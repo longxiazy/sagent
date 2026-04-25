@@ -365,7 +365,7 @@ function ResizeDivider() {
     e.preventDefault();
     dragging.current = true;
     startX.current = e.clientX;
-    const panel = document.querySelector('.layout-body > .agent-panel');
+    const panel = document.querySelector('.layout-body > .agent-panel-wrap');
     startWidth.current = panel ? panel.getBoundingClientRect().width : 420;
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
@@ -378,7 +378,7 @@ function ResizeDivider() {
       const maxW = Math.round(window.innerWidth * PANEL_MAX_RATIO);
       const next = Math.min(Math.max(startWidth.current + delta, PANEL_MIN), maxW);
       localStorage.setItem(PANEL_SIZE_KEY, String(next));
-      const panel = document.querySelector('.layout-body > .agent-panel');
+      const panel = document.querySelector('.layout-body > .agent-panel-wrap');
       if (panel) panel.style.flex = `0 0 ${next}px`;
     };
     const onMouseUp = () => {
@@ -1032,6 +1032,8 @@ function ModelPlanGroup({ trace, step, models, modelList, running }) {
 function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedAt, modelList, collapsed, onToggleCollapse }) {
   const traceBottomRef = useRef(null);
   const startTimeRef = useRef(null);
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const showContent = isMobile || !collapsed;
   const pauseRef = useRef(null);
   const [elapsed, setElapsed] = useState(0);
 
@@ -1101,7 +1103,7 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
       : elapsed > 0 ? formatElapsed(elapsed) : '-';
 
   return (
-    <section className={`agent-panel ${collapsed ? 'collapsed' : ''}`}>
+    <section className={`agent-panel ${!isMobile && collapsed ? 'collapsed' : ''}`}>
       <div className="agent-panel-head" onClick={collapsed && trace.length > 0 ? onToggleCollapse : undefined}>
         <div>
           <p className="agent-panel-eyebrow">Desktop Agent</p>
@@ -1136,7 +1138,7 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
         )}
       </div>
 
-      {!collapsed && (
+      {showContent && (
         <>
           <p className="agent-panel-note">
             当前支持 `browser`、`fs`、`terminal`、`macos` 工具。需要确认的动作会在这里暂停，等待你的批准或拒绝。
@@ -1387,6 +1389,7 @@ export default function App() {
   const [pendingApproval, setPendingApproval] = useState(null);
   const [approvalSubmitting, setApprovalSubmitting] = useState(false);
   const [agentCollapsed, setAgentCollapsed] = useState(false);
+  const [agentMobileTab, setAgentMobileTab] = useState('agent');
   const [pendingQuestion, setPendingQuestion] = useState(null);
   const [questionSubmitting, setQuestionSubmitting] = useState(false);
   const [showSessions, setShowSessions] = useState(window.innerWidth >= 768);
@@ -1634,7 +1637,7 @@ export default function App() {
   useEffect(() => {
     const saved = localStorage.getItem(PANEL_SIZE_KEY);
     if (saved && window.innerWidth >= 1200) {
-      const panel = document.querySelector('.layout-body > .agent-panel');
+      const panel = document.querySelector('.layout-body > .agent-panel-wrap');
       if (panel) panel.style.flex = `0 0 ${saved}px`;
     }
   }, []);
@@ -1937,6 +1940,7 @@ export default function App() {
       setReconnectedRun(false);
       setPendingApproval(null);
       approvalRequestRef.current = null;
+      if (window.innerWidth < 640) setAgentMobileTab('chat');
       setTimeout(() => textareaRef.current?.focus(), 0);
     }
   };
@@ -2135,7 +2139,13 @@ export default function App() {
           </div>
 
           <div className="layout-body">
-
+          {mode === 'agent' && (
+            <div className="agent-mobile-tabs">
+              <button className={`agent-mobile-tab ${agentMobileTab === 'agent' ? 'active' : ''}`} onClick={() => setAgentMobileTab('agent')}>Agent</button>
+              <button className={`agent-mobile-tab ${agentMobileTab === 'chat' ? 'active' : ''}`} onClick={() => setAgentMobileTab('chat')}>对话</button>
+            </div>
+          )}
+          <div className={`agent-panel-wrap ${mode === 'agent' && agentMobileTab === 'chat' ? 'mobile-hidden' : ''}`}>
           <AgentPanel
             mode={mode}
             running={agentRunning}
@@ -2150,11 +2160,12 @@ export default function App() {
               localStorage.setItem('agent_headless', String(v));
             }}
           />
+          </div>
 
           <ResizeDivider side="agent" />
 
           {messages.length > 0 && (
-            <div className="messages">
+            <div className={`messages ${mode === 'agent' && agentMobileTab === 'agent' ? 'mobile-hidden' : ''}`}>
               {messages.map((msg, i) => (
                 <div key={i} className={`bubble-row ${msg.role}`}>
                   {msg.role === 'assistant' && (
