@@ -160,40 +160,6 @@ textarea {
   border-top: 1px solid var(--c-border);
 }
 
-.hero-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.hero-action-btn {
-  height: 32px;
-  padding: 0 14px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-pill);
-  background: var(--c-surface);
-  color: var(--c-text-muted);
-  font-size: var(--f-sm);
-  cursor: pointer;
-  transition: all var(--ease);
-}
-
-.hero-action-btn:hover:not(:disabled) {
-  border-color: var(--c-primary-light);
-  color: var(--c-primary);
-  background: var(--c-primary-bg);
-}
-
-.hero-action-btn.active {
-  border-color: var(--c-primary);
-  color: var(--c-primary);
-  background: var(--c-primary-bg);
-}
-
-.hero-action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .suggestions {
   width: 100%;
   display: grid;
@@ -717,27 +683,6 @@ textarea {
     max-width: none;
     padding: 20px 32px;
   }
-}
-
-.empty-state {
-  margin: auto 0;
-  padding: 32px 24px;
-  border: 1px dashed var(--c-border);
-  border-radius: var(--r-lg);
-  text-align: center;
-  background: var(--c-surface);
-}
-
-.empty-title {
-  font-size: var(--f-base);
-  font-weight: 600;
-  color: var(--c-text);
-}
-
-.empty-text {
-  margin-top: 8px;
-  font-size: var(--f-sm);
-  color: var(--c-text-muted);
 }
 
 /* ── Chat bubbles ── */
@@ -1688,14 +1633,10 @@ textarea:disabled {
   background: rgba(20, 20, 31, 0.3);
 }
 
-.dialog,
-.drawer {
+.dialog {
   background: var(--c-surface);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-lg);
-}
-
-.dialog {
   padding: 24px;
   width: 320px;
 }
@@ -1708,11 +1649,6 @@ textarea:disabled {
 .approval-eyebrow { margin-bottom: 8px; font-size: var(--f-xs); letter-spacing: 0.08em; text-transform: uppercase; color: #8a6f21; }
 .approval-json { margin-top: 0; }
 .approval-confirm { min-width: 84px; }
-
-.drawer { padding: 24px; width: min(480px, 92vw); }
-.drawer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.drawer-title { font-size: var(--f-base); font-weight: 500; }
-.drawer-desc { font-size: var(--f-sm); color: var(--c-text-muted); margin-bottom: 8px; }
 
 .dialog-btn {
   display: inline-flex;
@@ -2125,9 +2061,6 @@ textarea:disabled {
     padding: 0 14px;
     font-size: var(--f-sm);
   }
-}
-
-@media (min-width: 641px) {
 }
 
 @media (max-width: 480px) {

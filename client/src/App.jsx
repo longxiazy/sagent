@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, Component } from 'react';
+import { useEffect, useRef, useState, Component, useMemo } from 'react';
 import {
   Menu, Timer, Trash2, Square, Brain, ChevronDown, ChevronUp,
-  X, Copy, Check, Clock, Send, Play, AlertTriangle, Bot, MessageSquare,
+  Copy, Check, Send,
 } from 'lucide-react';
 import hljs from 'highlight.js/lib/core';
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -608,7 +608,7 @@ function renderMarkdown(text) {
 }
 
 function MarkdownBlock({ content, className = '', showCursor = false }) {
-  const blocks = renderMarkdown(content);
+  const blocks = useMemo(() => renderMarkdown(content), [content]);
   return (
     <div className={className ? `md-body ${className}` : 'md-body'}>
       {blocks.map((block, idx) => {
