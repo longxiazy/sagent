@@ -7,13 +7,13 @@ N 倍智能 · 石破天惊 · 传说级 AI Agent
 ## 快速开始
 
 ```bash
-git clone https://github.com/your-repo/cuben.git && cd cuben
+git clone https://github.com/longxiazy/sagent && cd sagent
 cp .env.example .env                    # 编辑填入 API Key
 npm install && cd client && npm install && cd ..
 npm run sandbox
 ```
 
-打开 http://localhost:3001
+打开 http://localhost:5173
 
 ## 配置
 
@@ -21,15 +21,6 @@ npm run sandbox
 
 ```bash
 NVIDIA_API_KEY=nvapi-...                # MiniMax、Kimi、Qwen、GLM、DeepSeek 等
-```
-
-可选：
-
-```bash
-MODELS=minimaxai/minimax-m2.7,moonshotai/kimi-k2.5  # 可用模型列表
-AGENT_MULTI_MODELS=moonshotai/kimi-k2.5,qwen/qwen3.5-397b-a17b  # Agent 竞速
-AGENT_MAX_STEPS=32                      # Agent 最大步数
-LOG_LEVEL=info                          # debug | info | warn | error
 ```
 
 ## 常用命令
