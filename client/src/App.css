@@ -1087,7 +1087,7 @@ textarea {
 .agent-status-chip.idle { background: #f3f4f6; color: #6b7280; }
 
 .agent-headless-toggle {
-  display: inline-flex;
+  display: none;
   align-items: center;
   gap: 4px;
   font-size: 11px;
