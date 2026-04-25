@@ -2141,7 +2141,24 @@ export default function App() {
           <div className="layout-body">
           {mode === 'agent' && (
             <div className="agent-mobile-tabs">
-              <button className={`agent-mobile-tab ${agentMobileTab === 'agent' ? 'active' : ''}`} onClick={() => setAgentMobileTab('agent')}>Agent</button>
+              <button className={`agent-mobile-tab ${agentMobileTab === 'agent' ? 'active' : ''}`} onClick={() => setAgentMobileTab('agent')}>
+                Agent{agentRunning && <span className="tab-status-dot" />}
+              </button>
+              {agentTrace.length > 0 && (() => {
+                const lastStep = agentTrace.reduce((max, e) => (e.step != null ? Math.max(max, e.step) : max), 0);
+                const totalTokens = agentTrace.reduce((sum, e) => {
+                  if (e.type === 'step' && e.stage === 'action' && e.usage) return sum + e.usage.prompt_tokens + e.usage.completion_tokens;
+                  return sum;
+                }, 0);
+                const doneEvent = [...agentTrace].reverse().find(e => e.type === 'done');
+                const stepCount = doneEvent?.meta?.step_count || lastStep;
+                return (
+                  <div className="agent-mobile-metrics">
+                    {lastStep > 0 && <span className="agent-mobile-metric">Step {lastStep}/{stepCount}</span>}
+                    {totalTokens > 0 && <span className="agent-mobile-metric">{totalTokens > 999 ? `${(totalTokens / 1000).toFixed(1)}k` : totalTokens} tok</span>}
+                  </div>
+                );
+              })()}
               <button className={`agent-mobile-tab ${agentMobileTab === 'chat' ? 'active' : ''}`} onClick={() => setAgentMobileTab('chat')}>对话</button>
             </div>
           )}

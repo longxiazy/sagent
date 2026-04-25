@@ -1849,6 +1849,7 @@ textarea:disabled {
 
   .agent-mobile-tabs {
     display: flex;
+    align-items: center;
     gap: 0;
     border-bottom: 1px solid var(--c-border);
     flex-shrink: 0;
@@ -1865,11 +1866,40 @@ textarea:disabled {
     cursor: pointer;
     border-bottom: 2px solid transparent;
     transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
   }
 
   .agent-mobile-tab.active {
     color: var(--c-primary);
     border-bottom-color: var(--c-primary);
+  }
+
+  .tab-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #3b82f6;
+    animation: agent-timer-pulse 1.5s ease-in-out infinite;
+  }
+
+  .agent-mobile-metrics {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .agent-mobile-metric {
+    font-size: 9px;
+    font-weight: 600;
+    color: #6b7280;
+    background: #f3f4f6;
+    padding: 1px 5px;
+    border-radius: var(--r-sm);
+    white-space: nowrap;
   }
 
   .mobile-hidden {
