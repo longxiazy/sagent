@@ -225,7 +225,13 @@ async function streamSseJson({ url, body, signal, onEvent }) {
 
   if (!res.ok) {
     const errorText = await res.text();
-    throw new Error(errorText || `HTTP ${res.status}`);
+    try {
+      const parsed = JSON.parse(errorText);
+      throw new Error(parsed.error || `HTTP ${res.status}`);
+    } catch (parseErr) {
+      if (parseErr.message && !parseErr.message.startsWith('HTTP')) throw parseErr;
+      throw new Error(errorText || `HTTP ${res.status}`);
+    }
   }
 
   if (!res.body) {
@@ -1372,6 +1378,7 @@ export default function App() {
   const [streaming, setStreaming] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentRunId, setAgentRunId] = useState(null);
+  const [reconnectedRun, setReconnectedRun] = useState(false);
   const agentRunIdRef = useRef(null);
   const [agentHeadless, setAgentHeadless] = useState(() => localStorage.getItem('agent_headless') !== 'false');
   const [agentMemory, setAgentMemory] = useState(() => localStorage.getItem('agent_memory') !== 'false');
@@ -1467,11 +1474,25 @@ export default function App() {
         if (!data.active || aborted) return;
 
         setAgentRunning(true);
+        setReconnectedRun(true);
         setAgentStartedAt(data.startedAt || null);
         setAgentRunId(data.runId);
         agentRunIdRef.current = data.runId;
         setMode('agent');
         agentAbortRef.current = controller;
+
+        // 确保 session 有消息，让 showHero=false 以显示 Agent 面板
+        updateActiveSession(session => {
+          if (session.messages.length === 0) {
+            return touchSession(session, {
+              messages: [
+                { role: 'user', content: data.task || 'Agent 任务' },
+                { role: 'assistant', content: 'Desktop Agent 正在执行任务，已重连…' },
+              ],
+            });
+          }
+          return session;
+        });
 
         const response = await fetch(`/api/agent/stream/${data.runId}`, { signal: controller.signal });
         if (!response.ok || aborted) {
@@ -1913,6 +1934,7 @@ export default function App() {
       agentRunIdRef.current = null;
       setAgentRunId(null);
       setAgentRunning(false);
+      setReconnectedRun(false);
       setPendingApproval(null);
       approvalRequestRef.current = null;
       setTimeout(() => textareaRef.current?.focus(), 0);
@@ -2090,6 +2112,11 @@ export default function App() {
         </div>
       ) : (
         <div className="layout">
+          {reconnectedRun && agentRunning && (
+            <div className="reconnect-banner">
+              检测到运行中的 Agent 任务，已自动连接。可点击"停止"取消。
+            </div>
+          )}
           <div className="header">
             <div className="header-left">
               <button className="session-toggle-btn" onClick={() => setShowSessions(v => !v)} title="会话列表">
