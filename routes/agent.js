@@ -24,6 +24,12 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       return res.status(400).json({ error: 'task 不能为空' });
     }
 
+    // 只允许一个 Agent 同时运行
+    const activeRun = agentRunStore.getActiveRun();
+    if (activeRun) {
+      return res.status(409).json({ error: '已有 Agent 在运行中，请等待完成或取消', runId: activeRun.runId });
+    }
+
     const normalizedTask = task.trim();
     const agentHeadless = typeof headless === 'boolean' ? headless : process.env.AGENT_HEADLESS === 'true';
     const startedAt = Date.now();
