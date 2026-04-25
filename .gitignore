@@ -1,0 +1,31 @@
+# 环境变量（最重要，保护 API Key）
+.env
+.env.local
+.env.*.local
+
+# 依赖目录
+node_modules/
+client/node_modules/
+
+# Vite 构建产物
+client/dist/
+client/.vite/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 编辑器
+.idea/
+.vscode/
+*.suo
+*.swp
+
+# 日志
+logs/
+*.log
+npm-debug.log*
+
+data
+
+artifacts

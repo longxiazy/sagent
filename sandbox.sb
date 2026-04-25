@@ -1,0 +1,59 @@
+(version 1)
+(deny default)
+
+;; ── Node.js 运行必需 ──────────────────────────────
+(allow file-read*)
+
+;; ── 敏感目录读取限制（deny 覆盖上面的 allow）──────
+(deny file-read*
+  (subpath (string-append (param "HOME") "/.ssh"))
+  (subpath (string-append (param "HOME") "/.gnupg"))
+  (subpath (string-append (param "HOME") "/.aws"))
+  (subpath (string-append (param "HOME") "/.kube"))
+  (subpath (string-append (param "HOME") "/.config/gcloud"))
+  (subpath (string-append (param "HOME") "/.npmrc"))
+  (subpath (string-append (param "HOME") "/.netrc"))
+  (subpath (string-append (param "HOME") "/.gitconfig"))
+)
+(allow process-exec)
+(allow process-fork)
+(allow signal)
+(allow network-outbound)
+(allow network-inbound (local tcp))
+(allow sysctl-read)
+(allow sysctl-write)
+(allow mach-lookup)
+(allow mach-register)
+(allow mach-task-name)
+
+;; ── IPC ──────────────────────────────────────────
+(allow ipc-posix-shm*)
+(allow ipc-posix-sem)
+
+;; ── IOKit（GPU/显示）────────────────────────────
+(allow iokit-open)
+(allow iokit-get-properties)
+(allow iokit-set-properties)
+
+;; ── 项目目录读写 ─────────────────────────────────
+(allow file-write*
+  (subpath (param "PROJECT_DIR")))
+
+;; ── Chrome/Playwright 临时目录 & Socket ─────────
+(allow file-read* file-write*
+  (subpath "/private/var/folders"))
+(allow network-outbound
+  (regex "^/private/var/folders/"))
+(allow network-bind
+  (regex "^/private/var/folders/"))
+(allow file-write*
+  (subpath "/private/tmp"))
+(allow file-write*
+  (literal "/dev/null"))
+
+;; ── Chrome 用户数据目录 ──────────────────────────
+(allow file-write*
+  (subpath (string-append (param "HOME") "/Library/Application Support/Google/Chrome"))
+  (subpath (string-append (param "HOME") "/Library/Caches/Google/Chrome"))
+  (subpath (string-append (param "HOME") "/Library/Saved Application State"))
+  (subpath (string-append (param "HOME") "/Library/WebKit")))

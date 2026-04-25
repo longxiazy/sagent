@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f0c29"/>
+      <stop offset="100%" stop-color="#302b63"/>
+    </linearGradient>
+    <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ff4757"/>
+      <stop offset="100%" stop-color="#c0392b"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffa502"/>
+      <stop offset="100%" stop-color="#e67e22"/>
+    </linearGradient>
+    <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2ed573"/>
+      <stop offset="100%" stop-color="#27ae60"/>
+    </linearGradient>
+    <linearGradient id="g4" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e90ff"/>
+      <stop offset="100%" stop-color="#1565c0"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <!-- 4 small cubes in a fan arrangement -->
+  <!-- Cube 1 - red (far left) -->
+  <g transform="translate(2,8)">
+    <polygon points="12,4 20,8 12,12 4,8" fill="url(#g1)"/>
+    <polygon points="4,8 12,12 12,20 4,16" fill="#c0392b"/>
+    <polygon points="20,8 12,12 12,20 20,16" fill="#a93226"/>
+  </g>
+  <!-- Cube 2 - gold (left-center) -->
+  <g transform="translate(12,3)">
+    <polygon points="12,4 20,8 12,12 4,8" fill="url(#g2)"/>
+    <polygon points="4,8 12,12 12,20 4,16" fill="#e67e22"/>
+    <polygon points="20,8 12,12 12,20 20,16" fill="#d35400"/>
+  </g>
+  <!-- Cube 3 - green (right-center) -->
+  <g transform="translate(24,3)">
+    <polygon points="12,4 20,8 12,12 4,8" fill="url(#g3)"/>
+    <polygon points="4,8 12,12 12,20 4,16" fill="#27ae60"/>
+    <polygon points="20,8 12,12 12,20 20,16" fill="#1e8449"/>
+  </g>
+  <!-- Cube 4 - blue (far right) -->
+  <g transform="translate(34,8)">
+    <polygon points="12,4 20,8 12,12 4,8" fill="url(#g4)"/>
+    <polygon points="4,8 12,12 12,20 4,16" fill="#1565c0"/>
+    <polygon points="20,8 12,12 12,20 20,16" fill="#0d47a1"/>
+  </g>
+  <!-- N superscript -->
+  <text x="32" y="56" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="20" font-weight="900" fill="white" opacity="0.9">N</text>
+</svg>
