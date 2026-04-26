@@ -20,14 +20,21 @@ export async function executeBrowserAction(page, action) {
     if (/timeout|waiting for|not found|selector/i.test(msg)) {
       return `浏览器操作失败: ${msg.slice(0, 200)}。可能原因: 元素不存在或页面未加载完成，请重新观察页面后使用 observation 中存在的 elementId。`;
     }
+    if (/execution context was destroyed|net::err_|connection.*closed|navigation/i.test(msg)) {
+      return `浏览器操作失败: ${msg.slice(0, 200)}。可能原因: 页面导航失败或连接中断，请尝试重新打开页面或使用其他网站。`;
+    }
     throw err;
   }
 }
 
 async function _executeBrowserAction(page, action) {
   if (action.type === 'navigate') {
-    await page.goto(action.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    return `已打开 ${action.url}`;
+    try {
+      await page.goto(action.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      return `已打开 ${action.url}`;
+    } catch (err) {
+      return `无法打开 ${action.url}: ${err.message?.slice(0, 150) || '连接失败'}。请尝试其他网址或使用 fetch 工具。`;
+    }
   }
 
   if (action.type === 'google_search') {

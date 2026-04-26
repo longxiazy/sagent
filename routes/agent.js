@@ -115,6 +115,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         onEvent: sendEvent,
         isCancelled: () => runRecord.cancelled,
         conversationHistory: Array.isArray(conversationHistory) ? conversationHistory : [],
+        memory: useMemory,
       });
 
       finalAnswer = result.answer;

@@ -13,7 +13,7 @@ import { createChatRouter } from './routes/chat.js';
 import { createAgentRouter } from './routes/agent.js';
 import { createCompletionsRouter } from './routes/completions.js';
 import { listCheckpoints, clearCheckpoints, removeCheckpoint } from './agent/core/checkpoint.js';
-import { loadMemory, buildMemoryPrompt } from './agent/core/memory.js';
+import { loadMemory, buildMemoryPrompt, saveMemory } from './agent/core/memory.js';
 import { log } from './helpers/logger.js';
 
 const app = express();
@@ -116,12 +116,16 @@ async function resumeFromCheckpoint(cp) {
     const result = await runDesktopAgent({
       task,
       model,
+      models: cp.agentModels,
+      strategy: cp.strategy || 'race',
       systemPrompt,
       headless,
       runId,
       startedAt,
       initialStep: step + 1,
       initialHistory: history,
+      conversationHistory: cp.conversationHistory || [],
+      memory: cp.memory !== false,
       onEvent: sendEvent,
     });
     sendEvent({
@@ -131,6 +135,14 @@ async function resumeFromCheckpoint(cp) {
       steps: result.steps,
       meta: { elapsed_ms: Date.now() - startedAt, step_count: result.steps.length },
     });
+    if (cp.memory !== false) {
+      try {
+        const mem = await loadMemory(MEMORY_DIR);
+        await saveMemory(MEMORY_DIR, mem);
+      } catch (err) {
+        log.warn('[Resume] Memory save failed:', err.message);
+      }
+    }
   } catch (err) {
     log.error(`[Resume] 失败 run_id=${runId}:`, err.message);
     sendEvent({ type: 'error', runId, error: err.message });

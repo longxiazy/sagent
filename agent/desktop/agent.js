@@ -514,6 +514,7 @@ export function createDesktopAgentRunner({
     initialStep = 1,
     initialHistory = [],
     conversationHistory = [],
+    memory = true,
   }) {
     const blacklistedModels = new Set();
     const plan = buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs });
@@ -535,6 +536,7 @@ export function createDesktopAgentRunner({
         ? (history, step) => saveCheckpoint(checkpointDir, {
             runId, task, model, systemPrompt, headless,
             history, step, maxSteps, startedAt,
+            agentModels, strategy, conversationHistory, memory,
           })
         : null,
       initialize: async () => ({
