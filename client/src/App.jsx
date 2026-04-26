@@ -2163,8 +2163,8 @@ export default function App() {
             </button>
 
             <div className="hero-brand">
-              <h1 className="hero-title">CubeN</h1>
-              <p className="hero-subtitle">N 倍智能 · 石破天惊 · 传说级 Agent</p>
+              <h1 className="hero-title">sagent</h1>
+              <p className="hero-subtitle">多模型 AI 聊天 + 桌面 Agent</p>
             </div>
 
             <div className="hero-input-card">

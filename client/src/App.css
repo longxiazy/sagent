@@ -50,6 +50,7 @@ html,
 body,
 #root {
   height: 100%;
+  background: var(--c-bg);
 }
 
 button,
@@ -63,9 +64,11 @@ textarea {
 .hero-wrap {
   flex: 1;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 24px 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .hero {
@@ -1702,28 +1705,42 @@ textarea:disabled {
 
 @media (max-width: 640px) {
   .hero-wrap {
-    align-items: flex-start;
-    padding: 16px 12px;
+    padding: 4px 8px 8px;
   }
 
   .hero {
-    gap: 20px;
+    gap: 12px;
   }
 
   .hero-brand {
-    margin-top: 32px;
+    margin-top: 8px;
   }
 
   .hero-title {
-    font-size: 24px;
+    font-size: 22px;
   }
 
   .suggestions {
     grid-template-columns: 1fr;
+    gap: 6px;
   }
 
   .suggestion-card {
-    padding: 12px 14px;
+    padding: 8px 12px;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .suggestion-title {
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .suggestion-text {
+    -webkit-line-clamp: 1;
+    font-size: 11px;
   }
 
   .layout {
@@ -2101,11 +2118,12 @@ textarea:disabled {
   }
 
   .hero-subtitle {
-    font-size: var(--f-sm);
+    font-size: var(--f-xs);
   }
 
   .hero-input-card {
-    padding: 12px;
+    padding: 10px;
+    gap: 8px;
   }
 
   .hero-toolbar {
