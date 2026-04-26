@@ -1541,6 +1541,7 @@ export default function App() {
         if (!data.active || aborted) return;
 
         setAgentRunning(true);
+        setAgentTrace([]);
         setReconnectedRun(true);
         setAgentStartedAt(data.startedAt || null);
         setAgentRunId(data.runId);
@@ -1919,7 +1920,7 @@ export default function App() {
     try {
       await streamAgentRun({
         task: text,
-        model,
+        model: agentModels.length > 0 ? agentModels[0] : model,
         models: agentModels.length > 0 ? agentModels.filter(m => models.some(available => available.id === m)) : [model],
         strategy: agentModels.length > 1 ? agentStrategy : 'race',
         headless: agentHeadless,

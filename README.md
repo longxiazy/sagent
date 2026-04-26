@@ -2,32 +2,58 @@
 
 多模型 AI 聊天 + 桌面 Agent，支持浏览器自动化、文件操作、终端命令、macOS 控制。
 
-## 快速开始
+> **仅支持 macOS**。Agent 需要操控本地浏览器和系统，目前只在 Mac 上测试通过。
 
-```bash
-git clone https://github.com/longxiazy/sagent && cd sagent
-cp .env.example .env                    # 编辑填入 API Key
-npm install && cd client && npm install && cd ..
-npm run sandbox
+## 安全：沙盒隔离
+
+默认通过 `npm run sandbox` 启动，macOS 沙盒将 Agent 锁在一个围栏里：
+
+```
+┌─────────────────────────────────────────────┐
+│                  macOS                       │
+│                                              │
+│  ┌────────────────────────────────────────┐  │
+│  │           沙盒（sandbox）               │  │
+│  │                                        │  │
+│  │  ✅ Agent 可以：                       │  │
+│  │     · 读写项目目录内的文件              │  │
+│  │     · 用浏览器访问网页                  │  │
+│  │     · 联网调 API                        │  │
+│  │                                        │  │
+│  │  🚫 Agent 不能：                       │  │
+│  │     · 读取项目外的文件（如桌面、相册）    │  │
+│  │     · 安装软件或改系统设置               │  │
+│  │     · 访问钥匙串、通讯录等隐私数据       │  │
+│  └────────────────────────────────────────┘  │
+│                                              │
+│  你的个人文件、系统设置、隐私数据 → 安全 ✓    │
+└─────────────────────────────────────────────┘
 ```
 
-打开 http://localhost:5173
+简单说：Agent 只能在项目文件夹里干活，出不去。就算它想捣乱也够不着你的其他东西。
+
+危险操作（删文件、装包、执行终端命令）还会弹窗问你，你不点同意它就没法继续。
+
+## 多设备共享
+
+所有访问该服务的浏览器共享同一个会话状态。手机、电脑、iPad 打开同一个网址都能看到相同的聊天记录。
+
+如果 Agent 正在运行，其他设备打开页面也能实时看到执行进度。同一时间只允许一个 Agent 任务运行，新请求会收到 409 提示。
 
 ## 配置
 
 编辑 `.env`：
 
 ```bash
-# API Key（必填，支持 MiniMax、Kimi、Qwen、GLM、DeepSeek 等模型）
-NVIDIA_API_KEY=nvapi-...
+# API Key（至少填一个）
+NVIDIA_API_KEY=nvapi-...              # MiniMax、Kimi、Qwen、GLM、DeepSeek 等
+ANTHROPIC_API_KEY=sk-ant-...          # Claude 或 Anthropic 兼容模型
+ANTHROPIC_BASE_URL=                   # 自定义端点（如 https://open.bigmodel.cn/api/anthropic）
 
 # Agent 行为（可选）
 AGENT_MAX_STEPS=32         # 单次任务最大步数，默认 32
 AGENT_HEADLESS=false       # true=无头浏览器，false=显示浏览器窗口
 AGENT_RESUME=true          # 后端重启后自动恢复未完成的 Agent 任务
-
-# Anthropic Claude（可选，用于 Claude 模型）
-ANTHROPIC_API_KEY=sk-ant-...
 
 # Chrome 路径（可选，默认自动检测）
 CHROME_PATH=auto
