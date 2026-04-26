@@ -1532,21 +1532,36 @@ textarea {
   position: sticky;
   bottom: 0;
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 12px 0 max(12px, env(safe-area-inset-bottom));
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(24px) saturate(1.6);
-  -webkit-backdrop-filter: blur(24px) saturate(1.6);
-  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  flex-direction: column;
+  padding: 10px 0 max(10px, env(safe-area-inset-bottom));
+  background: transparent;
   z-index: 10;
   margin-top: auto;
+}
+
+.input-card {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 18px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  transition: border-color var(--ease), box-shadow var(--ease);
+}
+
+.input-card:focus-within {
+  border-color: rgba(83, 74, 183, 0.25);
+  box-shadow: 0 0 0 3px rgba(124, 110, 240, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
 .input-toolbar {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 4px 8px 6px;
   flex-shrink: 0;
 }
 
@@ -1567,26 +1582,22 @@ textarea {
 .toolbar-chip.active { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-bg); }
 
 textarea {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
   resize: none;
   font-size: var(--f-base);
-  padding: 14px 18px;
-  min-height: 52px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 22px;
+  padding: 10px 16px;
+  min-height: 44px;
+  max-height: 144px;
+  border: none;
+  border-radius: 0;
   outline: none;
   line-height: 1.5;
   overflow-y: auto;
-  transition: border-color var(--ease), box-shadow var(--ease);
-  background: rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: transparent;
 }
 
 textarea:focus {
-  border-color: rgba(83, 74, 183, 0.3);
-  box-shadow: 0 0 0 3px rgba(124, 110, 240, 0.1);
+  box-shadow: none;
 }
 
 textarea:disabled {
@@ -1597,14 +1608,17 @@ textarea:disabled {
 
 .send-btn {
   flex-shrink: 0;
-  height: 42px;
-  padding: 0 20px;
-  border-radius: var(--r-md);
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 16px;
   border: none;
   font-size: var(--f-sm);
   cursor: pointer;
   white-space: nowrap;
   transition: background var(--ease);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .send-btn.idle {
@@ -2053,20 +2067,31 @@ textarea:disabled {
   }
 
   .input-area {
-    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
-    gap: 6px;
+    padding: 6px 4px max(6px, env(safe-area-inset-bottom));
   }
 
   textarea {
     font-size: 16px;
-    padding: 8px 10px;
-    border-radius: 16px;
+    padding: 8px 12px;
+  }
+
+  .input-card {
+    border-radius: 14px;
   }
 
   .send-btn {
-    height: 38px;
-    padding: 0 14px;
-    font-size: var(--f-sm);
+    height: 28px;
+    padding: 0 10px;
+  }
+
+  textarea {
+    font-size: 16px;
+    padding: 8px 12px;
+  }
+
+  .send-btn {
+    height: 30px;
+    padding: 0 12px;
   }
 }
 

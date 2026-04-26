@@ -2291,22 +2291,24 @@ export default function App() {
               ))}
               <div ref={bottomRef} />
               <div className="input-area">
-                <textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={
-                    mode === 'agent'
-                      ? '描述要让 Agent 完成的任务…'
-                      : '输入消息…'
-                  }
-                  rows={1}
-                  disabled={sessionLocked}
-                />
-                <div className="input-toolbar">
-                  {memoryToggle}
-                  {sendButton}
+                <div className="input-card">
+                  <textarea
+                    ref={textareaRef}
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={
+                      mode === 'agent'
+                        ? '描述要让 Agent 完成的任务…'
+                        : '输入消息…'
+                    }
+                    rows={1}
+                    disabled={sessionLocked}
+                  />
+                  <div className="input-toolbar">
+                    {memoryToggle}
+                    {sendButton}
+                  </div>
                 </div>
               </div>
             </div>
