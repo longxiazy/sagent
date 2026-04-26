@@ -1519,6 +1519,7 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
 export default function App() {
   const [chatState, setChatState] = useState(loadChatState);
   const [models, setModels] = useState(DEFAULT_MODELS);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
   const [input, setInput] = useState('');
   const [mode, setMode] = useState(() => localStorage.getItem(LAST_MODE_KEY) || 'chat');
   const [streaming, setStreaming] = useState(false);
@@ -1547,6 +1548,9 @@ export default function App() {
   });
   // Filter out models no longer available
   useEffect(() => {
+    if (!modelsLoaded) {
+      return;
+    }
     if (agentModels.length > 0 && models.length > 0) {
       const valid = agentModels.filter(m => models.some(avail => avail.id === m));
       if (valid.length !== agentModels.length) {
@@ -1554,7 +1558,7 @@ export default function App() {
         localStorage.setItem('agent_models', JSON.stringify(valid));
       }
     }
-  }, [models]);
+  }, [models, modelsLoaded]);
   const [agentStrategy, setAgentStrategy] = useState(() => localStorage.getItem('agent_strategy') || 'race');
 
   const abortRef = useRef(null);
@@ -1586,7 +1590,10 @@ export default function App() {
           });
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        setModelsLoaded(true);
+      });
   }, []);
 
   const { sessions, activeSessionId } = chatState;
