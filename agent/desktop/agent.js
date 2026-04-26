@@ -102,7 +102,7 @@ function toolUseToNormalizedDecision(toolUse) {
   return normalizeDesktopAgentDecision({ action });
 }
 
-async function singleModelPlan({ model, openai_client, anthropic_client, isCancelled, ...context }) {
+async function singleModelPlan({ model, openai_client, anthropic_client, modelConfig, isCancelled, ...context }) {
   if (isCancelled?.()) throw new Error('Agent 已取消');
 
   // Create an AbortController that fires when isCancelled becomes true
@@ -118,7 +118,7 @@ async function singleModelPlan({ model, openai_client, anthropic_client, isCance
   }
 
   try {
-    if (isClaudeModel(model)) {
+    if (isClaudeModel(model, modelConfig)) {
       const system = buildDesktopAgentSystemPrompt(context.systemPrompt);
       const messages = buildClaudeTaskMessages(context);
       const result = await claudeAgentPlan({
@@ -136,6 +136,7 @@ async function singleModelPlan({ model, openai_client, anthropic_client, isCance
         : null;
       return { ...decision, usage, model };
     } else {
+      if (!openai_client) throw new Error(`模型 ${model} 需要 NVIDIA_API_KEY`);
       const planner = createJsonPlanner({
         client: openai_client,
         buildMessages: (ctx) =>
@@ -220,7 +221,7 @@ function aggregateResults(modelResults) {
 
 const DEFAULT_MODEL_TIMEOUT_MS = 90_000;
 
-function buildDesktopPlanner({ openai_client, anthropic_client, blacklistedModels, modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS }) {
+function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS }) {
   function planWithTimeout(model, context, isCancelled) {
     const timeoutMs = typeof modelTimeoutMs === 'number' && modelTimeoutMs > 0 ? modelTimeoutMs : DEFAULT_MODEL_TIMEOUT_MS;
     let timer;
@@ -228,7 +229,7 @@ function buildDesktopPlanner({ openai_client, anthropic_client, blacklistedModel
       timer = setTimeout(() => reject(new Error(`模型超时 (${Math.round(timeoutMs / 1000)}s)`)), timeoutMs);
     });
     return Promise.race([
-      singleModelPlan({ model, openai_client, anthropic_client, isCancelled, ...context }),
+      singleModelPlan({ model, openai_client, anthropic_client, modelConfig, isCancelled, ...context }),
       timeout,
     ]).finally(() => clearTimeout(timer));
   }
@@ -413,6 +414,7 @@ async function observeDesktopAgent(state) {
 export function createDesktopAgentRunner({
   openai_client,
   anthropic_client,
+  modelConfig,
   chromium,
   maxSteps = 8,
   browserCandidatePaths,
@@ -514,7 +516,7 @@ export function createDesktopAgentRunner({
     conversationHistory = [],
   }) {
     const blacklistedModels = new Set();
-    const plan = buildDesktopPlanner({ openai_client, anthropic_client, blacklistedModels, modelTimeoutMs });
+    const plan = buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs });
 
     const authorize = createAgentAuthorizer({
       runId,

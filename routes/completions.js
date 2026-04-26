@@ -45,8 +45,10 @@ export function createCompletionsRouter({ openai_client, anthropic_client, model
     log.info(`[${time}] POST /v1/chat/completions model=${model} stream=${Boolean(stream)} messages=${safeJson(messages)}`);
 
     try {
+      if (isClaudeModel(model, modelConfig) && !anthropic_client) throw new Error('未配置 ANTHROPIC_API_KEY');
+      if (!isClaudeModel(model, modelConfig) && !openai_client) throw new Error('未配置 NVIDIA_API_KEY');
       if (!stream) {
-        if (isClaudeModel(model)) {
+        if (isClaudeModel(model, modelConfig)) {
           const response = await anthropic_client.messages.create({
             model,
             max_tokens,

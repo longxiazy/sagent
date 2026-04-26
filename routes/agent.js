@@ -48,7 +48,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     req.on('close', () => {
       // Don't cancel the run on disconnect — allow reconnect
       if (!res.writableEnded) {
-        log.info(`[${formatLogTime()}] POST /api/agent client_disconnected model=${model} run_id=${runId}`);
+        log.debug(`[${formatLogTime()}] POST /api/agent client_disconnected model=${model} run_id=${runId}`);
       }
     });
 
@@ -144,7 +144,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       });
     } catch (err) {
       agentError = err;
-      log.error('Desktop agent error:', err);
+      log.error('Desktop agent error:', err?.message || err);
       sendEvent({
         type: 'error',
         runId,

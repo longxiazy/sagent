@@ -25,17 +25,18 @@ export function loadModelConfig() {
   const envModels = process.env.MODELS;
   if (typeof envModels === 'string' && envModels.trim()) {
     const ids = envModels.split(',').map(s => s.trim()).filter(Boolean);
+    const hasAnthropicKey = Boolean(process.env.ANTHROPIC_API_KEY);
+    const onlyAnthropic = hasAnthropicKey && !process.env.NVIDIA_API_KEY;
     return ids.map(id => ({
       id,
       label: id,
-      provider: id.startsWith('claude-') ? 'anthropic' : 'nvidia',
+      provider: id.startsWith('claude-') || onlyAnthropic ? 'anthropic' : 'nvidia',
     }));
   }
-  return [{
-    id: 'minimaxai/minimax-m2.7',
-    label: 'MiniMax M2.7',
-    provider: 'nvidia',
-  }];
+  if (process.env.ANTHROPIC_API_KEY && !process.env.NVIDIA_API_KEY) {
+    return [{ id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', provider: 'anthropic' }];
+  }
+  return [{ id: 'minimaxai/minimax-m2.7', label: 'MiniMax M2.7', provider: 'nvidia' }];
 }
 
 export function loadAgentMultiModels() {
@@ -54,14 +55,20 @@ export function isClaudeModel(model, modelConfig) {
 }
 
 export function createClients() {
-  const openai_client = new OpenAI({
-    apiKey: process.env.NVIDIA_API_KEY,
-    baseURL: 'https://integrate.api.nvidia.com/v1',
-  });
+  const nvidiaKey = process.env.NVIDIA_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
-  const anthropic_client = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-  });
+  const openai_client = nvidiaKey
+    ? new OpenAI({ apiKey: nvidiaKey, baseURL: 'https://integrate.api.nvidia.com/v1' })
+    : null;
+
+  const anthropic_client = anthropicKey
+    ? new Anthropic({ apiKey: anthropicKey, baseURL: process.env.ANTHROPIC_BASE_URL || undefined })
+    : null;
+
+  if (!openai_client && !anthropic_client) {
+    throw new Error('至少需要配置 NVIDIA_API_KEY 或 ANTHROPIC_API_KEY');
+  }
 
   return { openai_client, anthropic_client };
 }
@@ -123,7 +130,7 @@ export async function claudeAgentPlan({
   const toolBlock = message.content.find(b => b.type === 'tool_use');
   if (toolBlock) {
     return {
-      content: toolBlock.input,
+      content: { name: toolBlock.name, input: toolBlock.input },
       stop_reason: message.stop_reason,
       usage: message.usage,
     };

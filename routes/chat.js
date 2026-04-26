@@ -36,9 +36,11 @@ export function createChatRouter({ openai_client, anthropic_client, modelConfig 
     res.flushHeaders();
 
     try {
-      if (isClaudeModel(model)) {
+      if (isClaudeModel(model, modelConfig)) {
+        if (!anthropic_client) throw new Error('未配置 ANTHROPIC_API_KEY，无法使用 Claude 模型');
         await handleClaudeChat(anthropic_client, { model, messages, max_tokens, temperature }, res, startedAt);
       } else {
+        if (!openai_client) throw new Error('未配置 NVIDIA_API_KEY，无法使用该模型');
         await handleNvidiaChat(openai_client, createStreamingCompletion, { model, messages, temperature, top_p, max_tokens }, res, startedAt);
       }
     } catch (err) {
