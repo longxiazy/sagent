@@ -244,6 +244,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       runId: run.runId,
       startedAt: run.startedAt,
       model: run.meta?.model,
+      task: run.meta?.task,
       meta: run.meta,
     });
   });

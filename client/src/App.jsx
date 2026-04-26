@@ -1563,6 +1563,7 @@ export default function App() {
   const questionRequestRef = useRef(null);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
+  const reconnectTaskRef = useRef(null);
 
   // Fetch available models from backend
   useEffect(() => {
@@ -1651,12 +1652,20 @@ export default function App() {
         setMode('agent');
         agentAbortRef.current = controller;
 
-        // Keep current session if it has messages (same device refresh);
-        // only create empty session if current session is empty (other device)
+        // Reconnect: only keep current session if its first user message
+        // matches this agent task (same device refresh).
+        // Other devices have stale localStorage from different runs.
+        const task = data.task || 'Agent 任务';
         setChatState(prev => {
           const cur = prev.sessions.find(s => s.id === prev.activeSessionId);
-          if (cur && cur.messages.length > 0) return prev;
-          const cleanSession = createSession();
+          const firstUser = cur?.messages?.find(m => m.role === 'user');
+          if (firstUser && firstUser.content === task) return prev;
+          const cleanSession = createSession({
+            messages: [
+              { role: 'user', content: task, ts: data.startedAt || Date.now() },
+              { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() },
+            ],
+          });
           return normalizeChatState({
             sessions: [cleanSession, ...prev.sessions],
             activeSessionId: cleanSession.id,
@@ -1687,6 +1696,7 @@ export default function App() {
 
               if (event.type === 'run_meta') {
                 setAgentStartedAt(event.startedAt || null);
+                if (event.task) reconnectTaskRef.current = event.task;
                 continue;
               }
 
@@ -1728,7 +1738,7 @@ export default function App() {
                   if (idx >= 0) {
                     msgs[idx] = { role: 'assistant', content: event.answer || 'Agent 已完成任务。' };
                   } else if (!msgs.some(m => m.role === 'assistant' && m.content === (event.answer || ''))) {
-                    msgs.push({ role: 'user', content: data.task || 'Agent 任务', ts: data.startedAt || Date.now() });
+                    msgs.push({ role: 'user', content: reconnectTaskRef.current || data.task || 'Agent 任务', ts: data.startedAt || Date.now() });
                     msgs.push({ role: 'assistant', content: event.answer || 'Agent 已完成任务。', ts: Date.now() });
                   }
                   return touchSession(session, { messages: msgs });
