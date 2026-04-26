@@ -1454,6 +1454,16 @@ export default function App() {
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
+  // Filter out models no longer available
+  useEffect(() => {
+    if (agentModels.length > 0 && models.length > 0) {
+      const valid = agentModels.filter(m => models.some(avail => avail.id === m));
+      if (valid.length !== agentModels.length) {
+        setAgentModels(valid);
+        localStorage.setItem('agent_models', JSON.stringify(valid));
+      }
+    }
+  }, [models]);
   const [agentStrategy, setAgentStrategy] = useState(() => localStorage.getItem('agent_strategy') || 'race');
 
   const abortRef = useRef(null);
@@ -1910,7 +1920,7 @@ export default function App() {
       await streamAgentRun({
         task: text,
         model,
-        models: agentModels.length > 0 ? agentModels : [model],
+        models: agentModels.length > 0 ? agentModels.filter(m => models.some(available => available.id === m)) : [model],
         strategy: agentModels.length > 1 ? agentStrategy : 'race',
         headless: agentHeadless,
         memory: agentMemory,
