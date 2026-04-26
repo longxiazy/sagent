@@ -159,6 +159,11 @@ const LEGACY_MODEL_KEY = 'nvidia_chat_model';
 const SESSIONS_KEY = 'nvidia_chat_sessions';
 const ACTIVE_SESSION_KEY = 'nvidia_chat_active_session';
 const LAST_MODE_KEY = 'nvidia_chat_last_mode';
+const PHONE_BREAKPOINT = 640;
+const TABLET_BREAKPOINT = 768;
+const DOCKED_LAYOUT_BREAKPOINT = 1100;
+const APP_BG_COLOR = '#f5f5fa';
+const APP_SURFACE_COLOR = '#ffffff';
 
 function generateSessionId() {
   return `session_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -495,7 +500,7 @@ function ResizeDivider() {
   const startWidth = useRef(0);
 
   const onMouseDown = e => {
-    if (window.innerWidth < 1200) return;
+    if (window.innerWidth < DOCKED_LAYOUT_BREAKPOINT) return;
     e.preventDefault();
     dragging.current = true;
     startX.current = e.clientX;
@@ -1166,7 +1171,7 @@ function ModelPlanGroup({ trace, step, models, modelList, running }) {
 function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval }) {
   const traceBottomRef = useRef(null);
   const startTimeRef = useRef(null);
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < PHONE_BREAKPOINT;
   const showContent = isMobile || !collapsed;
   const pauseRef = useRef(null);
   const [elapsed, setElapsed] = useState(0);
@@ -1215,7 +1220,7 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
 
   useEffect(() => {
     // Only auto-scroll trace on small screens where it has a max-height
-    if (window.innerWidth < 1200) {
+    if (window.innerWidth < DOCKED_LAYOUT_BREAKPOINT) {
       traceBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [trace]);
@@ -1532,7 +1537,7 @@ export default function App() {
   const [agentMobileTab, setAgentMobileTab] = useState('agent');
   const [pendingQuestion, setPendingQuestion] = useState(null);
   const [questionSubmitting, setQuestionSubmitting] = useState(false);
-  const [showSessions, setShowSessions] = useState(window.innerWidth >= 768);
+  const [showSessions, setShowSessions] = useState(window.innerWidth >= DOCKED_LAYOUT_BREAKPOINT);
   const [agentStartedAt, setAgentStartedAt] = useState(null);
   const [agentModels, setAgentModels] = useState(() => {
     try {
@@ -1601,6 +1606,17 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(LAST_MODE_KEY, mode);
   }, [mode]);
+
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) return;
+
+    const isPhoneViewport = window.innerWidth <= PHONE_BREAKPOINT;
+    const showSurfaceChrome = (isPhoneViewport && mode === 'agent' && agentMobileTab === 'agent')
+      || (window.innerWidth < DOCKED_LAYOUT_BREAKPOINT && showSessions);
+
+    meta.setAttribute('content', showSurfaceChrome ? APP_SURFACE_COLOR : APP_BG_COLOR);
+  }, [mode, agentMobileTab, showSessions]);
 
   // Reconnect to running agent on page refresh
   useEffect(() => {
@@ -1787,10 +1803,31 @@ export default function App() {
   // Restore saved agent panel width on mount
   useEffect(() => {
     const saved = localStorage.getItem(PANEL_SIZE_KEY);
-    if (saved && window.innerWidth >= 1200) {
+    if (saved && window.innerWidth >= DOCKED_LAYOUT_BREAKPOINT) {
       const panel = document.querySelector('.layout-body > .agent-panel-wrap');
       if (panel) panel.style.flex = `0 0 ${saved}px`;
     }
+  }, []);
+
+  useEffect(() => {
+    const syncResponsiveState = () => {
+      const panel = document.querySelector('.layout-body > .agent-panel-wrap');
+      if (panel) {
+        if (window.innerWidth >= DOCKED_LAYOUT_BREAKPOINT) {
+          const saved = localStorage.getItem(PANEL_SIZE_KEY);
+          panel.style.flex = saved ? `0 0 ${saved}px` : '';
+        } else {
+          panel.style.flex = '';
+        }
+      }
+
+      if (window.innerWidth < TABLET_BREAKPOINT) {
+        setShowSessions(false);
+      }
+    };
+
+    window.addEventListener('resize', syncResponsiveState);
+    return () => window.removeEventListener('resize', syncResponsiveState);
   }, []);
 
   const stopGeneration = () => abortRef.current?.abort();
@@ -2111,7 +2148,7 @@ export default function App() {
       setReconnectedRun(false);
       setPendingApproval(null);
       approvalRequestRef.current = null;
-      if (window.innerWidth < 640) setAgentMobileTab('chat');
+      if (window.innerWidth < PHONE_BREAKPOINT) setAgentMobileTab('chat');
       setTimeout(() => textareaRef.current?.focus(), 0);
     }
   };
@@ -2131,7 +2168,7 @@ export default function App() {
   };
 
   const handleKeyDown = e => {
-    const isMobile = window.innerWidth < 768;
+    const isMobile = window.innerWidth < TABLET_BREAKPOINT;
     if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
       e.preventDefault();
       handleSubmit();
@@ -2240,6 +2277,11 @@ export default function App() {
           locked={sessionLocked}
         />
       </div>
+      <button
+        className={`sidebar-backdrop ${showSessions ? 'visible' : ''}`}
+        onClick={() => setShowSessions(false)}
+        aria-label="关闭会话列表"
+      />
 
       <div className="main-area">
       {showHero ? (
@@ -2309,54 +2351,57 @@ export default function App() {
             </div>
           </div>
 
-          <div className="layout-body">
+          <div className={`layout-body ${mode === 'agent' ? 'agent-layout' : 'chat-layout'}`}>
           {mode === 'agent' && (
-            <div className="agent-mobile-tabs">
-              <button className={`agent-mobile-tab ${agentMobileTab === 'agent' ? 'active' : ''}`} onClick={() => setAgentMobileTab('agent')}>
-                Agent{agentRunning && <span className="tab-status-dot" />}
-              </button>
-              {agentTrace.length > 0 && (() => {
-                const lastStep = agentTrace.reduce((max, e) => (e.step != null ? Math.max(max, e.step) : max), 0);
-                const totalTokens = agentTrace.reduce((sum, e) => {
-                  if (e.type === 'step' && e.stage === 'action' && e.usage) return sum + e.usage.prompt_tokens + e.usage.completion_tokens;
-                  return sum;
-                }, 0);
-                const doneEvent = [...agentTrace].reverse().find(e => e.type === 'done');
-                const stepCount = doneEvent?.meta?.step_count || lastStep;
-                return (
-                  <div className="agent-mobile-metrics">
-                    {lastStep > 0 && <span className="agent-mobile-metric">Step {lastStep}/{stepCount}</span>}
-                    {totalTokens > 0 && <span className="agent-mobile-metric">{totalTokens > 999 ? `${(totalTokens / 1000).toFixed(1)}k` : totalTokens} tok</span>}
-                  </div>
-                );
-              })()}
-              <button className={`agent-mobile-tab ${agentMobileTab === 'chat' ? 'active' : ''}`} onClick={() => setAgentMobileTab('chat')}>对话</button>
-            </div>
-          )}
-          <div className={`agent-panel-wrap ${mode === 'agent' && agentMobileTab === 'chat' ? 'mobile-hidden' : ''}`}>
-          <AgentPanel
-            mode={mode}
-            running={agentRunning}
-            trace={agentTrace}
-            headless={agentHeadless}
-            startedAt={agentStartedAt}
-            modelList={models}
-            collapsed={agentCollapsed}
-            onToggleCollapse={() => setAgentCollapsed(c => !c)}
-            onHeadlessChange={v => {
-              setAgentHeadless(v);
-              localStorage.setItem('agent_headless', String(v));
-            }}
-            onStop={stopAgent}
-            agentStopping={agentStopping}
-            pendingApproval={pendingApproval}
-          />
-          </div>
+            <>
+              <div className="agent-mobile-tabs">
+                <button className={`agent-mobile-tab ${agentMobileTab === 'agent' ? 'active' : ''}`} onClick={() => setAgentMobileTab('agent')}>
+                  Agent{agentRunning && <span className="tab-status-dot" />}
+                </button>
+                {agentTrace.length > 0 && (() => {
+                  const lastStep = agentTrace.reduce((max, e) => (e.step != null ? Math.max(max, e.step) : max), 0);
+                  const totalTokens = agentTrace.reduce((sum, e) => {
+                    if (e.type === 'step' && e.stage === 'action' && e.usage) return sum + e.usage.prompt_tokens + e.usage.completion_tokens;
+                    return sum;
+                  }, 0);
+                  const doneEvent = [...agentTrace].reverse().find(e => e.type === 'done');
+                  const stepCount = doneEvent?.meta?.step_count || lastStep;
+                  return (
+                    <div className="agent-mobile-metrics">
+                      {lastStep > 0 && <span className="agent-mobile-metric">Step {lastStep}/{stepCount}</span>}
+                      {totalTokens > 0 && <span className="agent-mobile-metric">{totalTokens > 999 ? `${(totalTokens / 1000).toFixed(1)}k` : totalTokens} tok</span>}
+                    </div>
+                  );
+                })()}
+                <button className={`agent-mobile-tab ${agentMobileTab === 'chat' ? 'active' : ''}`} onClick={() => setAgentMobileTab('chat')}>对话</button>
+              </div>
+              <div className={`agent-panel-wrap ${agentMobileTab === 'chat' ? 'mobile-hidden' : ''}`}>
+                <AgentPanel
+                  mode={mode}
+                  running={agentRunning}
+                  trace={agentTrace}
+                  headless={agentHeadless}
+                  startedAt={agentStartedAt}
+                  modelList={models}
+                  collapsed={agentCollapsed}
+                  onToggleCollapse={() => setAgentCollapsed(c => !c)}
+                  onHeadlessChange={v => {
+                    setAgentHeadless(v);
+                    localStorage.setItem('agent_headless', String(v));
+                  }}
+                  onStop={stopAgent}
+                  agentStopping={agentStopping}
+                  pendingApproval={pendingApproval}
+                />
+              </div>
 
-          <ResizeDivider side="agent" />
+              <ResizeDivider side="agent" />
+            </>
+          )}
 
           {messages.length > 0 && (
-            <div className={`messages ${mode === 'agent' && agentMobileTab === 'agent' ? 'mobile-hidden' : ''}`}>
+            <div className={`chat-panel-wrap ${mode === 'agent' && agentMobileTab === 'agent' ? 'mobile-hidden' : ''}`}>
+              <div className="messages">
               {messages.map((msg, i) => (
                 <div key={i} className={`bubble-row ${msg.role}`}>
                   {msg.role === 'assistant' && (
@@ -2400,6 +2445,7 @@ export default function App() {
                     {sendButton}
                   </div>
                 </div>
+              </div>
               </div>
             </div>
           )}

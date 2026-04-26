@@ -53,6 +53,7 @@ html {
 body {
   height: 100%;
   background: var(--c-bg);
+  overflow: auto;
 }
 
 #root {
@@ -240,6 +241,10 @@ textarea {
   margin-left: -260px;
 }
 
+.sidebar-backdrop {
+  display: none;
+}
+
 .session-panel {
   display: flex;
   flex-direction: column;
@@ -400,6 +405,7 @@ textarea {
 .main-area {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -421,6 +427,22 @@ textarea {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-panel-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.chat-panel-wrap > .messages {
+  flex: 1;
+}
+
+.layout-body.agent-layout > .agent-panel-wrap {
+  background: var(--c-surface);
 }
 
 .resize-divider {
@@ -457,14 +479,16 @@ textarea {
   background: #fff;
 }
 
-@media (min-width: 1200px) {
+@media (min-width: 1100px) {
   .layout-body {
     flex-direction: row;
   }
 
-  .layout-body > .agent-panel-wrap {
-    flex: 6;
+  .layout-body.agent-layout > .agent-panel-wrap {
+    flex: 0 0 420px;
     min-width: 0;
+    min-height: 0;
+    max-height: none;
     border-bottom: none;
     border-right: none;
     overflow-y: auto;
@@ -472,7 +496,7 @@ textarea {
     flex-direction: column;
   }
 
-  .layout-body > .agent-panel-wrap .agent-panel-note {
+  .layout-body.agent-layout > .agent-panel-wrap .agent-panel-note {
     display: none;
   }
 
@@ -480,10 +504,23 @@ textarea {
     display: block;
   }
 
-  .layout-body > .messages {
-    flex: 1;
-    min-width: 200px;
-    max-width: none;
+  .layout-body.agent-layout > .chat-panel-wrap {
+    flex: 1 1 auto;
+    min-width: 320px;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1099px) {
+  .layout-body.agent-layout > .agent-panel-wrap {
+    flex: 0 0 clamp(240px, 34vh, 380px);
+    min-height: 220px;
+    max-height: 42%;
+    border-bottom: 1px solid var(--c-border);
+  }
+
+  .layout-body.agent-layout > .chat-panel-wrap {
+    flex: 1 1 auto;
+    min-height: 280px;
   }
 }
 
@@ -688,7 +725,7 @@ textarea {
   position: relative;
 }
 
-@media (min-width: 1200px) {
+@media (min-width: 1100px) {
   .messages {
     max-width: none;
     padding: 20px 32px;
@@ -750,7 +787,7 @@ textarea {
   line-height: 1.6;
 }
 
-@media (min-width: 1200px) {
+@media (min-width: 1100px) {
   .bubble {
     max-width: min(85%, 900px);
   }
@@ -995,7 +1032,7 @@ textarea {
   width: 100%;
 }
 
-@media (min-width: 1200px) {
+@media (min-width: 1100px) {
   .agent-panel {
     max-width: none;
     margin: 0;
@@ -1179,8 +1216,11 @@ textarea {
   gap: 4px;
 }
 
-@media (max-width: 1199px) {
-  .agent-trace { max-height: 55vh; overflow-y: auto; }
+@media (min-width: 640px) and (max-width: 1099px) {
+  .agent-trace {
+    max-height: none;
+    overflow-y: visible;
+  }
 }
 
 .agent-trace-item {
@@ -1572,7 +1612,7 @@ textarea {
   bottom: 0;
   display: flex;
   flex-direction: column;
-  padding: 10px 0 max(10px, env(safe-area-inset-bottom));
+  padding: 10px 0 10px;
   background: transparent;
   z-index: 10;
   margin-top: auto;
@@ -1733,15 +1773,100 @@ textarea:disabled {
 
 /* ── Responsive ── */
 
-@media (max-width: 767px) {
+@media (max-width: 1099px) {
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    margin-left: 0;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: none;
+    padding-top: env(safe-area-inset-top);
+  }
+
   .sidebar.open {
-    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.1);
+    transform: translateX(0);
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.12);
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: block;
+    background: rgba(26, 26, 46, 0.28);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    border: none;
+    padding: 0;
+  }
+
+  .sidebar-backdrop.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1099px) {
+  .header {
+    padding: 10px 14px;
+    height: auto;
+    min-height: 52px;
+    flex-wrap: wrap;
+  }
+
+  .header-right {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .layout-body.agent-layout > .agent-panel-wrap {
+    flex-basis: clamp(250px, 35vh, 390px);
+  }
+
+  .messages {
+    max-width: none;
+    padding: 16px 20px;
+  }
+
+  .bubble {
+    max-width: min(86%, 820px);
+  }
+
+  .agent-panel {
+    max-width: none;
+    padding: 12px 16px;
+  }
+
+  .agent-panel-note {
+    max-width: 72ch;
   }
 }
 
 @media (max-width: 640px) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  .app-shell,
+  .main-area,
+  .layout {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
   .hero-wrap {
-    padding: 4px 8px max(8px, env(safe-area-inset-bottom));
+    padding: calc(4px + env(safe-area-inset-top)) 8px 8px;
   }
 
   .hero {
@@ -1784,7 +1909,7 @@ textarea:disabled {
   }
 
   .header {
-    padding: 6px 10px;
+    padding: calc(6px + env(safe-area-inset-top)) 10px 6px;
     height: auto;
     min-height: 44px;
     flex-wrap: wrap;
@@ -1863,6 +1988,7 @@ textarea:disabled {
     gap: 0;
     border-bottom: 1px solid var(--c-border);
     flex-shrink: 0;
+    background: var(--c-surface);
   }
 
   .agent-mobile-tab {
@@ -1920,15 +2046,22 @@ textarea:disabled {
     flex: 1;
     min-height: 0;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
     overflow-y: auto;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
-    padding-bottom: env(safe-area-inset-bottom);
+    max-height: none;
   }
 
   .agent-panel-wrap .agent-panel {
+    flex: 1 0 auto;
+    display: flex;
+    flex-direction: column;
     border-bottom: none;
     overflow-x: hidden;
+    min-height: 100%;
+    padding-bottom: 6px;
   }
 
   .agent-panel *,
@@ -1946,6 +2079,7 @@ textarea:disabled {
   }
 
   .agent-trace {
+    flex: 1 0 auto;
     max-height: none;
     overflow-y: visible;
   }
@@ -2127,7 +2261,7 @@ textarea:disabled {
   }
 
   .input-area {
-    padding: 6px 4px max(6px, env(safe-area-inset-bottom));
+    padding: 6px 4px 6px;
   }
 
   textarea {
