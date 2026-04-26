@@ -1,6 +1,4 @@
-# CubeN
-
-N 倍智能 · 石破天惊 · 传说级 AI Agent
+# sagent
 
 多模型 AI 聊天 + 桌面 Agent，支持浏览器自动化、文件操作、终端命令、macOS 控制。
 
@@ -17,11 +15,34 @@ npm run sandbox
 
 ## 配置
 
-编辑 `.env`，填入 API Key：
+编辑 `.env`：
 
 ```bash
-NVIDIA_API_KEY=nvapi-...                # MiniMax、Kimi、Qwen、GLM、DeepSeek 等
+# API Key（必填，支持 MiniMax、Kimi、Qwen、GLM、DeepSeek 等模型）
+NVIDIA_API_KEY=nvapi-...
+
+# Agent 行为（可选）
+AGENT_MAX_STEPS=32         # 单次任务最大步数，默认 32
+AGENT_HEADLESS=false       # true=无头浏览器，false=显示浏览器窗口
+AGENT_RESUME=true          # 后端重启后自动恢复未完成的 Agent 任务
+
+# Anthropic Claude（可选，用于 Claude 模型）
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Chrome 路径（可选，默认自动检测）
+CHROME_PATH=auto
 ```
+
+## 后端重启恢复
+
+Agent 每完成一步都会将状态写入 `data/checkpoints/` 目录（原子写入，防崩溃损坏）。
+
+当后端进程重启时：
+
+- **`AGENT_RESUME=true`（默认）**：自动检测未完成的 checkpoint，恢复上次的 runId、步骤历史，从断点继续执行。前端刷新后也能通过 SSE 重连接上恢复中的任务。
+- **`AGENT_RESUME=false`**：启动时清除所有 checkpoint，不恢复任何中断的任务。
+
+正常运行完成的任务会自动清理 checkpoint，无需手动维护。
 
 ## 常用命令
 
