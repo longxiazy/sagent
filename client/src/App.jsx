@@ -1549,17 +1549,13 @@ export default function App() {
         setMode('agent');
         agentAbortRef.current = controller;
 
-        // 确保 session 有消息，让 showHero=false 以显示 Agent 面板
-        updateActiveSession(session => {
-          if (session.messages.length === 0) {
-            return touchSession(session, {
-              messages: [
-                { role: 'user', content: data.task || 'Agent 任务', ts: data.startedAt || Date.now() },
-                { role: 'assistant', content: 'Desktop Agent 正在执行任务，已重连…', ts: Date.now() },
-              ],
-            });
-          }
-          return session;
+        // 创建空的 session，不带入 localStorage 的旧聊天记录
+        setChatState(prev => {
+          const cleanSession = createSession();
+          return normalizeChatState({
+            sessions: [cleanSession, ...prev.sessions],
+            activeSessionId: cleanSession.id,
+          });
         });
 
         const response = await fetch(`/api/agent/stream/${data.runId}`, { signal: controller.signal });
@@ -1627,7 +1623,8 @@ export default function App() {
                   if (idx >= 0) {
                     msgs[idx] = { role: 'assistant', content: event.answer || 'Agent 已完成任务。' };
                   } else if (!msgs.some(m => m.role === 'assistant' && m.content === (event.answer || ''))) {
-                    msgs.push({ role: 'assistant', content: event.answer || 'Agent 已完成任务。' });
+                    msgs.push({ role: 'user', content: data.task || 'Agent 任务', ts: data.startedAt || Date.now() });
+                    msgs.push({ role: 'assistant', content: event.answer || 'Agent 已完成任务。', ts: Date.now() });
                   }
                   return touchSession(session, { messages: msgs });
                 });
@@ -2137,7 +2134,7 @@ export default function App() {
     </button>
   );
 
-  const showHero = messages.length === 0;
+  const showHero = messages.length === 0 && !agentRunning;
 
   return (
     <ErrorBoundary>
@@ -2216,7 +2213,7 @@ export default function App() {
             <div className="header-right">
               {modeSwitch}
               {modelSelect}
-              {sessionStarted && (
+              {sessionStarted && mode !== 'agent' && (
                 <span className="header-model-label">{selectedModelLabel}</span>
               )}
               <button className="header-icon-btn" onClick={() => setShowReset(true)} title="清空" disabled={messages.length === 0 || sessionLocked}><Trash2 size={14} /></button>
