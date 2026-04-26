@@ -93,6 +93,7 @@ function normalizeMessages(value) {
     .map(item => ({
       role: item.role,
       content: item.content,
+      ...(item.ts ? { ts: item.ts } : {}),
     }));
 }
 
@@ -213,6 +214,17 @@ function formatSessionTime(value) {
     minute: '2-digit',
     hour12: false,
   }).format(value);
+}
+
+function formatMsgTime(ts) {
+  if (!ts) return '';
+  return new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Shanghai',
+  }).format(ts);
 }
 
 async function streamSseJson({ url, body, signal, onEvent }) {
@@ -1531,8 +1543,8 @@ export default function App() {
           if (session.messages.length === 0) {
             return touchSession(session, {
               messages: [
-                { role: 'user', content: data.task || 'Agent 任务' },
-                { role: 'assistant', content: 'Desktop Agent 正在执行任务，已重连…' },
+                { role: 'user', content: data.task || 'Agent 任务', ts: data.startedAt || Date.now() },
+                { role: 'assistant', content: 'Desktop Agent 正在执行任务，已重连…', ts: Date.now() },
               ],
             });
           }
@@ -1810,13 +1822,14 @@ export default function App() {
 
   const sendChatMessage = async text => {
     const sessionId = activeSession.id;
-    const userMsg = { role: 'user', content: text };
+    const now = Date.now();
+    const userMsg = { role: 'user', content: text, ts: now };
     const history = [...messages, userMsg];
     const apiMessages = history;
 
     updateSession(sessionId, session =>
       touchSession(session, {
-        messages: [...history, { role: 'assistant', content: '' }],
+        messages: [...history, { role: 'assistant', content: '', ts: now }],
       })
     );
     setInput('');
@@ -1876,12 +1889,12 @@ export default function App() {
 
   const sendAgentTask = async text => {
     const sessionId = activeSession.id;
-    const userMsg = { role: 'user', content: text };
+    const userMsg = { role: 'user', content: text, ts: Date.now() };
     const history = [...messages, userMsg];
 
     updateSession(sessionId, session =>
       touchSession(session, {
-        messages: [...history, { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…' }],
+        messages: [...history, { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() }],
       })
     );
     setInput('');
@@ -2250,6 +2263,7 @@ export default function App() {
                     <>
                       <div className={`bubble assistant ${hasThinkContent(msg.content) ? 'has-think' : ''}`}>
                         <MessageContent role="assistant" content={msg.content} showCursor={streaming && i === messages.length - 1} />
+                        {msg.ts && <div className="msg-time">{formatMsgTime(msg.ts)}</div>}
                       </div>
                       <CopyButton text={msg.content} />
                     </>
@@ -2259,6 +2273,7 @@ export default function App() {
                       <CopyButton text={msg.content} />
                       <div className="bubble user">
                         <MessageContent role="user" content={msg.content} />
+                        {msg.ts && <div className="msg-time">{formatMsgTime(msg.ts)}</div>}
                       </div>
                     </>
                   )}

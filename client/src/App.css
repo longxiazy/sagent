@@ -773,6 +773,13 @@ textarea {
   border: 1px solid #e5e2f6;
 }
 
+.msg-time {
+  font-size: 11px;
+  color: #999;
+  margin-top: 4px;
+  text-align: right;
+}
+
 .assistant-sections {
   display: flex;
   flex-direction: column;
