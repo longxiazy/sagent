@@ -26,6 +26,9 @@ hljs.registerLanguage('bash', bash);
 hljs.registerLanguage('sh', bash);
 hljs.registerLanguage('sql', sql);
 
+// Top-level render guard. App.jsx 承担了整页绝大部分 UI 和状态管理，
+// 一旦某个子组件因为异常崩掉，ErrorBoundary 至少还能保住基本交互，
+// 避免用户只能看到整页白屏。
 class ErrorBoundary extends Component {
   state = { error: null };
   static getDerivedStateFromError(error) { return { error }; }
@@ -165,10 +168,14 @@ const DOCKED_LAYOUT_BREAKPOINT = 1100;
 const APP_BG_COLOR = '#f5f5fa';
 const APP_SURFACE_COLOR = '#ffffff';
 
+// 会话 id 会同时承担 React key、本地持久化索引、切换会话时的主键。
+// 这里不要求全局唯一，只要在当前浏览器存储范围内稳定即可。
 function generateSessionId() {
   return `session_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// 浏览器本地存储里的消息历史可能来自旧版本、异常写入，或者手工改动。
+// 统一做一次清洗，后面的 UI/流式更新逻辑就可以直接假设结构正常。
 function normalizeMessages(value) {
   if (!Array.isArray(value)) {
     return [];
@@ -201,6 +208,10 @@ function createSession({
   };
 }
 
+// 统一修正整个聊天状态的外形：
+// 1. sessions 至少保留一个
+// 2. activeSessionId 必须落在现有 sessions 里
+// 3. 每个 session 都走 createSession，保证字段完整
 function normalizeChatState(rawState) {
   const sessions = Array.isArray(rawState?.sessions)
     ? rawState.sessions
@@ -229,6 +240,8 @@ function normalizeChatState(rawState) {
   return { sessions: nextSessions, activeSessionId };
 }
 
+// 首先尝试读取新版多会话结构；如果不存在，再从旧版单会话存储迁移。
+// 这样老用户刷新后不会丢历史，同时后续代码始终只处理新版状态。
 function loadChatState() {
   try {
     const storedSessions = JSON.parse(localStorage.getItem(SESSIONS_KEY) || 'null');
@@ -260,6 +273,8 @@ function loadChatState() {
   });
 }
 
+// 对单个 session 做浅更新，同时刷新 updatedAt，保证会话排序或后续扩展
+// 可以依赖这个时间戳，而不是到处手动补 Date.now()。
 function touchSession(session, patch = {}) {
   return {
     ...session,
@@ -313,6 +328,8 @@ function formatMsgTime(ts) {
   }).format(ts);
 }
 
+// 通用 SSE 读取器。Chat / Agent 两种流式接口都走这里，
+// 上层只关心“每收到一个 data 事件该怎么处理”。
 async function streamSseJson({ url, body, signal, onEvent }) {
   const res = await fetch(url, {
     method: 'POST',
@@ -380,6 +397,8 @@ async function streamSseJson({ url, body, signal, onEvent }) {
   await flushBuffer(true);
 }
 
+// 普通对话的流式包装。它只负责把 token 增量回调给调用方，
+// 不关心 UI 更新方式，方便 sendChatMessage 统一处理消息替换。
 async function streamChatCompletion({
   messages,
   model,
@@ -410,6 +429,9 @@ async function streamChatCompletion({
   return donePayload;
 }
 
+// Agent 的首个 POST 既负责发起任务，也承载最初的一段 SSE。
+// 如果这段连接中途断开，但服务端 run 已经创建成功，就退化为
+// 通过 runId 继续订阅 /stream/:runId，而不是直接把整次任务判失败。
 async function streamAgentRun({ task, model, models, strategy, headless, memory, signal, onEvent, messages }) {
   let runId = null;
   let gotDone = false;
@@ -494,6 +516,8 @@ const PANEL_MIN = 280;
 const PANEL_MAX_RATIO = 0.7;
 const PANEL_SIZE_KEY = 'agent_panel_width';
 
+// 桌面端 Agent 面板支持拖拽调整宽度，宽度直接写 localStorage，
+// 这样刷新页面后仍然能保持用户上一次的布局偏好。
 function ResizeDivider() {
   const dragging = useRef(false);
   const startX = useRef(0);
@@ -562,6 +586,8 @@ function CopyButton({ text }) {
   );
 }
 
+// Agent/Chat 的回答里可能带 <thinking> 或 <think> 片段。
+// 这里先把不同来源的标记统一成同一套语法，后面的展示逻辑才好复用。
 function normalizeThinkTags(content) {
   if (typeof content !== 'string') {
     return '';
@@ -574,6 +600,8 @@ function hasThinkContent(content) {
   return /<think>/i.test(normalizeThinkTags(content));
 }
 
+// Assistant 消息可能同时包含“可展示答案”和“可折叠思考过程”。
+// 这里把一整段消息拆成多个片段，让 UI 可以分别渲染 markdown/think。
 function splitAssistantContent(content) {
   const normalized = normalizeThinkTags(content);
   if (!normalized) {
@@ -646,6 +674,9 @@ function inlineFormat(s) {
   return out;
 }
 
+// 这是一个很轻量的 markdown 解析器，目标不是完整支持 GFM，
+// 而是覆盖当前产品里最常见的结构：标题、段落、列表、表格、代码块。
+// 这样可以避免引入完整 markdown runtime 带来的体积和样式不确定性。
 function renderMarkdown(text) {
   if (!text) return [];
   const blocks = [];
@@ -802,6 +833,8 @@ function ThinkBlock({ content, closed, showCursor }) {
   );
 }
 
+// Assistant 回复里如果包含截图路径，会同时渲染成图片。
+// 文本里对应的文件路径会被清理掉，避免在气泡中既显示路径又显示图片。
 function extractScreenshots(text) {
   const screenshots = [];
   // Match any path containing data/screenshots/xxx.png or desktop-agent-observations/xxx.png
@@ -823,6 +856,11 @@ function ScreenshotImages({ urls }) {
   );
 }
 
+// 用户消息直接原样展示；助手消息则需要经过：
+// 1. 提取截图
+// 2. 拆分 think 片段
+// 3. 再按 markdown 渲染
+// 这样能兼容普通回答、带思考的回答、以及带桌面截图的 Agent 结果。
 function MessageContent({ role, content, showCursor }) {
   if (role === 'user') {
     return <span >{content}</span>;
@@ -1011,6 +1049,8 @@ const PLAN_STAGE_ICON = {
   consensus: '🏆',
 };
 
+// 单个模型卡片负责展示某一步里某个模型的“决策快照”：
+// 当前状态、理由、动作、tokens，以及在竞速模式下是否被采纳。
 function ModelPlanCard({ event, isWinner, modelList, strategy, result }) {
   const label = getModelLabel(event.model, modelList);
   const stage = event.stage;
@@ -1108,6 +1148,8 @@ function ModelPlanCard({ event, isWinner, modelList, strategy, result }) {
   );
 }
 
+// 多模型一步会产生多条 model_plan 事件。这个组件负责把零散事件重新聚合成
+// 一个“按 step 分组”的展示块，让用户能看到同一步里不同模型如何竞争/投票。
 function ModelPlanGroup({ trace, step, models, modelList, running }) {
   let strategyMode = 'race';
   let consensusEvent = null;
@@ -1168,6 +1210,10 @@ function ModelPlanGroup({ trace, step, models, modelList, running }) {
   );
 }
 
+// AgentPanel 既是执行面板，也是运行时仪表盘：
+// - 负责展示 trace
+// - 负责显示暂停/审批/用时/token 等运行态指标
+// - 在移动端和桌面端之间复用同一套事件展示逻辑
 function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval }) {
   const traceBottomRef = useRef(null);
   const startTimeRef = useRef(null);
@@ -1517,8 +1563,13 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
 }
 
 export default function App() {
+  // chatState 是“会话级业务状态”的根对象：消息历史、会话列表、当前激活会话。
+  // 其余 state 大多是 UI 控件状态或运行时状态。
   const [chatState, setChatState] = useState(loadChatState);
   const [availableModels, setAvailableModels] = useState(DEFAULT_MODELS);
+  // availableModels 在首屏渲染时先用 DEFAULT_MODELS 占位；
+  // modelsLoaded 用来区分“占位值”和“真实从后端拿到的列表”，
+  // 避免启动阶段误把用户已选的多模型裁成一个。
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [input, setInput] = useState('');
   const [mode, setMode] = useState(() => localStorage.getItem(LAST_MODE_KEY) || 'chat');
@@ -1540,6 +1591,8 @@ export default function App() {
   const [questionSubmitting, setQuestionSubmitting] = useState(false);
   const [showSessions, setShowSessions] = useState(window.innerWidth >= DOCKED_LAYOUT_BREAKPOINT);
   const [agentStartedAt, setAgentStartedAt] = useState(null);
+  // Agent 的模型集合、策略、headless、memory 目前是“应用级偏好”，
+  // 不跟随 chat session 存储；chat session 只保存单模型对话所用的 model。
   const [selectedAgentModels, setSelectedAgentModels] = useState(() => {
     try {
       const saved = localStorage.getItem('agent_models');
@@ -1551,6 +1604,9 @@ export default function App() {
     if (!modelsLoaded) {
       return;
     }
+    // 只有在真正拿到后端模型列表之后才做清理：
+    // 否则启动时会拿 DEFAULT_MODELS 这个占位值去过滤，
+    // 把本地保存的多模型选择错误地写回成单模型。
     if (selectedAgentModels.length > 0 && availableModels.length > 0) {
       const valid = selectedAgentModels.filter(m => availableModels.some(avail => avail.id === m));
       if (valid.length !== selectedAgentModels.length) {
@@ -1563,13 +1619,16 @@ export default function App() {
 
   const abortRef = useRef(null);
   const agentAbortRef = useRef(null);
+  // 当前待审批/待回答的问题不只要进 state 展示，还要持有 resolve，
+  // 方便 UI 按钮点击后继续推进被 Promise 阻塞的 Agent 流程。
   const approvalRequestRef = useRef(null);
   const questionRequestRef = useRef(null);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const reconnectTaskRef = useRef(null);
 
-  // Fetch available models from backend
+  // 拉取后端可用模型。这里除了更新下拉/模型标签，
+  // 还要顺手修正那些引用了已下线模型的历史聊天会话。
   useEffect(() => {
     fetch('/api/models')
       .then(r => r.json())
@@ -1604,6 +1663,7 @@ export default function App() {
   const sessionLocked = streaming || agentRunning;
   const currentModeLabel = mode === 'agent' ? '桌面 Agent' : '普通对话';
 
+  // 会话历史和当前激活会话 id 都是持久化状态；这里统一落盘。
   useEffect(() => {
     localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
     localStorage.setItem(ACTIVE_SESSION_KEY, activeSession.id);
@@ -1615,6 +1675,8 @@ export default function App() {
     localStorage.setItem(LAST_MODE_KEY, mode);
   }, [mode]);
 
+  // 在移动端/窄屏时，会话侧栏和 Agent 面板会改变页面主色块区域。
+  // 同步 <meta name="theme-color"> 是为了让浏览器地址栏颜色也跟着切换。
   useEffect(() => {
     const meta = document.querySelector('meta[name="theme-color"]');
     if (!meta) return;
@@ -1626,12 +1688,16 @@ export default function App() {
     meta.setAttribute('content', showSurfaceChrome ? APP_SURFACE_COLOR : APP_BG_COLOR);
   }, [mode, agentMobileTab, showSessions]);
 
-  // Reconnect to running agent on page refresh
+  // 页面刷新后，如果后端还有运行中的 agent，这里会尝试“接回去”：
+  // 1. 先查 /api/agent/active
+  // 2. 再订阅 /api/agent/stream/:runId
+  // 3. 同时把 UI 切回 Agent 模式，并用占位消息保住聊天视图连续性
   useEffect(() => {
     const controller = new AbortController();
     let aborted = false;
 
-    // Update current active session without stale closure
+    // 订阅回调可能在很久之后才触发，不能依赖闭包里的 activeSession。
+    // 每次都从最新 chatState 里拿 activeSessionId，避免事件写错会话。
     const updateActiveSession = updater => {
       setChatState(prev => {
         const sid = prev.activeSessionId;
@@ -1659,9 +1725,8 @@ export default function App() {
         setMode('agent');
         agentAbortRef.current = controller;
 
-        // Reconnect: only keep current session if its first user message
-        // matches this agent task (same device refresh).
-        // Other devices have stale localStorage from different runs.
+        // 刷新重连时，如果当前会话看起来不是这次 Agent 任务对应的会话，
+        // 就临时创建一个“占位会话”承接运行态，避免把其他历史会话的消息替换掉。
         const task = data.task || 'Agent 任务';
         setChatState(prev => {
           const cur = prev.sessions.find(s => s.id === prev.activeSessionId);
@@ -1707,7 +1772,8 @@ export default function App() {
                 continue;
               }
 
-              // Deduplicate: skip events already in the session's saved trace
+              // SSE 重连时同一批事件可能会回放两次；这里按关键字段去重，
+              // 否则 trace 面板会出现重复步骤。
               setAgentTrace(prev => {
                 if (prev.some(e => e.type === event.type && e.step === event.step && e.stage === event.stage && e.model === event.model)) {
                   return prev;
@@ -1779,7 +1845,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Don't change trace if we're reconnecting to a running agent
+    // 普通切换会话时，Agent trace 跟着 active session 走；
+    // 但如果当前正处在“刷新后重连中的运行态”，不要被旧 session 覆盖掉。
     if (agentRunning) return;
     setAgentTrace(activeSession.agentTrace || []);
     setAgentStartedAt(null);
@@ -1802,6 +1869,8 @@ export default function App() {
 
   useEffect(() => {
     return () => {
+      // 页面卸载时同时中止 chat / agent 的网络流，
+      // 也顺手拒绝掉所有等待中的审批 Promise，避免悬挂。
       abortRef.current?.abort();
       agentAbortRef.current?.abort();
       approvalRequestRef.current?.resolve?.('reject');
@@ -1827,6 +1896,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // 这里统一处理窗口宽度变化带来的布局状态同步：
+    // - 面板宽度在桌面端恢复拖拽值
+    // - 平板/手机端自动关闭侧栏
     const syncResponsiveState = () => {
       const panel = document.querySelector('.layout-body > .agent-panel-wrap');
       if (panel) {
@@ -1849,6 +1921,8 @@ export default function App() {
 
   const stopGeneration = () => abortRef.current?.abort();
   const stopAgent = () => {
+    // 停止 Agent 既要通知后端取消 run，也要尽快把前端 SSE 断掉。
+    // 这里给一个很短的缓冲时间，让最后一两个 in-flight 事件有机会落到 UI。
     setAgentStopping(true);
     approvalRequestRef.current?.resolve?.('reject');
     setPendingApproval(null);
@@ -1971,6 +2045,10 @@ export default function App() {
     updateSession(activeSession.id, session => touchSession(session, { model: nextModel }));
   };
 
+  // 普通对话的核心流程：
+  // 1. 先写入 user message + 一个空 assistant 占位
+  // 2. 流式把 token 追加到最后一条 assistant 消息
+  // 3. 中断/失败时把状态折叠成用户可见的文本结果
   const sendChatMessage = async text => {
     const sessionId = activeSession.id;
     const now = Date.now();
@@ -2038,6 +2116,8 @@ export default function App() {
     }
   };
 
+  // Agent 流程和普通对话不一样：聊天区只保留“任务 + 最终回答”，
+  // 详细的中间步骤全部写进 agentTrace，再由 AgentPanel 单独展示。
   const sendAgentTask = async text => {
     const sessionId = activeSession.id;
     const userMsg = { role: 'user', content: text, ts: Date.now() };
@@ -2060,6 +2140,8 @@ export default function App() {
     try {
       await streamAgentRun({
         task: text,
+        // Agent 至少要有一个主模型。多模型时第一个模型作为主请求参数，
+        // 完整模型集合再通过 models 传给后端做并发规划。
         model: selectedAgentModels.length > 0 ? selectedAgentModels[0] : chatModel,
         models: selectedAgentModels.length > 0
           ? selectedAgentModels.filter(m => availableModels.some(available => available.id === m))
@@ -2178,6 +2260,7 @@ export default function App() {
       return;
     }
 
+    // 同一输入框根据 mode 分流到两套完全不同的执行链路。
     if (mode === 'agent') {
       await sendAgentTask(text);
       return;
@@ -2218,6 +2301,7 @@ export default function App() {
   const modelSelect = !sessionStarted
     ? mode === 'agent' ? (
       <div className="model-tags-wrap">
+        {/* Agent 模式支持多选模型；普通对话仍然是传统单选。 */}
         <div className="model-tags">
           {availableModels.map(item => (
             <button
