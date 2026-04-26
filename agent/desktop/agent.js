@@ -17,16 +17,26 @@ import { isClaudeModel, buildDesktopAgentSystemPrompt, claudeAgentPlan } from '.
 import { saveCheckpoint } from '../core/checkpoint.js';
 import { log } from '../../helpers/logger.js';
 
-function buildClaudeTaskMessages({ task, step, history, observation }) {
-  return [
-    {
-      role: 'user',
-      content: JSON.stringify({ task, step, history, observation }, null, 2),
-    },
-  ];
+function buildClaudeTaskMessages({ task, step, history, observation, conversationHistory }) {
+  const messages = [];
+  if (conversationHistory?.length) {
+    for (const msg of conversationHistory) {
+      messages.push({ role: msg.role, content: msg.content });
+    }
+  }
+  messages.push({
+    role: 'user',
+    content: JSON.stringify({ task, step, history, observation }, null, 2),
+  });
+  return messages;
 }
 
-function buildNvidiaTaskMessages({ task, systemPrompt, step, history, observation }) {
+function buildNvidiaTaskMessages({ task, systemPrompt, step, history, observation, conversationHistory }) {
+  const conversationSummary = conversationHistory?.length
+    ? '\n\n之前的对话（供参考）：\n' + conversationHistory
+        .map(m => `${m.role === 'user' ? '用户' : '助手'}: ${m.content}`)
+        .join('\n')
+    : '';
   return [
     {
       role: 'system',
@@ -71,6 +81,7 @@ function buildNvidiaTaskMessages({ task, systemPrompt, step, history, observatio
         '9. 需要用户输入或确认偏好时使用 ask_user。',
         '10. 发现重要信息或问题时使用 notify_user 主动告知用户。',
         systemPrompt ? `附加约束：${systemPrompt}` : '',
+        conversationSummary,
       ]
         .filter(Boolean)
         .join('\n'),
@@ -127,8 +138,8 @@ async function singleModelPlan({ model, openai_client, anthropic_client, isCance
     } else {
       const planner = createJsonPlanner({
         client: openai_client,
-        buildMessages: ({ task, systemPrompt, step, history, observation }) =>
-          buildNvidiaTaskMessages({ task, systemPrompt, step, history, observation }),
+        buildMessages: (ctx) =>
+          buildNvidiaTaskMessages({ ...ctx, conversationHistory: context.conversationHistory }),
         normalizeDecision: normalizeDesktopAgentDecision,
         buildParserError(err) {
           return `模型动作解析失败: ${err.message}`;
@@ -500,6 +511,7 @@ export function createDesktopAgentRunner({
     startedAt = Date.now(),
     initialStep = 1,
     initialHistory = [],
+    conversationHistory = [],
   }) {
     const blacklistedModels = new Set();
     const plan = buildDesktopPlanner({ openai_client, anthropic_client, blacklistedModels, modelTimeoutMs });
@@ -545,6 +557,7 @@ export function createDesktopAgentRunner({
           step,
           history,
           observation,
+          conversationHistory,
         }),
       authorize,
       shouldObserve: (lastAction) => {

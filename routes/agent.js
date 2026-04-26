@@ -17,7 +17,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
   const defaultModel = modelConfig?.[0]?.id || 'minimaxai/minimax-m2.7';
 
   router.post('/api/agent', async (req, res) => {
-    const { task, model = defaultModel, models: reqModels, strategy = 'race', headless, memory: useMemory = true } = req.body ?? {};
+    const { task, model = defaultModel, models: reqModels, strategy = 'race', headless, memory: useMemory = true, messages: conversationHistory } = req.body ?? {};
     const agentModels = Array.isArray(reqModels) && reqModels.length > 0 ? reqModels : [model];
 
     if (typeof task !== 'string' || !task.trim()) {
@@ -114,6 +114,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         runId,
         onEvent: sendEvent,
         isCancelled: () => runRecord.cancelled,
+        conversationHistory: Array.isArray(conversationHistory) ? conversationHistory : [],
       });
 
       finalAnswer = result.answer;
