@@ -219,7 +219,7 @@ function aggregateResults(modelResults) {
   };
 }
 
-const DEFAULT_MODEL_TIMEOUT_MS = 90_000;
+const DEFAULT_MODEL_TIMEOUT_MS = 10_000;
 
 function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS }) {
   function planWithTimeout(model, context, isCancelled) {
