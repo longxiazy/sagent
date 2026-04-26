@@ -1082,7 +1082,7 @@ function ModelPlanGroup({ trace, step, models, modelList, running }) {
   );
 }
 
-function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedAt, modelList, collapsed, onToggleCollapse }) {
+function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval }) {
   const traceBottomRef = useRef(null);
   const startTimeRef = useRef(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
@@ -1175,6 +1175,11 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
           )}
         </div>
         <span className={`agent-status-chip ${running ? 'running' : 'idle'}`}>{running ? 'Running' : 'Idle'}</span>
+        {running && onStop && (
+          <button className="agent-stop-btn" onClick={onStop} disabled={agentStopping} title="停止 Agent">
+            <Square size={10} /> {agentStopping ? '停止中…' : pendingApproval ? '停止并拒绝' : '停止'}
+          </button>
+        )}
         <label className="agent-headless-toggle" title={headless ? '浏览器在后台运行' : '浏览器窗口可见'}>
           <input
             type="checkbox"
@@ -1549,8 +1554,11 @@ export default function App() {
         setMode('agent');
         agentAbortRef.current = controller;
 
-        // 创建空的 session，不带入 localStorage 的旧聊天记录
+        // Keep current session if it has messages (same device refresh);
+        // only create empty session if current session is empty (other device)
         setChatState(prev => {
+          const cur = prev.sessions.find(s => s.id === prev.activeSessionId);
+          if (cur && cur.messages.length > 0) return prev;
           const cleanSession = createSession();
           return normalizeChatState({
             sessions: [cleanSession, ...prev.sessions],
@@ -2258,6 +2266,9 @@ export default function App() {
               setAgentHeadless(v);
               localStorage.setItem('agent_headless', String(v));
             }}
+            onStop={stopAgent}
+            agentStopping={agentStopping}
+            pendingApproval={pendingApproval}
           />
           </div>
 
