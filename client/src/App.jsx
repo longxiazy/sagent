@@ -312,13 +312,54 @@ async function streamChatCompletion({
   return donePayload;
 }
 
-async function streamAgentRun({ task, model, models, strategy, headless, memory, signal, onEvent }) {
-  await streamSseJson({
-    url: AGENT_API_URL,
-    body: { task, model, models, strategy, headless, memory },
-    signal,
-    onEvent,
-  });
+async function streamAgentRun({ task, model, models, strategy, headless, memory, signal, onEvent, messages }) {
+  let runId = null;
+  let gotDone = false;
+
+  const wrappedEvent = (event) => {
+    if (event.runId) runId = event.runId;
+    if (event.type === 'done' || event.type === 'error') gotDone = true;
+    onEvent(event);
+  };
+
+  try {
+    await streamSseJson({
+      url: AGENT_API_URL,
+      body: { task, model, models, strategy, headless, memory, messages },
+      signal,
+      onEvent: wrappedEvent,
+    });
+  } catch {
+    // initial POST may fail/disconnect, fall through to reconnect
+  }
+
+  // If SSE disconnected before done, reconnect to the stream
+  if (!gotDone && runId && !signal.aborted) {
+    try {
+      const res = await fetch(`/api/agent/stream/${runId}`, { signal });
+      if (!res.ok) return;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          const dataLine = line.replace(/^data:\s*/, '');
+          if (!dataLine || dataLine === '[DONE]') continue;
+          try {
+            const event = JSON.parse(dataLine);
+            wrappedEvent(event);
+          } catch { /* skip malformed */ }
+        }
+      }
+    } catch {
+      // reconnect also failed
+    }
+  }
 }
 
 async function submitAgentApproval({ runId, approvalId, decision }) {
@@ -1379,6 +1420,7 @@ export default function App() {
   const [mode, setMode] = useState(() => localStorage.getItem(LAST_MODE_KEY) || 'chat');
   const [streaming, setStreaming] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
+  const [agentStopping, setAgentStopping] = useState(false);
   const [agentRunId, setAgentRunId] = useState(null);
   const [reconnectedRun, setReconnectedRun] = useState(false);
   const agentRunIdRef = useRef(null);
@@ -1644,6 +1686,7 @@ export default function App() {
 
   const stopGeneration = () => abortRef.current?.abort();
   const stopAgent = () => {
+    setAgentStopping(true);
     approvalRequestRef.current?.resolve?.('reject');
     setPendingApproval(null);
     const rid = agentRunIdRef.current;
@@ -1654,10 +1697,8 @@ export default function App() {
         body: JSON.stringify({ runId: rid }),
       }).catch(() => {});
     }
-    // Don't abort SSE immediately — let late model results arrive.
-    // Server closes the stream after cancellation, which triggers cleanup naturally.
-    // Fallback: abort after 5s if server hasn't closed it.
-    setTimeout(() => agentAbortRef.current?.abort(), 5000);
+    // Abort SSE after a short grace period for in-flight results
+    setTimeout(() => agentAbortRef.current?.abort(), 1500);
   };
   const requestAgentApproval = event =>
     new Promise(resolve => {
@@ -1861,6 +1902,7 @@ export default function App() {
         headless: agentHeadless,
         memory: agentMemory,
         signal: controller.signal,
+        messages: history.slice(-10),
         async onEvent(event) {
           if (event.type === 'model_plan') {
             console.log(`[AgentUI] model_plan step=${event.step} stage=${event.stage} model=${event.model || '-'} models=${event.models?.join(',') || '-'}`);
@@ -1933,10 +1975,29 @@ export default function App() {
         });
       }
     } finally {
+      // SSE 可能断连导致 done 事件丢失，检查占位消息是否未被替换
+      setAgentTrace(prev => {
+        const doneEvent = prev.find(e => e.type === 'done');
+        if (doneEvent) {
+          updateSession(sessionId, session => {
+            const msgs = session.messages;
+            const lastIdx = msgs.length - 1;
+            if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].content.includes('正在执行任务')) {
+              const next = [...msgs];
+              next[lastIdx] = { role: 'assistant', content: doneEvent.answer || 'Agent 已完成任务。' };
+              return touchSession(session, { messages: next, agentTrace: prev });
+            }
+            return touchSession(session, { agentTrace: prev });
+          });
+        }
+        return prev;
+      });
+
       agentAbortRef.current = null;
       agentRunIdRef.current = null;
       setAgentRunId(null);
       setAgentRunning(false);
+      setAgentStopping(false);
       setReconnectedRun(false);
       setPendingApproval(null);
       approvalRequestRef.current = null;
@@ -2033,8 +2094,8 @@ export default function App() {
   const sendButton = streaming ? (
     <button className="send-btn stop" onClick={stopGeneration}><Square size={12} /> 停止</button>
   ) : agentRunning ? (
-    <button className="send-btn stop" onClick={stopAgent}>
-      <Square size={12} /> {pendingApproval ? '停止并拒绝' : '停止'}
+    <button className="send-btn stop" onClick={stopAgent} disabled={agentStopping}>
+      <Square size={12} /> {agentStopping ? '正在停止…' : pendingApproval ? '停止并拒绝' : '停止'}
     </button>
   ) : (
     <button className="send-btn idle" onClick={handleSubmit} disabled={!input.trim()}>
