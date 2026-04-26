@@ -1518,7 +1518,7 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
 
 export default function App() {
   const [chatState, setChatState] = useState(loadChatState);
-  const [models, setModels] = useState(DEFAULT_MODELS);
+  const [availableModels, setAvailableModels] = useState(DEFAULT_MODELS);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [input, setInput] = useState('');
   const [mode, setMode] = useState(() => localStorage.getItem(LAST_MODE_KEY) || 'chat');
@@ -1540,7 +1540,7 @@ export default function App() {
   const [questionSubmitting, setQuestionSubmitting] = useState(false);
   const [showSessions, setShowSessions] = useState(window.innerWidth >= DOCKED_LAYOUT_BREAKPOINT);
   const [agentStartedAt, setAgentStartedAt] = useState(null);
-  const [agentModels, setAgentModels] = useState(() => {
+  const [selectedAgentModels, setSelectedAgentModels] = useState(() => {
     try {
       const saved = localStorage.getItem('agent_models');
       return saved ? JSON.parse(saved) : [];
@@ -1551,14 +1551,14 @@ export default function App() {
     if (!modelsLoaded) {
       return;
     }
-    if (agentModels.length > 0 && models.length > 0) {
-      const valid = agentModels.filter(m => models.some(avail => avail.id === m));
-      if (valid.length !== agentModels.length) {
-        setAgentModels(valid);
+    if (selectedAgentModels.length > 0 && availableModels.length > 0) {
+      const valid = selectedAgentModels.filter(m => availableModels.some(avail => avail.id === m));
+      if (valid.length !== selectedAgentModels.length) {
+        setSelectedAgentModels(valid);
         localStorage.setItem('agent_models', JSON.stringify(valid));
       }
     }
-  }, [models, modelsLoaded]);
+  }, [availableModels, modelsLoaded, selectedAgentModels]);
   const [agentStrategy, setAgentStrategy] = useState(() => localStorage.getItem('agent_strategy') || 'race');
 
   const abortRef = useRef(null);
@@ -1575,7 +1575,7 @@ export default function App() {
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data.models) && data.models.length > 0) {
-          setModels(data.models);
+          setAvailableModels(data.models);
           // Fix sessions with models not available on backend
           setChatState(prev => {
             const changed = prev.sessions.some(s => s.model && !data.models.some(m => m.id === s.model));
@@ -1599,8 +1599,8 @@ export default function App() {
   const { sessions, activeSessionId } = chatState;
   const activeSession = sessions.find(session => session.id === activeSessionId) || sessions[0];
   const messages = activeSession.messages;
-  const model = activeSession.model;
-  const selectedModelLabel = models.find(item => item.id === model)?.label || model;
+  const chatModel = activeSession.model;
+  const selectedChatModelLabel = availableModels.find(item => item.id === chatModel)?.label || chatModel;
   const sessionLocked = streaming || agentRunning;
   const currentModeLabel = mode === 'agent' ? '桌面 Agent' : '普通对话';
 
@@ -1967,7 +1967,7 @@ export default function App() {
     setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
-  const setCurrentModel = nextModel => {
+  const setChatModel = nextModel => {
     updateSession(activeSession.id, session => touchSession(session, { model: nextModel }));
   };
 
@@ -1992,7 +1992,7 @@ export default function App() {
     try {
       await streamChatCompletion({
         messages: apiMessages,
-        model,
+        model: chatModel,
         signal: controller.signal,
         onContent(content) {
           updateSession(sessionId, session => {
@@ -2060,9 +2060,11 @@ export default function App() {
     try {
       await streamAgentRun({
         task: text,
-        model: agentModels.length > 0 ? agentModels[0] : model,
-        models: agentModels.length > 0 ? agentModels.filter(m => models.some(available => available.id === m)) : [model],
-        strategy: agentModels.length > 1 ? agentStrategy : 'race',
+        model: selectedAgentModels.length > 0 ? selectedAgentModels[0] : chatModel,
+        models: selectedAgentModels.length > 0
+          ? selectedAgentModels.filter(m => availableModels.some(available => available.id === m))
+          : [chatModel],
+        strategy: selectedAgentModels.length > 1 ? agentStrategy : 'race',
         headless: agentHeadless,
         memory: agentMemory,
         signal: controller.signal,
@@ -2206,7 +2208,7 @@ export default function App() {
   );
 
   const toggleAgentModel = id => {
-    setAgentModels(prev => {
+    setSelectedAgentModels(prev => {
       const next = prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id];
       localStorage.setItem('agent_models', JSON.stringify(next));
       return next;
@@ -2217,19 +2219,19 @@ export default function App() {
     ? mode === 'agent' ? (
       <div className="model-tags-wrap">
         <div className="model-tags">
-          {models.map(item => (
+          {availableModels.map(item => (
             <button
               key={item.id}
-              className={`model-tag ${agentModels.includes(item.id) ? 'selected' : ''}`}
+              className={`model-tag ${selectedAgentModels.includes(item.id) ? 'selected' : ''}`}
               onClick={() => toggleAgentModel(item.id)}
               disabled={sessionLocked}
-              title={agentModels.includes(item.id) ? '取消选择' : '选择并发执行'}
+              title={selectedAgentModels.includes(item.id) ? '取消选择' : '选择并发执行'}
             >
               {item.label}
             </button>
           ))}
         </div>
-        {agentModels.length > 1 && (
+        {selectedAgentModels.length > 1 && (
           <div className="strategy-toggle">
             <button
               className={`strategy-btn ${agentStrategy === 'race' ? 'active' : ''}`}
@@ -2247,8 +2249,8 @@ export default function App() {
         )}
       </div>
     ) : (
-      <select className="model-select" value={model} onChange={e => setCurrentModel(e.target.value)} title="切换模型">
-        {models.map(item => (
+      <select className="model-select" value={chatModel} onChange={e => setChatModel(e.target.value)} title="切换模型">
+        {availableModels.map(item => (
           <option key={item.id} value={item.id}>{item.label}</option>
         ))}
       </select>
@@ -2286,7 +2288,7 @@ export default function App() {
         <SessionList
           sessions={sessions}
           activeSessionId={activeSession.id}
-          modelList={models}
+          modelList={availableModels}
           onCreate={handleCreateSession}
           onDelete={handleDeleteSession}
           onClearAll={handleClearAllSessions}
@@ -2362,7 +2364,7 @@ export default function App() {
               {modeSwitch}
               {modelSelect}
               {sessionStarted && mode !== 'agent' && (
-                <span className="header-model-label">{selectedModelLabel}</span>
+                <span className="header-model-label">{selectedChatModelLabel}</span>
               )}
               <button className="header-icon-btn" onClick={() => setShowReset(true)} title="清空" disabled={messages.length === 0 || sessionLocked}><Trash2 size={14} /></button>
             </div>
@@ -2399,7 +2401,7 @@ export default function App() {
                   trace={agentTrace}
                   headless={agentHeadless}
                   startedAt={agentStartedAt}
-                  modelList={models}
+                  modelList={availableModels}
                   collapsed={agentCollapsed}
                   onToggleCollapse={() => setAgentCollapsed(c => !c)}
                   onHeadlessChange={v => {
