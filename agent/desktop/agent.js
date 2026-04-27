@@ -224,6 +224,13 @@ const DEFAULT_MODEL_TIMEOUT_MS = 10_000;
 function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS, staggerDelayMs = 0, batchSize = 1 }) {
   function planWithTimeout(model, context, isCancelled) {
     const timeoutMs = typeof modelTimeoutMs === 'number' && modelTimeoutMs > 0 ? modelTimeoutMs : DEFAULT_MODEL_TIMEOUT_MS;
+    const shortModel = model.split('/').pop();
+    const startTime = Date.now();
+    log.info(`\n` +
+      `╔══════════════════════════════════════════════════╗\n` +
+      `║  >>> LLM REQUEST  ${shortModel.padEnd(24)} ║\n` +
+      `║      step=${context.step ?? '-'} timeout=${Math.round(timeoutMs / 1000)}s`.padEnd(51) + '║\n' +
+      `╚══════════════════════════════════════════════════╝`);
     let timer;
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(() => reject(new Error(`模型超时 (${Math.round(timeoutMs / 1000)}s)`)), timeoutMs);
@@ -231,7 +238,26 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
     return Promise.race([
       singleModelPlan({ model, openai_client, anthropic_client, modelConfig, isCancelled, ...context }),
       timeout,
-    ]).finally(() => clearTimeout(timer));
+    ])
+      .then(result => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        log.info(`\n` +
+          `╔══════════════════════════════════════════════════╗\n` +
+          `║  <<< LLM RESPONSE ${shortModel.padEnd(23)} ║\n` +
+          `║      ${elapsed}s  ${result.action?.tool || '?'}.${result.action?.type || '?'}  ${(result.usage?.prompt_tokens || 0) + (result.usage?.completion_tokens || 0)}tok`.padEnd(51) + '║\n' +
+          `╚══════════════════════════════════════════════════╝`);
+        return result;
+      })
+      .catch(err => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        log.warn(`\n` +
+          `╔══════════════════════════════════════════════════╗\n` +
+          `║  !!! LLM FAILED   ${shortModel.padEnd(24)} ║\n` +
+          `║      ${elapsed}s  ${err.message.slice(0, 36)}`.padEnd(51) + '║\n' +
+          `╚══════════════════════════════════════════════════╝`);
+        throw err;
+      })
+      .finally(() => clearTimeout(timer));
   }
 
   return async ({ model, agentModels, strategy = 'race', onEvent, isCancelled, step, ...context }) => {
