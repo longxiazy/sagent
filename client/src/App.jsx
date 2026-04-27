@@ -2340,6 +2340,7 @@ export default function App() {
                 {isSelected && selectedAgentModels.length > 1 && (
                   <span className="model-tag-order">
                     <button className="order-arrow" onClick={() => moveAgentModel(item.id, -1)} disabled={orderIdx <= 0 || sessionLocked} title="提高优先级"><ChevronUp size={10} /></button>
+                    <span className="order-number">{orderIdx + 1}</span>
                     <button className="order-arrow" onClick={() => moveAgentModel(item.id, 1)} disabled={orderIdx >= selectedAgentModels.length - 1 || sessionLocked} title="降低优先级"><ChevronDown size={10} /></button>
                   </span>
                 )}

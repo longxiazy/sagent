@@ -726,6 +726,7 @@ textarea {
 .model-tag-order {
   display: inline-flex;
   flex-direction: column;
+  align-items: center;
   background: var(--c-primary);
   border: 1px solid var(--c-primary);
   border-left: none;
@@ -744,6 +745,16 @@ textarea {
   color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
   padding: 0;
+}
+
+.order-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .order-arrow:first-child {
