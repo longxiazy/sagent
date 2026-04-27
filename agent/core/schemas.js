@@ -322,6 +322,9 @@ export function normalizeDesktopAgentDecision(payload) {
   } else if (tool === 'fetch') {
     normalizedAction = normalizeFetchAction(type, action);
   } else {
+ } else if (tool === 'spawn') {
+ const tasks = Array.isArray(action.tasks) ? action.tasks : [];
+ return { tool: 'spawn', type: type || 'parallel', tasks };
     throw new Error(`不支持的工具: ${tool}`);
   }
 

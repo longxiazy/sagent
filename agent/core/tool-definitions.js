@@ -290,6 +290,17 @@ export function createModelTools() {
         required: ['answer'],
       },
     },
+ {
+ name: 'spawn',
+ description: '并行分发多个子 Agent 任务。适合同时分析多个文件、爬取多个页面等独立并行任务。比串行快数倍，最多5个并行任务。',
+ input_schema: {
+ type: 'object',
+ properties: {
+ tasks: { type: 'array', items: { type: 'string' }, description: '子任务列表，每个元素是一个独立任务字符串' },
+ },
+ required: ['tasks'],
+ },
+ },
   ];
 }
 
