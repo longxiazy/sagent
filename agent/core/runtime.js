@@ -17,9 +17,9 @@
  *     注入所有具体实现后调用 runAgentRuntime({ ... })
  */
 
-import { log } from '../../helpers/logger.js';
+import { log } from "../../helpers/logger.js";
 
-const MAX_HISTORY_STEPS = 6;
+const MAX_HISTORY_STEPS = 64;
 
 function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
   if (history.length <= maxSteps) {
@@ -28,10 +28,17 @@ function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
   const recent = history.slice(-maxSteps);
   const dropped = history.slice(0, -maxSteps);
   const summary = dropped
-    .map(h => `step ${h.step}: [${h.action?.type ?? '?'}] ${h.result ? `→ ${String(h.result).slice(0, 60)}` : ''}`)
-    .join(' | ');
+    .map(
+      (h) =>
+        `step ${h.step}: [${h.action?.type ?? "?"}] ${h.result ? `→ ${String(h.result).slice(0, 1000)}` : ""}`,
+    )
+    .join(" | ");
   return [
-    { step: 0, type: 'summary', text: `历史摘要（共${dropped.length}步）: ${summary}` },
+    {
+      step: 0,
+      type: "summary",
+      text: `历史摘要（共${dropped.length}步）: ${summary}`,
+    },
     ...recent,
   ];
 }
@@ -53,29 +60,32 @@ export async function runAgentRuntime({
   onCheckpoint = null,
 }) {
   const history = initialHistory;
-  let finalAnswer = '';
+  let finalAnswer = "";
   const state = await initialize?.({ task, onEvent });
 
   try {
     for (let step = initialStep; step <= maxSteps; step += 1) {
       if (isCancelled?.()) {
-        throw new Error('Agent 已取消');
+        throw new Error("Agent 已取消");
       }
 
-      const lastAction = history.length > 0 ? history[history.length - 1].action : null;
-      const skipObservation = shouldObserve ? !shouldObserve(lastAction) : false;
+      const lastAction =
+        history.length > 0 ? history[history.length - 1].action : null;
+      const skipObservation = shouldObserve
+        ? !shouldObserve(lastAction)
+        : false;
       const observation = skipObservation
-        ? { skipped: true, reason: '上一步为文件/终端操作，跳过观察' }
+        ? { skipped: true, reason: "上一步为文件/终端操作，跳过观察" }
         : await observe(state, {
-          task,
-          step,
-          history,
-        });
+            task,
+            step,
+            history,
+          });
 
       onEvent?.({
-        type: 'step',
+        type: "step",
         step,
-        stage: 'observe',
+        stage: "observe",
         observation,
       });
 
@@ -90,7 +100,7 @@ export async function runAgentRuntime({
       });
 
       if (isCancelled?.()) {
-        throw new Error('Agent 已取消');
+        throw new Error("Agent 已取消");
       }
 
       const authorization = await authorize?.(state, decision.action, {
@@ -101,8 +111,8 @@ export async function runAgentRuntime({
         rationale: decision.rationale,
       });
 
-      if (authorization?.status === 'rejected') {
-        const result = authorization.message || '操作未获批准';
+      if (authorization?.status === "rejected") {
+        const result = authorization.message || "操作未获批准";
         history.push({
           step,
           rationale: decision.rationale,
@@ -113,18 +123,18 @@ export async function runAgentRuntime({
         });
 
         onEvent?.({
-          type: 'step',
+          type: "step",
           step,
-          stage: 'result',
+          stage: "result",
           result,
         });
         continue;
       }
 
       onEvent?.({
-        type: 'step',
+        type: "step",
         step,
-        stage: 'action',
+        stage: "action",
         rationale: decision.rationale,
         action: decision.action,
         usage: decision.usage || null,
@@ -145,7 +155,7 @@ export async function runAgentRuntime({
       }
 
       if (isCancelled?.()) {
-        throw new Error('Agent 已取消');
+        throw new Error("Agent 已取消");
       }
 
       history.push({
@@ -157,25 +167,25 @@ export async function runAgentRuntime({
         title: observation?.title,
       });
 
-      if (decision.action.type !== 'finish') {
+      if (decision.action.type !== "finish") {
         onEvent?.({
-          type: 'step',
+          type: "step",
           step,
-          stage: 'result',
+          stage: "result",
           result,
         });
       }
 
       onCheckpoint?.(history, step);
 
-      if (decision.action.type === 'finish') {
+      if (decision.action.type === "finish") {
         finalAnswer = decision.action.answer || result;
         break;
       }
     }
 
     if (!finalAnswer) {
-      finalAnswer = '已达到最大执行步数，任务未完全完成。';
+      finalAnswer = "已达到最大执行步数，任务未完全完成。";
     }
 
     return {
