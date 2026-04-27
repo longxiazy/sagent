@@ -220,6 +220,18 @@ function normalizeMacOsAction(type, action) {
   throw new Error(`不支持的 macOS 动作: ${type}`);
 }
 
+function normalizeRememberFactAction(type, action) {
+  if (type !== 'remember_fact') {
+    throw new Error(`不支持的 remember_fact 动作: ${type}`);
+  }
+  return {
+    tool: 'core',
+    type: 'remember_fact',
+    fact: typeof action.fact === 'string' && action.fact.trim() ? action.fact.trim() : '',
+    category: ['preference', 'structure', 'path', 'learning'].includes(action.category) ? action.category : 'learning',
+  };
+}
+
 function normalizeCoreAction(type, action) {
   if (type === 'finish') {
     return {
@@ -241,6 +253,14 @@ function normalizeCoreAction(type, action) {
       type,
       message: typeof action.message === 'string' ? action.message.trim() : '',
       level: ['info', 'warning', 'discovery'].includes(action.level) ? action.level : 'info',
+    };
+  }
+  if (type === 'remember_fact') {
+    return {
+      tool: 'core',
+      type,
+      fact: typeof action.fact === 'string' && action.fact.trim() ? action.fact.trim() : '',
+      category: ['preference', 'structure', 'path', 'learning'].includes(action.category) ? action.category : 'learning',
     };
   }
   throw new Error(`不支持的核心动作: ${type}`);

@@ -280,6 +280,18 @@ export function createModelTools() {
       },
     },
     {
+ {
+ name: 'remember_fact',
+ description: '将重要信息持久化到 Agent 记忆（跨任务保持）。保存用户偏好、项目结构、关键路径、经验总结。',
+ input_schema: {
+ type: 'object',
+ properties: {
+ fact: { type: 'string', description: '要记住的信息' },
+ category: { type: 'string', description: '分类: preference/structure/path/learning' },
+ },
+ required: ['fact', 'category'],
+ },
+ },
       name: 'finish',
       description: '完成任务并返回最终结果',
       input_schema: {

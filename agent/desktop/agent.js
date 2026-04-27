@@ -477,6 +477,14 @@ export function createDesktopAgentRunner({
         if (action.type === 'ask_user') {
           return context?.authorization?.response || '用户未回答';
         }
+ if (action.type === 'remember_fact') {
+   state.onEvent?.({
+     type: 'memory_update',
+     category: action.category,
+     fact: action.fact,
+   });
+   return `已记住 [${action.category}]: ${action.fact.slice(0, 50)}${action.fact.length > 50 ? '...' : ''}`;
+ }
         return action.answer || '任务已完成';
       },
       browser: async (state, action) => {
