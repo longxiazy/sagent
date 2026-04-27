@@ -23,6 +23,7 @@ export async function createBrowserSession({
 
   const context = await browser.newContext({
     viewport: { width: 1440, height: 960 },
+  deviceScaleFactor: 3, // 3x for Claude Opus 4.7 visual reasoning level
   });
 
   // Block heavy resources for speed

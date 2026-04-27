@@ -49,7 +49,7 @@ export async function captureBrowserObservation(page) {
       )
     )
       .filter(isVisible)
-      .slice(0, 30)
+      .slice(0, 50)
       .map((element, index) => {
         const elementId = String(index + 1);
         element.setAttribute('data-agent-node-id', elementId);
@@ -63,7 +63,7 @@ export async function captureBrowserObservation(page) {
         };
       });
 
-    const bodyText = (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 5000);
+    const bodyText = (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 15000);
 
     return {
       title: document.title,
