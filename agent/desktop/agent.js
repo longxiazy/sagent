@@ -13,6 +13,7 @@ import { createDomainRules } from '../tools/fetch/domain-rules.js';
 import { executeMacOSAction } from '../tools/macos/execute.js';
 import { observeMacOSDesktop } from '../tools/macos/observe.js';
 import { executeTerminalAction } from '../tools/terminal/run.js';
+import { executeTestAction } from '../tools/test/execute.js';
 import { isClaudeModel, buildDesktopAgentSystemPrompt, claudeAgentPlan } from '../core/ai-client.js';
 import { saveCheckpoint } from '../core/checkpoint.js';
 import { log } from '../../helpers/logger.js';
@@ -557,6 +558,8 @@ export function createDesktopAgentRunner({
           runId: state.runId,
         }),
     },
+ spawn: async (_state, action) => executeSpawnAction(action),
+ test: async (_state, action) => executeTestAction(action),
     { defaultTool: 'core' }
   );
 

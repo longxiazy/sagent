@@ -299,4 +299,17 @@ export function toolToClaudeTool(tool) {
     description: tool.description,
     input_schema: tool.input_schema,
   };
+ {
+ name: 'test',
+ description: '运行测试用例并解析结果。支持 Jest/Vitest/Pytest/Go/Cargo 等框架，解析测试通过/失败统计。用于 TDD 驱动开发或修改后验证。',
+ input_schema: {
+ type: 'object',
+ properties: {
+ command: { type: 'string', description: '测试命令，如 npm test、pytest、go test 等' },
+ path: { type: 'string', description: '项目目录路径' },
+ timeout: { type: 'number', description: '超时时间(ms)，默认 60000' },
+ },
+ required: ['command'],
+ },
+ },
 }
