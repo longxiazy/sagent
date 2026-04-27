@@ -13,18 +13,33 @@ function execFileText(file, args) {
 }
 
 export async function executeBrowserAction(page, action) {
-  try {
-    return await _executeBrowserAction(page, action);
-  } catch (err) {
-    const msg = err.message || String(err);
-    if (/timeout|waiting for|not found|selector/i.test(msg)) {
-      return `浏览器操作失败: ${msg.slice(0, 200)}。可能原因: 元素不存在或页面未加载完成，请重新观察页面后使用 observation 中存在的 elementId。`;
+  // Retry on transient errors (connection, timeout) with backoff
+  const MAX_RETRIES = 2;
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        // Exponential backoff: 500ms, 1000ms
+        await new Promise(r => setTimeout(r, attempt * 500));
+      }
+      return await _executeBrowserAction(page, action);
+    } catch (err) {
+      lastError = err;
+      const msg = err.message || String(err);
+
+      // Only retry on transient errors
+      if (/timeout|waiting for|not found|selector|execution context was destroyed|net::err_|connection.*closed|navigation/i.test(msg)) {
+        if (attempt < MAX_RETRIES) continue;
+        if (/timeout|waiting for|not found|selector/i.test(msg)) {
+          return `浏览器操作失败: ${msg.slice(0, 200)}。可能原因: 元素不存在或页面未加载完成，请重新观察页面后使用 observation 中存在的 elementId。`;
+        }
+        return `浏览器操作失败: ${msg.slice(0, 200)}。可能原因: 页面导航失败或连接中断，请尝试重新打开页面或使用其他网站。`;
+      }
+      throw err;
     }
-    if (/execution context was destroyed|net::err_|connection.*closed|navigation/i.test(msg)) {
-      return `浏览器操作失败: ${msg.slice(0, 200)}。可能原因: 页面导航失败或连接中断，请尝试重新打开页面或使用其他网站。`;
-    }
-    throw err;
   }
+  throw lastError;
 }
 
 async function _executeBrowserAction(page, action) {
