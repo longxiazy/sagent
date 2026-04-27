@@ -42,11 +42,17 @@ npm run sandbox
 ```bash
 # API Key（至少填一个）
 NVIDIA_API_KEY=nvapi-...              # MiniMax、Kimi、Qwen、GLM、DeepSeek 等
+# ANTHROPIC_API_KEY=sk-ant-...
 
 # Agent 行为（可选）
-AGENT_MAX_STEPS=32         # 单次任务最大步数，默认 32
+AGENT_MAX_STEPS=128        # 单次任务最大步数，默认 8
+AGENT_MODEL_TIMEOUT=30     # 单模型超时秒数
 AGENT_RESUME=true          # 后端重启后自动恢复未完成的 Agent 任务
 
+# 多模型竞速（可选）
+AGENT_STAGGER_DELAY=3      # 批次间隔秒数
+AGENT_BATCH_SIZE=2         # 每批启动模型数
+# AGENT_MULTI_MODELS=moonshotai/kimi-k2.5,qwen/qwen3.5-397b-a17b
 ```
 
 ## 后端重启恢复
@@ -70,3 +76,13 @@ npm run dev          # 无沙盒启动
 
 npm run stop         # 停止前后端
 ```
+
+## 多模型 Agent
+
+Agent 每步可并发调用多个模型，取最快结果。
+
+- **竞速模式**：模型按优先级顺序启动，首个立即运行，后续间隔 `AGENT_STAGGER_DELAY` 秒依次加入。第一个有效结果直接采用，其余取消。超时或失败的模型自动加入黑名单。
+- **汇总模式**：所有模型同时并发，结果按多数投票聚合。
+- **分批竞速**：设置 `AGENT_BATCH_SIZE` 控制每批启动几个模型。整批全部失败后，下一批跳过延迟立即启动。
+
+前端：Agent 模式下选择多个模型，用箭头调整优先级顺序，切换竞速/汇总策略。Trace 面板展示各模型状态（等待中、思考中、采纳、已取消），任务完成后显示实际参与的模型。
