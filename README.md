@@ -42,10 +42,17 @@ Edit `.env`:
 ```bash
 # API Keys (fill at least one)
 NVIDIA_API_KEY=nvapi-...  # MiniMax, Kimi, Qwen, GLM, DeepSeek, etc.
+# ANTHROPIC_API_KEY=sk-ant-...
 
 # Agent behavior (optional)
-AGENT_MAX_STEPS=32   # Max steps per task, default 8
-AGENT_RESUME=true    # Auto-resume interrupted tasks after backend restart
+AGENT_MAX_STEPS=128          # Max steps per task, default 8
+AGENT_MODEL_TIMEOUT=30       # Per-model timeout in seconds
+AGENT_RESUME=true            # Auto-resume interrupted tasks after backend restart
+
+# Multi-model race (optional)
+AGENT_STAGGER_DELAY=3        # Delay between batches in seconds
+AGENT_BATCH_SIZE=2           # Models launched per batch
+# AGENT_MULTI_MODELS=moonshotai/kimi-k2.5,qwen/qwen3.5-397b-a17b
 ```
 
 ## Recovery After Backend Restart
@@ -67,3 +74,13 @@ npm run sandbox  # Start with sandbox (recommended)
 npm run dev   # Start without sandbox
 npm run stop  # Stop frontend and backend
 ```
+
+## Multi-Model Agent
+
+The Agent can invoke multiple models concurrently for each step, picking the fastest result.
+
+- **Race mode**: Models launch in priority order with a configurable stagger delay. First valid result wins; remaining models are cancelled. Models that fail or timeout are blacklisted for subsequent steps.
+- **Vote mode**: All models run concurrently, results are aggregated by majority vote.
+- **Batch race**: Set `AGENT_BATCH_SIZE` to launch N models at a time. If the entire batch fails, the next batch starts immediately (skipping the stagger delay).
+
+Frontend: select multiple models in Agent mode, reorder with arrows to set priority, toggle between race/vote strategies. The trace panel shows each model's status (pending, thinking, winner, cancelled).
