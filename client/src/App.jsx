@@ -2240,16 +2240,33 @@ export default function App() {
         });
       }
     } finally {
-      // SSE 可能断连导致 done 事件丢失，检查占位消息是否未被替换
+      // SSE 可能断连导致 done/error 事件丢失，检查占位消息是否未被替换
       setAgentTrace(prev => {
         const doneEvent = prev.find(e => e.type === 'done');
-        if (doneEvent) {
+        const errorEvent = prev.find(e => e.type === 'error');
+        if (doneEvent || errorEvent) {
           updateSession(sessionId, session => {
             const msgs = session.messages;
             const lastIdx = msgs.length - 1;
             if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].content.includes('正在执行任务')) {
               const next = [...msgs];
-              next[lastIdx] = { role: 'assistant', content: doneEvent.answer || 'Agent 已完成任务。' };
+              if (doneEvent) {
+                next[lastIdx] = { role: 'assistant', content: doneEvent.answer || 'Agent 已完成任务。' };
+              } else {
+                next[lastIdx] = { role: 'assistant', content: `⚠️ Desktop Agent 失败：${errorEvent.error || '连接中断'}` };
+              }
+              return touchSession(session, { messages: next, agentTrace: prev });
+            }
+            return touchSession(session, { agentTrace: prev });
+          });
+        } else if (prev.length === 0 || !prev.some(e => e.type === 'done' || e.type === 'error')) {
+          // No events received at all or SSE disconnected without done/error
+          updateSession(sessionId, session => {
+            const msgs = session.messages;
+            const lastIdx = msgs.length - 1;
+            if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].content.includes('正在执行任务')) {
+              const next = [...msgs];
+              next[lastIdx] = { role: 'assistant', content: '⚠️ Desktop Agent 连接中断，未收到执行结果。' };
               return touchSession(session, { messages: next, agentTrace: prev });
             }
             return touchSession(session, { agentTrace: prev });
