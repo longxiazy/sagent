@@ -54,6 +54,7 @@ const runDesktopAgent = createDesktopAgentRunner({
   observeDesktop: process.env.AGENT_OBSERVE_DESKTOP === 'true',
   modelTimeoutMs: Number(process.env.AGENT_MODEL_TIMEOUT || 90) * 1000,
   staggerDelayMs: Number(process.env.AGENT_STAGGER_DELAY || 5) * 1000,
+  batchSize: Number(process.env.AGENT_BATCH_SIZE || 1),
   runStore: agentRunStore,
   approvalStore,
   checkpointDir: CHECKPOINT_DIR,
@@ -162,7 +163,7 @@ app.listen(PORT, HOST, async () => {
     console.log(`[MultiModel] Agent 每步并发请求: ${multiModels.join(', ')}`);
   }
   console.log(
-    `[Config] AGENT_MAX_STEPS=${AGENT_MAX_STEPS} AGENT_MODEL_TIMEOUT=${process.env.AGENT_MODEL_TIMEOUT || 90}s STAGGER=${process.env.AGENT_STAGGER_DELAY || 5}s ` +
+    `[Config] AGENT_MAX_STEPS=${AGENT_MAX_STEPS} AGENT_MODEL_TIMEOUT=${process.env.AGENT_MODEL_TIMEOUT || 90}s STAGGER=${process.env.AGENT_STAGGER_DELAY || 5}s BATCH=${process.env.AGENT_BATCH_SIZE || 1} ` +
     `AGENT_HEADLESS=${process.env.AGENT_HEADLESS} ` +
     `AGENT_OBSERVE_DESKTOP=${process.env.AGENT_OBSERVE_DESKTOP} ` +
     `AGENT_RESUME=${AGENT_RESUME} ` +

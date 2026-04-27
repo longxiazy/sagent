@@ -221,7 +221,7 @@ function aggregateResults(modelResults) {
 
 const DEFAULT_MODEL_TIMEOUT_MS = 10_000;
 
-function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS, staggerDelayMs = 0 }) {
+function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS, staggerDelayMs = 0, batchSize = 1 }) {
   function planWithTimeout(model, context, isCancelled) {
     const timeoutMs = typeof modelTimeoutMs === 'number' && modelTimeoutMs > 0 ? modelTimeoutMs : DEFAULT_MODEL_TIMEOUT_MS;
     let timer;
@@ -339,7 +339,7 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
       return aggregated;
     }
 
-    // === RACE MODE: staggered start, first valid wins ===
+    // === RACE MODE: batched staggered start, first valid wins ===
     return new Promise((resolve, reject) => {
       let settled = false;
       let launched = 0;
@@ -374,32 +374,41 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
             log.debug(`[MultiModel] ${m} 失败: ${err.message.slice(0, 80)}`);
             onEvent?.({ type: 'model_plan', stage: 'failed', model: m, step, error: err.message.slice(0, 120) });
             failures.push(m);
-            // On failure, immediately launch next pending model
-            tryLaunchNext();
+            // Check if entire launched batch has failed → trigger next batch immediately
+            if (launched === failures.length) {
+              tryLaunchBatch(true);
+            }
             if (!settled && launched === activeModels.length && launched === failures.length) {
               reject(new Error(`所有模型均失败: ${failures.join(', ')}`));
             }
           });
       }
 
-      // Launch models in order with stagger delay; on failure, skip delay for next
       let nextIndex = 0;
-      function tryLaunchNext() {
-        while (nextIndex < activeModels.length) {
-          const m = activeModels[nextIndex++];
-          const delay = nextIndex === 1 ? 0 : staggerDelayMs;
-          if (delay > 0 && !settled) {
-            onEvent?.({ type: 'model_plan', stage: 'pending', model: m, step, delay });
-            const timer = setTimeout(() => launchModel(m), delay);
-            timers.push(timer);
-            return; // wait for timer or early trigger
+      function tryLaunchBatch(skipDelay = false) {
+        if (settled || isCancelled() || nextIndex >= activeModels.length) return;
+
+        const isFirstBatch = nextIndex === 0;
+        const batch = activeModels.slice(nextIndex, nextIndex + batchSize);
+        nextIndex += batch.length;
+
+        const launchBatch = () => {
+          for (const m of batch) {
+            launchModel(m);
           }
-          launchModel(m);
-          return;
+        };
+
+        if (isFirstBatch || skipDelay || staggerDelayMs <= 0) {
+          launchBatch();
+        } else {
+          for (const m of batch) {
+            onEvent?.({ type: 'model_plan', stage: 'pending', model: m, step, delay: staggerDelayMs });
+          }
+          timers.push(setTimeout(launchBatch, staggerDelayMs));
         }
       }
 
-      tryLaunchNext();
+      tryLaunchBatch();
     });
   };
 }
@@ -448,6 +457,7 @@ export function createDesktopAgentRunner({
   checkpointDir,
   modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS,
   staggerDelayMs = 0,
+  batchSize = 1,
 }) {
   const domainRules = createDomainRules(checkpointDir);
 
@@ -541,7 +551,7 @@ export function createDesktopAgentRunner({
     memory = true,
   }) {
     const blacklistedModels = new Set();
-    const plan = buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs, staggerDelayMs });
+    const plan = buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs, staggerDelayMs, batchSize });
 
     const authorize = createAgentAuthorizer({
       runId,
