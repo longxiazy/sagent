@@ -1503,6 +1503,14 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
                   <div className="agent-trace-content">
                     <strong>Agent 已完成</strong>
                     {event.meta?.step_count && <span className="agent-trace-meta">共 {event.meta.step_count} 步</span>}
+                    {event.meta?.models_used?.length > 0 && (
+                      <div className="agent-models-used">
+                        {event.meta.models_used.map(m => {
+                          const short = m.split('/').pop();
+                          return <span key={m} className="agent-model-chip">{short}</span>;
+                        })}
+                      </div>
+                    )}
                   </div>
                 </>
               )}
