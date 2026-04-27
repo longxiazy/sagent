@@ -1193,7 +1193,7 @@ function ModelPlanGroup({ trace, step, models, modelList, running }) {
 
   const getEvent = m => {
     const ev = modelEvents[m];
-    if (!ev) return { model: m, stage: agentFinished ? 'cancelled' : 'thinking' };
+    if (!ev) return { model: m, stage: agentFinished ? 'cancelled' : (strategyMode === 'race' ? 'pending' : 'thinking') };
     if (agentFinished && ev.stage === 'thinking') return { ...ev, stage: 'cancelled' };
     return ev;
   };
