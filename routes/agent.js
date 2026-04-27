@@ -62,12 +62,17 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         `run_id=${runId}`
     );
 
+    const modelsUsed = new Set();
+
     const sendEvent = payload => {
       if (payload.type === 'step') {
         observedStepCount = Math.max(observedStepCount, payload.step || 0);
         if (payload.stage === 'result') {
           completedStepCount = Math.max(completedStepCount, payload.step || 0);
         }
+      }
+      if (payload.type === 'model_plan' && payload.model && ['winner', 'success', 'thinking'].includes(payload.stage)) {
+        modelsUsed.add(payload.model);
       }
       logAgentEvent(payload);
       agentRunStore.addEvent(runId, payload);
@@ -141,6 +146,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         meta: {
           elapsed_ms: Date.now() - startedAt,
           step_count: Math.max(completedStepCount, observedStepCount),
+          models_used: [...modelsUsed],
         },
       });
     } catch (err) {
@@ -165,8 +171,9 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         status,
       });
 
+      const usedModels = [...modelsUsed].map(m => m.split('/').pop()).join(',');
       log.info(
-        `[${formatLogTime()}] POST /api/agent ${status} model=${model} headless=${agentHeadless} run_id=${runId} ` +
+        `[${formatLogTime()}] POST /api/agent ${status} model=${model} used=[${usedModels}] headless=${agentHeadless} run_id=${runId} ` +
           `elapsed_ms=${metrics.elapsed_ms} step_count=${metrics.step_count} ` +
           `answer=${finalAnswer ? safeJson(cleanText(finalAnswer, 240)) : 'n/a'} ` +
           `error=${agentError ? safeJson(agentError.message) : 'n/a'}`

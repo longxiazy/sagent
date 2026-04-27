@@ -221,9 +221,16 @@ function aggregateResults(modelResults) {
 
 const DEFAULT_MODEL_TIMEOUT_MS = 10_000;
 
-function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS }) {
+function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS, staggerDelayMs = 0, batchSize = 1 }) {
   function planWithTimeout(model, context, isCancelled) {
     const timeoutMs = typeof modelTimeoutMs === 'number' && modelTimeoutMs > 0 ? modelTimeoutMs : DEFAULT_MODEL_TIMEOUT_MS;
+    const shortModel = model.split('/').pop();
+    const startTime = Date.now();
+    log.info(`\n` +
+      `╔══════════════════════════════════════════════════╗\n` +
+      `║  >>> LLM REQUEST  ${shortModel.padEnd(24)} ║\n` +
+      `║      step=${context.step ?? '-'} timeout=${Math.round(timeoutMs / 1000)}s`.padEnd(51) + '║\n' +
+      `╚══════════════════════════════════════════════════╝`);
     let timer;
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(() => reject(new Error(`模型超时 (${Math.round(timeoutMs / 1000)}s)`)), timeoutMs);
@@ -231,7 +238,26 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
     return Promise.race([
       singleModelPlan({ model, openai_client, anthropic_client, modelConfig, isCancelled, ...context }),
       timeout,
-    ]).finally(() => clearTimeout(timer));
+    ])
+      .then(result => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        log.info(`\n` +
+          `╔══════════════════════════════════════════════════╗\n` +
+          `║  <<< LLM RESPONSE ${shortModel.padEnd(23)} ║\n` +
+          `║      ${elapsed}s  ${result.action?.tool || '?'}.${result.action?.type || '?'}  ${(result.usage?.prompt_tokens || 0) + (result.usage?.completion_tokens || 0)}tok`.padEnd(51) + '║\n' +
+          `╚══════════════════════════════════════════════════╝`);
+        return result;
+      })
+      .catch(err => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        log.warn(`\n` +
+          `╔══════════════════════════════════════════════════╗\n` +
+          `║  !!! LLM FAILED   ${shortModel.padEnd(24)} ║\n` +
+          `║      ${elapsed}s  ${err.message.slice(0, 36)}`.padEnd(51) + '║\n' +
+          `╚══════════════════════════════════════════════════╝`);
+        throw err;
+      })
+      .finally(() => clearTimeout(timer));
   }
 
   return async ({ model, agentModels, strategy = 'race', onEvent, isCancelled, step, ...context }) => {
@@ -339,28 +365,30 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
       return aggregated;
     }
 
-    // === RACE MODE: first valid wins, proceed immediately, others finish in background ===
+    // === RACE MODE: batched staggered start, first valid wins ===
     return new Promise((resolve, reject) => {
       let settled = false;
-      let pending = activeModels.length;
+      let launched = 0;
       const failures = [];
+      const timers = [];
 
-      for (const m of activeModels) {
+      function launchModel(m) {
+        if (settled || isCancelled()) return;
+        launched++;
         onEvent?.({ type: 'model_plan', stage: 'thinking', model: m, step });
         planWithTimeout(m, context, isCancelled)
           .then(result => {
-            pending -= 1;
             if (settled) {
               onEvent?.({ type: 'model_plan', stage: 'cancelled', model: m, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
               return;
             }
             settled = true;
+            timers.forEach(t => clearTimeout(t));
             log.info(`[MultiModel] 使用 ${m} 的结果（${activeModels.join(', ')}）`);
             onEvent?.({ type: 'model_plan', stage: 'winner', model: m, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
             resolve(result);
           })
           .catch(err => {
-            pending -= 1;
             if (settled) {
               onEvent?.({ type: 'model_plan', stage: 'cancelled', model: m, step });
               return;
@@ -372,11 +400,41 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
             log.debug(`[MultiModel] ${m} 失败: ${err.message.slice(0, 80)}`);
             onEvent?.({ type: 'model_plan', stage: 'failed', model: m, step, error: err.message.slice(0, 120) });
             failures.push(m);
-            if (!settled && pending === 0) {
+            // Check if entire launched batch has failed → trigger next batch immediately
+            if (launched === failures.length) {
+              tryLaunchBatch(true);
+            }
+            if (!settled && launched === activeModels.length && launched === failures.length) {
               reject(new Error(`所有模型均失败: ${failures.join(', ')}`));
             }
           });
       }
+
+      let nextIndex = 0;
+      function tryLaunchBatch(skipDelay = false) {
+        if (settled || isCancelled() || nextIndex >= activeModels.length) return;
+
+        const isFirstBatch = nextIndex === 0;
+        const batch = activeModels.slice(nextIndex, nextIndex + batchSize);
+        nextIndex += batch.length;
+
+        const launchBatch = () => {
+          for (const m of batch) {
+            launchModel(m);
+          }
+        };
+
+        if (isFirstBatch || skipDelay || staggerDelayMs <= 0) {
+          launchBatch();
+        } else {
+          for (const m of batch) {
+            onEvent?.({ type: 'model_plan', stage: 'pending', model: m, step, delay: staggerDelayMs });
+          }
+          timers.push(setTimeout(launchBatch, staggerDelayMs));
+        }
+      }
+
+      tryLaunchBatch();
     });
   };
 }
@@ -424,6 +482,8 @@ export function createDesktopAgentRunner({
   approvalStore,
   checkpointDir,
   modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS,
+  staggerDelayMs = 0,
+  batchSize = 1,
 }) {
   const domainRules = createDomainRules(checkpointDir);
 
@@ -517,7 +577,7 @@ export function createDesktopAgentRunner({
     memory = true,
   }) {
     const blacklistedModels = new Set();
-    const plan = buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs });
+    const plan = buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs, staggerDelayMs, batchSize });
 
     const authorize = createAgentAuthorizer({
       runId,

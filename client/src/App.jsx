@@ -1028,6 +1028,7 @@ function getModelLabel(modelId, modelList) {
 }
 
 const PLAN_STAGE_LABELS = {
+  pending: '等待中…',
   thinking: '思考中…',
   success: '完成',
   winner: '采纳',
@@ -1039,6 +1040,7 @@ const PLAN_STAGE_LABELS = {
 };
 
 const PLAN_STAGE_ICON = {
+  pending: '🕐',
   thinking: '⏳',
   success: '✓',
   winner: '👑',
@@ -1065,6 +1067,13 @@ function ModelPlanCard({ event, isWinner, modelList, strategy, result }) {
         <span className="model-card-label">{label}</span>
         <span className={`model-card-status ${stage}`}>{PLAN_STAGE_LABELS[stage] || stage}</span>
       </div>
+      {stage === 'pending' && (
+        <div className="model-card-body">
+          <p style={{ color: 'var(--c-text-tertiary)', fontSize: 12 }}>
+            {event.delay ? `${Math.round(event.delay / 1000)}s 后启动` : '排队中'}
+          </p>
+        </div>
+      )}
       {stage === 'thinking' && (
         <div className="model-card-body">
           <div className="model-card-thinking">
@@ -1184,7 +1193,7 @@ function ModelPlanGroup({ trace, step, models, modelList, running }) {
 
   const getEvent = m => {
     const ev = modelEvents[m];
-    if (!ev) return { model: m, stage: agentFinished ? 'cancelled' : 'thinking' };
+    if (!ev) return { model: m, stage: agentFinished ? 'cancelled' : (strategyMode === 'race' ? 'pending' : 'thinking') };
     if (agentFinished && ev.stage === 'thinking') return { ...ev, stage: 'cancelled' };
     return ev;
   };
@@ -1494,6 +1503,14 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
                   <div className="agent-trace-content">
                     <strong>Agent 已完成</strong>
                     {event.meta?.step_count && <span className="agent-trace-meta">共 {event.meta.step_count} 步</span>}
+                    {event.meta?.models_used?.length > 0 && (
+                      <div className="agent-models-used">
+                        {event.meta.models_used.map(m => {
+                          const short = m.split('/').pop();
+                          return <span key={m} className="agent-model-chip">{short}</span>;
+                        })}
+                      </div>
+                    )}
                   </div>
                 </>
               )}
@@ -2298,22 +2315,46 @@ export default function App() {
     });
   };
 
+  const moveAgentModel = (id, dir) => {
+    setSelectedAgentModels(prev => {
+      const idx = prev.indexOf(id);
+      if (idx < 0) return prev;
+      const next = [...prev];
+      const swap = idx + dir;
+      if (swap < 0 || swap >= next.length) return prev;
+      [next[idx], next[swap]] = [next[swap], next[idx]];
+      localStorage.setItem('agent_models', JSON.stringify(next));
+      return next;
+    });
+  };
+
   const modelSelect = !sessionStarted
     ? mode === 'agent' ? (
       <div className="model-tags-wrap">
-        {/* Agent 模式支持多选模型；普通对话仍然是传统单选。 */}
         <div className="model-tags">
-          {availableModels.map(item => (
-            <button
-              key={item.id}
-              className={`model-tag ${selectedAgentModels.includes(item.id) ? 'selected' : ''}`}
-              onClick={() => toggleAgentModel(item.id)}
-              disabled={sessionLocked}
-              title={selectedAgentModels.includes(item.id) ? '取消选择' : '选择并发执行'}
-            >
-              {item.label}
-            </button>
-          ))}
+          {availableModels.map(item => {
+            const isSelected = selectedAgentModels.includes(item.id);
+            const orderIdx = selectedAgentModels.indexOf(item.id);
+            return (
+              <span key={item.id} className={`model-tag-wrapper ${isSelected ? 'selected' : ''}`}>
+                <button
+                  className={`model-tag ${isSelected ? 'selected' : ''}`}
+                  onClick={() => toggleAgentModel(item.id)}
+                  disabled={sessionLocked}
+                  title={isSelected ? '取消选择' : '选择并发执行'}
+                >
+                  {item.label}
+                </button>
+                {isSelected && selectedAgentModels.length > 1 && (
+                  <span className="model-tag-order">
+                    <button className="order-arrow" onClick={() => moveAgentModel(item.id, -1)} disabled={orderIdx <= 0 || sessionLocked} title="提高优先级"><ChevronUp size={10} /></button>
+                    <span className="order-number">{orderIdx + 1}</span>
+                    <button className="order-arrow" onClick={() => moveAgentModel(item.id, 1)} disabled={orderIdx >= selectedAgentModels.length - 1 || sessionLocked} title="降低优先级"><ChevronDown size={10} /></button>
+                  </span>
+                )}
+              </span>
+            );
+          })}
         </div>
         {selectedAgentModels.length > 1 && (
           <div className="strategy-toggle">
@@ -2321,7 +2362,7 @@ export default function App() {
               className={`strategy-btn ${agentStrategy === 'race' ? 'active' : ''}`}
               onClick={() => { setAgentStrategy('race'); localStorage.setItem('agent_strategy', 'race'); }}
               disabled={sessionLocked}
-              title="先到先得，速度优先"
+              title="按优先级分批启动，先到先得"
             >竞速</button>
             <button
               className={`strategy-btn ${agentStrategy === 'vote' ? 'active' : ''}`}
