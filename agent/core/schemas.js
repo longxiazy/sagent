@@ -246,6 +246,19 @@ function normalizeCoreAction(type, action) {
   throw new Error(`不支持的核心动作: ${type}`);
 }
 
+function normalizeMcpAction(type, action) {
+  if (type !== 'call_tool') {
+    throw new Error(`不支持的 MCP 动作: ${type}`);
+  }
+  return {
+    tool: 'mcp',
+    type: 'call_tool',
+    server: typeof action.server === 'string' && action.server.trim() ? action.server.trim() : '',
+    mcpTool: action.tool || '',
+    args: typeof action.args === 'object' && action.args !== null ? action.args : {},
+  };
+}
+
 function normalizeFetchAction(type, action) {
   // Fix models that put extractLinks into the URL: "url":"...&extractLinks":true}
   if (typeof action.url === 'string' && /[&?]extractLinks[=:]/i.test(action.url)) {
@@ -321,6 +334,8 @@ export function normalizeDesktopAgentDecision(payload) {
     normalizedAction = normalizeCoreAction(type, action);
   } else if (tool === 'fetch') {
     normalizedAction = normalizeFetchAction(type, action);
+  } else if (tool === 'mcp') {
+    normalizedAction = normalizeMcpAction(type, action);
   } else {
     throw new Error(`不支持的工具: ${tool}`);
   }

@@ -290,7 +290,20 @@ export function createModelTools() {
         required: ['answer'],
       },
     },
-  ];
+   {
+    name: 'mcp',
+    description: '调用外部 MCP (Model Context Protocol) 服务器。97M+ 月下载量，10k+ 服务器。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        server: { type: 'string', description: 'MCP 服务器名称，如 big-model-radar' },
+        tool: { type: 'string', description: '要调用的工具名，如 get_latest、list_reports、search' },
+        args: { type: 'object', description: '工具参数，如 { type: "ai-agents" }' },
+      },
+      required: ['server', 'tool'],
+    },
+  },
+ ];
 }
 
 export function toolToClaudeTool(tool) {
