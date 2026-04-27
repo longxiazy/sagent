@@ -3,8 +3,13 @@ import { classifyAgentAction } from './classify.js';
 import { cleanText } from '../core/utils.js';
 
 function sendMacosNotification(title, body) {
+  if (process.platform !== 'darwin') return; // 仅 macOS 支持 osascript
   const script = `display notification "${body.replace(/"/g, '\\"')}" with title "${title.replace(/"/g, '\\"')}" sound name "Glass"`;
-  spawn('osascript', ['-e', script], { stdio: 'ignore' });
+  try {
+    spawn('osascript', ['-e', script], { stdio: 'ignore' });
+  } catch (err) {
+    // osascript 不可用时静默忽略（Linux/Windows 环境）
+  }
 }
 
 export function createAgentAuthorizer({
