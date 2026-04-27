@@ -629,6 +629,42 @@ export function createDesktopAgentRunner({
         const tool = lastAction.tool || '';
         return tool !== 'fs' && tool !== 'terminal';
       },
+  review: async ({ task, step, history, observation, result }) => {
+    // Ask LLM: did the last action achieve its goal? Should we retry?
+    const recentHistory = history.slice(-3);
+    const lastAction = history[history.length - 1];
+    const prompt = `你是 Agent 审查员。检查上一步执行结果，决定是否需要重试。
+
+任务: ${task}
+上一步动作: ${JSON.stringify(lastAction?.action)}
+上一步结果: ${String(result).slice(0, 500)}
+
+判断标准:
+- 文件操作结果为空或错误? → 需要重试
+- 浏览器操作后页面内容不符合预期? → 需要重试
+- 命令执行报错? → 需要重试
+- 结果明显不对或遗漏? → 需要重试
+
+如果需要重试，说明原因并给出修改建议。
+如果结果正常，返回 null 表示不需要重试。`;
+
+    try {
+      const messages = [{ role: 'user', content: prompt }];
+      const response = await openai_client.chat.completions.create({
+        model: model.startsWith('nv/') ? 'nvidia/...' : model,
+        messages,
+        max_tokens: 500,
+        temperature: 0.1,
+      });
+      const review_text = response.choices[0]?.message?.content || '';
+      if (review_text.includes('需要重试') || review_text.includes('重试')) {
+        return { needs_retry: true, reason: review_text.slice(0, 300) };
+      }
+    } catch (e) {
+      log.debug('[Review] review failed:', e.message);
+    }
+    return null;
+  },
       execute: async (state, action, context) => routeAction(state, action, context),
       cleanup: async state => {
         if (state.browserSession?.page) {

@@ -43,6 +43,8 @@ function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
   ];
 }
 
+const MAX_RETRIES_PER_STEP = 1;
+
 export async function runAgentRuntime({
   task,
   maxSteps = 8,
@@ -55,6 +57,7 @@ export async function runAgentRuntime({
   execute,
   cleanup,
   shouldObserve,
+  review,
   initialStep = 1,
   initialHistory = [],
   onCheckpoint = null,
@@ -167,6 +170,24 @@ export async function runAgentRuntime({
         title: observation?.title,
       });
 
+
+  // Self-correction: ask LLM to review the result
+  if (review && decision.action.type !== "finish" && result && !String(result).startsWith("执行失败")) {
+    let retryCount = 0;
+    let needsRetry = false;
+    do {
+      needsRetry = false;
+      const reviewResult = await review({ task, step, history, observation, result, state });
+      if (reviewResult?.needs_retry === true && retryCount < MAX_RETRIES_PER_STEP) {
+        log.info(`[Runtime] step ${step} self-correct: ${reviewResult.reason}`);
+        history.push({ step, type: "review", result: reviewResult.reason });
+        needsRetry = true;
+        retryCount++;
+        const newDecision = await decide({ task, step, history, observation, state });
+        decision = newDecision;
+      }
+    } while (needsRetry);
+  }
       if (decision.action.type !== "finish") {
         onEvent?.({
           type: "step",
