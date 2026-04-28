@@ -1602,6 +1602,33 @@ textarea {
   word-break: break-word;
 }
 
+.model-card-result-toggle {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--c-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+.model-card-result-toggle:hover { text-decoration: underline; }
+
+.agent-done-answer {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: var(--r-sm);
+  font-size: var(--f-xs);
+  line-height: 1.6;
+  max-height: 300px;
+  overflow-y: auto;
+  word-break: break-word;
+}
+.agent-done-answer :first-child { margin-top: 0; }
+.agent-done-answer :last-child { margin-bottom: 0; }
+
 /* ── Strategy Toggle ── */
 
 .model-tags-wrap {

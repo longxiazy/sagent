@@ -1057,6 +1057,7 @@ function ModelPlanCard({ event, isWinner, modelList, strategy, result }) {
   const label = getModelLabel(event.model, modelList);
   const stage = event.stage;
   const [showReasoning, setShowReasoning] = useState(false);
+  const [showFullResult, setShowFullResult] = useState(false);
 
   if (stage === 'start') return null;
 
@@ -1106,7 +1107,12 @@ function ModelPlanCard({ event, isWinner, modelList, strategy, result }) {
           {isWinner && result && (
             <div className="model-card-result">
               <span className="model-card-result-label">执行结果</span>
-              <p>{result.length > 300 ? result.slice(0, 300) + '…' : result}</p>
+              <p>{showFullResult || result.length <= 50 ? result : result.slice(0, 50) + '…'}</p>
+              {result.length > 50 && (
+                <button className="model-card-result-toggle" onClick={() => setShowFullResult(v => !v)}>
+                  {showFullResult ? '收起' : '展开全部'}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1509,6 +1515,11 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
                           const short = m.split('/').pop();
                           return <span key={m} className="agent-model-chip">{short}</span>;
                         })}
+                      </div>
+                    )}
+                    {event.answer && (
+                      <div className="agent-done-answer">
+                        <MarkdownBlock content={event.answer} />
                       </div>
                     )}
                   </div>
