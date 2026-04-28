@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 
 const SAFE_COMMANDS = new Set([
+  // 文件查看 / 搜索（只读）
   'pwd',
   'ls',
   'cat',
@@ -16,6 +17,40 @@ const SAFE_COMMANDS = new Set([
   'which',
   'git',
   'grep',
+  'diff',
+  'sort',
+  'uniq',
+  'awk',
+  'sed',
+  'cut',
+  'tr',
+  'xargs',
+  'tee',
+  'tree',
+  'du',
+  'df',
+  'jq',
+  // 文件操作（低破坏性）
+  'mkdir',
+  'touch',
+  'cp',
+  'mv',
+  'ln',
+  'tar',
+  'gzip',
+  'gunzip',
+  'zip',
+  'unzip',
+  // 系统信息（只读）
+  'env',
+  'printenv',
+  'id',
+  'whoami',
+  'hostname',
+  'uname',
+  'ps',
+  'pgrep',
+  'pidof',
 ]);
 
 function resolveCwd(value) {
