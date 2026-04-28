@@ -1,10 +1,19 @@
 import { spawn } from 'node:child_process';
 import { classifyAgentAction } from './classify.js';
 import { cleanText } from '../core/utils.js';
+import { log } from '../../helpers/logger.js';
 
 function sendMacosNotification(title, body) {
+  if (process.platform !== 'darwin') {
+    log.warn(`[Notification] macOS 通知不可用，当前平台: ${process.platform}`);
+    return;
+  }
   const script = `display notification "${body.replace(/"/g, '\\"')}" with title "${title.replace(/"/g, '\\"')}" sound name "Glass"`;
-  spawn('osascript', ['-e', script], { stdio: 'ignore' });
+  try {
+    spawn('osascript', ['-e', script], { stdio: 'ignore' });
+  } catch (err) {
+    log.warn(`[Notification] osascript 调用失败: ${err.message}`);
+  }
 }
 
 export function createAgentAuthorizer({
