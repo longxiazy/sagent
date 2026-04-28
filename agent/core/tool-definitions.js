@@ -290,6 +290,19 @@ export function createModelTools() {
         required: ['answer'],
       },
     },
+  {
+    name: 'git',
+    description: '查询 Git 工作区状态、分支、日志、变更等。帮助 Agent 了解当前代码状态，避免在未提交的分支上做危险操作。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['status', 'branch', 'log', 'diff', 'stash', 'remote'], description: 'Git 命令类型' },
+        path: { type: 'string', description: '仓库路径，默认 .' },
+        extra: { type: 'string', description: '额外参数，如 log 的数量' },
+      },
+      required: ['type'],
+    },
+  },
   ];
 }
 
