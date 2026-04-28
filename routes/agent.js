@@ -223,7 +223,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     }
 
     try {
-      approvalStore.resolve(approvalId, response.trim());
+    approvalStore.resolve(approvalId, (response || ).trim());
       return res.json({ ok: true });
     } catch (err) {
       return res.status(404).json({ error: err.message });
