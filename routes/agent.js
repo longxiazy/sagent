@@ -218,8 +218,8 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       return res.status(400).json({ error: 'approvalId 不能为空' });
     }
 
-    if (typeof response !== 'string' || !response.trim()) {
-      return res.status(400).json({ error: 'response 不能为空' });
+    if (typeof response !== 'string') {
+      return res.status(400).json({ error: 'response 必须是字符串' });
     }
 
     try {

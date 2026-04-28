@@ -958,7 +958,8 @@ function QuestionDialog({ question, submitting, onSubmit, onSkip }) {
           onChange={e => setResponse(e.target.value)}
           placeholder="输入你的回答..."
           rows={3}
-          autoFocus
+ onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit(response); } }}
+ autoFocus
         />
         <div className="dialog-actions">
           <button className="dialog-btn cancel" onClick={onSkip} disabled={submitting}>
@@ -967,7 +968,7 @@ function QuestionDialog({ question, submitting, onSubmit, onSkip }) {
           <button
             className="dialog-btn confirm approval-confirm"
             onClick={() => onSubmit(response)}
-            disabled={submitting || !response.trim()}
+            disabled={submitting}
           >
             {submitting ? '提交中…' : '回答'}
           </button>
