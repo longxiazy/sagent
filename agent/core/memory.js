@@ -21,14 +21,25 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cleanText } from './utils.js';
 
+/**
+ * 四层记忆架构 (Inspired by Gemini CLI Tiered Memory System)
+ *
+ * Layer 1 — Working Memory: 当前任务的对话历史（最多 20 条，进程内）
+ * Layer 2 — Session Memory: 本次会话的任务摘要（agent-memory.json）
+ * Layer 3 — Project Memory: 项目级知识（结构、路径、偏好）
+ * Layer 4 — Long-term Memory: 跨项目的长期知识（全局记忆）
+ */
+
 const MEMORY_FILE = 'agent-memory.json';
+const LONG_TERM_FILE = 'long-term-memory.json';
 const MAX_CHARS = 2000;
 const MAX_CONVERSATION_ENTRIES = 20;
 const MAX_KNOWLEDGE_PER_CATEGORY = 50;
+const MAX_LONG_TERM_ITEMS = 100;
 
 function emptyMemory() {
   return {
-    version: 1,
+    version: 2,
     conversation: [],
     conversationSummary: '',
     projectKnowledge: {
@@ -38,6 +49,37 @@ function emptyMemory() {
       learnings: [],
     },
   };
+}
+
+function emptyLongTermMemory() {
+  return {
+    version: 1,
+    globalLearnings: [],   // 全局经验：跨项目适用
+    userPreferences: {},   // 用户全局偏好
+    language: 'zh-CN',     // 用户语言偏好
+  };
+}
+
+export async function loadLongTermMemory(dir) {
+  const filePath = path.join(dir, LONG_TERM_FILE);
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    return { ...emptyLongTermMemory(), ...JSON.parse(raw) };
+  } catch {
+    return emptyLongTermMemory();
+  }
+}
+
+export async function saveLongTermMemory(dir, memory) {
+  const filePath = path.join(dir, LONG_TERM_FILE);
+  const tmpPath = filePath + '.tmp';
+  await fs.mkdir(dir, { recursive: true });
+  // Keep only top MAX_LONG_TERM_ITEMS
+  if (memory.globalLearnings?.length > MAX_LONG_TERM_ITEMS) {
+    memory.globalLearnings = memory.globalLearnings.slice(-MAX_LONG_TERM_ITEMS);
+  }
+  await fs.writeFile(tmpPath, JSON.stringify(memory, null, 2), 'utf8');
+  await fs.rename(tmpPath, filePath);
 }
 
 export async function loadMemory(dir) {
