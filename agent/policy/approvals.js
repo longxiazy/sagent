@@ -78,16 +78,6 @@ export function createAgentAuthorizer({
     });
 
     const isQuestion = action.type === 'ask_user';
-    const eventType = isQuestion ? 'question_required' : 'approval_required';
-
-    onEvent?.({
-      type: eventType,
-      runId,
-      approvalId,
-      step: context.step,
-      action,
-      message: isQuestion ? action.question : policy.reason,
-    });
 
     if (isQuestion) {
       const nativeAnswer = macosAsk('Desktop Agent 提问', cleanText(action.question, 200));
@@ -106,7 +96,6 @@ export function createAgentAuthorizer({
         }
         return { status: 'approved', response: nativeAnswer };
       }
-      sendMacosNotification('Desktop Agent 提问', cleanText(action.question, 120));
     } else {
       const nativeDecision = macosConfirm('Desktop Agent 需要审批', `${cleanText(policy.reason, 200)}\n\n${JSON.stringify(action)}`);
       if (nativeDecision) {
@@ -125,6 +114,22 @@ export function createAgentAuthorizer({
         }
         return { status: 'approved' };
       }
+    }
+
+    // Native dialog unavailable or timed out — fall back to web UI
+    const eventType = isQuestion ? 'question_required' : 'approval_required';
+    onEvent?.({
+      type: eventType,
+      runId,
+      approvalId,
+      step: context.step,
+      action,
+      message: isQuestion ? action.question : policy.reason,
+    });
+
+    if (isQuestion) {
+      sendMacosNotification('Desktop Agent 提问', cleanText(action.question, 120));
+    } else {
       sendMacosNotification('Desktop Agent 需要审批', `${cleanText(policy.reason, 120)}\n\nrunId: ${runId}`);
     }
 
