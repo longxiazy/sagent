@@ -48,6 +48,12 @@ import { log } from '../../helpers/logger.js';
 
 function buildClaudeTaskMessages({ task, step, history, observation, conversationHistory }) {
   const messages = [];
+  if (_planningMode) {
+    messages.push({
+      role: 'system',
+      content: '[规划模式] 收到任务后，先用 ask_user 展示执行计划，格式：1. 第一步 2. 第二步...用户批准后再执行。',
+    });
+  }
   if (conversationHistory?.length) {
     for (const msg of conversationHistory) {
       messages.push({ role: msg.role, content: msg.content });
@@ -66,11 +72,17 @@ function buildNvidiaTaskMessages({ task, systemPrompt, step, history, observatio
         .map(m => `${m.role === 'user' ? '用户' : '助手'}: ${m.content}`)
         .join('\n')
     : '';
+  const planningNote = _planningMode
+    ? '
+
+[规划模式] 收到任务后先用 ask_user 展示执行计划，格式：1. 第一步 2. 第二步...用户批准后再执行。'
+    : '';
+
   return [
     {
       role: 'system',
       content: [
-        '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。',
+        '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。' + planningNote,
         '你只能输出一个 JSON 对象，不要输出 Markdown，不要解释。',
         '可用动作示例：',
         '{"rationale":"打开网页","action":{"tool":"browser","type":"navigate","url":"https://example.com"}}',
@@ -148,7 +160,7 @@ async function singleModelPlan({ model, openai_client, anthropic_client, modelCo
 
   try {
     if (isClaudeModel(model, modelConfig)) {
-      const system = buildDesktopAgentSystemPrompt(context.systemPrompt);
+      const system = buildDesktopAgentSystemPrompt(context.systemPrompt, _planningMode);
       const messages = buildClaudeTaskMessages(context);
       const result = await claudeAgentPlan({
         client: anthropic_client,
@@ -585,12 +597,17 @@ export function createDesktopAgentRunner({
     { defaultTool: 'core' }
   );
 
+// Planning mode: when true, Agent outputs plan before executing
+let _planningMode = false;
+export function setPlanningMode(enabled) { _planningMode = enabled; }
+
   return async function runDesktopAgent({
     task,
     model,
     models: agentModels,
     strategy = 'race',
     systemPrompt = null,
+ planningMode = false,
     headless = defaultHeadless,
     onEvent,
     isCancelled,

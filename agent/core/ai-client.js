@@ -85,9 +85,18 @@ export function createClients() {
   return { openai_client, anthropic_client };
 }
 
-export function buildDesktopAgentSystemPrompt(systemPrompt) {
+export function buildDesktopAgentSystemPrompt(systemPrompt, planningMode = false) {
+  const planningSection = planningMode
+    ? '
+
+## 规划模式 (Planning Mode)
+当你收到任务时，先不执行，先制定详细的执行计划，' \n      '用 ask_user 展示给用户批准后再按计划执行。计划格式：
+1. 第一步：做什么 + 为什么
+2. 第二步：...' \n      '确认后再执行，完成后汇报。'
+    : '';
+
   const base = [
-    '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。',
+    '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。' + planningSection,
     '通过工具调用完成任务，只能使用提供的工具，不要输出 JSON 以外的文本。',
     '规则：',
     '1. 只有 observation.browser.elements 中存在的 elementId 才能用于 click/type。',
