@@ -322,6 +322,8 @@ export function normalizeDesktopAgentDecision(payload) {
   } else if (tool === 'fetch') {
     normalizedAction = normalizeFetchAction(type, action);
   } else {
+ } else if (tool === 'mcp') {
+ return { tool: 'mcp', server: action.server, tool: action.tool, args: action.args || {} };
     throw new Error(`不支持的工具: ${tool}`);
   }
 
