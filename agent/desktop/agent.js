@@ -1,8 +1,37 @@
+/**
+ * Desktop Agent — 浏览器/桌面/文件/终端多工具协同的 Agent 运行器
+ * Desktop Agent runtime — orchestrates browser, macOS desktop, filesystem, and terminal tools
+ *
+ * 核心流程 / Core loop:
+ *   initialize → (observe → decide → authorize → execute) × N → cleanup
+ *   由 agent/core/runtime.js 驱动单步循环，本文件提供各阶段的实现。
+ *
+ * 多模型竞速 / Multi-model race:
+ *   buildDesktopPlanner() 支持 race / vote 两种策略：
+ *   - race: 批量错峰启动，首个有效结果胜出，其余取消
+ *   - vote: 等待全部完成，多数投票选最优决策
+ *   超时模型自动加入黑名单，批次全部失败时触发下一批。
+ *
+ * 观测 / Observation:
+ *   observeDesktopAgent() 同时采集桌面（AppleScript）和浏览器（Playwright）状态，
+ *   合并为统一的 observation 对象供 LLM 决策。
+ *
+ * 调用场景 / Callers:
+ *   - server.js 启动时: createDesktopAgentRunner() 工厂创建 runDesktopAgent 函数
+ *   - routes/agent.js POST /api/agent: runDesktopAgent() 执行任务
+ *   - server.js resumeFromCheckpoint(): 恢复断点继续执行
+ *
+ * TODO / 拆分建议 Refactor suggestions:
+ *   - 将 multi-model 竞速逻辑（buildDesktopPlanner / aggregateResults）拆到 agent/core/multi-model.js
+ *   - 将 message 构建（buildClaudeTaskMessages / buildNvidiaTaskMessages）拆到 agent/core/prompts.js
+ *   - 将 observation 采集逻辑拆到 agent/desktop/observer.js
+ */
+
 import { createJsonPlanner } from '../core/planner.js';
 import { createActionRouter } from '../core/router.js';
 import { runAgentRuntime } from '../core/runtime.js';
 import { normalizeDesktopAgentDecision } from '../core/schemas.js';
-import { cleanText } from '../core/utils.js';
+import { cleanText, displayWidth, padEndW } from '../core/utils.js';
 import { createAgentAuthorizer } from '../policy/approvals.js';
 import { executeBrowserAction } from '../tools/browser/execute.js';
 import { captureBrowserObservation, summarizeBrowserObservation } from '../tools/browser/observe.js';
@@ -226,11 +255,9 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
     const timeoutMs = typeof modelTimeoutMs === 'number' && modelTimeoutMs > 0 ? modelTimeoutMs : DEFAULT_MODEL_TIMEOUT_MS;
     const shortModel = model.split('/').pop();
     const startTime = Date.now();
-    log.info(`\n` +
-      `╔══════════════════════════════════════════════════╗\n` +
-      `║  >>> LLM REQUEST  ${shortModel.padEnd(24)} ║\n` +
-      `║      step=${context.step ?? '-'} timeout=${Math.round(timeoutMs / 1000)}s`.padEnd(51) + '║\n' +
-      `╚══════════════════════════════════════════════════╝`);
+    const reqLine = `  >>> LLM REQUEST  ${shortModel}  step=${context.step ?? '-'}  timeout=${Math.round(timeoutMs / 1000)}s`;
+    const w = Math.max(displayWidth(reqLine) + 4, 52);
+    log.info(`\n  ${'╔' + '═'.repeat(w) + '╗'}\n  ║${padEndW(reqLine, w)}║\n  ${'╚' + '═'.repeat(w) + '╝'}`);
     let timer;
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(() => reject(new Error(`模型超时 (${Math.round(timeoutMs / 1000)}s)`)), timeoutMs);
@@ -241,20 +268,17 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
     ])
       .then(result => {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        log.info(`\n` +
-          `╔══════════════════════════════════════════════════╗\n` +
-          `║  <<< LLM RESPONSE ${shortModel.padEnd(23)} ║\n` +
-          `║      ${elapsed}s  ${result.action?.tool || '?'}.${result.action?.type || '?'}  ${(result.usage?.prompt_tokens || 0) + (result.usage?.completion_tokens || 0)}tok`.padEnd(51) + '║\n' +
-          `╚══════════════════════════════════════════════════╝`);
+        const tokens = (result.usage?.prompt_tokens || 0) + (result.usage?.completion_tokens || 0);
+        const resLine = `  <<< LLM RESPONSE ${shortModel}  ${elapsed}s  ${result.action?.tool || '?'}.${result.action?.type || '?'}  ${tokens}tok`;
+        const rw = Math.max(displayWidth(resLine) + 4, 52);
+        log.info(`\n  ${'╔' + '═'.repeat(rw) + '╗'}\n  ║${padEndW(resLine, rw)}║\n  ${'╚' + '═'.repeat(rw) + '╝'}`);
         return result;
       })
       .catch(err => {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        log.warn(`\n` +
-          `╔══════════════════════════════════════════════════╗\n` +
-          `║  !!! LLM FAILED   ${shortModel.padEnd(24)} ║\n` +
-          `║      ${elapsed}s  ${err.message.slice(0, 36)}`.padEnd(51) + '║\n' +
-          `╚══════════════════════════════════════════════════╝`);
+        const errLine = `  !!! LLM FAILED   ${shortModel}  ${elapsed}s  ${err.message.slice(0, 60)}`;
+        const ew = Math.max(displayWidth(errLine) + 4, 52);
+        log.warn(`\n  ${'╔' + '═'.repeat(ew) + '╗'}\n  ║${padEndW(errLine, ew)}║\n  ${'╚' + '═'.repeat(ew) + '╝'}`);
         throw err;
       })
       .finally(() => clearTimeout(timer));
@@ -264,6 +288,7 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
     const extraModels = Array.isArray(agentModels) && agentModels.length > 1
       ? agentModels.filter(m => m !== model)
       : [];
+    const planCtx = { ...context, step };
 
     if (extraModels.length === 0) {
       onEvent?.({ type: 'model_plan', stage: 'start', models: [model], step });
@@ -274,7 +299,7 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
       }
       onEvent?.({ type: 'model_plan', stage: 'thinking', model, step });
       try {
-        const result = await planWithTimeout(model, context, isCancelled);
+        const result = await planWithTimeout(model, planCtx, isCancelled);
         onEvent?.({ type: 'model_plan', stage: 'success', model, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
         return result;
       } catch (err) {
@@ -315,7 +340,7 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
 
       const settled = await Promise.allSettled(
         activeModels.map(m =>
-	          planWithTimeout(m, context, isCancelled)
+	          planWithTimeout(m, planCtx, isCancelled)
             .then(result => {
               log.debug(`[MultiModel] step=${step} model=${m} succeeded: ${result.action?.tool}.${result.action?.type}`);
               onEvent?.({ type: 'model_plan', stage: 'success', model: m, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
@@ -376,7 +401,7 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
         if (settled || isCancelled()) return;
         launched++;
         onEvent?.({ type: 'model_plan', stage: 'thinking', model: m, step });
-        planWithTimeout(m, context, isCancelled)
+        planWithTimeout(m, planCtx, isCancelled)
           .then(result => {
             if (settled) {
               onEvent?.({ type: 'model_plan', stage: 'cancelled', model: m, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });

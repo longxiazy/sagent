@@ -1,21 +1,33 @@
 /**
- * AI Client — 统一的 LLM 客户端层，屏蔽 NVIDIA / Anthropic 两套 API 差异
+ * AI Client — Unified LLM client layer, abstracting NVIDIA (OpenAI-compatible) / Anthropic API differences
+ * AI 客户端 — 统一的 LLM 客户端层，屏蔽 NVIDIA / Anthropic 两套 API 差异
  *
- * 职责：
+ * 职责 / Responsibilities:
  *   1. 管理 OpenAI (NVIDIA) 和 Anthropic (Claude) 两套 SDK 客户端
+ *      Manage OpenAI (NVIDIA) and Anthropic (Claude) SDK clients
  *   2. 从环境变量加载模型配置（MODELS, AGENT_MULTI_MODELS）
+ *      Load model configuration from env vars (MODELS, AGENT_MULTI_MODELS)
  *   3. 提供 Claude 专用的 claudeAgentPlan() — 通过 Anthropic SDK 原生 tool_use 调用
+ *      Claude-specific planning via Anthropic SDK native tool_use
+ *   4. 提供 summarizeText() — 用于记忆压缩的 LLM 文本摘要
+ *      LLM text summarization for memory compaction via summarizeText()
  *
- * 调用场景：
- *   - server.js 启动时调用 createClients() 创建客户端、loadModelConfig() 加载模型列表
- *   - agent/desktop/agent.js 的 singleModelPlan() 中：
+ * 调用场景 / Callers:
+ *   - server.js 启动时: createClients() 创建客户端、loadModelConfig() 加载模型列表
+ *   - agent/desktop/agent.js singleModelPlan():
  *     Claude 模型走 claudeAgentPlan()，NVIDIA 模型走 planner.js 的 createJsonPlanner()
- *   - planner.js 的 createJsonPlanner() 内部调用 openai_client.chat.completions.create()
+ *   - routes/agent.js 异步记忆保存: summarizeText() 用于压缩对话记忆
+ *
+ * TODO / 拆分建议 Refactor suggestions:
+ *   - 将 summarizeText() 拆到 agent/core/summarizer.js（摘要逻辑与客户端管理解耦）
+ *   - 将 buildDesktopAgentSystemPrompt() 拆到 agent/core/prompts.js（Prompt 模板集中管理）
  */
 
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { logLlmRequest, logLlmResponse } from './llm-logger.js';
+import { displayWidth, padEndW } from './utils.js';
+import { log } from '../../helpers/logger.js';
 import { retryAsync } from '../../helpers/retry.js';
 import { createModelTools, toolToClaudeTool } from './tool-definitions.js';
 
@@ -147,4 +159,54 @@ export async function claudeAgentPlan({
   }
 
   throw new Error(`Claude 未返回有效工具调用，停止原因: ${message.stop_reason}`);
+}
+
+export async function summarizeText({ text, openai_client, anthropic_client, model }) {
+  const shortModel = model?.split('/').pop() || '?';
+  const startTime = Date.now();
+  const reqLine = `  >>> 记忆摘要 REQUEST  ${shortModel}  input=${text.length}字`;
+  const w = Math.max(displayWidth(reqLine) + 4, 52);
+  log.info(`\n  ${'╔' + '═'.repeat(w) + '╗'}\n  ║${padEndW(reqLine, w)}║\n  ${'╚' + '═'.repeat(w) + '╝'}`);
+
+  const prompt = `请用简洁的中文提炼以下 Agent 任务记录的关键信息。要求：
+1. 相同或相似主题的任务合并为一条，不要重复
+2. 每个任务一行，格式：任务→结果要点
+3. 保留重要的事实、数据和结论
+4. 去除冗余细节
+
+${text}`;
+  try {
+    let result;
+    const useClaude = isClaudeModel(model, null);
+    if (useClaude && anthropic_client) {
+      const resp = await retryAsync(() => anthropic_client.messages.create({
+        model,
+        max_tokens: 800,
+        temperature: 0.1,
+        messages: [{ role: 'user', content: prompt }],
+      }));
+      result = resp.content.find(b => b.type === 'text')?.text || text.slice(0, 300);
+    } else if (openai_client) {
+      const resp = await retryAsync(() => openai_client.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        max_tokens: 800,
+      }));
+      result = resp.choices[0]?.message?.content || text.slice(0, 300);
+    } else {
+      result = text.slice(0, 300);
+    }
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const resLine = `  <<< 记忆摘要 RESPONSE ${shortModel}  ${elapsed}s  output=${result.length}字`;
+    const rw = Math.max(displayWidth(resLine) + 4, 52);
+    log.info(`\n  ${'╔' + '═'.repeat(rw) + '╗'}\n  ║${padEndW(resLine, rw)}║\n  ${'╚' + '═'.repeat(rw) + '╝'}`);
+    return result;
+  } catch (err) {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const errLine = `  !!! 记忆摘要 FAILED   ${shortModel}  ${elapsed}s  ${err.message.slice(0, 60)}`;
+    const ew = Math.max(displayWidth(errLine) + 4, 52);
+    log.warn(`\n  ${'╔' + '═'.repeat(ew) + '╗'}\n  ║${padEndW(errLine, ew)}║\n  ${'╚' + '═'.repeat(ew) + '╝'}`);
+    throw err;
+  }
 }

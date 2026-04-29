@@ -47,6 +47,7 @@ NVIDIA_API_KEY=nvapi-...  # MiniMax, Kimi, Qwen, GLM, DeepSeek, etc.
 # Agent behavior (optional)
 AGENT_MAX_STEPS=128          # Max steps per task, default 8
 AGENT_MODEL_TIMEOUT=30       # Per-model timeout in seconds
+AGENT_MEMORY_MAX_ENTRIES=20  # Memory compaction threshold
 AGENT_RESUME=true            # Auto-resume interrupted tasks after backend restart
 
 # Multi-model race (optional)
@@ -84,3 +85,36 @@ The Agent can invoke multiple models concurrently for each step, picking the fas
 - **Batch race**: Set `AGENT_BATCH_SIZE` to launch N models at a time. If the entire batch fails, the next batch starts immediately (skipping the stagger delay).
 
 Frontend: select multiple models in Agent mode, reorder with arrows to set priority, toggle between race/vote strategies. The trace panel shows each model's status (pending, thinking, winner, cancelled).
+
+## Cross-Session Memory
+
+The Agent automatically accumulates project experience and conversation history, persisted across sessions so it "remembers" what was done before.
+
+### What's Stored
+
+- **Conversation records**: Summaries of the last N tasks (task → result + models used + timestamp)
+- **Compacted summary**: LLM-distilled historical summary (deduplicated, merged, up to 2000 chars)
+- **Project knowledge**: Directory structure, common paths, user preferences, learnings
+
+### Auto-Compaction
+
+- Triggered when conversation records exceed `AGENT_MEMORY_MAX_ENTRIES` (default 20)
+- All entries are sent to an LLM for deduplication and summarization; only the most recent N entries are kept
+- The compaction model is automatically selected based on the most successful model in the current session
+- Runs asynchronously — does not block Agent responses
+- Falls back to text concatenation if LLM is unavailable
+
+### Memory Panel
+
+Click the 🧠 icon in the Agent panel header to open the memory panel:
+
+- **Conversation** tab: Historical summary (with compaction timestamp) + recent conversation list (task, result, models, time)
+- **Knowledge** tab: Project structure, common paths, preferences, learnings
+- **Manual compact**: Click "Compact History" at the bottom to trigger LLM compaction
+
+### Related Configuration
+
+```bash
+AGENT_MEMORY_MAX_ENTRIES=20  # Compaction threshold — triggers when exceeded
+MEMORY_DIR=data             # Directory for memory file storage
+```

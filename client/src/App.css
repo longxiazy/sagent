@@ -1206,6 +1206,28 @@ textarea {
 
 .agent-collapse-btn:hover { background: #f9fafb; }
 
+.agent-memory-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  cursor: pointer;
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-secondary);
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.agent-memory-btn:hover { background: #ede9fe; color: #6d28d9; border-color: #c4b5fd; }
+
+.agent-collapse-btn.agent-tablet-only { display: none; }
+@media (min-width: 640px) and (max-width: 1099px) {
+  .agent-collapse-btn.agent-tablet-only { display: inline-flex; }
+}
+
 .agent-panel.collapsed .agent-panel-head { cursor: pointer; border-radius: var(--r-sm); transition: background 0.15s; }
 .agent-panel.collapsed .agent-panel-head:hover { background: #f9fafb; }
 
@@ -2443,3 +2465,174 @@ textarea:disabled {
   .model-card { padding: 4px 5px; }
   .model-card-json { max-height: 48px; font-size: 8px; }
 }
+
+/* ── Memory Panel ── */
+
+.memory-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.memory-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--c-border);
+  margin-bottom: 8px;
+}
+
+.memory-panel-tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.memory-tab {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--c-border);
+  background: transparent;
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: all 0.15s;
+}
+.memory-tab.active {
+  background: #ede9fe;
+  color: #6d28d9;
+  border-color: #c4b5fd;
+}
+.memory-tab:hover:not(.active) { background: #f9fafb; }
+
+.memory-panel-close {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-secondary);
+  border-radius: var(--r-sm);
+}
+.memory-panel-close:hover { background: #f3f4f6; }
+
+.memory-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.memory-loading, .memory-empty {
+  text-align: center;
+  padding: 20px;
+  color: var(--c-text-secondary);
+  font-size: var(--f-sm);
+}
+
+.memory-section {
+  margin-bottom: 10px;
+}
+
+.memory-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: #6d28d9;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid #ede9fe;
+}
+
+.memory-summary-text {
+  font-size: 11px;
+  color: var(--c-text-secondary);
+  line-height: 1.5;
+  background: #f9fafb;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  word-break: break-word;
+}
+
+.memory-conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.memory-conv-item {
+  padding: 6px 8px;
+  background: #f9fafb;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--c-border);
+}
+
+.memory-conv-task {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--c-text);
+  margin-bottom: 2px;
+}
+
+.memory-conv-summary {
+  font-size: 10px;
+  color: var(--c-text-secondary);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.memory-conv-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 9px;
+  color: var(--c-text-tertiary);
+}
+
+.memory-conv-model {
+  background: #ede9fe;
+  color: #6d28d9;
+  padding: 0 4px;
+  border-radius: 2px;
+}
+
+.memory-kv {
+  font-size: 11px;
+  color: var(--c-text-secondary);
+  line-height: 1.5;
+  padding: 2px 0;
+  word-break: break-word;
+}
+
+.memory-k {
+  display: inline-block;
+  font-weight: 500;
+  color: var(--c-text);
+  min-width: 60px;
+}
+
+.memory-panel-footer {
+  padding: 8px 0;
+  border-top: 1px solid var(--c-border);
+  margin-top: 8px;
+}
+
+.memory-compact-btn {
+  width: 100%;
+  padding: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #6d28d9;
+  background: #ede9fe;
+  border: 1px solid #c4b5fd;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.memory-compact-btn:hover { background: #ddd6fe; }
+.memory-compact-btn:disabled { opacity: 0.5; cursor: not-allowed; }
