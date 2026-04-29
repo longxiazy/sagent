@@ -1,3 +1,32 @@
+/**
+ * Desktop Agent — 浏览器/桌面/文件/终端多工具协同的 Agent 运行器
+ * Desktop Agent runtime — orchestrates browser, macOS desktop, filesystem, and terminal tools
+ *
+ * 核心流程 / Core loop:
+ *   initialize → (observe → decide → authorize → execute) × N → cleanup
+ *   由 agent/core/runtime.js 驱动单步循环，本文件提供各阶段的实现。
+ *
+ * 多模型竞速 / Multi-model race:
+ *   buildDesktopPlanner() 支持 race / vote 两种策略：
+ *   - race: 批量错峰启动，首个有效结果胜出，其余取消
+ *   - vote: 等待全部完成，多数投票选最优决策
+ *   超时模型自动加入黑名单，批次全部失败时触发下一批。
+ *
+ * 观测 / Observation:
+ *   observeDesktopAgent() 同时采集桌面（AppleScript）和浏览器（Playwright）状态，
+ *   合并为统一的 observation 对象供 LLM 决策。
+ *
+ * 调用场景 / Callers:
+ *   - server.js 启动时: createDesktopAgentRunner() 工厂创建 runDesktopAgent 函数
+ *   - routes/agent.js POST /api/agent: runDesktopAgent() 执行任务
+ *   - server.js resumeFromCheckpoint(): 恢复断点继续执行
+ *
+ * TODO / 拆分建议 Refactor suggestions:
+ *   - 将 multi-model 竞速逻辑（buildDesktopPlanner / aggregateResults）拆到 agent/core/multi-model.js
+ *   - 将 message 构建（buildClaudeTaskMessages / buildNvidiaTaskMessages）拆到 agent/core/prompts.js
+ *   - 将 observation 采集逻辑拆到 agent/desktop/observer.js
+ */
+
 import { createJsonPlanner } from '../core/planner.js';
 import { createActionRouter } from '../core/router.js';
 import { runAgentRuntime } from '../core/runtime.js';

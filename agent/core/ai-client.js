@@ -1,16 +1,26 @@
 /**
- * AI Client — 统一的 LLM 客户端层，屏蔽 NVIDIA / Anthropic 两套 API 差异
+ * AI Client — Unified LLM client layer, abstracting NVIDIA (OpenAI-compatible) / Anthropic API differences
+ * AI 客户端 — 统一的 LLM 客户端层，屏蔽 NVIDIA / Anthropic 两套 API 差异
  *
- * 职责：
+ * 职责 / Responsibilities:
  *   1. 管理 OpenAI (NVIDIA) 和 Anthropic (Claude) 两套 SDK 客户端
+ *      Manage OpenAI (NVIDIA) and Anthropic (Claude) SDK clients
  *   2. 从环境变量加载模型配置（MODELS, AGENT_MULTI_MODELS）
+ *      Load model configuration from env vars (MODELS, AGENT_MULTI_MODELS)
  *   3. 提供 Claude 专用的 claudeAgentPlan() — 通过 Anthropic SDK 原生 tool_use 调用
+ *      Claude-specific planning via Anthropic SDK native tool_use
+ *   4. 提供 summarizeText() — 用于记忆压缩的 LLM 文本摘要
+ *      LLM text summarization for memory compaction via summarizeText()
  *
- * 调用场景：
- *   - server.js 启动时调用 createClients() 创建客户端、loadModelConfig() 加载模型列表
- *   - agent/desktop/agent.js 的 singleModelPlan() 中：
+ * 调用场景 / Callers:
+ *   - server.js 启动时: createClients() 创建客户端、loadModelConfig() 加载模型列表
+ *   - agent/desktop/agent.js singleModelPlan():
  *     Claude 模型走 claudeAgentPlan()，NVIDIA 模型走 planner.js 的 createJsonPlanner()
- *   - planner.js 的 createJsonPlanner() 内部调用 openai_client.chat.completions.create()
+ *   - routes/agent.js 异步记忆保存: summarizeText() 用于压缩对话记忆
+ *
+ * TODO / 拆分建议 Refactor suggestions:
+ *   - 将 summarizeText() 拆到 agent/core/summarizer.js（摘要逻辑与客户端管理解耦）
+ *   - 将 buildDesktopAgentSystemPrompt() 拆到 agent/core/prompts.js（Prompt 模板集中管理）
  */
 
 import OpenAI from 'openai';
@@ -157,7 +167,13 @@ export async function summarizeText({ text, openai_client, anthropic_client, mod
   const w = Math.max(reqLine.length + 4, 52);
   log.info(`\n  ${'╔' + '═'.repeat(w) + '╗'}\n  ║${reqLine.padEnd(w)}║\n  ${'╚' + '═'.repeat(w) + '╝'}`);
 
-  const prompt = `请用简洁的中文提炼以下 Agent 任务记录的关键信息（每个任务一行，格式：任务→结果要点）。保留重要的事实和结论，去除冗余细节。\n\n${text}`;
+  const prompt = `请用简洁的中文提炼以下 Agent 任务记录的关键信息。要求：
+1. 相同或相似主题的任务合并为一条，不要重复
+2. 每个任务一行，格式：任务→结果要点
+3. 保留重要的事实、数据和结论
+4. 去除冗余细节
+
+${text}`;
   try {
     let result;
     const useClaude = isClaudeModel(model, null);

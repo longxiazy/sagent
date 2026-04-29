@@ -1,20 +1,37 @@
 /**
- * Memory — Agent 跨会话记忆系统，让 Agent 积累项目经验和用户偏好
+ * Memory — Agent 跨会话记忆系统 / Cross-session memory system
  *
- * 存储内容：
- *   - conversation: 最近 N 次任务的摘要（任务 → 结果）
- *   - conversationSummary: 早期任务的压缩摘要
+ * 让 Agent 积累项目经验和用户偏好，跨会话持久化。
+ * Persists project knowledge and conversation history across sessions.
+ *
+ * 存储内容 / Storage:
+ *   - conversation: 最近 N 次任务的摘要（任务 → 结果 / task → result）
+ *     每条记录包含 task, summary, models（该任务各步使用的模型列表）, timestamp
+ *   - conversationSummary: LLM 提炼的历史摘要（去重合并）
+ *     LLM-distilled summary with deduplication and merging
  *   - projectKnowledge: 项目结构、常用路径、用户偏好、经验积累
+ *   - lastCompactedAt: 上次压缩时间
  *
- * 记忆会被注入到 Agent 的 systemPrompt 中，让 Agent 知道之前做过什么。
- * 例如：Agent 记得上次项目用了哪些文件，就不用重新搜索。
+ * 压缩机制 / Compaction:
+ *   - 当 conversation 超过 AGENT_MEMORY_MAX_ENTRIES（默认 20）时触发
+ *   - 将全部历史条目交给 LLM 提炼为摘要（去重合并），而非简单拼接
+ *   - 异步执行，不阻塞 Agent 响应（routes/agent.js res.end() 之后）
+ *   - 回退：LLM 不可用时退化为文本拼接
  *
- * 调用场景：
- *   - routes/agent.js POST /api/agent 开始前：loadMemory → buildMemoryPrompt 注入 systemPrompt
- *   - routes/agent.js 任务完成后：extractConversationEntry → extractProjectKnowledge → saveMemory
- *   - 超过 20 条记录时 compactConversationMemory 自动压缩旧记录
+ * 注入方式 / Injection:
+ *   buildMemoryPrompt() 将记忆注入 Agent 的 systemPrompt（上限 3000 字）
  *
- * 存储位置：{MEMORY_DIR}/agent-memory.json
+ * 调用场景 / Callers:
+ *   - routes/agent.js POST /api/agent 开始前: loadMemory → buildMemoryPrompt
+ *   - routes/agent.js 任务完成后: extractConversationEntry → extractProjectKnowledge → async compactConversationMemory → saveMemory
+ *   - routes/agent.js POST /api/agent/compact: 手动触发压缩
+ *   - routes/agent.js GET /api/agent/memory: 返回完整记忆数据供前端展示
+ *
+ * 存储位置: {MEMORY_DIR}/agent-memory.json
+ *
+ * TODO / 拆分建议 Refactor suggestions:
+ *   - 将 buildMemoryPrompt 拆到 agent/core/memory-prompt.js（prompt 构建与存储逻辑分离）
+ *   - 将 extractProjectKnowledge 拆到 agent/core/knowledge-extractor.js（知识提取独立为可插拔模块）
  */
 
 import fs from 'node:fs/promises';
@@ -23,7 +40,7 @@ import { cleanText } from './utils.js';
 
 const MEMORY_FILE = 'agent-memory.json';
 const MAX_CHARS = 3000;
-const MAX_CONVERSATION_ENTRIES = 20;
+const MAX_CONVERSATION_ENTRIES = Number(process.env.AGENT_MEMORY_MAX_ENTRIES || 20);
 const MAX_KNOWLEDGE_PER_CATEGORY = 50;
 
 function emptyMemory() {

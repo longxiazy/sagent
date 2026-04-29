@@ -1,3 +1,35 @@
+/**
+ * Agent Routes — Express 路由，处理 Agent 的启动、取消、重连、审批、记忆等 API
+ * Express routes for agent lifecycle: start, cancel, reconnect, approval, memory
+ *
+ * 端点 / Endpoints:
+ *   POST   /api/agent            — 启动 Agent 任务（SSE 流式响应）
+ *   POST   /api/agent/cancel     — 取消正在运行的 Agent
+ *   GET    /api/agent/active     — 查询当前活跃的 Agent 运行
+ *   GET    /api/agent/stream/:id — 重连到运行中的 Agent（重放历史事件）
+ *   POST   /api/agent/approvals  — 审批 Agent 的危险操作
+ *   POST   /api/agent/question   — 回答 Agent 的提问
+ *   GET    /api/agent/memory     — 获取完整记忆数据（前端面板展示）
+ *   POST   /api/agent/compact    — 手动触发记忆压缩
+ *   GET    /api/agent/fetch-rules — 获取域名抓取规则
+ *   POST   /api/agent/fetch-rules — 添加域名规则
+ *   DELETE /api/agent/fetch-rules — 删除域名规则
+ *   POST   /api/agent/fetch-rules/reset — 重置为默认规则
+ *
+ * 关键设计 / Key design:
+ *   - 任务完成后记忆异步保存（IIFE 在 res.end() 之后），不阻塞 SSE 响应
+ *   - 压缩模型选择本轮成功次数最多的模型（stepModels 统计）
+ *   - 支持客户端断线重连（/stream/:runId 重放 + 实时转发）
+ *
+ * 调用场景 / Callers:
+ *   - server.js 启动时: createAgentRouter() 挂载到 Express app
+ *
+ * TODO / 拆分建议 Refactor suggestions:
+ *   - 将记忆相关端点（GET/POST memory, compact）拆到 routes/agent-memory.js
+ *   - 将审批相关端点（approvals, question）拆到 routes/agent-approval.js
+ *   - 将域名规则端点拆到 routes/agent-fetch-rules.js
+ */
+
 import { Router } from 'express';
 import { safeJson, cleanText } from '../agent/core/utils.js';
 import { formatLogTime, buildAgentMetrics, buildSseWriter, logAgentEvent } from '../helpers/agent-logging.js';
@@ -191,8 +223,13 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
             const entry = extractConversationEntry({ task: normalizedTask, result: { answer: finalAnswer, steps: [] }, model, stepModels });
             memory.conversation.push(entry);
             extractProjectKnowledge(memory, { task: normalizedTask, result: { answer: finalAnswer, steps: [] } });
-            const summaryModel = modelConfig?.[0]?.id;
-            log.info(`[Memory] 开始压缩记忆 ${memory.conversation.length} 条, 摘要模型: ${summaryModel || '无'}`);
+            const modelCounts = {};
+            for (const m of Object.values(stepModels)) {
+              modelCounts[m] = (modelCounts[m] || 0) + 1;
+            }
+            const summaryModel = Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || modelConfig?.[0]?.id;
+            const modelStats = Object.entries(modelCounts).map(([m, c]) => `${m.split('/').pop()}×${c}`).join(', ');
+            log.info(`[Memory] 开始压缩记忆 ${memory.conversation.length} 条, 摘要模型: ${summaryModel?.split('/').pop() || '无'} (本轮 ${modelStats || '无竞速'})`);
             const memStart = Date.now();
             await compactConversationMemory(memory, {
               summarizeFn: summaryModel ? (text) => summarizeText({ text, openai_client, anthropic_client, model: summaryModel }) : undefined,

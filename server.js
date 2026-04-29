@@ -1,3 +1,31 @@
+/**
+ * Server — Sagent 主入口，配置 Express 中间件、路由、Agent 运行器、断点恢复
+ * Main entry point — Express middleware, routing, agent runner setup, checkpoint resume
+ *
+ * 启动流程 / Startup:
+ *   1. 加载 .env 配置
+ *   2. 创建 LLM 客户端（NVIDIA / Anthropic）
+ *   3. 初始化 Agent 运行器、审批存储、记忆目录
+ *   4. 挂载路由：chat、agent、completions
+ *   5. 检查断点（checkpoint），自动恢复上次未完成的任务
+ *   6. 输出图形化启动信息（表格样式）
+ *
+ * 配置项 / Configuration (env vars):
+ *   PORT, HOST                      — 监听地址
+ *   MODELS                          — 可用模型列表（逗号分隔）
+ *   AGENT_MULTI_MODELS              — 多模型竞速列表
+ *   AGENT_MAX_STEPS                 — 单次任务最大步数
+ *   AGENT_MODEL_TIMEOUT             — 单步超时（秒）
+ *   AGENT_STAGGER_DELAY             — 竞速错峰延迟（秒）
+ *   AGENT_BATCH_SIZE                — 每批并发模型数
+ *   AGENT_MEMORY_MAX_ENTRIES        — 记忆压缩阈值
+ *   AGENT_HEADLESS                  — 浏览器无头模式
+ *   AGENT_OBSERVE_DESKTOP           — 是否观测 macOS 桌面
+ *   AGENT_RESUME                    — 是否自动恢复断点
+ *   MEMORY_DIR                      — 记忆和截图存储目录
+ *   NVIDIA_API_KEY / ANTHROPIC_API_KEY — LLM API 密钥
+ */
+
 import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
@@ -156,21 +184,35 @@ async function resumeFromCheckpoint(cp) {
 }
 
 app.listen(PORT, HOST, async () => {
-  console.log(`Server running on http://${HOST}:${PORT}`);
-  console.log(`[Models] ${modelConfig.map(m => m.id).join(', ')}`);
   const multiModels = loadAgentMultiModels();
-  if (multiModels.length > 0) {
-    console.log(`[MultiModel] Agent 每步并发请求: ${multiModels.join(', ')}`);
-  }
-  console.log(
-    `[Config] AGENT_MAX_STEPS=${AGENT_MAX_STEPS} AGENT_MODEL_TIMEOUT=${process.env.AGENT_MODEL_TIMEOUT || 90}s STAGGER=${process.env.AGENT_STAGGER_DELAY || 5}s BATCH=${process.env.AGENT_BATCH_SIZE || 1} ` +
-    `AGENT_HEADLESS=${process.env.AGENT_HEADLESS} ` +
-    `AGENT_OBSERVE_DESKTOP=${process.env.AGENT_OBSERVE_DESKTOP} ` +
-    `AGENT_RESUME=${AGENT_RESUME} ` +
-    `NVIDIA_API_KEY=${process.env.NVIDIA_API_KEY ? '✓' : '✗'} ` +
-    `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY ? '✓' : '✗'} ` +
-    `CHROME_PATH=${process.env.AGENT_BROWSER_PATH || 'auto'}`
-  );
+  const W = 56;
+  const pad = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s).padEnd(n);
+  const row = (k, v) => `  │  ${pad(k, 28)}${pad(String(v), W - 32)}│`;
+  const hLine = `  ${'─'.repeat(W + 4)}`;
+  const dLine = `  ${'═'.repeat(W + 4)}`;
+
+  console.log(`
+  ╔${dLine.slice(2)}╗
+  ${row('🚀 Sagent Server', `http://${HOST}:${PORT}`)}
+  ╠${dLine.slice(2)}╣
+  ${row('Models', modelConfig.map(m => m.id).join(', '))}
+  ${multiModels.length > 0 ? row('MultiModel', multiModels.join(', ')) : ''}
+  ${hLine}
+  ${row('AGENT_MAX_STEPS', AGENT_MAX_STEPS)}
+  ${row('AGENT_MODEL_TIMEOUT', `${process.env.AGENT_MODEL_TIMEOUT || 90}s`)}
+  ${row('AGENT_STAGGER_DELAY', `${process.env.AGENT_STAGGER_DELAY || 5}s`)}
+  ${row('AGENT_BATCH_SIZE', process.env.AGENT_BATCH_SIZE || 1)}
+  ${row('AGENT_MEMORY_MAX_ENTRIES', process.env.AGENT_MEMORY_MAX_ENTRIES || 20)}
+  ${hLine}
+  ${row('AGENT_HEADLESS', process.env.AGENT_HEADLESS || false)}
+  ${row('AGENT_OBSERVE_DESKTOP', process.env.AGENT_OBSERVE_DESKTOP || false)}
+  ${row('AGENT_RESUME', AGENT_RESUME)}
+  ${row('CHROME_PATH', process.env.AGENT_BROWSER_PATH || 'auto')}
+  ${hLine}
+  ${row('NVIDIA_API_KEY', process.env.NVIDIA_API_KEY ? '✓ configured' : '✗ not set')}
+  ${row('ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY ? '✓ configured' : '✗ not set')}
+  ╚${dLine.slice(2)}╝
+  `);
 
   if (AGENT_RESUME) {
     const checkpoints = await listCheckpoints(CHECKPOINT_DIR);
