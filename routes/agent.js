@@ -349,36 +349,34 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     res.json({ ok: true });
   });
 
+  // POST /api/agent/compact - 手动压缩会话历史
+  router.post('/api/agent/compact', async (_req, res) => {
+    try {
+      const memory = await loadMemory(memoryDir);
+      if (memory) {
+        compactConversationMemory(memory);
+        await saveMemory(memoryDir, memory);
+        res.json({ ok: true, message: '已压缩，保留 ' + memory.conversation.length + ' 条' });
+      } else {
+        res.json({ ok: false, message: '无记忆数据' });
+      }
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // GET /api/agent/memory - 获取当前记忆状态
+  router.get('/api/agent/memory', async (_req, res) => {
+    try {
+      const memory = await loadMemory(memoryDir);
+      res.json({
+        conversationCount: memory?.conversation?.length ?? 0,
+        summaryLength: memory?.conversationSummary?.length ?? 0,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return router;
 }
-
-// POST /api/agent/compact - 手动压缩会话历史
-agentApp.post('/compact', async (req, res) => {
-  try {
-    const memoryDir = path.join(process.cwd(), 'data');
-    const memory = await loadMemory(memoryDir);
-    if (memory) {
-      compactConversationMemory(memory);
-      await saveMemory(memoryDir, memory);
-      res.json({ ok: true, message: '已压缩，保留 ' + memory.conversation.length + ' 条' });
-    } else {
-      res.json({ ok: false, message: '无记忆数据' });
-    }
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-// GET /api/agent/memory - 获取当前记忆状态
-agentApp.get('/memory', async (req, res) => {
-  try {
-    const memoryDir = path.join(process.cwd(), 'data');
-    const memory = await loadMemory(memoryDir);
-    res.json({
-      conversationCount: memory && memory.conversation ? memory.conversation.length : 0,
-      summaryLength: memory && memory.conversationSummary ? memory.conversationSummary.length : 0,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
