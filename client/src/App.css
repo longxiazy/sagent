@@ -1223,6 +1223,11 @@ textarea {
 }
 .agent-memory-btn:hover { background: #ede9fe; color: #6d28d9; border-color: #c4b5fd; }
 
+.agent-collapse-btn.agent-tablet-only { display: none; }
+@media (min-width: 640px) and (max-width: 1099px) {
+  .agent-collapse-btn.agent-tablet-only { display: inline-flex; }
+}
+
 .agent-panel.collapsed .agent-panel-head { cursor: pointer; border-radius: var(--r-sm); transition: background 0.15s; }
 .agent-panel.collapsed .agent-panel-head:hover { background: #f9fafb; }
 

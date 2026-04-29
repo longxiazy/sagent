@@ -64,7 +64,7 @@ const SCREENSHOT_DIR = path.join(MEMORY_DIR, 'screenshots');
 app.use('/screenshots', express.static(SCREENSHOT_DIR));
 
 app.use(createChatRouter({ openai_client, anthropic_client, modelConfig }));
-app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, domainRules: runDesktopAgent.domainRules, modelConfig }));
+app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, domainRules: runDesktopAgent.domainRules, modelConfig, openai_client, anthropic_client }));
 app.use(createCompletionsRouter({ openai_client, anthropic_client, modelConfig }));
 
 const PORT = process.env.PORT || 3001;

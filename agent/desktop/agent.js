@@ -226,11 +226,9 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
     const timeoutMs = typeof modelTimeoutMs === 'number' && modelTimeoutMs > 0 ? modelTimeoutMs : DEFAULT_MODEL_TIMEOUT_MS;
     const shortModel = model.split('/').pop();
     const startTime = Date.now();
-    log.info(`\n` +
-      `╔══════════════════════════════════════════════════╗\n` +
-      `║  >>> LLM REQUEST  ${shortModel.padEnd(24)} ║\n` +
-      `║      step=${context.step ?? '-'} timeout=${Math.round(timeoutMs / 1000)}s`.padEnd(51) + '║\n' +
-      `╚══════════════════════════════════════════════════╝`);
+    const reqLine = `  >>> LLM REQUEST  ${shortModel}  step=${context.step ?? '-'}  timeout=${Math.round(timeoutMs / 1000)}s`;
+    const w = Math.max(reqLine.length + 4, 52);
+    log.info(`\n  ${'╔' + '═'.repeat(w) + '╗'}\n  ║${reqLine.padEnd(w)}║\n  ${'╚' + '═'.repeat(w) + '╝'}`);
     let timer;
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(() => reject(new Error(`模型超时 (${Math.round(timeoutMs / 1000)}s)`)), timeoutMs);
@@ -241,20 +239,17 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
     ])
       .then(result => {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        log.info(`\n` +
-          `╔══════════════════════════════════════════════════╗\n` +
-          `║  <<< LLM RESPONSE ${shortModel.padEnd(23)} ║\n` +
-          `║      ${elapsed}s  ${result.action?.tool || '?'}.${result.action?.type || '?'}  ${(result.usage?.prompt_tokens || 0) + (result.usage?.completion_tokens || 0)}tok`.padEnd(51) + '║\n' +
-          `╚══════════════════════════════════════════════════╝`);
+        const tokens = (result.usage?.prompt_tokens || 0) + (result.usage?.completion_tokens || 0);
+        const resLine = `  <<< LLM RESPONSE ${shortModel}  ${elapsed}s  ${result.action?.tool || '?'}.${result.action?.type || '?'}  ${tokens}tok`;
+        const rw = Math.max(resLine.length + 4, 52);
+        log.info(`\n  ${'╔' + '═'.repeat(rw) + '╗'}\n  ║${resLine.padEnd(rw)}║\n  ${'╚' + '═'.repeat(rw) + '╝'}`);
         return result;
       })
       .catch(err => {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        log.warn(`\n` +
-          `╔══════════════════════════════════════════════════╗\n` +
-          `║  !!! LLM FAILED   ${shortModel.padEnd(24)} ║\n` +
-          `║      ${elapsed}s  ${err.message.slice(0, 36)}`.padEnd(51) + '║\n' +
-          `╚══════════════════════════════════════════════════╝`);
+        const errLine = `  !!! LLM FAILED   ${shortModel}  ${elapsed}s  ${err.message.slice(0, 60)}`;
+        const ew = Math.max(errLine.length + 4, 52);
+        log.warn(`\n  ${'╔' + '═'.repeat(ew) + '╗'}\n  ║${errLine.padEnd(ew)}║\n  ${'╚' + '═'.repeat(ew) + '╝'}`);
         throw err;
       })
       .finally(() => clearTimeout(timer));

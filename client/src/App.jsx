@@ -1277,7 +1277,7 @@ function MemoryPanel({ onClose }) {
           <>
             {data?.conversationSummary && (
               <div className="memory-section">
-                <p className="memory-section-title">早期摘要</p>
+                <p className="memory-section-title">历史摘要{data.lastCompactedAt ? ` · 压缩于 ${new Date(data.lastCompactedAt).toLocaleString()}` : ''}</p>
                 <p className="memory-summary-text">{data.conversationSummary}</p>
               </div>
             )}
@@ -1290,7 +1290,11 @@ function MemoryPanel({ onClose }) {
                     <div className="memory-conv-task">{entry.task}</div>
                     <div className="memory-conv-summary">{entry.summary}</div>
                     <div className="memory-conv-meta">
-                      {entry.model && <span className="memory-conv-model">{entry.model.split('/').pop()}</span>}
+                      {entry.models?.length > 0 ? (
+                        entry.models.map(m => <span key={m} className="memory-conv-model">{m.split('/').pop()}</span>)
+                      ) : entry.model ? (
+                        <span className="memory-conv-model">{entry.model.split('/').pop()}</span>
+                      ) : null}
                       {entry.timestamp && <span className="memory-conv-time">{new Date(entry.timestamp).toLocaleString()}</span>}
                     </div>
                   </div>
@@ -1453,7 +1457,7 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
           <Brain size={12} />
         </button>
         {trace.length > 0 && (
-          <button className="agent-collapse-btn" onClick={e => { e.stopPropagation(); onToggleCollapse(); }} title={collapsed ? '展开' : '收起'}>
+          <button className="agent-collapse-btn agent-tablet-only" onClick={e => { e.stopPropagation(); onToggleCollapse(); }} title={collapsed ? '展开' : '收起'}>
             {collapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
           </button>
         )}

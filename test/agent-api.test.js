@@ -61,7 +61,7 @@ describe('POST /api/agent/compact', () => {
     const res = await request(app).post('/api/agent/compact');
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
-    expect(res.body.message).toContain('20');
+    expect(res.body.message).toMatch(/保留 \d+ 条/);
   });
 
   it('returns ok:false when no memory', async () => {

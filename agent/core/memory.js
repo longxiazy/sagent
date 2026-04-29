@@ -22,7 +22,7 @@ import path from 'node:path';
 import { cleanText } from './utils.js';
 
 const MEMORY_FILE = 'agent-memory.json';
-const MAX_CHARS = 2000;
+const MAX_CHARS = 3000;
 const MAX_CONVERSATION_ENTRIES = 20;
 const MAX_KNOWLEDGE_PER_CATEGORY = 50;
 
@@ -31,6 +31,7 @@ function emptyMemory() {
     version: 1,
     conversation: [],
     conversationSummary: '',
+    lastCompactedAt: '',
     projectKnowledge: {
       structure: [],
       paths: {},
@@ -139,10 +140,11 @@ export function buildMemoryPrompt(memory, { maxChars = MAX_CHARS } = {}) {
   return result;
 }
 
-export function extractConversationEntry({ task, result, model }) {
+export function extractConversationEntry({ task, result, model, stepModels }) {
   const steps = result?.steps || [];
   const filesTouched = [];
   const toolsUsed = new Set();
+  const usedModels = new Set();
 
   for (const step of steps) {
     const action = step.action;
@@ -157,6 +159,9 @@ export function extractConversationEntry({ task, result, model }) {
         filesTouched.push(...fileHints);
       }
     }
+    if (stepModels && step.step != null && stepModels[step.step]) {
+      usedModels.add(stepModels[step.step]);
+    }
   }
 
   return {
@@ -164,6 +169,7 @@ export function extractConversationEntry({ task, result, model }) {
     summary: cleanText(result?.answer || '', 120),
     filesTouched: [...new Set(filesTouched)].slice(0, 10),
     toolsUsed: [...toolsUsed],
+    models: [...usedModels],
     model: model || '',
     timestamp: new Date().toISOString(),
   };
@@ -225,25 +231,30 @@ export function extractProjectKnowledge(memory, { task, result }) {
   }
 }
 
-export function compactConversationMemory(memory, { maxEntries = MAX_CONVERSATION_ENTRIES } = {}) {
+export async function compactConversationMemory(memory, { maxEntries = MAX_CONVERSATION_ENTRIES, summarizeFn } = {}) {
   const conv = memory.conversation;
   if (conv.length <= maxEntries) {
     return;
   }
 
-  const dropped = conv.slice(0, conv.length - maxEntries);
-  const droppedSummary = dropped
-    .map(e => `${cleanText(e.task || '', 40)} → ${cleanText(e.summary || '', 50)}`)
-    .join('; ');
+  const allText = conv
+    .map(e => `${cleanText(e.task || '', 60)} → ${cleanText(e.summary || '', 80)}`)
+    .join('\n');
 
-  memory.conversationSummary = memory.conversationSummary
-    ? `${memory.conversationSummary}; ${droppedSummary}`
-    : droppedSummary;
+  const input = memory.conversationSummary
+    ? `${memory.conversationSummary}\n\n--- 历史记录 ---\n${allText}`
+    : allText;
 
-  // Keep summary under 500 chars
-  if (memory.conversationSummary.length > 500) {
-    memory.conversationSummary = memory.conversationSummary.slice(0, 500) + '...';
+  if (summarizeFn) {
+    try {
+      memory.conversationSummary = await summarizeFn(input);
+    } catch {
+      memory.conversationSummary = input.replace(/\n/g, '; ').slice(0, 2000);
+    }
+  } else {
+    memory.conversationSummary = input.replace(/\n/g, '; ').slice(0, 2000);
   }
 
   memory.conversation = conv.slice(-maxEntries);
+  memory.lastCompactedAt = new Date().toISOString();
 }

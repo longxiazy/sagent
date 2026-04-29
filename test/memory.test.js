@@ -45,30 +45,58 @@ describe('loadMemory / saveMemory', () => {
 });
 
 describe('compactConversationMemory', () => {
-  it('does nothing when under limit', () => {
+  const LIMIT = 5;
+
+  it('does nothing when under limit', async () => {
     const mem = { conversation: [makeEntry('a', 'b')], conversationSummary: '' };
-    compactConversationMemory(mem);
+    await compactConversationMemory(mem, { maxEntries: LIMIT });
     expect(mem.conversation).toHaveLength(1);
   });
 
-  it('compacts when over limit', () => {
+  it('compacts when over limit', async () => {
     const mem = { conversation: [], conversationSummary: '' };
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < 10; i++) {
       mem.conversation.push(makeEntry(`task ${i}`, `result ${i}`));
     }
-    compactConversationMemory(mem);
-    expect(mem.conversation).toHaveLength(20);
+    await compactConversationMemory(mem, { maxEntries: LIMIT });
+    expect(mem.conversation).toHaveLength(LIMIT);
     expect(mem.conversationSummary).toContain('task 0');
-    expect(mem.conversationSummary).not.toContain('task 24');
+    expect(mem.conversationSummary).toContain('task 9');
   });
 
-  it('truncates summary over 500 chars', () => {
+  it('truncates summary without summarizeFn', async () => {
     const mem = { conversation: [], conversationSummary: '' };
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 20; i++) {
       mem.conversation.push(makeEntry(`task ${i} with a longer description`, `result ${i} with details`));
     }
-    compactConversationMemory(mem);
-    expect(mem.conversationSummary.length).toBeLessThanOrEqual(503); // 500 + '...'
+    await compactConversationMemory(mem, { maxEntries: LIMIT });
+    expect(mem.conversationSummary.length).toBeLessThanOrEqual(2000);
+  });
+
+  it('uses summarizeFn when provided', async () => {
+    const mem = { conversation: [], conversationSummary: '' };
+    for (let i = 0; i < 10; i++) {
+      mem.conversation.push(makeEntry(`task ${i}`, `result ${i}`));
+    }
+    await compactConversationMemory(mem, {
+      maxEntries: LIMIT,
+      summarizeFn: async (text) => 'LLM summary: ' + text.slice(0, 50),
+    });
+    expect(mem.conversation).toHaveLength(LIMIT);
+    expect(mem.conversationSummary).toContain('LLM summary');
+  });
+
+  it('falls back to concatenation when summarizeFn fails', async () => {
+    const mem = { conversation: [], conversationSummary: '' };
+    for (let i = 0; i < 10; i++) {
+      mem.conversation.push(makeEntry(`task ${i}`, `result ${i}`));
+    }
+    await compactConversationMemory(mem, {
+      maxEntries: LIMIT,
+      summarizeFn: async () => { throw new Error('LLM error'); },
+    });
+    expect(mem.conversation).toHaveLength(LIMIT);
+    expect(mem.conversationSummary).toContain('task 0');
   });
 });
 
