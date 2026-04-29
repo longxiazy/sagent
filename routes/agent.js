@@ -31,7 +31,7 @@
  */
 
 import { Router } from 'express';
-import { safeJson, cleanText, displayWidth, padEndW, truncateW } from '../agent/core/utils.js';
+import { safeJson, cleanText, displayWidth, padEndW } from '../agent/core/utils.js';
 import { formatLogTime, buildAgentMetrics, buildSseWriter, logAgentEvent } from '../helpers/agent-logging.js';
 import {
   loadMemory,

@@ -125,7 +125,7 @@ export function buildMemoryPrompt(memory, { maxChars = MAX_CHARS } = {}) {
   if (pk.paths && Object.keys(pk.paths).length) {
     const pathStr = Object.entries(pk.paths)
       .slice(-8)
-      .map(([k, v]) => `${v}`)
+      .map(([_k, v]) => `${v}`)
       .join(', ');
     knowledgeLines.push(`- 常用路径: ${pathStr}`);
   }
@@ -199,7 +199,7 @@ export function extractConversationEntry({ task, result, model, stepModels }) {
   };
 }
 
-export function extractProjectKnowledge(memory, { task, result }) {
+export function extractProjectKnowledge(memory, { task: _task, result }) {
   const pk = memory.projectKnowledge;
   const steps = result?.steps || [];
 

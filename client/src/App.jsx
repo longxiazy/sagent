@@ -293,29 +293,6 @@ function getSessionTitle(messages) {
   return text.length > 20 ? `${text.slice(0, 20)}…` : text;
 }
 
-function getSessionPreview(messages) {
-  const lastMessage = [...messages].reverse().find(item => item.content.trim());
-  if (!lastMessage) {
-    return '暂无消息';
-  }
-
-  const text = lastMessage.content.replace(/\s+/g, ' ').trim();
-  return text.length > 42 ? `${text.slice(0, 42)}…` : text;
-}
-
-function formatSessionTime(value) {
-  if (!value) {
-    return '';
-  }
-
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(value);
-}
 
 function formatMsgTime(ts) {
   if (!ts) return '';
@@ -785,9 +762,10 @@ function MarkdownBlock({ content, className = '', showCursor = false }) {
         switch (block.type) {
           case 'code':
             return <CodeBlock key={idx} language={block.lang}>{block.content}</CodeBlock>;
-          case 'heading':
-            const Tag = `h${block.level}`;
-            return <Tag key={idx} dangerouslySetInnerHTML={{ __html: inlineFormat(block.content) }} />;
+          case 'heading': {
+            const HeadingTag = `h${block.level}`;
+            return <HeadingTag key={idx} dangerouslySetInnerHTML={{ __html: inlineFormat(block.content) }} />;
+          }
           case 'p':
             return <p key={idx} dangerouslySetInnerHTML={{ __html: inlineFormat(block.content) }} />;
           case 'ul':
@@ -1054,7 +1032,7 @@ const PLAN_STAGE_ICON = {
 
 // 单个模型卡片负责展示某一步里某个模型的“决策快照”：
 // 当前状态、理由、动作、tokens，以及在竞速模式下是否被采纳。
-function ModelPlanCard({ event, isWinner, modelList, strategy, result }) {
+function ModelPlanCard({ event, isWinner, modelList, strategy: _strategy, result }) {
   const label = getModelLabel(event.model, modelList);
   const stage = event.stage;
   const [showReasoning, setShowReasoning] = useState(false);
@@ -1171,7 +1149,6 @@ function ModelPlanGroup({ trace, step, models, modelList, running }) {
   let consensusEvent = null;
   const modelEvents = {};
   let stepResult = null;
-  let stepAction = null;
 
   // Collect ALL model_plan events + step result for this step from the entire trace
   for (const e of trace) {
@@ -1188,8 +1165,6 @@ function ModelPlanGroup({ trace, step, models, modelList, running }) {
       modelEvents[e.model] = e;
     } else if (e.type === 'step' && e.stage === 'result') {
       stepResult = e.result;
-    } else if (e.type === 'step' && e.stage === 'action') {
-      stepAction = e;
     }
   }
 
@@ -1730,7 +1705,7 @@ export default function App() {
   const [streaming, setStreaming] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentStopping, setAgentStopping] = useState(false);
-  const [agentRunId, setAgentRunId] = useState(null);
+  const [_agentRunId, setAgentRunId] = useState(null);
   const [reconnectedRun, setReconnectedRun] = useState(false);
   const agentRunIdRef = useRef(null);
   const [agentHeadless, setAgentHeadless] = useState(() => localStorage.getItem('agent_headless') !== 'false');
@@ -1816,7 +1791,6 @@ export default function App() {
   const chatModel = activeSession.model;
   const selectedChatModelLabel = availableModels.find(item => item.id === chatModel)?.label || chatModel;
   const sessionLocked = streaming || agentRunning;
-  const currentModeLabel = mode === 'agent' ? '桌面 Agent' : '普通对话';
 
   // 会话历史和当前激活会话 id 都是持久化状态；这里统一落盘。
   useEffect(() => {

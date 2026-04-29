@@ -31,7 +31,7 @@ import { createJsonPlanner } from '../core/planner.js';
 import { createActionRouter } from '../core/router.js';
 import { runAgentRuntime } from '../core/runtime.js';
 import { normalizeDesktopAgentDecision } from '../core/schemas.js';
-import { cleanText, displayWidth, padEndW } from '../core/utils.js';
+import { displayWidth, padEndW } from '../core/utils.js';
 import { createAgentAuthorizer } from '../policy/approvals.js';
 import { executeBrowserAction } from '../tools/browser/execute.js';
 import { captureBrowserObservation, summarizeBrowserObservation } from '../tools/browser/observe.js';
@@ -503,7 +503,7 @@ export function createDesktopAgentRunner({
   browserCandidatePaths,
   defaultHeadless = false,
   observeDesktop = false,
-  runStore,
+  runStore: _runStore,
   approvalStore,
   checkpointDir,
   modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS,
@@ -585,7 +585,7 @@ export function createDesktopAgentRunner({
     { defaultTool: 'core' }
   );
 
-  return async function runDesktopAgent({
+  async function runDesktopAgent({
     task,
     model,
     models: agentModels,
@@ -661,8 +661,8 @@ export function createDesktopAgentRunner({
         }
       },
     });
-  };
+  }
 
   runDesktopAgent.domainRules = domainRules;
-
+  return runDesktopAgent;
 }

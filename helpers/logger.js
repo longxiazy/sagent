@@ -6,7 +6,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = join(__dirname, '..', 'data', 'logs');
 const LOG_FILE = join(LOG_DIR, `app-${new Date().toISOString().slice(0, 10)}.log`);
 
-try { mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+try { mkdirSync(LOG_DIR, { recursive: true }); } catch { /* dir may already exist */ }
 
 const LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
 
@@ -36,7 +36,7 @@ function writeToFile(level, args) {
     if (a instanceof Error) return a.stack || a.message;
     try { return JSON.stringify(a); } catch { return String(a); }
   }).join(' ');
-  try { appendFileSync(LOG_FILE, `[${ts} ${level.toUpperCase()}] ${line}\n`); } catch {}
+  try { appendFileSync(LOG_FILE, `[${ts} ${level.toUpperCase()}] ${line}\n`); } catch { /* ignore write errors */ }
 }
 
 export const log = {
