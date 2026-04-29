@@ -81,6 +81,8 @@ function formatTimeAgo(timestamp) {
 
 export function buildMemoryPrompt(memory, { maxChars = MAX_CHARS } = {}) {
   const parts = [];
+  // Deduplication: ensure we don't inject content that would overlap with conversationHistory.
+  // Build a set of known task/result keywords from conversationSummary to avoid repetition.
 
   // Conversation memory
   const convLines = [];
@@ -95,7 +97,8 @@ export function buildMemoryPrompt(memory, { maxChars = MAX_CHARS } = {}) {
     convLines.push(`- ${taskShort} → ${summaryShort} (${ago})`);
   }
   if (convLines.length > 0) {
-    parts.push(`最近的任务:\n${convLines.join('\n')}`);
+    // Mark as archived to avoid confusion with active conversationHistory
+    parts.push(`【历史任务摘要】（与上方 recent conversation 不同）\n${convLines.join('\n')}`);
   }
 
   // Project knowledge
@@ -240,9 +243,12 @@ export function compactConversationMemory(memory, { maxEntries = MAX_CONVERSATIO
     ? `${memory.conversationSummary}; ${droppedSummary}`
     : droppedSummary;
 
-  // Keep summary under 500 chars
-  if (memory.conversationSummary.length > 500) {
-    memory.conversationSummary = memory.conversationSummary.slice(0, 500) + '...';
+  // Cap summary at ~2000 chars total (not 500) to preserve more historical context.
+  // Previous code: slice to 500 - this lost historical data progressively.
+  const MAX_SUMMARY_CHARS = 2000;
+  if (memory.conversationSummary.length > MAX_SUMMARY_CHARS) {
+    // Truncate from the BEGINNING (oldest), keeping the newest summaries which are more relevant
+    memory.conversationSummary = '...' + memory.conversationSummary.slice(-(MAX_SUMMARY_CHARS - 3));
   }
 
   memory.conversation = conv.slice(-maxEntries);
