@@ -107,7 +107,7 @@ export async function executeFsAction(action) {
       if (err.code === 1 || (err.stderr && err.stderr === '')) {
         return `搜索 "${query}" 在 ${targetPath} (${include}): 未找到匹配`;
       }
-      throw new Error(`搜索失败: ${err.message}`);
+      throw new Error(`搜索失败: ${err.message}`, { cause: err });
     }
   }
 

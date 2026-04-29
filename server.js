@@ -42,7 +42,7 @@ import { createAgentRouter } from './routes/agent.js';
 import { createCompletionsRouter } from './routes/completions.js';
 import { listCheckpoints, clearCheckpoints, removeCheckpoint } from './agent/core/checkpoint.js';
 import { loadMemory, buildMemoryPrompt, saveMemory } from './agent/core/memory.js';
-import { displayWidth, padEndW, truncateW } from './agent/core/utils.js';
+import { padEndW, truncateW } from './agent/core/utils.js';
 import { log } from './helpers/logger.js';
 
 const app = express();
@@ -100,7 +100,7 @@ const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 
 async function resumeFromCheckpoint(cp) {
-  const { runId, task, model, headless, history, step, maxSteps, startedAt } = cp;
+  const { runId, task, model, headless, history, step, maxSteps: _maxSteps, startedAt } = cp;
   log.info(`[Resume] 恢复运行 run_id=${runId} step=${step} task=${task.slice(0, 60)}…`);
 
   const sendEvent = payload => {

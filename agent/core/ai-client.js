@@ -110,7 +110,7 @@ export async function claudeAgentPlan({
   client,
   model,
   maxTokens = 16000,
-  temperature = 0.1,
+  temperature: _temperature = 0.1,
   system,
   messages,
   signal,

@@ -69,7 +69,7 @@ function matchDomain(domain, rules) {
 export function createDomainRules(dir) {
   const filePath = path.join(dir, 'fetch-domain-rules.json');
   let cache = null;
-  let dirty = false;
+  let _dirty = false;
   let saveTimer = null;
 
   async function load() {
@@ -93,7 +93,7 @@ export function createDomainRules(dir) {
     const tmp = filePath + '.tmp';
     await writeFile(tmp, JSON.stringify(cache, null, 2));
     await rename(tmp, filePath);
-    dirty = false;
+    _dirty = false;
   }
 
   function scheduleSave() {

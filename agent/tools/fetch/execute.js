@@ -162,7 +162,7 @@ async function executeSingleFetch(action, page, domainRules) {
 
     try {
       return await fetchWithBrowser(page, action);
-    } catch (browserErr) {
+    } catch {
       return `http_fetch ${action.url}: 请求失败 (${err.message.slice(0, 100)})。`;
     }
   }
