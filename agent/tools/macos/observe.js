@@ -6,7 +6,7 @@ import { getMacOSCapabilityReport } from './permissions.js';
 import { invokeMacOSHelper, resolveMacOSBackend } from './helper-client.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SCREENSHOT_DIR = path.resolve(__dirname, '../../../data/screenshots');
+const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR || path.resolve(__dirname, '../../../data/screenshots');
 
 function execFileText(file, args) {
   return new Promise((resolve, reject) => {

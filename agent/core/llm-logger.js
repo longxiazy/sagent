@@ -13,16 +13,20 @@ import { mkdir, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { log } from '../../helpers/logger.js';
 
-let logDir = 'data/llm-logs';
+let logDir = process.env.LLM_LOG_DIR || '';
 
 export function initLlmLogger(baseDir) {
   logDir = join(baseDir, 'llm-logs');
 }
 
+function getLogDir() {
+  return logDir || process.env.LLM_LOG_DIR || join(process.cwd(), 'data/llm-logs');
+}
+
 function todayDir() {
   const d = new Date();
   const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  return join(logDir, date);
+  return join(getLogDir(), date);
 }
 
 function modelFileName(model) {
