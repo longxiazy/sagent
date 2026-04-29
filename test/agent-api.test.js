@@ -79,6 +79,9 @@ describe('GET /api/agent/memory', () => {
     expect(res.status).toBe(200);
     expect(res.body.conversationCount).toBe(0);
     expect(res.body.summaryLength).toBe(0);
+    expect(res.body.conversation).toEqual([]);
+    expect(res.body.conversationSummary).toBe('');
+    expect(res.body.projectKnowledge).toBeDefined();
   });
 
   it('returns counts after saving memory', async () => {
@@ -91,5 +94,8 @@ describe('GET /api/agent/memory', () => {
     expect(res.status).toBe(200);
     expect(res.body.conversationCount).toBe(1);
     expect(res.body.summaryLength).toBe(0);
+    expect(res.body.conversation).toHaveLength(1);
+    expect(res.body.conversation[0].task).toBe('test');
+    expect(res.body.projectKnowledge).toBeDefined();
   });
 });

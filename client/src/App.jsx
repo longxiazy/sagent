@@ -1227,10 +1227,122 @@ function ModelPlanGroup({ trace, step, models, modelList, running }) {
 }
 
 // AgentPanel 既是执行面板，也是运行时仪表盘：
+function MemoryPanel({ onClose }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [compacting, setCompacting] = useState(false);
+  const [tab, setTab] = useState('conversation');
+
+  useEffect(() => {
+    setLoading(true);
+    fetch('/api/agent/memory')
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const handleCompact = async () => {
+    setCompacting(true);
+    try {
+      const r = await fetch('/api/agent/compact', { method: 'POST' });
+      const result = await r.json();
+      if (result.ok) {
+        const r2 = await fetch('/api/agent/memory');
+        setData(await r2.json());
+      }
+    } finally {
+      setCompacting(false);
+    }
+  };
+
+  const pk = data?.projectKnowledge || {};
+
+  return (
+    <div className="memory-panel">
+      <div className="memory-panel-head">
+        <div className="memory-panel-tabs">
+          <button className={`memory-tab ${tab === 'conversation' ? 'active' : ''}`} onClick={() => setTab('conversation')}>
+            对话 ({data?.conversationCount ?? 0})
+          </button>
+          <button className={`memory-tab ${tab === 'knowledge' ? 'active' : ''}`} onClick={() => setTab('knowledge')}>
+            知识 ({(pk.structure?.length || 0) + Object.keys(pk.paths || {}).length + (pk.preferences?.length || 0) + (pk.learnings?.length || 0)})
+          </button>
+        </div>
+        <button className="memory-panel-close" onClick={onClose}><ChevronUp size={14} /></button>
+      </div>
+      <div className="memory-panel-body">
+        {loading ? (
+          <div className="memory-loading">加载中…</div>
+        ) : tab === 'conversation' ? (
+          <>
+            {data?.conversationSummary && (
+              <div className="memory-section">
+                <p className="memory-section-title">早期摘要</p>
+                <p className="memory-summary-text">{data.conversationSummary}</p>
+              </div>
+            )}
+            {(data?.conversation || []).length === 0 ? (
+              <div className="memory-empty">暂无对话记录</div>
+            ) : (
+              <div className="memory-conversation-list">
+                {[...(data.conversation || [])].reverse().map((entry, i) => (
+                  <div key={i} className="memory-conv-item">
+                    <div className="memory-conv-task">{entry.task}</div>
+                    <div className="memory-conv-summary">{entry.summary}</div>
+                    <div className="memory-conv-meta">
+                      {entry.model && <span className="memory-conv-model">{entry.model.split('/').pop()}</span>}
+                      {entry.timestamp && <span className="memory-conv-time">{new Date(entry.timestamp).toLocaleString()}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            {pk.structure?.length > 0 && (
+              <div className="memory-section">
+                <p className="memory-section-title">项目结构</p>
+                {pk.structure.map((s, i) => <p key={i} className="memory-kv">{s}</p>)}
+              </div>
+            )}
+            {Object.keys(pk.paths || {}).length > 0 && (
+              <div className="memory-section">
+                <p className="memory-section-title">常用路径</p>
+                {Object.entries(pk.paths).map(([k, v]) => <p key={k} className="memory-kv"><span className="memory-k">{k}</span> {v}</p>)}
+              </div>
+            )}
+            {pk.preferences?.length > 0 && (
+              <div className="memory-section">
+                <p className="memory-section-title">偏好</p>
+                {pk.preferences.map((p, i) => <p key={i} className="memory-kv">{p}</p>)}
+              </div>
+            )}
+            {pk.learnings?.length > 0 && (
+              <div className="memory-section">
+                <p className="memory-section-title">经验</p>
+                {pk.learnings.map((l, i) => <p key={i} className="memory-kv">{l}</p>)}
+              </div>
+            )}
+            {!pk.structure?.length && !Object.keys(pk.paths || {}).length && !pk.preferences?.length && !pk.learnings?.length && (
+              <div className="memory-empty">暂无项目知识</div>
+            )}
+          </>
+        )}
+      </div>
+      <div className="memory-panel-footer">
+        <button className="memory-compact-btn" onClick={handleCompact} disabled={compacting}>
+          {compacting ? '压缩中…' : '压缩历史'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // - 负责展示 trace
 // - 负责显示暂停/审批/用时/token 等运行态指标
 // - 在移动端和桌面端之间复用同一套事件展示逻辑
-function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval }) {
+function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onToggleMemory, showMemoryPanel }) {
   const traceBottomRef = useRef(null);
   const startTimeRef = useRef(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < PHONE_BREAKPOINT;
@@ -1337,6 +1449,9 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
           />
           <span>Headless</span>
         </label>
+        <button className="agent-memory-btn" onClick={onToggleMemory} title="查看记忆">
+          <Brain size={12} />
+        </button>
         {trace.length > 0 && (
           <button className="agent-collapse-btn" onClick={e => { e.stopPropagation(); onToggleCollapse(); }} title={collapsed ? '展开' : '收起'}>
             {collapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
@@ -1346,14 +1461,18 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
 
       {showContent && (
         <>
-          <p className="agent-panel-note">
-            当前支持 `browser`、`fs`、`terminal`、`macos` 工具。需要确认的动作会在这里暂停，等待你的批准或拒绝。
-          </p>
-
-          {trace.length === 0 ? (
-            <div className="agent-empty">切到 Agent 模式后输入任务，例如"查看当前目录并告诉我 README 开头写了什么"。</div>
+          {showMemoryPanel ? (
+            <MemoryPanel onClose={() => onToggleMemory()} />
           ) : (
-            <div className="agent-trace">
+            <>
+              <p className="agent-panel-note">
+                当前支持 `browser`、`fs`、`terminal`、`macos` 工具。需要确认的动作会在这里暂停，等待你的批准或拒绝。
+              </p>
+
+              {trace.length === 0 ? (
+                <div className="agent-empty">切到 Agent 模式后输入任务，例如"查看当前目录并告诉我 README 开头写了什么"。</div>
+              ) : (
+                <div className="agent-trace">
           {(() => {
             // Track which steps have multi-model planning (action/result shown inside cards)
             const multiModelSteps = new Set();
@@ -1585,6 +1704,8 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
           <div ref={traceBottomRef} />
         </div>
       )}
+            </>
+          )}
         </>
       )}
     </section>
@@ -1615,6 +1736,7 @@ export default function App() {
   const [pendingApproval, setPendingApproval] = useState(null);
   const [approvalSubmitting, setApprovalSubmitting] = useState(false);
   const [agentCollapsed, setAgentCollapsed] = useState(false);
+  const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   const [agentMobileTab, setAgentMobileTab] = useState('agent');
   const [pendingQuestion, setPendingQuestion] = useState(null);
   const [questionSubmitting, setQuestionSubmitting] = useState(false);
@@ -2565,6 +2687,8 @@ export default function App() {
                   onStop={stopAgent}
                   agentStopping={agentStopping}
                   pendingApproval={pendingApproval}
+                  onToggleMemory={() => setShowMemoryPanel(v => !v)}
+                  showMemoryPanel={showMemoryPanel}
                 />
               </div>
 

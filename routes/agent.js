@@ -349,7 +349,21 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     res.json({ ok: true });
   });
 
-  // POST /api/agent/compact - 手动压缩会话历史
+  router.get('/api/agent/memory', async (_req, res) => {
+    try {
+      const memory = await loadMemory(memoryDir);
+      res.json({
+        conversationCount: memory?.conversation?.length ?? 0,
+        summaryLength: memory?.conversationSummary?.length ?? 0,
+        conversation: memory?.conversation ?? [],
+        conversationSummary: memory?.conversationSummary ?? '',
+        projectKnowledge: memory?.projectKnowledge ?? { structure: [], paths: {}, preferences: [], learnings: [] },
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   router.post('/api/agent/compact', async (_req, res) => {
     try {
       const memory = await loadMemory(memoryDir);
@@ -362,19 +376,6 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       }
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message });
-    }
-  });
-
-  // GET /api/agent/memory - 获取当前记忆状态
-  router.get('/api/agent/memory', async (_req, res) => {
-    try {
-      const memory = await loadMemory(memoryDir);
-      res.json({
-        conversationCount: memory?.conversation?.length ?? 0,
-        summaryLength: memory?.conversationSummary?.length ?? 0,
-      });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
     }
   });
 
