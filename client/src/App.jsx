@@ -1032,7 +1032,7 @@ const PLAN_STAGE_ICON = {
 
 // 单个模型卡片负责展示某一步里某个模型的“决策快照”：
 // 当前状态、理由、动作、tokens，以及在竞速模式下是否被采纳。
-function ModelPlanCard({ event, isWinner, modelList, strategy: _strategy, result }) {
+function ModelPlanCard({ event, isWinner, modelList, result }) {
   const label = getModelLabel(event.model, modelList);
   const stage = event.stage;
   const [showReasoning, setShowReasoning] = useState(false);
