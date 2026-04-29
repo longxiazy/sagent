@@ -181,6 +181,13 @@ export function extractConversationEntry({ task, result, model, stepModels }) {
     }
   }
 
+  // Also extract models from stepModels directly (covers case where steps is empty)
+  if (stepModels) {
+    for (const m of Object.values(stepModels)) {
+      usedModels.add(m);
+    }
+  }
+
   return {
     task: cleanText(task || '', 80),
     summary: cleanText(result?.answer || '', 120),

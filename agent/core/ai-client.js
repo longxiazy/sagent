@@ -26,6 +26,7 @@
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { logLlmRequest, logLlmResponse } from './llm-logger.js';
+import { displayWidth, padEndW } from './utils.js';
 import { log } from '../../helpers/logger.js';
 import { retryAsync } from '../../helpers/retry.js';
 import { createModelTools, toolToClaudeTool } from './tool-definitions.js';
@@ -164,8 +165,8 @@ export async function summarizeText({ text, openai_client, anthropic_client, mod
   const shortModel = model?.split('/').pop() || '?';
   const startTime = Date.now();
   const reqLine = `  >>> 记忆摘要 REQUEST  ${shortModel}  input=${text.length}字`;
-  const w = Math.max(reqLine.length + 4, 52);
-  log.info(`\n  ${'╔' + '═'.repeat(w) + '╗'}\n  ║${reqLine.padEnd(w)}║\n  ${'╚' + '═'.repeat(w) + '╝'}`);
+  const w = Math.max(displayWidth(reqLine) + 4, 52);
+  log.info(`\n  ${'╔' + '═'.repeat(w) + '╗'}\n  ║${padEndW(reqLine, w)}║\n  ${'╚' + '═'.repeat(w) + '╝'}`);
 
   const prompt = `请用简洁的中文提炼以下 Agent 任务记录的关键信息。要求：
 1. 相同或相似主题的任务合并为一条，不要重复
@@ -198,14 +199,14 @@ ${text}`;
     }
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     const resLine = `  <<< 记忆摘要 RESPONSE ${shortModel}  ${elapsed}s  output=${result.length}字`;
-    const rw = Math.max(resLine.length + 4, 52);
-    log.info(`\n  ${'╔' + '═'.repeat(rw) + '╗'}\n  ║${resLine.padEnd(rw)}║\n  ${'╚' + '═'.repeat(rw) + '╝'}`);
+    const rw = Math.max(displayWidth(resLine) + 4, 52);
+    log.info(`\n  ${'╔' + '═'.repeat(rw) + '╗'}\n  ║${padEndW(resLine, rw)}║\n  ${'╚' + '═'.repeat(rw) + '╝'}`);
     return result;
   } catch (err) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     const errLine = `  !!! 记忆摘要 FAILED   ${shortModel}  ${elapsed}s  ${err.message.slice(0, 60)}`;
-    const ew = Math.max(errLine.length + 4, 52);
-    log.warn(`\n  ${'╔' + '═'.repeat(ew) + '╗'}\n  ║${errLine.padEnd(ew)}║\n  ${'╚' + '═'.repeat(ew) + '╝'}`);
+    const ew = Math.max(displayWidth(errLine) + 4, 52);
+    log.warn(`\n  ${'╔' + '═'.repeat(ew) + '╗'}\n  ║${padEndW(errLine, ew)}║\n  ${'╚' + '═'.repeat(ew) + '╝'}`);
     throw err;
   }
 }

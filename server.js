@@ -42,6 +42,7 @@ import { createAgentRouter } from './routes/agent.js';
 import { createCompletionsRouter } from './routes/completions.js';
 import { listCheckpoints, clearCheckpoints, removeCheckpoint } from './agent/core/checkpoint.js';
 import { loadMemory, buildMemoryPrompt, saveMemory } from './agent/core/memory.js';
+import { displayWidth, padEndW, truncateW } from './agent/core/utils.js';
 import { log } from './helpers/logger.js';
 
 const app = express();
@@ -186,8 +187,8 @@ async function resumeFromCheckpoint(cp) {
 app.listen(PORT, HOST, async () => {
   const multiModels = loadAgentMultiModels();
   const W = 56;
-  const pad = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s).padEnd(n);
-  const row = (k, v) => `  │  ${pad(k, 28)}${pad(String(v), W - 32)}│`;
+  const rowPad = (s, n) => padEndW(truncateW(s, n), n);
+  const row = (k, v) => `  │  ${rowPad(k, 28)}${rowPad(String(v), W - 32)}│`;
   const hLine = `  ${'─'.repeat(W + 4)}`;
   const dLine = `  ${'═'.repeat(W + 4)}`;
 

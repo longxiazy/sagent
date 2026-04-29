@@ -31,7 +31,7 @@
  */
 
 import { Router } from 'express';
-import { safeJson, cleanText } from '../agent/core/utils.js';
+import { safeJson, cleanText, displayWidth, padEndW, truncateW } from '../agent/core/utils.js';
 import { formatLogTime, buildAgentMetrics, buildSseWriter, logAgentEvent } from '../helpers/agent-logging.js';
 import {
   loadMemory,
@@ -145,8 +145,9 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       }
     }
 
+    let agentResult = null;
     try {
-      const result = await runDesktopAgent({
+      agentResult = await runDesktopAgent({
         task: normalizedTask,
         model,
         models: agentModels,
@@ -160,13 +161,13 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         memory: useMemory,
       });
 
-      finalAnswer = result.answer;
+      finalAnswer = agentResult.answer;
 
       sendEvent({
         type: 'done',
         runId,
-        answer: result.answer,
-        steps: result.steps,
+        answer: agentResult.answer,
+        steps: agentResult.steps,
         meta: {
           elapsed_ms: Date.now() - startedAt,
           step_count: Math.max(completedStepCount, observedStepCount),
@@ -198,31 +199,32 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       const usedModels = [...modelsUsed].map(m => m.split('/').pop()).join(',');
       const statusIcon = status === 'done' ? '✅' : status === 'cancelled' ? '⛔' : '❌';
       const elapsedSec = (metrics.elapsed_ms / 1000).toFixed(1);
-      log.info(
-        `\n` +
-        `  ╔══════════════════════════════════════════════════╗\n` +
-        `  ║  ${statusIcon} Agent ${status.toUpperCase().padEnd(10)}                         ║\n` +
-        `  ║      ${elapsedSec.padStart(5)}s  ${metrics.step_count} steps  ${usedModels}  ║\n` +
-        `  ║      run: ${runId}  ║\n` +
-        (finalAnswer
-          ? `  ║  answer: ${safeJson(cleanText(finalAnswer, 200))}  ║\n`
-          : '') +
-        (agentError
-          ? `  ║  error: ${safeJson(agentError.message)}  ║\n`
-          : '') +
-        `  ╚══════════════════════════════════════════════════╝`
-      );
+      const statusLine = `  ${statusIcon} Agent ${status.toUpperCase()}  ${elapsedSec}s  ${metrics.step_count} steps  ${usedModels}`;
+      const runLine = `  run: ${runId}`;
+      const answerLine = finalAnswer ? `  answer: ${safeJson(cleanText(finalAnswer, 80))}` : '';
+      const errorLine = agentError ? `  error: ${safeJson(agentError.message)}` : '';
+      const innerLines = [statusLine, runLine, answerLine, errorLine].filter(Boolean);
+      const W = Math.max(...innerLines.map(displayWidth)) + 4;
+      const bRow = `  ${'═'.repeat(W)}`;
+      const box = [
+        `  ╔${bRow.slice(2)}╗`,
+        ...innerLines.map(l => `  ║${padEndW(l, W)}║`),
+        `  ╚${bRow.slice(2)}╝`,
+      ].join('\n');
+      log.info(`\n${box}`);
       agentRunStore.closeRun(runId);
       approvalStore.rejectAll();
       res.end();
 
       // Async memory save — don't block the response
-      if (memory && finalAnswer) {
+      if (memory) {
         (async () => {
           try {
-            const entry = extractConversationEntry({ task: normalizedTask, result: { answer: finalAnswer, steps: [] }, model, stepModels });
+            const answer = finalAnswer || (agentError ? `失败: ${agentError.message.slice(0, 60)}` : '无结果');
+            const steps = agentResult?.steps || [];
+            const entry = extractConversationEntry({ task: normalizedTask, result: { answer, steps }, model, stepModels });
             memory.conversation.push(entry);
-            extractProjectKnowledge(memory, { task: normalizedTask, result: { answer: finalAnswer, steps: [] } });
+            extractProjectKnowledge(memory, { task: normalizedTask, result: { answer, steps } });
             const modelCounts = {};
             for (const m of Object.values(stepModels)) {
               modelCounts[m] = (modelCounts[m] || 0) + 1;
