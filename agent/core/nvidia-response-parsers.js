@@ -314,13 +314,35 @@ export function createModelResponseParser(model) {
   const extractReasoning = config.extractReasoning || false;
 
   return function parseResponse(response) {
+return function parseResponse(response) {
     const message = response.choices[0]?.message;
     const content = getMessageText(message?.content);
     const usage = response.usage || null;
-    const reasoning = extractReasoning
-      ? (message?.reasoning || message?.reasoning_content || null)
-      : null;
+    const reasoning = extractReasoning ? (message?.reasoning || message?.reasoning_content || null) : null;
 
+    // Check if message has BOTH text narration AND tool_calls (Zeroclaw #5584)
+    const messageContent = message?.content;
+    const hasNarration = Array.isArray(messageContent)
+      ? messageContent.some(b => b.type === 'text' && b.text?.trim())
+      : (typeof content === 'string' && content.trim().length > 0);
+    const hasToolCalls = (message?.tool_calls?.length ?? 0) > 0;
+
+    for (const strategy of chain) {
+      const result = strategy(message, content);
+      if (result) {
+        return {
+          ...result,
+          usage,
+          reasoning,
+          rawContent: content,
+          // Mark coexist to trigger dedup on frontend
+          _hasNarrationAndToolCalls: (hasNarration && hasToolCalls) ? content.slice(0, 200) : null,
+        };
+      }
+    }
+    return { parseFailed: true, rawContent: content, usage, reasoning };
+  };
+};
     for (const strategy of chain) {
       const result = strategy(message, content);
       if (result) {

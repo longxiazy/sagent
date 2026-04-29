@@ -49,7 +49,7 @@ export function createJsonPlanner({
 
     if (!parsed.parseFailed) {
       const result = normalizeDecision(parsed, context);
-      return { ...result, usage: parsed.usage, reasoning: parsed.reasoning || null };
+      return { ...result, usage: parsed.usage, reasoning: parsed.reasoning || null, _hasNarrationAndToolCalls: parsed._hasNarrationAndToolCalls || null };
     }
 
     // Parse failed — retry with hint
@@ -79,7 +79,7 @@ export function createJsonPlanner({
 
       if (!retryParsed.parseFailed) {
         const result = normalizeDecision(retryParsed, context);
-        return { ...result, usage: retryParsed.usage || parsed.usage, reasoning: retryParsed.reasoning || null };
+        return { ...result, usage: retryParsed.usage || parsed.usage, reasoning: retryParsed.reasoning || null, _hasNarrationAndToolCalls: parsed._hasNarrationAndToolCalls || null };
       }
     } catch (retryErr) {
       log.warn(`[Planner] 重试也失败: ${retryErr.message}`);

@@ -158,14 +158,14 @@ export async function runAgentRuntime({
         throw new Error("Agent 已取消");
       }
 
-      history.push({
-        step,
-        rationale: decision.rationale,
-        action: decision.action,
-        result,
-        url: observation?.url,
-        title: observation?.title,
-      });
+  // Deduplicate: if step already in history (from narration+tool_calls), update it
+  const existingIdx = history.findIndex(h => h.step === step);
+  const entry = { step, rationale: decision.rationale, action: decision.action, result, url: observation?.url, title: observation?.title };
+  if (existingIdx >= 0) {
+    history[existingIdx] = entry;
+  } else {
+    history.push(entry);
+  }
 
       if (decision.action.type !== "finish") {
         onEvent?.({
