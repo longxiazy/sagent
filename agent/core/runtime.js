@@ -91,9 +91,13 @@ export async function runAgentRuntime({
       }
 
       // ---- 检查外部回滚请求 ----
+      if (runRecord && shouldRollback(runRecord) && !sessionCheckpointDir) {
+        log.warn(`[Runtime] 回滚请求存在但 sessionCheckpointDir 未设置，跳过`);
+        runRecord.pendingRollback = null;
+      }
       if (sessionCheckpointDir && runRecord && shouldRollback(runRecord)) {
         const targetStep = runRecord.pendingRollback;
-        log.info(`[Runtime] 执行回滚到第 ${targetStep} 步`);
+        log.info(`[Runtime] 执行回滚到第 ${targetStep} 步, dir=${sessionCheckpointDir}, runId=${runRecord.runId}`);
         const snapshot = await loadLatestHealthySnapshot(sessionCheckpointDir, runRecord.runId, targetStep);
         if (snapshot) {
           history.length = 0;
@@ -233,15 +237,19 @@ export async function runAgentRuntime({
       // ---- 会话级健康快照 ----
       if (sessionCheckpointDir && runRecord && step % HEALTH_CHECKPOINT_INTERVAL === 0) {
         const runId = runRecord.runId;
-        saveHealthySnapshot({
-          dir: sessionCheckpointDir,
-          runId,
-          step,
-          history,
-          state,
-          result,
-          usage: decision.usage,
-        }).catch(err => log.error(`[Runtime] 健康快照保存失败: ${err.message}`));
+        try {
+          await saveHealthySnapshot({
+            dir: sessionCheckpointDir,
+            runId,
+            step,
+            history,
+            state,
+            result,
+            usage: decision.usage,
+          });
+        } catch (err) {
+          log.error(`[Runtime] 健康快照保存失败: ${err.message}`);
+        }
         onEvent?.({
           type: "session_checkpoint",
           step,
