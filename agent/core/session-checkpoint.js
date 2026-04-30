@@ -17,7 +17,7 @@
 import { mkdir, writeFile, readFile, unlink, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const HEALTH_CHECKPOINT_INTERVAL = 5;  // 每 5 步打一次健康快照
+const HEALTH_CHECKPOINT_INTERVAL = 2;  // 每 2 步打一次健康快照
 const KEEP_HEALTHY = 3;
 const KEEP_FAILED = 1;
 
