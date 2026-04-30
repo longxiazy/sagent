@@ -44,7 +44,6 @@ import {
 import { removeCheckpoint } from '../agent/core/checkpoint.js';
 import {
   listSessionCheckpoints,
-  clearSessionCheckpoints,
 } from '../agent/core/session-checkpoint.js';
 import { summarizeText } from '../agent/core/ai-client.js';
 import { log } from '../helpers/logger.js';

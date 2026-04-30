@@ -16,7 +16,6 @@
 
 import { mkdir, writeFile, readFile, unlink, readdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
-import { log } from '../../helpers/logger.js';
 
 const HEALTH_CHECKPOINT_INTERVAL = 5;  // 每 5 步打一次健康快照
 const KEEP_HEALTHY = 3;
@@ -86,9 +85,9 @@ export async function saveHealthySnapshot({ dir, runId, step, history, state, re
   };
 
   const filePath = healthyPath(dir, runId, step);
-  const tmpPath = filePath + '.tmp';
-  await writeFile(tmpPath, JSON.stringify(snapshot), 'utf8');
-  await rename(tmpPath, filePath);
+  const tmpFile = filePath + '.tmp';
+  await writeFile(tmpFile, JSON.stringify(snapshot), 'utf8');
+  await rename(tmpFile, filePath);
 
   // 修剪旧快照
   await pruneSnapshots(dir, runId, 'healthy', KEEP_HEALTHY);
@@ -116,9 +115,9 @@ export async function saveFailedSnapshot({ dir, runId, step, history, error, sta
   };
 
   const filePath = failedPath(dir, runId, step);
-  const tmpPath = filePath + '.tmp';
-  await writeFile(tmpPath, JSON.stringify(snapshot), 'utf8');
-  await rename(tmpPath, filePath);
+  const tmpFile = filePath + '.tmp';
+  await writeFile(tmpFile, JSON.stringify(snapshot), 'utf8');
+  await rename(tmpFile, filePath);
 
   await pruneSnapshots(dir, runId, 'failed', KEEP_FAILED);
 }
