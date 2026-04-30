@@ -38,9 +38,9 @@ export function createJsonPlanner({
       max_tokens: maxTokens,
       messages,
     };
-    if (signal) createOpts.signal = signal;
+    const reqOpts = signal ? { signal } : undefined;
 
-    const response = await retryAsync(() => client.chat.completions.create(createOpts));
+    const response = await retryAsync(() => client.chat.completions.create(createOpts, reqOpts));
 
     logLlmResponse(model, response);
 
@@ -72,9 +72,8 @@ export function createJsonPlanner({
         max_tokens: maxTokens,
         messages: retryMessages,
       };
-      if (signal) retryOpts.signal = signal;
 
-      const retryResponse = await retryAsync(() => client.chat.completions.create(retryOpts));
+      const retryResponse = await retryAsync(() => client.chat.completions.create(retryOpts, reqOpts));
       const retryParsed = parser(retryResponse);
 
       if (!retryParsed.parseFailed) {
