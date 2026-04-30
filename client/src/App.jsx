@@ -1984,6 +1984,13 @@ export default function App() {
                 approvalRequestRef.current = null;
               }
 
+              if (event.type === 'rollback') {
+                setAgentTrace(prev => {
+                  const target = event.targetStep;
+                  return prev.filter(e => e.step == null || e.step <= target);
+                });
+              }
+
               if (event.type === 'done') {
                 setAgentRunning(false);
                 updateActiveSession(session => {
@@ -2392,6 +2399,14 @@ export default function App() {
             await new Promise(resolve => {
               questionRequestRef.current = { ...event, resolve };
               setPendingQuestion(event);
+            });
+            return;
+          }
+
+          if (event.type === 'rollback') {
+            setAgentTrace(prev => {
+              const target = event.targetStep;
+              return prev.filter(e => e.step == null || e.step <= target);
             });
             return;
           }
