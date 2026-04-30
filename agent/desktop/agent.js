@@ -595,6 +595,7 @@ export function createDesktopAgentRunner({
     onEvent,
     isCancelled,
     runId,
+    runRecord = null,
     startedAt = Date.now(),
     initialStep = 1,
     initialHistory = [],
@@ -617,6 +618,9 @@ export function createDesktopAgentRunner({
       isCancelled,
       initialStep,
       initialHistory,
+      // v2: 会话级健康检查点支持
+      sessionCheckpointDir: checkpointDir,
+      runRecord,
       onCheckpoint: checkpointDir
         ? (history, step) => saveCheckpoint(checkpointDir, {
             runId, task, model, systemPrompt, headless,

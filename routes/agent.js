@@ -42,6 +42,10 @@ import {
   compactConversationMemory,
 } from '../agent/core/memory.js';
 import { removeCheckpoint } from '../agent/core/checkpoint.js';
+import {
+  listSessionCheckpoints,
+  clearSessionCheckpoints,
+} from '../agent/core/session-checkpoint.js';
 import { summarizeText } from '../agent/core/ai-client.js';
 import { log } from '../helpers/logger.js';
 
@@ -155,6 +159,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         systemPrompt,
         headless: agentHeadless,
         runId,
+        runRecord,
         onEvent: sendEvent,
         isCancelled: () => runRecord.cancelled,
         conversationHistory: Array.isArray(conversationHistory) ? conversationHistory : [],
@@ -446,6 +451,46 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message });
     }
+  });
+
+  // ---- v2: 会话检查点 API ----
+
+  /**
+   * GET /api/agent/checkpoints — 列出当前运行的所有会话检查点
+   */
+  router.get('/api/agent/checkpoints', async (_req, res) => {
+    if (!checkpointDir) {
+      return res.json({ checkpoints: [] });
+    }
+    const activeRun = agentRunStore.getActiveRun();
+    if (!activeRun) {
+      return res.json({ checkpoints: [] });
+    }
+    try {
+      const checkpoints = await listSessionCheckpoints(checkpointDir, activeRun.runId);
+      res.json({ runId: activeRun.runId, checkpoints });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * POST /api/agent/rollback — 回滚到指定步数
+   * Body: { targetStep: number }
+   * 设置 pendingRollback 标记，runtime 会在下一轮循环中执行回滚
+   */
+  router.post('/api/agent/rollback', (req, res) => {
+    const { targetStep } = req.body ?? {};
+    if (typeof targetStep !== 'number' || !Number.isInteger(targetStep) || targetStep < 1) {
+      return res.status(400).json({ error: 'targetStep 必须是正整数' });
+    }
+    const activeRun = agentRunStore.getActiveRun();
+    if (!activeRun) {
+      return res.status(404).json({ error: '没有活跃的运行' });
+    }
+    activeRun.pendingRollback = targetStep;
+    log.info(`[API] 设置回滚请求: runId=${activeRun.runId} targetStep=${targetStep}`);
+    res.json({ ok: true, runId: activeRun.runId, targetStep });
   });
 
   return router;
