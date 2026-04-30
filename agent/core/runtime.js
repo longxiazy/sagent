@@ -16,23 +16,19 @@
  *   - agent/desktop/agent.js 的 runDesktopAgent() 是唯一的调用方，
  *     注入所有具体实现后调用 runAgentRuntime({ ... })
  *
- * v2 增强（2026-04-30）：
+ * v2 增强：
  *   - 会话级健康检查点（session-checkpoint.js 集成）
- *   - decide 连续失败自动回滚到上一个健康快照
  *   - 前端可触发手动回滚
  */
 
 import { log } from "../../helpers/logger.js";
 import {
   saveHealthySnapshot,
-  saveFailedSnapshot,
   loadLatestHealthySnapshot,
   HEALTH_CHECKPOINT_INTERVAL,
 } from "./session-checkpoint.js";
 
 const MAX_HISTORY_STEPS = 64;
-const MAX_DECIDE_ERRORS = 3; // 连续 decide 失败多少次后自动回滚
-const MAX_ROLLBACKS = 2;    // 最大自动回滚次数，防止无限循环
 
 function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
   if (history.length <= maxSteps) {
@@ -78,15 +74,13 @@ export async function runAgentRuntime({
   initialStep = 1,
   initialHistory = [],
   onCheckpoint = null,
-  // v2: 会话检查点 & 自动回滚
+  // v2: 会话检查点 & 手动回滚
   sessionCheckpointDir = null,
   runRecord = null,
 }) {
   const history = initialHistory;
   let finalAnswer = "";
   const state = await initialize?.({ task, onEvent });
-  let decideErrorCount = 0;
-  let rollbackCount = 0;
 
   const cancelled = () => cancelSignal?.aborted;
 
@@ -102,13 +96,11 @@ export async function runAgentRuntime({
         log.info(`[Runtime] 执行回滚到第 ${targetStep} 步`);
         const snapshot = await loadLatestHealthySnapshot(sessionCheckpointDir, runRecord.runId, targetStep);
         if (snapshot) {
-          // 清空 history 到目标步数
           history.length = 0;
           for (const h of snapshot.history) {
             history.push({ ...h });
           }
           step = targetStep;
-          decideErrorCount = 0;
           runRecord.pendingRollback = null;
           runRecord.rolledBack = true;
 
@@ -147,58 +139,14 @@ export async function runAgentRuntime({
 
       const compactHistory = compressHistory(history, MAX_HISTORY_STEPS);
 
-      // ---- 决策（带自动回滚保护） ----
-      let decision;
-      try {
-        decision = await decide({
-          task,
-          step,
-          history: compactHistory,
-          observation,
-          state,
-        });
-        decideErrorCount = 0; // 成功则重置错误计数
-      } catch (decErr) {
-        decideErrorCount++;
-        log.error(`[Runtime] step ${step} decide 失败 (${decideErrorCount}/${MAX_DECIDE_ERRORS}): ${decErr.message}`);
-
-        if (decideErrorCount >= MAX_DECIDE_ERRORS && sessionCheckpointDir && runRecord) {
-          if (rollbackCount >= MAX_ROLLBACKS) {
-            log.warn(`[Runtime] 已达到最大回滚次数 ${MAX_ROLLBACKS}，不再回滚`);
-            throw decErr;
-          }
-          // 自动回滚到上一个健康快照
-          const snapshot = await loadLatestHealthySnapshot(sessionCheckpointDir, runRecord.runId, step - 1);
-          if (snapshot) {
-            log.info(`[Runtime] 连续 ${MAX_DECIDE_ERRORS} 次 decide 失败，自动回滚到第 ${snapshot.step} 步`);
-            history.length = 0;
-            for (const h of snapshot.history) {
-              history.push({ ...h });
-            }
-            step = snapshot.step;
-            decideErrorCount = 0;
-            rollbackCount++;
-
-            await saveFailedSnapshot({
-              dir: sessionCheckpointDir,
-              runId: runRecord.runId,
-              step,
-              history,
-              error: new Error(`连续 ${MAX_DECIDE_ERRORS} 次 decide 失败，自动回滚`),
-              state,
-            });
-
-            onEvent?.({
-              type: "rollback",
-              targetStep: snapshot.step,
-              message: `连续 ${MAX_DECIDE_ERRORS} 次决策失败，自动回滚到第 ${snapshot.step} 步`,
-              auto: true,
-            });
-            continue;
-          }
-        }
-        throw decErr; // 未达到阈值或无快照，继续抛异常
-      }
+      // ---- 决策 ----
+      const decision = await decide({
+        task,
+        step,
+        history: compactHistory,
+        observation,
+        state,
+      });
 
       if (cancelled()) {
         throw new Error("Agent 已取消");
