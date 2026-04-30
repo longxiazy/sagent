@@ -14,7 +14,7 @@
  *   - desktop/agent.js: 异常检测后自动触发回滚
  */
 
-import { mkdir, writeFile, readFile, unlink, readdir, rename } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, unlink, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const HEALTH_CHECKPOINT_INTERVAL = 5;  // 每 5 步打一次健康快照
@@ -50,10 +50,12 @@ function assessHealth(result) {
 function sanitizeState(state) {
   if (!state) return null;
   const safe = { ...state };
-  // 移除敏感字段
+  // 移除不可序列化/敏感字段
   delete safe.chromium;
   delete safe.browserCandidatePaths;
   delete safe.onEvent;
+  delete safe.browserSession;
+  delete safe.observeDesktop;
   // 标记 browser session 存在，但不存储引用
   safe.browserSessionActive = Boolean(state.browserSession);
   return safe;
@@ -77,6 +79,7 @@ export async function saveHealthySnapshot({ dir, runId, step, history, state, re
       result: typeof h.result === 'string' ? h.result.slice(0, 2000) : '',
       url: h.url,
       title: h.title,
+      observation: h.observation ? { url: h.observation.url, title: h.observation.title, text: typeof h.observation.text === 'string' ? h.observation.text.slice(0, 500) : undefined } : undefined,
     })),
     state: sanitizeState(state),
     usage: usage || {},
@@ -182,11 +185,7 @@ export async function listSessionCheckpoints(dir, runId) {
 export async function clearSessionCheckpoints(dir, runId) {
   const cpDir = sessionDir(dir, runId);
   try {
-    const files = await readdir(cpDir);
-    for (const f of files) {
-      await unlink(join(cpDir, f)).catch(() => {});
-    }
-    await unlink(cpDir).catch(() => {});
+    await rm(cpDir, { recursive: true, force: true });
   } catch { /* ignore */ }
 }
 
@@ -197,6 +196,12 @@ async function pruneSnapshots(dir, runId, type, keepCount) {
   const cpDir = sessionDir(dir, runId);
   try {
     const files = await readdir(cpDir);
+    // 清理残留的 .tmp 文件
+    for (const f of files) {
+      if (f.endsWith('.tmp')) {
+        await unlink(join(cpDir, f)).catch(() => {});
+      }
+    }
     const snapshots = files
       .filter(f => f.startsWith(`session-${type}-`) && f.endsWith('.json'))
       .map(f => {
