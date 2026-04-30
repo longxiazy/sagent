@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, Component, useMemo } from 'react';
 import {
   Menu, Timer, Trash2, Square, Brain, ChevronDown, ChevronUp,
-  Copy, Check, Send,
+  Copy, Check, Send, RotateCcw,
 } from 'lucide-react';
 import hljs from 'highlight.js/lib/core';
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -1321,7 +1321,7 @@ function MemoryPanel({ onClose }) {
 // - 负责展示 trace
 // - 负责显示暂停/审批/用时/token 等运行态指标
 // - 在移动端和桌面端之间复用同一套事件展示逻辑
-function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onToggleMemory, showMemoryPanel }) {
+function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onToggleMemory, showMemoryPanel, checkpoints, onRollback, rollbackLoading, showCheckpointPanel, onToggleCheckpointPanel }) {
   const traceBottomRef = useRef(null);
   const startTimeRef = useRef(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < PHONE_BREAKPOINT;
@@ -1419,6 +1419,11 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
             <Square size={10} /> {agentStopping ? '停止中…' : pendingApproval ? '停止并拒绝' : '停止'}
           </button>
         )}
+        {running && checkpoints.length > 0 && (
+          <button className={`agent-rollback-btn ${showCheckpointPanel ? 'active' : ''}`} onClick={onToggleCheckpointPanel} title="回滚到历史快照">
+            <RotateCcw size={10} /> 回滚
+          </button>
+        )}
         <label className="agent-headless-toggle" title={headless ? '浏览器在后台运行' : '浏览器窗口可见'}>
           <input
             type="checkbox"
@@ -1442,6 +1447,31 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
         <>
           {showMemoryPanel ? (
             <MemoryPanel onClose={() => onToggleMemory()} />
+          ) : showCheckpointPanel ? (
+            <div className="checkpoint-panel">
+              <div className="checkpoint-panel-head">
+                <strong>健康快照</strong>
+                <button className="checkpoint-panel-close" onClick={onToggleCheckpointPanel}>✕</button>
+              </div>
+              <p className="checkpoint-panel-note">选择一个快照回滚，Agent 将从该步重新执行。</p>
+              {checkpoints.length === 0 ? (
+                <p className="checkpoint-empty">暂无快照（每 5 步自动保存）</p>
+              ) : (
+                <div className="checkpoint-list">
+                  {checkpoints.map(cp => (
+                    <div key={cp.step} className="checkpoint-item">
+                      <div className="checkpoint-info">
+                        <span className="checkpoint-step">Step {cp.step}</span>
+                        <span className={`checkpoint-health ${cp.health || 'unknown'}`}>{cp.health || 'unknown'}</span>
+                      </div>
+                      <button className="checkpoint-rollback-btn" onClick={() => onRollback(cp.step)} disabled={rollbackLoading}>
+                        {rollbackLoading ? '回滚中…' : '回滚'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           ) : (
             <>
               <p className="agent-panel-note">
@@ -1677,6 +1707,25 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
                   </div>
                 </>
               )}
+
+              {event.type === 'rollback' && (
+                <>
+                  <span className="agent-trace-badge rollback">回滚</span>
+                  <div className="agent-trace-content">
+                    <strong>已回滚到 Step {event.targetStep}</strong>
+                    <p>{event.message}</p>
+                  </div>
+                </>
+              )}
+
+              {event.type === 'session_checkpoint' && (
+                <>
+                  <span className="agent-trace-badge plan">快照</span>
+                  <div className="agent-trace-content">
+                    <strong>Step {event.step} 健康快照已保存</strong>
+                  </div>
+                </>
+              )}
             </div>
             );
           })})()}
@@ -1716,6 +1765,9 @@ export default function App() {
   const [approvalSubmitting, setApprovalSubmitting] = useState(false);
   const [agentCollapsed, setAgentCollapsed] = useState(false);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
+  const [showCheckpointPanel, setShowCheckpointPanel] = useState(false);
+  const [agentCheckpoints, setAgentCheckpoints] = useState([]);
+  const [rollbackLoading, setRollbackLoading] = useState(false);
   const [agentMobileTab, setAgentMobileTab] = useState('agent');
   const [pendingQuestion, setPendingQuestion] = useState(null);
   const [questionSubmitting, setQuestionSubmitting] = useState(false);
@@ -2065,6 +2117,46 @@ export default function App() {
     }
     // Abort SSE after a short grace period for in-flight results
     setTimeout(() => agentAbortRef.current?.abort(), 1500);
+  };
+
+  const fetchCheckpoints = async () => {
+    try {
+      const res = await fetch('/api/agent/checkpoints');
+      if (res.ok) {
+        const data = await res.json();
+        setAgentCheckpoints(data.checkpoints || []);
+      }
+    } catch {}
+  };
+
+  const toggleCheckpointPanel = () => {
+    if (!showCheckpointPanel) {
+      fetchCheckpoints();
+    }
+    setShowCheckpointPanel(v => !v);
+  };
+
+  const handleRollback = async targetStep => {
+    const rid = agentRunIdRef.current;
+    if (!rid) return;
+    setRollbackLoading(true);
+    try {
+      const res = await fetch('/api/agent/rollback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetStep }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || '回滚失败');
+      } else {
+        setShowCheckpointPanel(false);
+      }
+    } catch {
+      alert('回滚请求失败');
+    } finally {
+      setRollbackLoading(false);
+    }
   };
   const requestAgentApproval = event =>
     new Promise(resolve => {
@@ -2667,6 +2759,11 @@ export default function App() {
                   pendingApproval={pendingApproval}
                   onToggleMemory={() => setShowMemoryPanel(v => !v)}
                   showMemoryPanel={showMemoryPanel}
+                  checkpoints={agentCheckpoints}
+                  onRollback={handleRollback}
+                  rollbackLoading={rollbackLoading}
+                  showCheckpointPanel={showCheckpointPanel}
+                  onToggleCheckpointPanel={toggleCheckpointPanel}
                 />
               </div>
 
