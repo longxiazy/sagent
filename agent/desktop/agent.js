@@ -35,7 +35,7 @@ import { displayWidth, padEndW } from '../core/utils.js';
 import { createAgentAuthorizer } from '../policy/approvals.js';
 import { executeBrowserAction } from '../tools/browser/execute.js';
 import { captureBrowserObservation, summarizeBrowserObservation } from '../tools/browser/observe.js';
-import { closeBrowserSession, createBrowserSession } from '../tools/browser/session.js';
+import { closeBrowserSession, createBrowserSession } from '../tools/browser/webview-session.js';
 import { executeFsAction } from '../tools/fs/execute.js';
 import { executeFetchAction } from '../tools/fetch/execute.js';
 import { createDomainRules } from '../tools/fetch/domain-rules.js';
@@ -478,7 +478,7 @@ async function observeDesktopAgent(state) {
       ? observeMacOSDesktop({ runId: state.runId })
       : Promise.resolve({ frontmostApp: '', frontmostWindowTitle: '', windows: [] }),
     state.browserSession
-      ? captureBrowserObservation(state.browserSession.page)
+      ? captureBrowserObservation(state.browserSession.view)
       : Promise.resolve(null),
   ]);
 
@@ -506,9 +506,7 @@ export function createDesktopAgentRunner({
   openai_client,
   anthropic_client,
   modelConfig,
-  chromium,
   maxSteps = 8,
-  browserCandidatePaths,
   defaultHeadless = false,
   observeDesktop = false,
   runStore: _runStore,
@@ -524,21 +522,20 @@ export function createDesktopAgentRunner({
   let sharedBrowserSession = null;
   let sharedBrowserHeadless = null;
 
-  async function getSharedBrowserSession(chromium, candidatePaths, headless, onEvent) {
+  async function getSharedBrowserSession(headless, onEvent) {
     if (sharedBrowserSession && sharedBrowserHeadless === headless) {
       return sharedBrowserSession;
     }
-    // Close old session if headless mode changed
     if (sharedBrowserSession) {
       await closeBrowserSession(sharedBrowserSession);
       sharedBrowserSession = null;
     }
-    sharedBrowserSession = await createBrowserSession({ chromium, candidatePaths, headless });
+    sharedBrowserSession = createBrowserSession();
     sharedBrowserHeadless = headless;
     onEvent?.({
       type: 'status',
       status: 'browser_ready',
-      message: headless ? '浏览器已启动（headless）' : '浏览器已启动',
+      message: 'Bun.WebView 浏览器已启动',
     });
     return sharedBrowserSession;
   }
@@ -547,10 +544,8 @@ export function createDesktopAgentRunner({
     if (state.browserSession) {
       return state.browserSession;
     }
-    const session = await getSharedBrowserSession(
-      state.chromium, state.browserCandidatePaths, state.headless, onEvent
-    );
-    await session.page.goto('about:blank').catch(() => {});
+    const session = await getSharedBrowserSession(state.headless, onEvent);
+    await session.view.navigate('about:blank').catch(() => {});
     state.browserSession = session;
     return session;
   }
@@ -573,17 +568,11 @@ export function createDesktopAgentRunner({
         return action.answer || '任务已完成';
       },
       browser: async (state, action) => {
-        if (action.type === 'google_search') {
-          return executeBrowserAction(null, action);
-        }
         const session = await ensureBrowserSession(state, state.onEvent);
-        return executeBrowserAction(session.page, action);
+        return executeBrowserAction(session.view, action);
       },
       fs: async (_state, action) => executeFsAction(action),
-      fetch: async (state, action) => {
-        const session = await ensureBrowserSession(state, state.onEvent);
-        return executeFetchAction(action, session.page, domainRules);
-      },
+      fetch: async (state, action) => executeFetchAction(action, state.browserSession, domainRules),
       terminal: async (_state, action) => executeTerminalAction(action),
       macos: async (state, action) =>
         executeMacOSAction(action, {
@@ -636,8 +625,6 @@ export function createDesktopAgentRunner({
         runId,
         onEvent,
         headless,
-        chromium,
-        browserCandidatePaths,
         browserSession: null,
         observeDesktop,
       }),
@@ -664,8 +651,8 @@ export function createDesktopAgentRunner({
       },
       execute: async (state, action, context) => routeAction(state, action, context),
       cleanup: async state => {
-        if (state.browserSession?.page) {
-          await state.browserSession.page.goto('about:blank').catch(() => {});
+        if (state.browserSession?.view) {
+          await state.browserSession.view.navigate('about:blank').catch(() => {});
         }
       },
     });

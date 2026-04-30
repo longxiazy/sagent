@@ -6,6 +6,8 @@
 
 > **仅支持 macOS**。Agent 需要操控本地浏览器和系统，目前只在 Mac 上测试通过。
 >
+> 浏览器自动化基于 Bun 1.3+ 内置 `Bun.WebView`，macOS 会直接使用系统 WebKit。
+>
 > 前端适配移动端 — 手机、平板、电脑浏览器都能用，随时随地查看 Agent 进度、继续对话。
 
 ## 快速开始
@@ -14,7 +16,7 @@
 git clone https://github.com/longxiazy/sagent && cd sagent
 cp .env.example .env                    # 编辑填入 API Key
 npm install && cd client && npm install && cd ..
-npm run sandbox
+npm run sandbox                         # 需要 Bun 1.3+
 ```
 
 打开 http://localhost:5173
@@ -49,6 +51,7 @@ AGENT_MAX_STEPS=128        # 单次任务最大步数，默认 8
 AGENT_MODEL_TIMEOUT=30     # 单模型超时秒数
 AGENT_MEMORY_MAX_ENTRIES=20  # 记忆压缩阈值
 AGENT_RESUME=true          # 后端重启后自动恢复未完成的 Agent 任务
+AGENT_HEADLESS=false       # 兼容旧配置，WebView 后端会忽略该值
 
 # 多模型竞速（可选）
 AGENT_STAGGER_DELAY=3      # 批次间隔秒数

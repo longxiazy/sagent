@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { createBrowserSession, closeBrowserSession } from '../browser/webview-session.js';
 import { log } from '../../../helpers/logger.js';
 
 const execFileAsync = promisify(execFile);
@@ -13,32 +14,62 @@ function extractMainContent(text) {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-async function fetchWithBrowser(page, action) {
+function createTimeout(ms, message) {
+  let timer;
+  const promise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return { promise, clear: () => clearTimeout(timer) };
+}
+
+async function withTimeout(promise, ms, message) {
+  const timeout = createTimeout(ms, message);
+  try {
+    return await Promise.race([promise, timeout.promise]);
+  } finally {
+    timeout.clear();
+  }
+}
+
+function getView(session) {
+  return session?.view || session?.page || session;
+}
+
+async function withFetchView(session, fn) {
+  if (session) {
+    return fn(getView(session));
+  }
+
+  const transientSession = createBrowserSession();
+  try {
+    return await fn(transientSession.view);
+  } finally {
+    await closeBrowserSession(transientSession);
+  }
+}
+
+async function fetchWithBrowser(session, action) {
   const url = action.url;
   const timeout = action.timeoutMs || BROWSER_TIMEOUT_MS;
 
-  // Use a separate page to avoid destroying the agent's main page context
-  const context = page.context();
-  const fetchPage = await context.newPage();
-
-  try {
-    await fetchPage.goto(url, { waitUntil: 'domcontentloaded', timeout });
-    await fetchPage.waitForTimeout(1000);
+  return withFetchView(session, async view => {
+    await withTimeout(view.navigate(url), timeout, `WebView 访问超时: ${url}`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     if (action.extractLinks) {
-      const { content, links } = await fetchPage.evaluate(() => {
-        const bodyText = document.body.innerText || '';
+      const { content, links } = await view.evaluate(`(() => {
+        const bodyText = document.body?.innerText || '';
         const anchors = Array.from(document.querySelectorAll('a[href]'));
         const extracted = [];
         for (const a of anchors) {
           const href = a.href;
-          const label = a.textContent.trim();
+          const label = (a.textContent || '').trim();
           if (href && href.startsWith('http') && label.length > 3 && label.length < 120) {
             extracted.push({ url: href, title: label });
           }
         }
         return { content: bodyText, links: extracted };
-      });
+      })()`);
 
       let result = `搜索结果 ${url}:\n\n链接列表:\n`;
       for (const link of links.slice(0, 10)) {
@@ -48,16 +79,14 @@ async function fetchWithBrowser(page, action) {
       return result.slice(0, MAX_CONTENT_LENGTH);
     }
 
-    const text = await fetchPage.evaluate(() => document.body.innerText || '');
+    const text = await view.evaluate("document.body?.innerText || ''");
     const cleaned = extractMainContent(text);
     const truncated = cleaned.length > MAX_CONTENT_LENGTH
       ? cleaned.slice(0, MAX_CONTENT_LENGTH) + '\n...(内容已截断)'
       : cleaned;
 
     return `http_fetch ${url} 内容:\n${truncated}`;
-  } finally {
-    await fetchPage.close().catch(() => {});
-  }
+  });
 }
 
 async function fetchWithCurl(action) {
@@ -118,18 +147,18 @@ async function fetchWithCurl(action) {
   return `http_fetch ${url} 内容:\n${truncated}`;
 }
 
-async function executeSingleFetch(action, page, domainRules) {
+async function executeSingleFetch(action, browserSession, domainRules) {
   if (!action.url) {
     throw new Error('http_fetch 缺少 url');
   }
 
   const useBrowser = domainRules ? await domainRules.needsBrowser(action.url) : false;
 
-  if (useBrowser && page) {
+  if (useBrowser) {
     try {
-      return await fetchWithBrowser(page, action);
+      return await fetchWithBrowser(browserSession, action);
     } catch (err) {
-      log.warn(`[Fetch] 浏览器也失败: ${(err.message || '').slice(0, 80)}`);
+      log.warn(`[Fetch] WebView 访问失败: ${(err.message || '').slice(0, 80)}`);
       return `http_fetch ${action.url}: 浏览器访问失败 (${(err.message || '').slice(0, 100)})。`;
     }
   }
@@ -141,44 +170,37 @@ async function executeSingleFetch(action, page, domainRules) {
       if (isBot) {
         log.info(`[Fetch] 检测到反爬机制: ${action.url}`);
         await domainRules.markBrowserDomain(action.url);
-        if (page) {
-          try {
-            return await fetchWithBrowser(page, action);
-          } catch {
-            /* fall through to curl result */
-          }
+        try {
+          return await fetchWithBrowser(browserSession, action);
+        } catch {
+          /* fall through to curl result */
         }
       }
     }
     if (result) return result;
     return `http_fetch ${action.url}: 返回内容为空或过短。`;
   } catch (err) {
-    if (!page) {
+    try {
+      return await fetchWithBrowser(browserSession, action);
+    } catch {
       if (err.killed || /timed?out/i.test(err.message)) {
         return `http_fetch ${action.url}: 请求超时。`;
       }
       return `http_fetch ${action.url}: 请求失败 (${err.message.slice(0, 100)})。`;
     }
-
-    try {
-      return await fetchWithBrowser(page, action);
-    } catch {
-      return `http_fetch ${action.url}: 请求失败 (${err.message.slice(0, 100)})。`;
-    }
   }
 }
 
-export async function executeFetchAction(action, page, domainRules) {
-  // Parallel fetch: multiple URLs concurrently
+export async function executeFetchAction(action, browserSession, domainRules) {
   if (action.type === 'parallel_fetch' && Array.isArray(action.urls)) {
     const results = await Promise.all(
       action.urls.map(url =>
-        executeSingleFetch({ ...action, type: 'http_fetch', url }, page, domainRules)
+        executeSingleFetch({ ...action, type: 'http_fetch', url }, browserSession, domainRules)
           .catch(err => `http_fetch ${url}: 失败 (${err.message.slice(0, 80)})`)
       )
     );
     return results.join('\n\n---\n\n');
   }
 
-  return executeSingleFetch(action, page, domainRules);
+  return executeSingleFetch(action, browserSession, domainRules);
 }
