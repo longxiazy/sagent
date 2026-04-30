@@ -19,7 +19,7 @@
  *   AGENT_STAGGER_DELAY             — 竞速错峰延迟（秒）
  *   AGENT_BATCH_SIZE                — 每批并发模型数
  *   AGENT_MEMORY_MAX_ENTRIES        — 记忆压缩阈值
- *   AGENT_HEADLESS                  — 浏览器无头模式
+ *   AGENT_HEADLESS                  — 兼容旧配置，WebView 后端会忽略该值
  *   AGENT_OBSERVE_DESKTOP           — 是否观测 macOS 桌面
  *   AGENT_RESUME                    — 是否自动恢复断点
  *   MEMORY_DIR                      — 记忆和截图存储目录
@@ -31,7 +31,6 @@ import cors from 'cors';
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright-core';
 import { createAgentRunStore } from './helpers/run-store.js';
 import { createApprovalStore } from './agent/core/approval-store.js';
 import { initLlmLogger } from './agent/core/llm-logger.js';
@@ -60,25 +59,13 @@ const AGENT_RESUME = process.env.AGENT_RESUME !== 'false';
 initLlmLogger(MEMORY_DIR);
 
 const AGENT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS || 8);
-const CHROME_CANDIDATE_PATHS = [
-  process.env.AGENT_BROWSER_PATH,
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-  '/usr/bin/google-chrome',
-  '/usr/bin/chromium-browser',
-  '/usr/bin/chromium',
-].filter(Boolean);
-
 const agentRunStore = createAgentRunStore();
 const approvalStore = createApprovalStore();
 const runDesktopAgent = createDesktopAgentRunner({
   openai_client,
   anthropic_client,
   modelConfig,
-  chromium,
   maxSteps: AGENT_MAX_STEPS,
-  browserCandidatePaths: CHROME_CANDIDATE_PATHS,
   defaultHeadless: process.env.AGENT_HEADLESS === 'true',
   observeDesktop: process.env.AGENT_OBSERVE_DESKTOP === 'true',
   modelTimeoutMs: Number(process.env.AGENT_MODEL_TIMEOUT || 90) * 1000,

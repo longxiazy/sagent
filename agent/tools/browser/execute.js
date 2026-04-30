@@ -1,23 +1,30 @@
-import { execFile } from 'node:child_process';
+import { getWebView } from './webview-session.js';
 
-function execFileText(file, args) {
-  return new Promise((resolve, reject) => {
-    execFile(file, args, { timeout: 12000 }, (error, stdout, stderr) => {
-      if (error) {
-        reject(new Error(stderr?.trim() || error.message));
-        return;
-      }
-      resolve((stdout || '').trim());
-    });
-  });
+const ACTION_SETTLE_MS = 600;
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export async function executeBrowserAction(page, action) {
+function elementSelector(elementId) {
+  const id = String(elementId).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `[data-agent-node-id="${id}"]`;
+}
+
+function queryElementScript(selector, body) {
+  return `(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!element) throw new Error('元素不存在: ${selector.replace(/'/g, "\\'")}');
+    ${body}
+  })()`;
+}
+
+export async function executeBrowserAction(view, action) {
   try {
-    return await _executeBrowserAction(page, action);
+    return await _executeBrowserAction(view || getWebView(), action);
   } catch (err) {
     const msg = err.message || String(err);
-    if (/timeout|waiting for|not found|selector/i.test(msg)) {
+    if (/timeout|waiting for|not found|selector|元素不存在/i.test(msg)) {
       return `浏览器操作失败: ${msg.slice(0, 200)}。可能原因: 元素不存在或页面未加载完成，请重新观察页面后使用 observation 中存在的 elementId。`;
     }
     if (/execution context was destroyed|net::err_|connection.*closed|navigation/i.test(msg)) {
@@ -27,10 +34,11 @@ export async function executeBrowserAction(page, action) {
   }
 }
 
-async function _executeBrowserAction(page, action) {
+async function _executeBrowserAction(view, action) {
   if (action.type === 'navigate') {
     try {
-      await page.goto(action.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await view.navigate(action.url);
+      await delay(ACTION_SETTLE_MS);
       return `已打开 ${action.url}`;
     } catch (err) {
       return `无法打开 ${action.url}: ${err.message?.slice(0, 150) || '连接失败'}。请尝试其他网址或使用 fetch 工具。`;
@@ -41,10 +49,9 @@ async function _executeBrowserAction(page, action) {
     const query = action.query || '';
     if (!query) throw new Error('google_search 缺少 query');
     const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-    await execFileText('open', [url]);
-    // Wait for browser to load
-    await new Promise(resolve => setTimeout(resolve, 4000));
-    return `已在默认浏览器打开 Google 搜索: "${query}"。请使用 capture_screen 截图查看结果。`;
+    await view.navigate(url);
+    await delay(ACTION_SETTLE_MS);
+    return `已在浏览器打开 Google 搜索: "${query}"。`;
   }
 
   if (action.type === 'click') {
@@ -52,11 +59,9 @@ async function _executeBrowserAction(page, action) {
       throw new Error('click 缺少 elementId');
     }
 
-    const locator = page.locator(`[data-agent-node-id="${action.elementId}"]`).first();
-    await locator.waitFor({ state: 'visible', timeout: 10000 });
-    await locator.click({ timeout: 10000 });
-    await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
-    await page.waitForTimeout(600);
+    const selector = elementSelector(action.elementId);
+    await view.click(selector, { timeout: 10000 });
+    await delay(ACTION_SETTLE_MS);
     return `已点击元素 ${action.elementId}`;
   }
 
@@ -65,51 +70,56 @@ async function _executeBrowserAction(page, action) {
       throw new Error('type 缺少 elementId');
     }
 
-    const locator = page.locator(`[data-agent-node-id="${action.elementId}"]`).first();
-    await locator.waitFor({ state: 'visible', timeout: 10000 });
-    await locator.click({ timeout: 10000 });
+    const selector = elementSelector(action.elementId);
+    const elementInfo = await view.evaluate(queryElementScript(selector, `
+      return {
+        tagName: element.tagName.toLowerCase(),
+        isEditable: Boolean(element.isContentEditable),
+      };
+    `));
 
-    const tagName = await locator.evaluate(element => element.tagName.toLowerCase());
-    const isEditable = await locator.evaluate(element => element.isContentEditable);
+    await view.click(selector, { timeout: 10000 });
 
-    if (tagName === 'input' || tagName === 'textarea') {
-      await locator.fill(action.text, { timeout: 10000 });
-    } else if (isEditable) {
-      await locator.evaluate((element, text) => {
+    if (elementInfo.tagName === 'input' || elementInfo.tagName === 'textarea') {
+      await view.evaluate(queryElementScript(selector, `
         element.focus();
-        element.textContent = text;
-      }, action.text);
+        element.value = '';
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      `));
+      await view.type(selector, action.text || '');
+    } else if (elementInfo.isEditable) {
+      await view.evaluate(queryElementScript(selector, `
+        element.focus();
+        element.textContent = '';
+      `));
+      await view.type(selector, action.text || '');
     } else {
       throw new Error(`元素 ${action.elementId} 不可输入`);
     }
 
     if (action.submit) {
-      await locator.press('Enter').catch(() => {});
-      await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
-      await page.waitForTimeout(600);
+      await view.press('Enter');
+      await delay(ACTION_SETTLE_MS);
     }
 
     return `已在元素 ${action.elementId} 输入内容`;
   }
 
   if (action.type === 'wait') {
-    await page.waitForTimeout(action.seconds * 1000);
+    await delay(action.seconds * 1000);
     return `已等待 ${action.seconds} 秒`;
   }
 
   if (action.type === 'scroll') {
     const pixels = (action.amount || 3) * 300;
-    if (action.direction === 'up') {
-      await page.evaluate(n => window.scrollBy(0, -n), pixels);
-    } else {
-      await page.evaluate(n => window.scrollBy(0, n), pixels);
-    }
-    await page.waitForTimeout(400);
+    const signedPixels = action.direction === 'up' ? -pixels : pixels;
+    await view.evaluate(`window.scrollBy(0, ${signedPixels})`);
+    await delay(400);
     return `已向${action.direction === 'up' ? '上' : '下'}滚动 ${action.amount || 3} 步`;
   }
 
   if (action.type === 'get_page_content') {
-    const text = await page.evaluate(() => document.body.innerText);
+    const text = await view.evaluate("document.body?.innerText || ''");
     return text.slice(0, 12000) || '页面内容为空';
   }
 

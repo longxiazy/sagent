@@ -6,6 +6,8 @@
 
 > **macOS only.** The Agent needs to control the local browser and system, currently tested on Mac only.
 >
+> Browser automation uses Bun 1.3+ `Bun.WebView`, which runs on the system WebKit backend on macOS.
+>
 > 🌐 **中文版**: [README_ZH.md](README_ZH.md)
 
 ## Quick Start
@@ -14,7 +16,7 @@
 git clone https://github.com/longxiazy/sagent && cd sagent
 cp .env.example .env  # Fill in your API Key
 npm install && cd client && npm install && cd ..
-npm run sandbox
+npm run sandbox       # Requires Bun 1.3+
 ```
 
 Open http://localhost:5173
@@ -49,6 +51,7 @@ AGENT_MAX_STEPS=128          # Max steps per task, default 8
 AGENT_MODEL_TIMEOUT=30       # Per-model timeout in seconds
 AGENT_MEMORY_MAX_ENTRIES=20  # Memory compaction threshold
 AGENT_RESUME=true            # Auto-resume interrupted tasks after backend restart
+AGENT_HEADLESS=false         # Legacy compatibility; ignored by the WebView backend
 
 # Multi-model race (optional)
 AGENT_STAGGER_DELAY=3        # Delay between batches in seconds
