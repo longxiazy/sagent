@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"node server.js\" \"cd client && npm run dev\"",
-    "sandbox": "concurrently \"sandbox-exec -f sandbox.sb -D HOME=$HOME -D PROJECT_DIR=$(pwd) $(which node) server.js\" \"cd client && npm run dev\"",
+    "dev": "concurrently \"bun server.js\" \"cd client && npm run dev\"",
+    "sandbox": "concurrently \"sandbox-exec -f sandbox.sb -D HOME=$HOME -D PROJECT_DIR=$(pwd) $(which bun) server.js\" \"cd client && npm run dev\"",
     "build": "cd client && npm run build",
     "lint": "eslint .",
     "stop": "kill -9 $(lsof -ti :3001) $(lsof -ti :5173) 2>/dev/null; echo 'stopped'",
@@ -15,8 +15,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.4.1",
     "express": "^4.18.2",
-    "openai": "^4.47.1",
-    "playwright-core": "^1.59.1"
+    "openai": "^4.47.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
