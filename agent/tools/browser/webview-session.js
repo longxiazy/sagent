@@ -41,7 +41,12 @@ export function getWebView(options = {}) {
 export async function closeBrowserSession(session = sharedSession) {
   const view = session?.view || session?.page || session;
   if (view && typeof view.close === 'function') {
-    await view.close().catch(() => {});
+    try {
+      const result = view.close();
+      if (result && typeof result.catch === 'function') {
+        await result.catch(() => {});
+      }
+    } catch { /* view.close may throw if already closed */ }
   }
   if (session === sharedSession || session?.view === sharedSession?.view) {
     sharedSession = null;
