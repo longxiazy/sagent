@@ -409,7 +409,7 @@ async function streamChatCompletion({
 // Agent 的首个 POST 既负责发起任务，也承载最初的一段 SSE。
 // 如果这段连接中途断开，但服务端 run 已经创建成功，就退化为
 // 通过 runId 继续订阅 /stream/:runId，而不是直接把整次任务判失败。
-async function streamAgentRun({ task, model, models, strategy, headless, memory, signal, onEvent, messages }) {
+async function streamAgentRun({ task, model, models, strategy, headless, memory, signal, onEvent, messages, ...extra }) {
   let runId = null;
   let gotDone = false;
 
@@ -422,7 +422,7 @@ async function streamAgentRun({ task, model, models, strategy, headless, memory,
   try {
     await streamSseJson({
       url: AGENT_API_URL,
-      body: { task, model, models, strategy, headless, memory, messages },
+      body: { task, model, models, strategy, headless, memory, messages, ...extra },
       signal,
       onEvent: wrappedEvent,
     });
@@ -2017,8 +2017,6 @@ export default function App() {
       } catch (err) {
         if (err.name === 'AbortError') {
           setAgentRunning(false);
-          agentRunIdRef.current = null;
-          setAgentRunId(null);
         }
       }
     })();
@@ -2512,8 +2510,7 @@ export default function App() {
       });
 
       agentAbortRef.current = null;
-      agentRunIdRef.current = null;
-      setAgentRunId(null);
+      // Keep agentRunIdRef for post-task checkpoint queries
       setAgentRunning(false);
       setAgentStopping(false);
       setReconnectedRun(false);
