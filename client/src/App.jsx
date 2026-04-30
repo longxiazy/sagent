@@ -1419,7 +1419,7 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
             <Square size={10} /> {agentStopping ? '停止中…' : pendingApproval ? '停止并拒绝' : '停止'}
           </button>
         )}
-        {running && checkpoints.length > 0 && (
+        {running && (
           <button className={`agent-rollback-btn ${showCheckpointPanel ? 'active' : ''}`} onClick={onToggleCheckpointPanel} title="回滚到历史快照">
             <RotateCcw size={10} /> 回滚
           </button>
