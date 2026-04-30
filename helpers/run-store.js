@@ -42,7 +42,7 @@ export function createAgentRunStore() {
       const record = {
         runId,
         startedAt,
-        cancelled: false,
+        cancelAc: new AbortController(),
         events: [],
         status: 'running',
         meta,
@@ -59,7 +59,7 @@ export function createAgentRunStore() {
      */
     getActiveRun() {
       for (const run of runs.values()) {
-        if (run.status === 'running' && !run.cancelled) {
+        if (run.status === 'running' && !run.cancelAc.signal.aborted) {
           return run;
         }
       }
@@ -85,7 +85,7 @@ export function createAgentRunStore() {
     cancelRun(runId) {
       const run = getRun(runId);
       if (!run) return;
-      run.cancelled = true;
+      run.cancelAc.abort();
     },
 
     /**

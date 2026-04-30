@@ -156,7 +156,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         headless: agentHeadless,
         runId,
         onEvent: sendEvent,
-        isCancelled: () => runRecord.cancelled,
+        cancelSignal: runRecord.cancelAc.signal,
         conversationHistory: Array.isArray(conversationHistory) ? conversationHistory : [],
         memory: useMemory,
       });
@@ -343,7 +343,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
 
     // Register writer BEFORE snapshotting to avoid event gap
     let writer = null;
-    if (run.status === 'running' && !run.cancelled) {
+    if (run.status === 'running' && !run.cancelAc.signal.aborted) {
       writer = payload => {
         if (!res.writableEnded) {
           res.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -365,7 +365,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       res.write(`data: ${JSON.stringify(run.events[i])}\n\n`);
     }
 
-    if (run.status !== 'running' || run.cancelled) {
+    if (run.status !== 'running' || run.cancelAc.signal.aborted) {
       res.end();
     }
   });
