@@ -1419,7 +1419,7 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
             <Square size={10} /> {agentStopping ? '停止中…' : pendingApproval ? '停止并拒绝' : '停止'}
           </button>
         )}
-        {running && (
+        {(running || trace.length > 0) && (
           <button className={`agent-rollback-btn ${showCheckpointPanel ? 'active' : ''}`} onClick={onToggleCheckpointPanel} title="回滚到历史快照">
             <RotateCcw size={10} /> 回滚
           </button>
@@ -1808,6 +1808,7 @@ export default function App() {
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const reconnectTaskRef = useRef(null);
+  const lastAgentTaskRef = useRef(null);
 
   // 拉取后端可用模型。这里除了更新下拉/模型标签，
   // 还要顺手修正那些引用了已下线模型的历史聊天会话。
@@ -2128,7 +2129,9 @@ export default function App() {
 
   const fetchCheckpoints = async () => {
     try {
-      const res = await fetch('/api/agent/checkpoints');
+      const rid = agentRunIdRef.current;
+      const url = rid ? `/api/agent/checkpoints?runId=${rid}` : '/api/agent/checkpoints';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setAgentCheckpoints(data.checkpoints || []);
@@ -2148,16 +2151,26 @@ export default function App() {
     if (!rid) return;
     setRollbackLoading(true);
     try {
-      const res = await fetch('/api/agent/rollback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetStep }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || '回滚失败');
+      if (agentRunning) {
+        // Running task — use pendingRollback for in-place rollback
+        const res = await fetch('/api/agent/rollback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetStep }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || '回滚失败');
+        } else {
+          setShowCheckpointPanel(false);
+        }
       } else {
+        // Finished task — restart from checkpoint
         setShowCheckpointPanel(false);
+        setAgentTrace(prev => prev.filter(e => e.step == null || e.step <= targetStep));
+        await sendAgentTask(lastAgentTaskRef.current || '继续任务', {
+          fromCheckpoint: { runId: rid, step: targetStep },
+        });
       }
     } catch {
       alert('回滚请求失败');
@@ -2346,18 +2359,21 @@ export default function App() {
 
   // Agent 流程和普通对话不一样：聊天区只保留“任务 + 最终回答”，
   // 详细的中间步骤全部写进 agentTrace，再由 AgentPanel 单独展示。
-  const sendAgentTask = async text => {
+  const sendAgentTask = async (text, extraBody) => {
     const sessionId = activeSession.id;
-    const userMsg = { role: 'user', content: text, ts: Date.now() };
-    const history = [...messages, userMsg];
+    const isRetry = !!extraBody?.fromCheckpoint;
+    lastAgentTaskRef.current = text;
+    const history = isRetry ? messages : [...messages, { role: 'user', content: text, ts: Date.now() }];
 
-    updateSession(sessionId, session =>
-      touchSession(session, {
-        messages: [...history, { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() }],
-      })
-    );
-    setInput('');
-    setAgentTrace([]);
+    if (!isRetry) {
+      updateSession(sessionId, session =>
+        touchSession(session, {
+          messages: [...history, { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() }],
+        })
+      );
+      setInput('');
+      setAgentTrace([]);
+    }
     setAgentStartedAt(Date.now());
     setAgentRunning(true);
     setPendingApproval(null);
@@ -2379,6 +2395,7 @@ export default function App() {
         memory: agentMemory,
         signal: controller.signal,
         messages: history.slice(-10),
+        ...extraBody,
         async onEvent(event) {
           if (event.type === 'model_plan') {
             console.log(`[AgentUI] model_plan step=${event.step} stage=${event.stage} model=${event.model || '-'} models=${event.models?.join(',') || '-'}`);

@@ -44,6 +44,7 @@ import {
 import { removeCheckpoint } from '../agent/core/checkpoint.js';
 import {
   listSessionCheckpoints,
+  loadLatestHealthySnapshot,
 } from '../agent/core/session-checkpoint.js';
 import { summarizeText } from '../agent/core/ai-client.js';
 import { log } from '../helpers/logger.js';
@@ -53,7 +54,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
   const defaultModel = modelConfig?.[0]?.id || 'minimaxai/minimax-m2.7';
 
   router.post('/api/agent', async (req, res) => {
-    const { task, model = defaultModel, models: reqModels, strategy = 'race', headless, memory: useMemory = true, messages: conversationHistory } = req.body ?? {};
+    const { task, model = defaultModel, models: reqModels, strategy = 'race', headless, memory: useMemory = true, messages: conversationHistory, fromCheckpoint } = req.body ?? {};
     const agentModels = Array.isArray(reqModels) && reqModels.length > 0 ? reqModels : [model];
 
     if (typeof task !== 'string' || !task.trim()) {
@@ -64,6 +65,21 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     const activeRun = agentRunStore.getActiveRun();
     if (activeRun) {
       return res.status(409).json({ error: '已有 Agent 在运行中，请等待完成或取消', runId: activeRun.runId });
+    }
+
+    // Load checkpoint history if retrying from a checkpoint
+    let checkpointInitialStep;
+    let checkpointInitialHistory;
+    if (fromCheckpoint && checkpointDir) {
+      const cpRunId = fromCheckpoint.runId;
+      const cpStep = fromCheckpoint.step;
+      if (typeof cpRunId === 'string' && typeof cpStep === 'number') {
+        const snapshot = await loadLatestHealthySnapshot(checkpointDir, cpRunId, cpStep);
+        if (snapshot) {
+          checkpointInitialStep = snapshot.step + 1;
+          checkpointInitialHistory = snapshot.history || [];
+        }
+      }
     }
 
     const normalizedTask = task.trim();
@@ -163,6 +179,8 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         cancelSignal: runRecord.cancelAc.signal,
         conversationHistory: Array.isArray(conversationHistory) ? conversationHistory : [],
         memory: useMemory,
+        initialStep: checkpointInitialStep,
+        initialHistory: checkpointInitialHistory,
       });
 
       finalAnswer = agentResult.answer;
@@ -457,17 +475,19 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
   /**
    * GET /api/agent/checkpoints — 列出当前运行的所有会话检查点
    */
-  router.get('/api/agent/checkpoints', async (_req, res) => {
+  router.get('/api/agent/checkpoints', async (req, res) => {
     if (!checkpointDir) {
       return res.json({ checkpoints: [] });
     }
+    const queryRunId = req.query.runId;
     const activeRun = agentRunStore.getActiveRun();
-    if (!activeRun) {
+    const runId = queryRunId || activeRun?.runId;
+    if (!runId) {
       return res.json({ checkpoints: [] });
     }
     try {
-      const checkpoints = await listSessionCheckpoints(checkpointDir, activeRun.runId);
-      res.json({ runId: activeRun.runId, checkpoints });
+      const checkpoints = await listSessionCheckpoints(checkpointDir, runId);
+      res.json({ runId, checkpoints });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
