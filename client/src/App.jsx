@@ -2134,7 +2134,7 @@ export default function App() {
         const data = await res.json();
         setAgentCheckpoints(data.checkpoints || []);
       }
-    } catch {}
+    } catch { /* ignore fetch errors */ }
   };
 
   const toggleCheckpointPanel = () => {
