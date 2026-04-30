@@ -131,19 +131,18 @@ function toolUseToNormalizedDecision(toolUse) {
   return normalizeDesktopAgentDecision({ action });
 }
 
-async function singleModelPlan({ model, openai_client, anthropic_client, modelConfig, isCancelled, ...context }) {
-  if (isCancelled?.()) throw new Error('Agent 已取消');
+async function singleModelPlan({ model, openai_client, anthropic_client, modelConfig, cancelSignal, raceSignal, ...context }) {
+  if (cancelSignal?.aborted) throw new Error('Agent 已取消');
 
-  // Create an AbortController that fires when isCancelled becomes true
+  // Create an AbortController that fires on user cancel OR race winner
   const ac = new AbortController();
-  let cancelTimer = null;
-  if (isCancelled) {
-    cancelTimer = setInterval(() => {
-      if (isCancelled()) {
-        ac.abort();
-        clearInterval(cancelTimer);
-      }
-    }, 200);
+  const onUserCancel = () => ac.abort();
+  const onRaceAbort = () => ac.abort();
+  if (cancelSignal) {
+    if (cancelSignal.aborted) { ac.abort(); } else { cancelSignal.addEventListener('abort', onUserCancel); }
+  }
+  if (raceSignal) {
+    if (raceSignal.aborted) { ac.abort(); } else { raceSignal.addEventListener('abort', onRaceAbort); }
   }
 
   try {
@@ -179,7 +178,8 @@ async function singleModelPlan({ model, openai_client, anthropic_client, modelCo
       return { ...result, model };
     }
   } finally {
-    if (cancelTimer) clearInterval(cancelTimer);
+    if (cancelSignal) cancelSignal.removeEventListener('abort', onUserCancel);
+    if (raceSignal) raceSignal.removeEventListener('abort', onRaceAbort);
   }
 }
 
@@ -251,7 +251,7 @@ function aggregateResults(modelResults) {
 const DEFAULT_MODEL_TIMEOUT_MS = 10_000;
 
 function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS, staggerDelayMs = 0, batchSize = 1 }) {
-  function planWithTimeout(model, context, isCancelled) {
+  function planWithTimeout(model, context, cancelSignal, raceSignal) {
     const timeoutMs = typeof modelTimeoutMs === 'number' && modelTimeoutMs > 0 ? modelTimeoutMs : DEFAULT_MODEL_TIMEOUT_MS;
     const shortModel = model.split('/').pop();
     const startTime = Date.now();
@@ -263,7 +263,7 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
       timer = setTimeout(() => reject(new Error(`模型超时 (${Math.round(timeoutMs / 1000)}s)`)), timeoutMs);
     });
     return Promise.race([
-      singleModelPlan({ model, openai_client, anthropic_client, modelConfig, isCancelled, ...context }),
+      singleModelPlan({ model, openai_client, anthropic_client, modelConfig, cancelSignal, raceSignal, ...context }),
       timeout,
     ])
       .then(result => {
@@ -276,15 +276,21 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
       })
       .catch(err => {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        const errLine = `  !!! LLM FAILED   ${shortModel}  ${elapsed}s  ${err.message.slice(0, 60)}`;
-        const ew = Math.max(displayWidth(errLine) + 4, 52);
-        log.warn(`\n  ${'╔' + '═'.repeat(ew) + '╗'}\n  ║${padEndW(errLine, ew)}║\n  ${'╚' + '═'.repeat(ew) + '╝'}`);
+        if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+          const line = `  ··· RACE_ABORT  ${shortModel}  ${elapsed}s`;
+          const w = Math.max(displayWidth(line) + 4, 52);
+          log.info(`\n  ${'╔' + '═'.repeat(w) + '╗'}\n  ║${padEndW(line, w)}║\n  ${'╚' + '═'.repeat(w) + '╝'}`);
+        } else {
+          const errLine = `  !!! LLM FAILED   ${shortModel}  ${elapsed}s  ${err.message.slice(0, 60)}`;
+          const ew = Math.max(displayWidth(errLine) + 4, 52);
+          log.warn(`\n  ${'╔' + '═'.repeat(ew) + '╗'}\n  ║${padEndW(errLine, ew)}║\n  ${'╚' + '═'.repeat(ew) + '╝'}`);
+        }
         throw err;
       })
       .finally(() => clearTimeout(timer));
   }
 
-  return async ({ model, agentModels, strategy = 'race', onEvent, isCancelled, step, ...context }) => {
+  return async ({ model, agentModels, strategy = 'race', onEvent, cancelSignal, step, ...context }) => {
     const extraModels = Array.isArray(agentModels) && agentModels.length > 1
       ? agentModels.filter(m => m !== model)
       : [];
@@ -299,7 +305,7 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
       }
       onEvent?.({ type: 'model_plan', stage: 'thinking', model, step });
       try {
-        const result = await planWithTimeout(model, planCtx, isCancelled);
+        const result = await planWithTimeout(model, planCtx, cancelSignal, undefined);
         onEvent?.({ type: 'model_plan', stage: 'success', model, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
         return result;
       } catch (err) {
@@ -340,7 +346,7 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
 
       const settled = await Promise.allSettled(
         activeModels.map(m =>
-	          planWithTimeout(m, planCtx, isCancelled)
+	          planWithTimeout(m, planCtx, cancelSignal, undefined)
             .then(result => {
               log.debug(`[MultiModel] step=${step} model=${m} succeeded: ${result.action?.tool}.${result.action?.type}`);
               onEvent?.({ type: 'model_plan', stage: 'success', model: m, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
@@ -396,18 +402,20 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
       let launched = 0;
       const failures = [];
       const timers = [];
+      const raceAc = new AbortController();
 
       function launchModel(m) {
-        if (settled || isCancelled()) return;
+        if (settled || cancelSignal.aborted) return;
         launched++;
         onEvent?.({ type: 'model_plan', stage: 'thinking', model: m, step });
-        planWithTimeout(m, planCtx, isCancelled)
+        planWithTimeout(m, planCtx, cancelSignal, raceAc.signal)
           .then(result => {
             if (settled) {
               onEvent?.({ type: 'model_plan', stage: 'cancelled', model: m, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
               return;
             }
             settled = true;
+            raceAc.abort();
             timers.forEach(t => clearTimeout(t));
             log.info(`[MultiModel] 使用 ${m} 的结果（${activeModels.join(', ')}）`);
             onEvent?.({ type: 'model_plan', stage: 'winner', model: m, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
@@ -437,7 +445,7 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
 
       let nextIndex = 0;
       function tryLaunchBatch(skipDelay = false) {
-        if (settled || isCancelled() || nextIndex >= activeModels.length) return;
+        if (settled || cancelSignal.aborted || nextIndex >= activeModels.length) return;
 
         const isFirstBatch = nextIndex === 0;
         const batch = activeModels.slice(nextIndex, nextIndex + batchSize);
@@ -593,7 +601,7 @@ export function createDesktopAgentRunner({
     systemPrompt = null,
     headless = defaultHeadless,
     onEvent,
-    isCancelled,
+    cancelSignal,
     runId,
     runRecord = null,
     startedAt = Date.now(),
@@ -615,7 +623,7 @@ export function createDesktopAgentRunner({
       task,
       maxSteps,
       onEvent,
-      isCancelled,
+      cancelSignal,
       initialStep,
       initialHistory,
       // v2: 会话级健康检查点支持
@@ -644,7 +652,7 @@ export function createDesktopAgentRunner({
           agentModels,
           strategy,
           onEvent,
-          isCancelled,
+          cancelSignal,
           task: currentTask,
           systemPrompt,
           step,

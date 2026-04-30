@@ -66,7 +66,7 @@ export async function runAgentRuntime({
   task,
   maxSteps = 8,
   onEvent,
-  isCancelled,
+  cancelSignal,
   initialize,
   observe,
   decide,
@@ -86,9 +86,11 @@ export async function runAgentRuntime({
   const state = await initialize?.({ task, onEvent });
   let decideErrorCount = 0;
 
+  const cancelled = () => cancelSignal?.aborted;
+
   try {
     for (let step = initialStep; step <= maxSteps; step += 1) {
-      if (isCancelled?.()) {
+      if (cancelled()) {
         throw new Error("Agent 已取消");
       }
 
@@ -191,7 +193,7 @@ export async function runAgentRuntime({
         throw decErr; // 未达到阈值或无快照，继续抛异常
       }
 
-      if (isCancelled?.()) {
+      if (cancelled()) {
         throw new Error("Agent 已取消");
       }
 
@@ -248,7 +250,7 @@ export async function runAgentRuntime({
         log.error(`[Runtime] step ${step} execute error: ${execErr.message}`);
       }
 
-      if (isCancelled?.()) {
+      if (cancelled()) {
         throw new Error("Agent 已取消");
       }
 

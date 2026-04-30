@@ -16,7 +16,9 @@ export function buildAgentMetrics(startedAt, { stepCount = 0, status = 'done' } 
 
 export function buildSseWriter(res) {
   return payload => {
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    }
   };
 }
 
