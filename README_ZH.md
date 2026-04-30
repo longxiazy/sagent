@@ -13,10 +13,13 @@
 ## 快速开始
 
 ```bash
+# 安装 Bun（必需，>= 1.3）
+curl -fsSL https://bun.sh/install | bash
+
 git clone https://github.com/longxiazy/sagent && cd sagent
 cp .env.example .env                    # 编辑填入 API Key
 npm install && cd client && npm install && cd ..
-npm run sandbox                         # 需要 Bun 1.3+
+npm run dev
 ```
 
 打开 http://localhost:5173

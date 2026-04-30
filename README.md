@@ -13,10 +13,13 @@
 ## Quick Start
 
 ```bash
+# Install Bun (required, >= 1.3)
+curl -fsSL https://bun.sh/install | bash
+
 git clone https://github.com/longxiazy/sagent && cd sagent
 cp .env.example .env  # Fill in your API Key
 npm install && cd client && npm install && cd ..
-npm run sandbox       # Requires Bun 1.3+
+npm run dev
 ```
 
 Open http://localhost:5173
