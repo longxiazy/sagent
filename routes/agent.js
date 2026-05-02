@@ -67,6 +67,12 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     const agentHeadless = typeof headless === 'boolean' ? headless : process.env.AGENT_HEADLESS === 'true';
     const startedAt = Date.now();
     const rawSendEvent = buildSseWriter(res);
+    // SSE 连接状态追踪
+    let sseConnected = true;
+    const sseSend = payload => {
+      if (!sseConnected || res.writableEnded) return;
+      try { rawSendEvent(payload); } catch (_) { sseConnected = false; }
+    };
     const runRecord = agentRunStore.createRun({
       model,
       task: normalizedTask,
@@ -79,9 +85,11 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     let agentError = null;
 
     req.on('close', () => {
-      // Don't cancel the run on disconnect — allow reconnect
+      if (res.writableEnded) return;
+      log.debug(`[${formatLogTime()}] POST /api/agent client_disconnected model=${model} run_id=${runId}`);
+      // 客户端断开：清理未发送的 buffer，确保 res.end() 被调用
       if (!res.writableEnded) {
-        log.debug(`[${formatLogTime()}] POST /api/agent client_disconnected model=${model} run_id=${runId}`);
+        try { res.end(); } catch (_) {}
       }
     });
 
@@ -113,7 +121,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       }
       logAgentEvent(payload);
       agentRunStore.addEvent(runId, payload);
-      rawSendEvent(payload);
+      sseSend(payload);
       // Forward to any reconnected clients
       const run = agentRunStore.getRun(runId);
       if (run?._reconnectWriters) {
