@@ -290,5 +290,7 @@ describe('runtime: session checkpoint integration', () => {
     expect(evtLog.some(e => e.type === 'rollback')).toBe(false);
     // Runtime returns result, it doesn't emit 'done' event itself
     expect(result.answer).toBe('done');
+    // Wait for fire-and-forget snapshot writes to complete
+    await new Promise(r => setTimeout(r, 200));
   });
 });

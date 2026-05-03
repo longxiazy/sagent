@@ -40,6 +40,8 @@ import {
   extractConversationEntry,
   extractProjectKnowledge,
   compactConversationMemory,
+  clearMemory,
+  clearProjectKnowledge,
 } from '../agent/core/memory.js';
 import { removeCheckpoint } from '../agent/core/checkpoint.js';
 import {
@@ -494,6 +496,26 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       }
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  router.delete('/api/agent/memory', async (_req, res) => {
+    try {
+      await clearMemory(memoryDir);
+      log.info('[Memory] 已清空全部记忆');
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.delete('/api/agent/memory/knowledge', async (_req, res) => {
+    try {
+      await clearProjectKnowledge(memoryDir);
+      log.info('[Memory] 已清空项目知识');
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
   });
 

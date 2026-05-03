@@ -28,11 +28,23 @@ import {
   HEALTH_CHECKPOINT_INTERVAL,
 } from "./session-checkpoint.js";
 
-const MAX_HISTORY_STEPS = 64;
+const MAX_HISTORY_STEPS = 20;
+const MAX_RESULT_CHARS = 1000;
 
 function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
+  // Always truncate result fields to limit context size
+  const truncateEntry = (h) => {
+    if (h.result && typeof h.result === 'string' && h.result.length > MAX_RESULT_CHARS) {
+      return { ...h, result: h.result.slice(0, MAX_RESULT_CHARS) + '…[truncated]' };
+    }
+    if (h.result != null && typeof h.result !== 'string' && String(h.result).length > MAX_RESULT_CHARS) {
+      return { ...h, result: String(h.result).slice(0, MAX_RESULT_CHARS) + '…[truncated]' };
+    }
+    return h;
+  };
+
   if (history.length <= maxSteps) {
-    return history;
+    return history.map(truncateEntry);
   }
   const recent = history.slice(-maxSteps);
   const dropped = history.slice(0, -maxSteps);
@@ -48,7 +60,7 @@ function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
       type: "summary",
       text: `历史摘要（共${dropped.length}步）: ${summary}`,
     },
-    ...recent,
+    ...recent.map(truncateEntry),
   ];
 }
 

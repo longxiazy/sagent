@@ -282,3 +282,16 @@ export async function compactConversationMemory(memory, { maxEntries = MAX_CONVE
   memory.conversation = conv.slice(-maxEntries);
   memory.lastCompactedAt = new Date().toISOString();
 }
+
+export async function clearMemory(dir) {
+  const fresh = emptyMemory();
+  await saveMemory(dir, fresh);
+  return fresh;
+}
+
+export async function clearProjectKnowledge(dir) {
+  const memory = await loadMemory(dir);
+  memory.projectKnowledge = emptyMemory().projectKnowledge;
+  await saveMemory(dir, memory);
+  return memory;
+}
