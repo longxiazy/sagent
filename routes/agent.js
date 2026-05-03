@@ -208,10 +208,28 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     } catch (err) {
       agentError = err;
       log.error('Desktop agent error:', err?.message || err);
+      // Suggest rollback to latest healthy snapshot
+      let rollbackSuggestion = null;
+      if (checkpointDir) {
+        try {
+          const latestStep = Math.max(completedStepCount, observedStepCount) - 1;
+          const snapshot = await loadLatestHealthySnapshot(checkpointDir, runId, latestStep);
+          if (snapshot) {
+            const lastStep = snapshot.history.length > 0 ? snapshot.history[snapshot.history.length - 1] : null;
+            rollbackSuggestion = {
+              step: snapshot.step,
+              lastAction: lastStep ? { type: lastStep.action?.type, tool: lastStep.action?.tool } : null,
+              lastRationale: lastStep?.rationale?.slice(0, 200) || null,
+              lastResult: lastStep?.result?.slice(0, 200) || null,
+            };
+          }
+        } catch { /* ignore snapshot load failure */ }
+      }
       sendEvent({
         type: 'error',
         runId,
         error: err.message,
+        rollbackSuggestion,
       });
     } finally {
       if (checkpointDir) {

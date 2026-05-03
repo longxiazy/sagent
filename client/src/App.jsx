@@ -1671,6 +1671,22 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
                   <div className="agent-trace-content">
                     <strong>Agent 失败</strong>
                     <p>{event.error}</p>
+                    {event.rollbackSuggestion && (() => {
+                      const rs = event.rollbackSuggestion;
+                      return (
+                        <div className="rollback-suggestion">
+                          <p className="rollback-suggestion-info">
+                            建议回滚到 Step {rs.step} 重新执行
+                            {rs.lastAction && <span className="rollback-suggestion-detail">（上一步: {rs.lastAction.tool}.{rs.lastAction.type}）</span>}
+                          </p>
+                          {rs.lastRationale && <p className="rollback-suggestion-ctx">决策: {rs.lastRationale}</p>}
+                          {rs.lastResult && <p className="rollback-suggestion-ctx">结果: {rs.lastResult}</p>}
+                          <button className="rollback-suggestion-btn" onClick={() => onRollback(rs.step)} disabled={rollbackLoading}>
+                            <RotateCcw size={12} /> 回滚到 Step {rs.step}
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </>
               )}
@@ -2003,7 +2019,20 @@ export default function App() {
     // 普通切换会话时，Agent trace 跟着 active session 走；
     // 但如果当前正处在“刷新后重连中的运行态”，不要被旧 session 覆盖掉。
     if (agentRunning) return;
-    setAgentTrace(activeSession.agentTrace || []);
+    const savedTrace = activeSession.agentTrace || [];
+    setAgentTrace(savedTrace);
+    // Recover runId from saved trace (survives page refresh / backend restart)
+    const runEvent = savedTrace.find(e => e.runId);
+    if (runEvent) {
+      agentRunIdRef.current = runEvent.runId;
+      setAgentRunId(runEvent.runId);
+    } else {
+      agentRunIdRef.current = null;
+      setAgentRunId(null);
+    }
+    // Recover last agent task text from session messages for rollback retry
+    const lastUserMsg = [...(activeSession.messages || [])].reverse().find(m => m.role === 'user');
+    lastAgentTaskRef.current = lastUserMsg?.content || null;
     setAgentStartedAt(null);
     setPendingApproval(null);
     approvalRequestRef.current = null;

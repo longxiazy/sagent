@@ -662,7 +662,7 @@ export function createDesktopAgentRunner({
         }),
       authorize,
       shouldObserve: (lastAction) => {
-        if (!lastAction) return true;
+        if (!lastAction) return false;
         const tool = lastAction.tool || '';
         return tool !== 'fs' && tool !== 'terminal';
       },

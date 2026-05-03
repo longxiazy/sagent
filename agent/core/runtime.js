@@ -234,22 +234,21 @@ export async function runAgentRuntime({
       // ---- 原有 checkpoint（step 级） ----
       onCheckpoint?.(history, step);
 
-      // ---- 会话级健康快照 ----
+      // ---- 会话级健康快照（后台写入，不阻塞） ----
       if (sessionCheckpointDir && runRecord && step % HEALTH_CHECKPOINT_INTERVAL === 0) {
         const runId = runRecord.runId;
-        try {
-          await saveHealthySnapshot({
-            dir: sessionCheckpointDir,
-            runId,
-            step,
-            history,
-            state,
-            result,
-            usage: decision.usage,
-          });
-        } catch (err) {
+        const snapData = {
+          dir: sessionCheckpointDir,
+          runId,
+          step,
+          history: history.map(h => ({ ...h })),
+          state: { ...state },
+          result,
+          usage: decision.usage,
+        };
+        saveHealthySnapshot(snapData).catch(err => {
           log.error(`[Runtime] 健康快照保存失败: ${err.message}`);
-        }
+        });
         onEvent?.({
           type: "session_checkpoint",
           step,
