@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, Component, useMemo } from 'react';
 import {
   Menu, Timer, Trash2, Square, Brain, ChevronDown, ChevronUp,
-  Copy, Check, Send,
+  Copy, Check, Send, RotateCcw,
 } from 'lucide-react';
 import hljs from 'highlight.js/lib/core';
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -409,7 +409,7 @@ async function streamChatCompletion({
 // Agent 的首个 POST 既负责发起任务，也承载最初的一段 SSE。
 // 如果这段连接中途断开，但服务端 run 已经创建成功，就退化为
 // 通过 runId 继续订阅 /stream/:runId，而不是直接把整次任务判失败。
-async function streamAgentRun({ task, model, models, strategy, headless, memory, signal, onEvent, messages }) {
+async function streamAgentRun({ task, model, models, strategy, headless, memory, signal, onEvent, messages, ...extra }) {
   let runId = null;
   let gotDone = false;
 
@@ -422,7 +422,7 @@ async function streamAgentRun({ task, model, models, strategy, headless, memory,
   try {
     await streamSseJson({
       url: AGENT_API_URL,
-      body: { task, model, models, strategy, headless, memory, messages },
+      body: { task, model, models, strategy, headless, memory, messages, ...extra },
       signal,
       onEvent: wrappedEvent,
     });
@@ -1321,7 +1321,7 @@ function MemoryPanel({ onClose }) {
 // - 负责展示 trace
 // - 负责显示暂停/审批/用时/token 等运行态指标
 // - 在移动端和桌面端之间复用同一套事件展示逻辑
-function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onToggleMemory, showMemoryPanel }) {
+function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onToggleMemory, showMemoryPanel, onRollback, rollbackLoading }) {
   const traceBottomRef = useRef(null);
   const startTimeRef = useRef(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < PHONE_BREAKPOINT;
@@ -1372,10 +1372,7 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
   }, [hasPendingQuestion]);
 
   useEffect(() => {
-    // Only auto-scroll trace on small screens where it has a max-height
-    if (window.innerWidth < DOCKED_LAYOUT_BREAKPOINT) {
-      traceBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
+    traceBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [trace]);
 
   if (mode !== 'agent') {
@@ -1674,7 +1671,45 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
                   <div className="agent-trace-content">
                     <strong>Agent 失败</strong>
                     <p>{event.error}</p>
+                    {event.rollbackSuggestion && (() => {
+                      const rs = event.rollbackSuggestion;
+                      return (
+                        <div className="rollback-suggestion">
+                          <p className="rollback-suggestion-info">
+                            建议回滚到 Step {rs.step} 重新执行
+                            {rs.lastAction && <span className="rollback-suggestion-detail">（上一步: {rs.lastAction.tool}.{rs.lastAction.type}）</span>}
+                          </p>
+                          {rs.lastRationale && <p className="rollback-suggestion-ctx">决策: {rs.lastRationale}</p>}
+                          {rs.lastResult && <p className="rollback-suggestion-ctx">结果: {rs.lastResult}</p>}
+                          <button className="rollback-suggestion-btn" onClick={() => onRollback(rs.step)} disabled={rollbackLoading}>
+                            <RotateCcw size={12} /> 回滚到 Step {rs.step}
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
+                </>
+              )}
+
+              {event.type === 'rollback' && (
+                <>
+                  <span className="agent-trace-badge rollback">回滚</span>
+                  <div className="agent-trace-content">
+                    <strong>已回滚到 Step {event.targetStep}</strong>
+                    <p>{event.message}</p>
+                  </div>
+                </>
+              )}
+
+              {event.type === 'session_checkpoint' && (
+                <>
+                  <span className="agent-trace-badge plan">快照</span>
+                  <div className="agent-trace-content">
+                    <strong>Step {event.step} 健康快照已保存</strong>
+                  </div>
+                  <button className="trace-rollback-btn" onClick={() => onRollback(event.step)} disabled={rollbackLoading || running} title={`回滚到 Step ${event.step}`}>
+                    <RotateCcw size={10} />
+                  </button>
                 </>
               )}
             </div>
@@ -1716,6 +1751,7 @@ export default function App() {
   const [approvalSubmitting, setApprovalSubmitting] = useState(false);
   const [agentCollapsed, setAgentCollapsed] = useState(false);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
+  const [rollbackLoading, setRollbackLoading] = useState(false);
   const [agentMobileTab, setAgentMobileTab] = useState('agent');
   const [pendingQuestion, setPendingQuestion] = useState(null);
   const [questionSubmitting, setQuestionSubmitting] = useState(false);
@@ -1756,6 +1792,7 @@ export default function App() {
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const reconnectTaskRef = useRef(null);
+  const lastAgentTaskRef = useRef(null);
 
   // 拉取后端可用模型。这里除了更新下拉/模型标签，
   // 还要顺手修正那些引用了已下线模型的历史聊天会话。
@@ -1932,6 +1969,13 @@ export default function App() {
                 approvalRequestRef.current = null;
               }
 
+              if (event.type === 'rollback') {
+                setAgentTrace(prev => {
+                  const target = event.targetStep;
+                  return prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step <= target);
+                });
+              }
+
               if (event.type === 'done') {
                 setAgentRunning(false);
                 updateActiveSession(session => {
@@ -1957,8 +2001,6 @@ export default function App() {
       } catch (err) {
         if (err.name === 'AbortError') {
           setAgentRunning(false);
-          agentRunIdRef.current = null;
-          setAgentRunId(null);
         }
       }
     })();
@@ -1977,7 +2019,20 @@ export default function App() {
     // 普通切换会话时，Agent trace 跟着 active session 走；
     // 但如果当前正处在“刷新后重连中的运行态”，不要被旧 session 覆盖掉。
     if (agentRunning) return;
-    setAgentTrace(activeSession.agentTrace || []);
+    const savedTrace = activeSession.agentTrace || [];
+    setAgentTrace(savedTrace);
+    // Recover runId from saved trace (survives page refresh / backend restart)
+    const runEvent = savedTrace.find(e => e.runId);
+    if (runEvent) {
+      agentRunIdRef.current = runEvent.runId;
+      setAgentRunId(runEvent.runId);
+    } else {
+      agentRunIdRef.current = null;
+      setAgentRunId(null);
+    }
+    // Recover last agent task text from session messages for rollback retry
+    const lastUserMsg = [...(activeSession.messages || [])].reverse().find(m => m.role === 'user');
+    lastAgentTaskRef.current = lastUserMsg?.content || null;
     setAgentStartedAt(null);
     setPendingApproval(null);
     approvalRequestRef.current = null;
@@ -2065,6 +2120,40 @@ export default function App() {
     }
     // Abort SSE after a short grace period for in-flight results
     setTimeout(() => agentAbortRef.current?.abort(), 1500);
+  };
+
+  const handleRollback = async targetStep => {
+    const rid = agentRunIdRef.current;
+    console.log('[Rollback] targetStep:', targetStep, 'runId:', rid, 'running:', agentRunning);
+    if (!rid) {
+      console.warn('[Rollback] no runId, cannot rollback');
+      return;
+    }
+    setRollbackLoading(true);
+    try {
+      if (agentRunning) {
+        // Running task — use pendingRollback for in-place rollback
+        const res = await fetch('/api/agent/rollback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetStep }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || '回滚失败');
+        }
+      } else {
+        // Finished task — restart from checkpoint
+        setAgentTrace(prev => prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step <= targetStep));
+        await sendAgentTask(lastAgentTaskRef.current || '继续任务', {
+          fromCheckpoint: { runId: rid, step: targetStep },
+        });
+      }
+    } catch {
+      alert('回滚请求失败');
+    } finally {
+      setRollbackLoading(false);
+    }
   };
   const requestAgentApproval = event =>
     new Promise(resolve => {
@@ -2247,18 +2336,28 @@ export default function App() {
 
   // Agent 流程和普通对话不一样：聊天区只保留“任务 + 最终回答”，
   // 详细的中间步骤全部写进 agentTrace，再由 AgentPanel 单独展示。
-  const sendAgentTask = async text => {
+  const sendAgentTask = async (text, extraBody) => {
     const sessionId = activeSession.id;
-    const userMsg = { role: 'user', content: text, ts: Date.now() };
-    const history = [...messages, userMsg];
+    const isRetry = !!extraBody?.fromCheckpoint;
+    lastAgentTaskRef.current = text;
+    const history = isRetry ? messages : [...messages, { role: 'user', content: text, ts: Date.now() }];
 
-    updateSession(sessionId, session =>
-      touchSession(session, {
-        messages: [...history, { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() }],
-      })
-    );
-    setInput('');
-    setAgentTrace([]);
+    if (!isRetry) {
+      updateSession(sessionId, session =>
+        touchSession(session, {
+          messages: [...history, { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() }],
+        })
+      );
+      setInput('');
+      setAgentTrace([]);
+    } else {
+      // Retry from checkpoint — update chat placeholder to show re-executing
+      updateSession(sessionId, session => {
+        const msgs = [...session.messages];
+        msgs.push({ role: 'assistant', content: 'Desktop Agent 正在从检查点重新执行任务…', ts: Date.now() });
+        return touchSession(session, { messages: msgs });
+      });
+    }
     setAgentStartedAt(Date.now());
     setAgentRunning(true);
     setPendingApproval(null);
@@ -2280,11 +2379,18 @@ export default function App() {
         memory: agentMemory,
         signal: controller.signal,
         messages: history.slice(-10),
+        ...extraBody,
         async onEvent(event) {
-          if (event.type === 'model_plan') {
-            console.log(`[AgentUI] model_plan step=${event.step} stage=${event.stage} model=${event.model || '-'} models=${event.models?.join(',') || '-'}`);
-          }
-          setAgentTrace(prev => [...prev, event]);
+          console.log(`[AgentUI] event type=${event.type} step=${event.step ?? '-'} stage=${event.stage ?? '-'} model=${event.model || '-'}`);
+          setAgentTrace(prev => {
+            // Deduplicate: same type+step+stage+model already exists
+            const key = `${event.type}:${event.step ?? ''}:${event.stage ?? ''}:${event.model ?? ''}`;
+            if (prev.some(e => `${e.type}:${e.step ?? ''}:${e.stage ?? ''}:${e.model ?? ''}` === key)) {
+              console.log(`[AgentUI] DEDUP skipped: ${key}`);
+              return prev;
+            }
+            return [...prev, event];
+          });
 
           if (event.runId && !agentRunIdRef.current) {
             agentRunIdRef.current = event.runId;
@@ -2300,6 +2406,14 @@ export default function App() {
             await new Promise(resolve => {
               questionRequestRef.current = { ...event, resolve };
               setPendingQuestion(event);
+            });
+            return;
+          }
+
+          if (event.type === 'rollback') {
+            setAgentTrace(prev => {
+              const target = event.targetStep;
+              return prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step <= target);
             });
             return;
           }
@@ -2388,8 +2502,7 @@ export default function App() {
       });
 
       agentAbortRef.current = null;
-      agentRunIdRef.current = null;
-      setAgentRunId(null);
+      // Keep agentRunIdRef for post-task checkpoint queries
       setAgentRunning(false);
       setAgentStopping(false);
       setReconnectedRun(false);
@@ -2667,6 +2780,8 @@ export default function App() {
                   pendingApproval={pendingApproval}
                   onToggleMemory={() => setShowMemoryPanel(v => !v)}
                   showMemoryPanel={showMemoryPanel}
+                  onRollback={handleRollback}
+                  rollbackLoading={rollbackLoading}
                 />
               </div>
 

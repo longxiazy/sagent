@@ -140,6 +140,7 @@ async function resumeFromCheckpoint(cp) {
       systemPrompt,
       headless,
       runId,
+      runRecord: agentRunStore.getRun(runId),
       startedAt,
       initialStep: step + 1,
       initialHistory: history,

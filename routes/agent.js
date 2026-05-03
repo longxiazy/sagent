@@ -42,6 +42,10 @@ import {
   compactConversationMemory,
 } from '../agent/core/memory.js';
 import { removeCheckpoint } from '../agent/core/checkpoint.js';
+import {
+  listSessionCheckpoints,
+  loadLatestHealthySnapshot,
+} from '../agent/core/session-checkpoint.js';
 import { summarizeText } from '../agent/core/ai-client.js';
 import { log } from '../helpers/logger.js';
 
@@ -50,7 +54,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
   const defaultModel = modelConfig?.[0]?.id || 'minimaxai/minimax-m2.7';
 
   router.post('/api/agent', async (req, res) => {
-    const { task, model = defaultModel, models: reqModels, strategy = 'race', headless, memory: useMemory = true, messages: conversationHistory } = req.body ?? {};
+    const { task, model = defaultModel, models: reqModels, strategy = 'race', headless, memory: useMemory = true, messages: conversationHistory, fromCheckpoint } = req.body ?? {};
     const agentModels = Array.isArray(reqModels) && reqModels.length > 0 ? reqModels : [model];
 
     if (typeof task !== 'string' || !task.trim()) {
@@ -61,6 +65,21 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     const activeRun = agentRunStore.getActiveRun();
     if (activeRun) {
       return res.status(409).json({ error: '已有 Agent 在运行中，请等待完成或取消', runId: activeRun.runId });
+    }
+
+    // Load checkpoint history if retrying from a checkpoint
+    let checkpointInitialStep;
+    let checkpointInitialHistory;
+    if (fromCheckpoint && checkpointDir) {
+      const cpRunId = fromCheckpoint.runId;
+      const cpStep = fromCheckpoint.step;
+      if (typeof cpRunId === 'string' && typeof cpStep === 'number') {
+        const snapshot = await loadLatestHealthySnapshot(checkpointDir, cpRunId, cpStep);
+        if (snapshot) {
+          checkpointInitialStep = snapshot.step + 1;
+          checkpointInitialHistory = snapshot.history || [];
+        }
+      }
     }
 
     const normalizedTask = task.trim();
@@ -89,6 +108,11 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
+    res.socket?.setNoDelay(true);
+    // Heartbeat: detect half-open connections between steps
+    const heartbeat = setInterval(() => {
+      if (!res.writableEnded) res.write(': heartbeat\n\n');
+    }, 15000);
 
     log.info(
       `[${formatLogTime()}] POST /api/agent model=${model} headless=${agentHeadless} task=${safeJson(normalizedTask)} ` +
@@ -113,6 +137,9 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       }
       logAgentEvent(payload);
       agentRunStore.addEvent(runId, payload);
+      if (payload.type === 'model_plan' || payload.type === 'session_checkpoint') {
+        log.debug(`[SSE] write type=${payload.type} step=${payload.step} stage=${payload.stage ?? '-'} model=${payload.model ?? '-'} writableEnded=${res.writableEnded} writableFinished=${res.writableFinished}`);
+      }
       rawSendEvent(payload);
       // Forward to any reconnected clients
       const run = agentRunStore.getRun(runId);
@@ -129,6 +156,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       runId,
       message: '准备启动桌面 Agent',
     });
+    log.debug(`[SSE] stream started, writableEnded=${res.writableEnded} writableFinished=${res.writableFinished}`);
 
     // Load memory
     let memory = null;
@@ -155,10 +183,13 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         systemPrompt,
         headless: agentHeadless,
         runId,
+        runRecord,
         onEvent: sendEvent,
         cancelSignal: runRecord.cancelAc.signal,
         conversationHistory: Array.isArray(conversationHistory) ? conversationHistory : [],
         memory: useMemory,
+        initialStep: checkpointInitialStep,
+        initialHistory: checkpointInitialHistory,
       });
 
       finalAnswer = agentResult.answer;
@@ -177,10 +208,28 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     } catch (err) {
       agentError = err;
       log.error('Desktop agent error:', err?.message || err);
+      // Suggest rollback to latest healthy snapshot
+      let rollbackSuggestion = null;
+      if (checkpointDir) {
+        try {
+          const latestStep = Math.max(completedStepCount, observedStepCount) - 1;
+          const snapshot = await loadLatestHealthySnapshot(checkpointDir, runId, latestStep);
+          if (snapshot) {
+            const lastStep = snapshot.history.length > 0 ? snapshot.history[snapshot.history.length - 1] : null;
+            rollbackSuggestion = {
+              step: snapshot.step,
+              lastAction: lastStep ? { type: lastStep.action?.type, tool: lastStep.action?.tool } : null,
+              lastRationale: lastStep?.rationale?.slice(0, 200) || null,
+              lastResult: lastStep?.result?.slice(0, 200) || null,
+            };
+          }
+        } catch { /* ignore snapshot load failure */ }
+      }
       sendEvent({
         type: 'error',
         runId,
         error: err.message,
+        rollbackSuggestion,
       });
     } finally {
       if (checkpointDir) {
@@ -212,6 +261,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         `  ╚${bRow.slice(2)}╝`,
       ].join('\n');
       log.info(`\n${box}`);
+      clearInterval(heartbeat);
       agentRunStore.closeRun(runId);
       approvalStore.rejectAll();
       res.end();
@@ -331,8 +381,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
-
-    // Send run metadata first so frontend can restore timer and model
+    res.socket?.setNoDelay(true);
     res.write(`data: ${JSON.stringify({
       type: 'run_meta',
       runId: run.runId,
@@ -446,6 +495,54 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message });
     }
+  });
+
+  // ---- v2: 会话检查点 API ----
+
+  /**
+   * GET /api/agent/checkpoints — 列出当前运行的所有会话检查点
+   */
+  router.get('/api/agent/checkpoints', async (req, res) => {
+    if (!checkpointDir) {
+      return res.json({ checkpoints: [] });
+    }
+    const queryRunId = req.query.runId;
+    const activeRun = agentRunStore.getActiveRun();
+    const runId = queryRunId || activeRun?.runId;
+    if (!runId) {
+      return res.json({ checkpoints: [] });
+    }
+    try {
+      const checkpoints = await listSessionCheckpoints(checkpointDir, runId);
+      res.json({ runId, checkpoints });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * POST /api/agent/rollback — 回滚到指定步数
+   * Body: { targetStep: number }
+   * 设置 pendingRollback 标记，runtime 会在下一轮循环中执行回滚
+   */
+  router.post('/api/agent/rollback', (req, res) => {
+    const { targetStep } = req.body ?? {};
+    if (typeof targetStep !== 'number' || !Number.isInteger(targetStep) || targetStep < 1) {
+      return res.status(400).json({ error: 'targetStep 必须是正整数' });
+    }
+    if (!checkpointDir) {
+      return res.status(400).json({ error: '会话检查点未启用' });
+    }
+    const activeRun = agentRunStore.getActiveRun();
+    if (!activeRun) {
+      return res.status(404).json({ error: '没有活跃的运行' });
+    }
+    if (activeRun.rolledBack) {
+      return res.status(409).json({ error: '已有回滚请求处理中' });
+    }
+    activeRun.pendingRollback = targetStep;
+    log.info(`[API] 设置回滚请求: runId=${activeRun.runId} targetStep=${targetStep}`);
+    res.json({ ok: true, runId: activeRun.runId, targetStep });
   });
 
   return router;

@@ -592,6 +592,7 @@ export function createDesktopAgentRunner({
     onEvent,
     cancelSignal,
     runId,
+    runRecord = null,
     startedAt = Date.now(),
     initialStep = 1,
     initialHistory = [],
@@ -614,6 +615,9 @@ export function createDesktopAgentRunner({
       cancelSignal,
       initialStep,
       initialHistory,
+      // v2: 会话级健康检查点支持
+      sessionCheckpointDir: checkpointDir,
+      runRecord,
       onCheckpoint: checkpointDir
         ? (history, step) => saveCheckpoint(checkpointDir, {
             runId, task, model, systemPrompt, headless,
@@ -645,7 +649,7 @@ export function createDesktopAgentRunner({
         }),
       authorize,
       shouldObserve: (lastAction) => {
-        if (!lastAction) return true;
+        if (!lastAction) return false;
         const tool = lastAction.tool || '';
         return tool !== 'fs' && tool !== 'terminal';
       },
