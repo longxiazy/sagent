@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 
+const PROJECT_DIR = process.env.PROJECT_DIR || process.cwd();
 const DEFAULT_HELPER_CANDIDATES = [
   process.env.AGENT_MACOS_HELPER_PATH,
-  path.resolve(process.cwd(), 'agent/tools/macos/helper/bin/macos-agent-helper'),
+  path.resolve(PROJECT_DIR, 'agent/tools/macos/helper/bin/macos-agent-helper'),
 ].filter(Boolean);
 
 function execFileJson(file, args, payload = {}) {
