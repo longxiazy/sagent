@@ -42,6 +42,7 @@ import { createDomainRules } from '../tools/fetch/domain-rules.js';
 import { executeMacOSAction } from '../tools/macos/execute.js';
 import { observeMacOSDesktop } from '../tools/macos/observe.js';
 import { executeTerminalAction } from '../tools/terminal/run.js';
+import { executeGitAction } from '../tools/git/execute.js';
 import { isClaudeModel, buildDesktopAgentSystemPrompt, claudeAgentPlan } from '../core/ai-client.js';
 import { saveCheckpoint } from '../core/checkpoint.js';
 import { log } from '../../helpers/logger.js';
@@ -574,6 +575,7 @@ export function createDesktopAgentRunner({
       fs: async (_state, action) => executeFsAction(action),
       fetch: async (state, action) => executeFetchAction(action, state.browserSession, domainRules),
       terminal: async (_state, action) => executeTerminalAction(action),
+ git: async (_state, action) => executeGitAction(action),
       macos: async (state, action) =>
         executeMacOSAction(action, {
           runId: state.runId,
