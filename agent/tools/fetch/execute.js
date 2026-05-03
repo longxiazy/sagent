@@ -1,3 +1,20 @@
+/**
+ * Fetch — HTTP 抓取工具，支持 curl 轻量抓取和 Playwright 浏览器渲染两种模式
+ *
+ * 执行策略：
+ *   1. 已知需要浏览器的域名（domain-rules.js）→ 直接走 fetchWithBrowser
+ *   2. 其余域名 → 先 curl，检测反爬响应 → fallback 到浏览器
+ *   3. 浏览器也触发反爬 → 返回明确错误，提示 agent 换方式
+ *   4. parallel_fetch：多个 URL 并发抓取，结果用 --- 分隔
+ *
+ * 反爬检测（domain-rules.js BOT_SIGNALS）：
+ *   curl 和浏览器返回的内容都经 detectBotResponse 检测，
+ *   匹配到验证页关键词时不再静默返回，而是报错让 agent 采取替代方案。
+ *
+ * 调用场景：
+ *   - agent/desktop/agent.js routeAction → executeFetchAction()
+ */
+
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createBrowserSession, closeBrowserSession } from '../browser/webview-session.js';
@@ -156,7 +173,12 @@ async function executeSingleFetch(action, browserSession, domainRules) {
 
   if (useBrowser) {
     try {
-      return await fetchWithBrowser(browserSession, action);
+      const result = await fetchWithBrowser(browserSession, action);
+      if (domainRules && await domainRules.detectBotResponse(result)) {
+        log.info(`[Fetch] 浏览器也触发反爬: ${action.url}`);
+        return `http_fetch ${action.url}: 页面要求人机验证（反爬机制），无法获取内容。请尝试其他方式获取信息。`;
+      }
+      return result;
     } catch (err) {
       log.warn(`[Fetch] WebView 访问失败: ${(err.message || '').slice(0, 80)}`);
       return `http_fetch ${action.url}: 浏览器访问失败 (${(err.message || '').slice(0, 100)})。`;
@@ -170,10 +192,16 @@ async function executeSingleFetch(action, browserSession, domainRules) {
       if (isBot) {
         log.info(`[Fetch] 检测到反爬机制: ${action.url}`);
         await domainRules.markBrowserDomain(action.url);
-        try {
-          return await fetchWithBrowser(browserSession, action);
-        } catch {
-          /* fall through to curl result */
+        if (browserSession) {
+          try {
+            const browserResult = await fetchWithBrowser(browserSession, action);
+            if (await domainRules.detectBotResponse(browserResult)) {
+              return `http_fetch ${action.url}: 页面要求人机验证（反爬机制），无法获取内容。请尝试其他方式获取信息。`;
+            }
+            return browserResult;
+          } catch {
+            /* fall through to curl result */
+          }
         }
       }
     }

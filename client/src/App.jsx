@@ -1180,13 +1180,16 @@ function ModelPlanGroup({ trace, step, models, modelList, running }) {
     return ev;
   };
 
+  const visibleModels = models.filter(m => { const s = getEvent(m).stage; return s !== 'cancelled' && s !== 'failed'; });
+  const collapsedModels = models.filter(m => { const s = getEvent(m).stage; return s === 'cancelled' || s === 'failed'; });
+
   return (
     <div className="model-plan-group">
       <span className="agent-trace-badge plan">
         {strategyMode === 'vote' ? '投票' : '决策'}
       </span>
       <div className="model-plan-cards">
-        {models.map(m => (
+        {visibleModels.map(m => (
           <ModelPlanCard
             key={m}
             event={getEvent(m)}
@@ -1197,6 +1200,23 @@ function ModelPlanGroup({ trace, step, models, modelList, running }) {
           />
         ))}
       </div>
+      {collapsedModels.length > 0 && (
+        <details className="model-plan-collapsed">
+          <summary className="collapsed-summary">{collapsedModels.length} 个模型已取消/失败</summary>
+          <div className="model-plan-cards">
+            {collapsedModels.map(m => (
+              <ModelPlanCard
+                key={m}
+                event={getEvent(m)}
+                isWinner={false}
+                modelList={modelList}
+                strategy={strategyMode}
+                result={null}
+              />
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
@@ -1228,6 +1248,18 @@ function MemoryPanel({ onClose }) {
     } finally {
       setCompacting(false);
     }
+  };
+
+  const handleClear = async (url) => {
+    if (!confirm('确定要清空吗？此操作不可撤销。')) return;
+    try {
+      const r = await fetch(url, { method: 'DELETE' });
+      const result = await r.json();
+      if (result.ok) {
+        const r2 = await fetch('/api/agent/memory');
+        setData(await r2.json());
+      }
+    } catch { /* ignore */ }
   };
 
   const pk = data?.projectKnowledge || {};
@@ -1313,6 +1345,14 @@ function MemoryPanel({ onClose }) {
         <button className="memory-compact-btn" onClick={handleCompact} disabled={compacting}>
           {compacting ? '压缩中…' : '压缩历史'}
         </button>
+        <div className="memory-clear-group">
+          <button className="memory-clear-btn" onClick={() => handleClear('/api/agent/memory/knowledge')} title="清空项目知识，保留对话">
+            清空知识
+          </button>
+          <button className="memory-clear-btn danger" onClick={() => handleClear('/api/agent/memory')} title="清空全部记忆">
+            清空全部
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -2351,7 +2391,8 @@ export default function App() {
       setInput('');
       setAgentTrace([]);
     } else {
-      // Retry from checkpoint — update chat placeholder to show re-executing
+      // Retry from checkpoint — clear old trace, update chat placeholder
+      setAgentTrace([]);
       updateSession(sessionId, session => {
         const msgs = [...session.messages];
         msgs.push({ role: 'assistant', content: 'Desktop Agent 正在从检查点重新执行任务…', ts: Date.now() });
@@ -2422,10 +2463,17 @@ export default function App() {
             setAgentTrace(prev => {
               updateSession(sessionId, session => {
                 const nextMessages = [...session.messages];
-                nextMessages[nextMessages.length - 1] = {
-                  role: 'assistant',
-                  content: event.answer || 'Agent 已完成任务。',
-                };
+                const lastMsg = nextMessages[nextMessages.length - 1];
+                // Keep retry placeholder, append result as new message
+                if (lastMsg?.content?.includes('从检查点')) {
+                  nextMessages.push({ role: 'assistant', content: event.answer || 'Agent 已完成任务。', ts: Date.now() });
+                } else {
+                  nextMessages[nextMessages.length - 1] = {
+                    role: 'assistant',
+                    content: event.answer || 'Agent 已完成任务。',
+                    ts: Date.now(),
+                  };
+                }
                 return touchSession(session, { messages: nextMessages, agentTrace: prev });
               });
               return prev;
@@ -2436,10 +2484,16 @@ export default function App() {
             setAgentTrace(prev => {
               updateSession(sessionId, session => {
                 const nextMessages = [...session.messages];
-                nextMessages[nextMessages.length - 1] = {
-                  role: 'assistant',
-                  content: `⚠️ Desktop Agent 失败：${event.error}`,
-                };
+                const lastMsg = nextMessages[nextMessages.length - 1];
+                if (lastMsg?.content?.includes('从检查点')) {
+                  nextMessages.push({ role: 'assistant', content: `⚠️ Desktop Agent 失败：${event.error}`, ts: Date.now() });
+                } else {
+                  nextMessages[nextMessages.length - 1] = {
+                    role: 'assistant',
+                    content: `⚠️ Desktop Agent 失败：${event.error}`,
+                    ts: Date.now(),
+                  };
+                }
                 return touchSession(session, { messages: nextMessages, agentTrace: prev });
               });
               return prev;
@@ -2477,9 +2531,9 @@ export default function App() {
             if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].content.includes('正在执行任务')) {
               const next = [...msgs];
               if (doneEvent) {
-                next[lastIdx] = { role: 'assistant', content: doneEvent.answer || 'Agent 已完成任务。' };
+                next[lastIdx] = { role: 'assistant', content: doneEvent.answer || 'Agent 已完成任务。', ts: Date.now() };
               } else {
-                next[lastIdx] = { role: 'assistant', content: `⚠️ Desktop Agent 失败：${errorEvent.error || '连接中断'}` };
+                next[lastIdx] = { role: 'assistant', content: `⚠️ Desktop Agent 失败：${errorEvent.error || '连接中断'}`, ts: Date.now() };
               }
               return touchSession(session, { messages: next, agentTrace: prev });
             }
@@ -2492,7 +2546,7 @@ export default function App() {
             const lastIdx = msgs.length - 1;
             if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].content.includes('正在执行任务')) {
               const next = [...msgs];
-              next[lastIdx] = { role: 'assistant', content: '⚠️ Desktop Agent 连接中断，未收到执行结果。' };
+              next[lastIdx] = { role: 'assistant', content: '⚠️ Desktop Agent 连接中断，未收到执行结果。', ts: Date.now() };
               return touchSession(session, { messages: next, agentTrace: prev });
             }
             return touchSession(session, { agentTrace: prev });

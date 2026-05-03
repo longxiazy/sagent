@@ -12,6 +12,13 @@
  *   5. execute()     — 执行动作（路由到 browser/fs/terminal/macos 工具）
  *   6. 回到步骤 2，直到 decide 返回 finish 或达到 maxSteps
  *
+ * 历史截断 / Progressive history truncation：
+ *   compressHistory() 发给 LLM 前截断历史，防止上下文超限：
+ *   - 保留最近 AGENT_MAX_HISTORY_STEPS（默认 20）步
+ *   - 渐进截断 result：最近 3 步保留最多 1000 字符，4-10 步 500 字符，11+ 步 200 字符
+ *   - 超出步数压缩为一行摘要
+ *   - 可通过 .env 的 AGENT_MAX_HISTORY_STEPS / AGENT_MAX_RESULT_CHARS 配置
+ *
  * 调用场景：
  *   - agent/desktop/agent.js 的 runDesktopAgent() 是唯一的调用方，
  *     注入所有具体实现后调用 runAgentRuntime({ ... })
@@ -28,18 +35,30 @@ import {
   HEALTH_CHECKPOINT_INTERVAL,
 } from "./session-checkpoint.js";
 
-const MAX_HISTORY_STEPS = 64;
+const MAX_HISTORY_STEPS = Number(process.env.AGENT_MAX_HISTORY_STEPS || 20);
+const MAX_RESULT_CHARS = Number(process.env.AGENT_MAX_RESULT_CHARS || 1000);
 
 function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
+  // Progressive truncation: recent steps keep more context, old steps get shorter results
+  const truncateEntry = (h, remaining) => {
+    // Last 3 steps: full (up to MAX_RESULT_CHARS)
+    // Steps 4-10: 500 chars
+    // Steps 11+: 200 chars
+    const limit = remaining <= 3 ? MAX_RESULT_CHARS : remaining <= 10 ? 500 : 200;
+    const str = h.result == null ? '' : String(h.result);
+    if (str.length <= limit) return h;
+    return { ...h, result: str.slice(0, limit) + '…[truncated]' };
+  };
+
   if (history.length <= maxSteps) {
-    return history;
+    return history.map((h, i) => truncateEntry(h, history.length - i));
   }
   const recent = history.slice(-maxSteps);
   const dropped = history.slice(0, -maxSteps);
   const summary = dropped
     .map(
       (h) =>
-        `step ${h.step}: [${h.action?.type ?? "?"}] ${h.result ? `→ ${String(h.result).slice(0, 1000)}` : ""}`,
+        `step ${h.step}: [${h.action?.type ?? "?"}] ${h.result ? `→ ${String(h.result).slice(0, 200)}` : ""}`,
     )
     .join(" | ");
   return [
@@ -48,7 +67,7 @@ function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
       type: "summary",
       text: `历史摘要（共${dropped.length}步）: ${summary}`,
     },
-    ...recent,
+    ...recent.map((h, i) => truncateEntry(h, recent.length - i)),
   ];
 }
 

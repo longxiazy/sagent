@@ -1518,6 +1518,7 @@ textarea {
 
 .model-plan-group {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 6px;
   width: 100%;
@@ -1528,7 +1529,18 @@ textarea {
   min-width: 0;
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
+}
+
+.model-plan-collapsed {
+  flex-basis: 100%;
+  font-size: var(--f-xs);
+  color: var(--c-text-tertiary);
+}
+
+.model-plan-collapsed .collapsed-summary {
+  cursor: pointer;
+  padding: 2px 0;
+  color: var(--c-text-secondary);
 }
 
 .model-card {
@@ -2713,11 +2725,34 @@ textarea:disabled {
   padding: 8px 0;
   border-top: 1px solid var(--c-border);
   margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
+.memory-clear-group {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.memory-clear-btn {
+  padding: 4px 8px;
+  font-size: 10px;
+  color: #6b7280;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.memory-clear-btn:hover { background: #e5e7eb; }
+.memory-clear-btn.danger { color: #dc2626; border-color: #fca5a5; }
+.memory-clear-btn.danger:hover { background: #fef2f2; }
+
 .memory-compact-btn {
-  width: 100%;
-  padding: 6px;
+  padding: 6px 12px;
   font-size: 11px;
   font-weight: 500;
   color: #6d28d9;
