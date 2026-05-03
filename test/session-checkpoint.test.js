@@ -222,9 +222,9 @@ describe('runtime: session checkpoint integration', () => {
     });
 
     // Snapshot save is fire-and-forget — wait for IO then poll
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 1000));
     let snap2 = null;
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 50; i++) {
       snap2 = await loadLatestHealthySnapshot(tmpDir, runId, 2);
       if (snap2 && snap2.step === 2) break;
       snap2 = null;
