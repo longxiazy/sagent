@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, Component, useMemo } from 'react';
 import {
   Menu, Timer, Trash2, Square, Brain, ChevronDown, ChevronUp,
-  Copy, Check, Send, RotateCcw,
+  Copy, Check, Send, RotateCcw, Monitor, Loader2,
 } from 'lucide-react';
 import hljs from 'highlight.js/lib/core';
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -957,45 +957,54 @@ function QuestionDialog({ question, submitting, onSubmit, onSkip }) {
 }
 
 
-function SessionList({ sessions, activeSessionId, modelList, onCreate, onDelete, onClearAll, onSelect, locked }) {
+function SessionList({ sessions, activeSessionId, modelList, onCreate, onDelete, onClearAll, onSelect, locked, showMemoryPanel, onToggleMemory }) {
   return (
     <aside className="session-panel">
       <div className="session-panel-header">
         <h2 className="session-panel-title">会话</h2>
-        <button className="session-create-btn" onClick={onCreate} disabled={locked} title="新建会话">
-          + 新建
-        </button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button className={`session-memory-btn ${showMemoryPanel ? 'active' : ''}`} onClick={onToggleMemory} title="查看记忆">
+            <Brain size={13} />
+          </button>
+          <button className="session-create-btn" onClick={onCreate} disabled={locked} title="新建会话">
+            + 新建
+          </button>
+        </div>
       </div>
 
-      <div className="session-list">
-        {sessions.map(session => {
-          const active = session.id === activeSessionId;
-          const modelLabel = modelList.find(item => item.id === session.model)?.label || session.model;
+      {showMemoryPanel ? (
+        <MemoryPanel onClose={onToggleMemory} />
+      ) : (
+        <div className="session-list">
+          {sessions.map(session => {
+            const active = session.id === activeSessionId;
+            const modelLabel = modelList.find(item => item.id === session.model)?.label || session.model;
 
-          return (
-            <div key={session.id} className={`session-card ${active ? 'active' : ''}`}>
-              <button className="session-main" onClick={() => onSelect(session.id)} disabled={locked || active}>
-                <span className="session-card-title">{getSessionTitle(session.messages)}</span>
-                <span className="session-card-meta">{modelLabel} · {session.messages.length} 条</span>
-              </button>
-
-              {sessions.length > 1 && (
-                <button
-                  className="session-delete-btn"
-                  onClick={() => onDelete(session.id)}
-                  disabled={locked}
-                  title="删除会话"
-                >
-                  <Trash2 size={12} />
+            return (
+              <div key={session.id} className={`session-card ${active ? 'active' : ''}`}>
+                <button className="session-main" onClick={() => onSelect(session.id)} disabled={locked || active}>
+                  <span className="session-card-title">{getSessionTitle(session.messages)}</span>
+                  <span className="session-card-meta">{modelLabel} · {session.messages.length} 条</span>
                 </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
 
-      {sessions.length > 1 && (
-        <button className="session-clear-all-btn" onClick={onClearAll} disabled={locked}>清空全部</button>
+                {sessions.length > 1 && (
+                  <button
+                    className="session-delete-btn"
+                    onClick={() => onDelete(session.id)}
+                    disabled={locked}
+                    title="删除会话"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+
+          {sessions.length > 1 && (
+            <button className="session-clear-all-btn" onClick={onClearAll} disabled={locked}>清空全部</button>
+          )}
+        </div>
       )}
     </aside>
   );
@@ -1019,15 +1028,15 @@ const PLAN_STAGE_LABELS = {
 };
 
 const PLAN_STAGE_ICON = {
-  pending: '🕐',
-  thinking: '⏳',
+  pending: '·',
+  thinking: '·',
   success: '✓',
-  winner: '👑',
+  winner: '★',
   failed: '✗',
   discarded: '…',
   abandoned: '—',
   cancelled: '⊘',
-  consensus: '🏆',
+  consensus: '★',
 };
 
 // 单个模型卡片负责展示某一步里某个模型的“决策快照”：
@@ -1037,15 +1046,17 @@ function ModelPlanCard({ event, isWinner, modelList, result }) {
   const stage = event.stage;
   const [showReasoning, setShowReasoning] = useState(false);
   const [showFullResult, setShowFullResult] = useState(false);
+  const [expanded, setExpanded] = useState(isWinner || stage === 'failed');
 
   if (stage === 'start') return null;
 
   return (
-    <div className={`model-card ${stage} ${isWinner ? 'winner' : ''}`}>
+    <div className={`model-card ${stage} ${isWinner ? 'winner' : ''} ${expanded ? 'expanded' : ''}`} onClick={() => setExpanded(v => !v)}>
       <div className="model-card-head">
         <span className="model-card-icon">{PLAN_STAGE_ICON[stage] || '·'}</span>
         <span className="model-card-label">{label}</span>
         <span className={`model-card-status ${stage}`}>{PLAN_STAGE_LABELS[stage] || stage}</span>
+        <span className="model-card-expand-icon">{expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}</span>
       </div>
       {stage === 'pending' && (
         <div className="model-card-body">
@@ -1361,14 +1372,21 @@ function MemoryPanel({ onClose }) {
 // - 负责展示 trace
 // - 负责显示暂停/审批/用时/token 等运行态指标
 // - 在移动端和桌面端之间复用同一套事件展示逻辑
-function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onToggleMemory, showMemoryPanel, onRollback, rollbackLoading }) {
+function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onRollback, rollbackLoading }) {
   const traceBottomRef = useRef(null);
   const startTimeRef = useRef(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < PHONE_BREAKPOINT;
-  const showContent = isMobile || !collapsed;
   const pauseRef = useRef(null);
   const [elapsed, setElapsed] = useState(0);
   const [lightboxSrc, setLightboxSrc] = useState(null);
+
+  // ESC closes lightbox
+  useEffect(() => {
+    if (!lightboxSrc) return;
+    const handler = e => { if (e.key === 'Escape') setLightboxSrc(null); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [lightboxSrc]);
 
   const lastStep = trace.reduce((max, e) => (e.step != null ? Math.max(max, e.step) : max), 0);
   const doneEvent = trace.find(e => e.type === 'done');
@@ -1448,9 +1466,6 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
             </button>
           )}
           <div className="agent-head-actions">
-            <button className="agent-memory-btn" onClick={e => { e.stopPropagation(); onToggleMemory(); }} title="查看记忆">
-              <Brain size={12} />
-            </button>
             {trace.length > 0 && (
               <button className="agent-collapse-btn agent-tablet-only" onClick={e => { e.stopPropagation(); onToggleCollapse(); }} title={collapsed ? '展开' : '收起'}>
                 {collapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
@@ -1472,18 +1487,24 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
         </div>
       </div>
 
-      {showContent && (
+      <div className="agent-panel-body">
         <>
-          {showMemoryPanel ? (
-            <MemoryPanel onClose={() => onToggleMemory()} />
-          ) : (
-            <>
-              <p className="agent-panel-note">
-                当前支持 `browser`、`fs`、`terminal`、`macos` 工具。需要确认的动作会在这里暂停，等待你的批准或拒绝。
-              </p>
+          <p className="agent-panel-note">
+            当前支持 `browser`、`fs`、`terminal`、`macos` 工具。需要确认的动作会在这里暂停，等待你的批准或拒绝。
+          </p>
 
-              {trace.length === 0 ? (
-                <div className="agent-empty">切到 Agent 模式后输入任务，例如"查看当前目录并告诉我 README 开头写了什么"。</div>
+              {trace.length === 0 && running ? (
+                <div className="agent-skeleton">
+                  <div className="agent-skeleton-line agent-skeleton-line--w60" />
+                  <div className="agent-skeleton-line agent-skeleton-line--w90" />
+                  <div className="agent-skeleton-line agent-skeleton-line--w70" />
+                  <Loader2 size={14} className="agent-skeleton-spinner" />
+                </div>
+              ) : trace.length === 0 ? (
+                <div className="agent-empty">
+                  <Monitor size={28} className="agent-empty-icon" />
+                  <span>输入任务启动 Agent，例如"查看当前目录并告诉我 README 开头写了什么"</span>
+                </div>
               ) : (
                 <div className="agent-trace">
           {(() => {
@@ -1750,9 +1771,7 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
         </div>
       )}
             </>
-          )}
-        </>
-      )}
+      </div>
     </section>
     {lightboxSrc && (
       <div className="screenshot-lightbox" onClick={() => setLightboxSrc(null)}>
@@ -1790,6 +1809,7 @@ export default function App() {
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   const [rollbackLoading, setRollbackLoading] = useState(false);
   const [agentMobileTab, setAgentMobileTab] = useState('agent');
+  const touchStartRef = useRef(null);
   const [pendingQuestion, setPendingQuestion] = useState(null);
   const [questionSubmitting, setQuestionSubmitting] = useState(false);
   const [showSessions, setShowSessions] = useState(window.innerWidth >= DOCKED_LAYOUT_BREAKPOINT);
@@ -2074,6 +2094,25 @@ export default function App() {
     setPendingApproval(null);
     approvalRequestRef.current = null;
   }, [activeSession.id]);
+
+  // Keyboard shortcuts: Cmd/Ctrl+Shift+E collapse panel, Cmd/Ctrl+Shift+M toggle memory
+  useEffect(() => {
+    const handler = e => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod || !e.shiftKey) return;
+      if (e.key === 'E' || e.key === 'e') {
+        e.preventDefault();
+        if (mode === 'agent') setAgentCollapsed(c => !c);
+      }
+      if (e.key === 'M' || e.key === 'm') {
+        e.preventDefault();
+        setShowMemoryPanel(v => !v);
+        if (!showMemoryPanel) setShowSessions(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [mode]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -2588,6 +2627,12 @@ export default function App() {
 
   const sessionStarted = messages.length > 0;
 
+  const suggestions = useMemo(() => {
+    const pool = SUGGESTIONS[mode];
+    const count = mode === 'agent' ? 8 : 4;
+    return shuffled(pool).slice(0, count);
+  }, [mode]);
+
   const modeSwitch = !sessionStarted && (
     <div className="mode-switch" aria-label="模式切换">
       <button className={`mode-btn ${mode === 'chat' ? 'active' : ''}`} onClick={() => setMode('chat')} disabled={sessionLocked}>
@@ -2711,6 +2756,8 @@ export default function App() {
           onClearAll={handleClearAllSessions}
           onSelect={(id) => { handleSelectSession(id); if (window.innerWidth < 768) setShowSessions(false); }}
           locked={sessionLocked}
+          showMemoryPanel={showMemoryPanel}
+          onToggleMemory={() => setShowMemoryPanel(v => !v)}
         />
       </div>
       <button
@@ -2751,7 +2798,7 @@ export default function App() {
             </div>
 
             <div className="suggestions">
-              {shuffled(SUGGESTIONS[mode]).slice(0, mode === 'agent' ? 8 : 4).map(s => (
+              {suggestions.map(s => (
                 <button key={s.title} className="suggestion-card"
                   onClick={() => { setInput(s.text); textareaRef.current?.focus(); }}
                   onDoubleClick={() => { setInput(s.text); setTimeout(() => handleSubmit(), 0); }}
@@ -2811,7 +2858,15 @@ export default function App() {
                 })()}
                 <button className={`agent-mobile-tab ${agentMobileTab === 'chat' ? 'active' : ''}`} onClick={() => setAgentMobileTab('chat')}>对话</button>
               </div>
-              <div className={`agent-panel-wrap ${agentMobileTab === 'chat' ? 'mobile-hidden' : ''}`}>
+              <div className={`agent-panel-wrap ${agentMobileTab === 'chat' ? 'mobile-hidden' : ''}`}
+                onTouchStart={e => { touchStartRef.current = e.touches[0].clientX; }}
+                onTouchEnd={e => {
+                  if (touchStartRef.current == null) return;
+                  const delta = e.changedTouches[0].clientX - touchStartRef.current;
+                  if (delta < -60 && agentMobileTab === 'agent') setAgentMobileTab('chat');
+                  touchStartRef.current = null;
+                }}
+              >
                 <AgentPanel
                   mode={mode}
                   running={agentRunning}
@@ -2823,8 +2878,6 @@ export default function App() {
                   onStop={stopAgent}
                   agentStopping={agentStopping}
                   pendingApproval={pendingApproval}
-                  onToggleMemory={() => setShowMemoryPanel(v => !v)}
-                  showMemoryPanel={showMemoryPanel}
                   onRollback={handleRollback}
                   rollbackLoading={rollbackLoading}
                 />
@@ -2835,7 +2888,15 @@ export default function App() {
           )}
 
           {messages.length > 0 && (
-            <div className={`chat-panel-wrap ${mode === 'agent' && agentMobileTab === 'agent' ? 'mobile-hidden' : ''}`}>
+            <div className={`chat-panel-wrap ${mode === 'agent' && agentMobileTab === 'agent' ? 'mobile-hidden' : ''}`}
+              onTouchStart={e => { touchStartRef.current = e.touches[0].clientX; }}
+              onTouchEnd={e => {
+                if (touchStartRef.current == null) return;
+                const delta = e.changedTouches[0].clientX - touchStartRef.current;
+                if (delta > 60 && agentMobileTab === 'chat') setAgentMobileTab('agent');
+                touchStartRef.current = null;
+              }}
+            >
               <div className="messages">
               {messages.map((msg, i) => (
                 <div key={i} className={`bubble-row ${msg.role}`}>
