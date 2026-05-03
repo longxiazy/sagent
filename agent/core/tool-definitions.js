@@ -290,6 +290,19 @@ export function createModelTools() {
         required: ['answer'],
       },
     },
+  {
+    name: 'mcp',
+    description: '调用外部 MCP (Model Context Protocol) 服务器。工具名经 sanitize 验证防注入。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        server: { type: 'string', description: 'MCP 服务器名称' },
+        tool: { type: 'string', description: '工具名称' },
+        args: { type: 'object', description: '工具参数' },
+      },
+      required: ['server', 'tool'],
+    },
+  },
   ];
 }
 
