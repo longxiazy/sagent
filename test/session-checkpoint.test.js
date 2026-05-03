@@ -187,6 +187,8 @@ describe('runtime: session checkpoint integration', () => {
     const cpEvents = evtLog.filter(e => e.type === 'session_checkpoint');
     expect(cpEvents.map(e => e.step)).toEqual([1, 2, 3, 4, 5, 6, 7]);
 
+    // Snapshot save is fire-and-forget — wait for disk writes to complete
+    await new Promise(r => setTimeout(r, 200));
     const cp = await loadLatestHealthySnapshot(tmpDir, runId, 6);
     expect(cp).not.toBeNull();
     expect(cp.history.length).toBeGreaterThanOrEqual(5);
@@ -218,6 +220,9 @@ describe('runtime: session checkpoint integration', () => {
       execute: () => 'executed',
       cleanup: noop,
     });
+
+    // Snapshot save is fire-and-forget — wait for disk writes to complete
+    await new Promise(r => setTimeout(r, 200));
 
     // Verify step 2 snapshot exists
     const snap2 = await loadLatestHealthySnapshot(tmpDir, runId, 2);

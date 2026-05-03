@@ -2122,17 +2122,6 @@ export default function App() {
     setTimeout(() => agentAbortRef.current?.abort(), 1500);
   };
 
-  const fetchCheckpoints = async () => {
-    try {
-      const rid = agentRunIdRef.current;
-      const url = rid ? `/api/agent/checkpoints?runId=${rid}` : '/api/agent/checkpoints';
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-      }
-    } catch { /* ignore fetch errors */ }
-  };
-
   const handleRollback = async targetStep => {
     const rid = agentRunIdRef.current;
     console.log('[Rollback] targetStep:', targetStep, 'runId:', rid, 'running:', agentRunning);
