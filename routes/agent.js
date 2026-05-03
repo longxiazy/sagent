@@ -108,6 +108,11 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
+    res.socket?.setNoDelay(true);
+    // Heartbeat: detect half-open connections between steps
+    const heartbeat = setInterval(() => {
+      if (!res.writableEnded) res.write(': heartbeat\n\n');
+    }, 15000);
 
     log.info(
       `[${formatLogTime()}] POST /api/agent model=${model} headless=${agentHeadless} task=${safeJson(normalizedTask)} ` +
@@ -132,6 +137,9 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       }
       logAgentEvent(payload);
       agentRunStore.addEvent(runId, payload);
+      if (payload.type === 'model_plan' || payload.type === 'session_checkpoint') {
+        log.debug(`[SSE] write type=${payload.type} step=${payload.step} stage=${payload.stage ?? '-'} model=${payload.model ?? '-'} writableEnded=${res.writableEnded} writableFinished=${res.writableFinished}`);
+      }
       rawSendEvent(payload);
       // Forward to any reconnected clients
       const run = agentRunStore.getRun(runId);
@@ -148,6 +156,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       runId,
       message: '准备启动桌面 Agent',
     });
+    log.debug(`[SSE] stream started, writableEnded=${res.writableEnded} writableFinished=${res.writableFinished}`);
 
     // Load memory
     let memory = null;
@@ -234,6 +243,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         `  ╚${bRow.slice(2)}╝`,
       ].join('\n');
       log.info(`\n${box}`);
+      clearInterval(heartbeat);
       agentRunStore.closeRun(runId);
       approvalStore.rejectAll();
       res.end();
@@ -353,8 +363,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
-
-    // Send run metadata first so frontend can restore timer and model
+    res.socket?.setNoDelay(true);
     res.write(`data: ${JSON.stringify({
       type: 'run_meta',
       runId: run.runId,

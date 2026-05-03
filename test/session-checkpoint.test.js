@@ -71,7 +71,8 @@ describe('saveHealthySnapshot + loadLatestHealthySnapshot', () => {
 describe('snapshot pruning', () => {
   it('keeps only KEEP_HEALTHY most recent snapshots', async () => {
     const runId = 'run_prune';
-    for (let s = 2; s <= 10; s += 2) {
+    // Save more than KEEP_HEALTHY snapshots
+    for (let s = 1; s <= 40; s++) {
       await saveHealthySnapshot({ dir: tmpDir, runId, step: s, history: makeHistory([s]), state: null, result: 'ok' });
     }
 
@@ -84,7 +85,9 @@ describe('snapshot pruning', () => {
       const m = f.match(/session-healthy-(\d+)\.json$/);
       return m ? parseInt(m[1]) : 0;
     }).sort((a, b) => a - b);
-    expect(steps).toEqual([6, 8, 10]);
+    // Should keep the latest KEEP_HEALTHY steps
+    expect(steps[0]).toBe(40 - KEEP_HEALTHY + 1);
+    expect(steps[steps.length - 1]).toBe(40);
   });
 });
 
@@ -180,9 +183,9 @@ describe('runtime: session checkpoint integration', () => {
       cleanup: noop,
     });
 
-    // HEALTH_CHECKPOINT_INTERVAL = 2, steps 2,4,6 should have snapshots
+    // HEALTH_CHECKPOINT_INTERVAL = 1, every step gets a snapshot (including the finish step)
     const cpEvents = evtLog.filter(e => e.type === 'session_checkpoint');
-    expect(cpEvents.map(e => e.step)).toEqual([2, 4, 6]);
+    expect(cpEvents.map(e => e.step)).toEqual([1, 2, 3, 4, 5, 6, 7]);
 
     const cp = await loadLatestHealthySnapshot(tmpDir, runId, 6);
     expect(cp).not.toBeNull();

@@ -1321,7 +1321,7 @@ function MemoryPanel({ onClose }) {
 // - 负责展示 trace
 // - 负责显示暂停/审批/用时/token 等运行态指标
 // - 在移动端和桌面端之间复用同一套事件展示逻辑
-function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onToggleMemory, showMemoryPanel, checkpoints, onRollback, rollbackLoading, showCheckpointPanel, onToggleCheckpointPanel }) {
+function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onToggleMemory, showMemoryPanel, onRollback, rollbackLoading }) {
   const traceBottomRef = useRef(null);
   const startTimeRef = useRef(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < PHONE_BREAKPOINT;
@@ -1372,10 +1372,7 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
   }, [hasPendingQuestion]);
 
   useEffect(() => {
-    // Only auto-scroll trace on small screens where it has a max-height
-    if (window.innerWidth < DOCKED_LAYOUT_BREAKPOINT) {
-      traceBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
+    traceBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [trace]);
 
   if (mode !== 'agent') {
@@ -1419,11 +1416,6 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
             <Square size={10} /> {agentStopping ? '停止中…' : pendingApproval ? '停止并拒绝' : '停止'}
           </button>
         )}
-        {(running || trace.length > 0) && (
-          <button className={`agent-rollback-btn ${showCheckpointPanel ? 'active' : ''}`} onClick={onToggleCheckpointPanel} title="回滚到历史快照">
-            <RotateCcw size={10} /> 回滚
-          </button>
-        )}
         <label className="agent-headless-toggle" title={headless ? '浏览器在后台运行' : '浏览器窗口可见'}>
           <input
             type="checkbox"
@@ -1447,31 +1439,6 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
         <>
           {showMemoryPanel ? (
             <MemoryPanel onClose={() => onToggleMemory()} />
-          ) : showCheckpointPanel ? (
-            <div className="checkpoint-panel">
-              <div className="checkpoint-panel-head">
-                <strong>健康快照</strong>
-                <button className="checkpoint-panel-close" onClick={onToggleCheckpointPanel}>✕</button>
-              </div>
-              <p className="checkpoint-panel-note">选择一个快照回滚，Agent 将从该步重新执行。</p>
-              {checkpoints.length === 0 ? (
-                <p className="checkpoint-empty">暂无快照（每 5 步自动保存）</p>
-              ) : (
-                <div className="checkpoint-list">
-                  {checkpoints.map(cp => (
-                    <div key={cp.step} className="checkpoint-item">
-                      <div className="checkpoint-info">
-                        <span className="checkpoint-step">Step {cp.step}</span>
-                        <span className={`checkpoint-health ${cp.health || 'unknown'}`}>{cp.health || 'unknown'}</span>
-                      </div>
-                      <button className="checkpoint-rollback-btn" onClick={() => onRollback(cp.step)} disabled={rollbackLoading}>
-                        {rollbackLoading ? '回滚中…' : '回滚'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           ) : (
             <>
               <p className="agent-panel-note">
@@ -1724,6 +1691,9 @@ function AgentPanel({ mode, running, trace, headless, onHeadlessChange, startedA
                   <div className="agent-trace-content">
                     <strong>Step {event.step} 健康快照已保存</strong>
                   </div>
+                  <button className="trace-rollback-btn" onClick={() => onRollback(event.step)} disabled={rollbackLoading || running} title={`回滚到 Step ${event.step}`}>
+                    <RotateCcw size={10} />
+                  </button>
                 </>
               )}
             </div>
@@ -1765,8 +1735,6 @@ export default function App() {
   const [approvalSubmitting, setApprovalSubmitting] = useState(false);
   const [agentCollapsed, setAgentCollapsed] = useState(false);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
-  const [showCheckpointPanel, setShowCheckpointPanel] = useState(false);
-  const [agentCheckpoints, setAgentCheckpoints] = useState([]);
   const [rollbackLoading, setRollbackLoading] = useState(false);
   const [agentMobileTab, setAgentMobileTab] = useState('agent');
   const [pendingQuestion, setPendingQuestion] = useState(null);
@@ -1988,7 +1956,7 @@ export default function App() {
               if (event.type === 'rollback') {
                 setAgentTrace(prev => {
                   const target = event.targetStep;
-                  return prev.filter(e => e.step == null || e.step <= target);
+                  return prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step <= target);
                 });
               }
 
@@ -2132,21 +2100,17 @@ export default function App() {
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
-        setAgentCheckpoints(data.checkpoints || []);
       }
     } catch { /* ignore fetch errors */ }
   };
 
-  const toggleCheckpointPanel = () => {
-    if (!showCheckpointPanel) {
-      fetchCheckpoints();
-    }
-    setShowCheckpointPanel(v => !v);
-  };
-
   const handleRollback = async targetStep => {
     const rid = agentRunIdRef.current;
-    if (!rid) return;
+    console.log('[Rollback] targetStep:', targetStep, 'runId:', rid, 'running:', agentRunning);
+    if (!rid) {
+      console.warn('[Rollback] no runId, cannot rollback');
+      return;
+    }
     setRollbackLoading(true);
     try {
       if (agentRunning) {
@@ -2159,13 +2123,10 @@ export default function App() {
         const data = await res.json();
         if (!res.ok) {
           alert(data.error || '回滚失败');
-        } else {
-          setShowCheckpointPanel(false);
         }
       } else {
         // Finished task — restart from checkpoint
-        setShowCheckpointPanel(false);
-        setAgentTrace(prev => prev.filter(e => e.step == null || e.step <= targetStep));
+        setAgentTrace(prev => prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step <= targetStep));
         await sendAgentTask(lastAgentTaskRef.current || '继续任务', {
           fromCheckpoint: { runId: rid, step: targetStep },
         });
@@ -2371,6 +2332,13 @@ export default function App() {
       );
       setInput('');
       setAgentTrace([]);
+    } else {
+      // Retry from checkpoint — update chat placeholder to show re-executing
+      updateSession(sessionId, session => {
+        const msgs = [...session.messages];
+        msgs.push({ role: 'assistant', content: 'Desktop Agent 正在从检查点重新执行任务…', ts: Date.now() });
+        return touchSession(session, { messages: msgs });
+      });
     }
     setAgentStartedAt(Date.now());
     setAgentRunning(true);
@@ -2395,10 +2363,16 @@ export default function App() {
         messages: history.slice(-10),
         ...extraBody,
         async onEvent(event) {
-          if (event.type === 'model_plan') {
-            console.log(`[AgentUI] model_plan step=${event.step} stage=${event.stage} model=${event.model || '-'} models=${event.models?.join(',') || '-'}`);
-          }
-          setAgentTrace(prev => [...prev, event]);
+          console.log(`[AgentUI] event type=${event.type} step=${event.step ?? '-'} stage=${event.stage ?? '-'} model=${event.model || '-'}`);
+          setAgentTrace(prev => {
+            // Deduplicate: same type+step+stage+model already exists
+            const key = `${event.type}:${event.step ?? ''}:${event.stage ?? ''}:${event.model ?? ''}`;
+            if (prev.some(e => `${e.type}:${e.step ?? ''}:${e.stage ?? ''}:${e.model ?? ''}` === key)) {
+              console.log(`[AgentUI] DEDUP skipped: ${key}`);
+              return prev;
+            }
+            return [...prev, event];
+          });
 
           if (event.runId && !agentRunIdRef.current) {
             agentRunIdRef.current = event.runId;
@@ -2421,7 +2395,7 @@ export default function App() {
           if (event.type === 'rollback') {
             setAgentTrace(prev => {
               const target = event.targetStep;
-              return prev.filter(e => e.step == null || e.step <= target);
+              return prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step <= target);
             });
             return;
           }
@@ -2788,11 +2762,8 @@ export default function App() {
                   pendingApproval={pendingApproval}
                   onToggleMemory={() => setShowMemoryPanel(v => !v)}
                   showMemoryPanel={showMemoryPanel}
-                  checkpoints={agentCheckpoints}
                   onRollback={handleRollback}
                   rollbackLoading={rollbackLoading}
-                  showCheckpointPanel={showCheckpointPanel}
-                  onToggleCheckpointPanel={toggleCheckpointPanel}
                 />
               </div>
 

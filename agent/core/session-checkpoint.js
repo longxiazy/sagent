@@ -17,9 +17,9 @@
 import { mkdir, writeFile, readFile, unlink, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const HEALTH_CHECKPOINT_INTERVAL = 2;  // 每 2 步打一次健康快照
-const KEEP_HEALTHY = 3;
-const KEEP_FAILED = 1;
+const HEALTH_CHECKPOINT_INTERVAL = 1;  // 每步都保存快照，支持回滚到任意步
+const KEEP_HEALTHY = 30;  // 保留最近 30 个快照（覆盖 128 步运行）
+const KEEP_FAILED = 3;
 
 function sessionDir(dir, runId) {
   return join(dir, 'session-checkpoints', runId);
