@@ -40,6 +40,7 @@ import { executeFsAction } from '../tools/fs/execute.js';
 import { executeFetchAction } from '../tools/fetch/execute.js';
 import { createDomainRules } from '../tools/fetch/domain-rules.js';
 import { executeMacOSAction } from '../tools/macos/execute.js';
+import { executeSpawnAction } from '../tools/spawn/execute.js';
 import { observeMacOSDesktop } from '../tools/macos/observe.js';
 import { executeTerminalAction } from '../tools/terminal/run.js';
 import { isClaudeModel, buildDesktopAgentSystemPrompt, claudeAgentPlan } from '../core/ai-client.js';
@@ -578,6 +579,7 @@ export function createDesktopAgentRunner({
         executeMacOSAction(action, {
           runId: state.runId,
         }),
+ spawn: async (_state, action) => executeSpawnAction(action),
     },
     { defaultTool: 'core' }
   );
