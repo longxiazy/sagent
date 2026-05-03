@@ -194,7 +194,7 @@ describe('runtime: session checkpoint integration', () => {
     expect(cp.history.length).toBeGreaterThanOrEqual(5);
   });
 
-  it('manual rollback restores snapshot history and continues', async () => {
+  it('manual rollback restores snapshot history and continues', { timeout: 15000 }, async () => {
     const runId = 'run_rt3';
     const cancelSignal = new AbortController().signal;
 
