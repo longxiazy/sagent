@@ -1799,7 +1799,6 @@ export default function App() {
   const [_agentRunId, setAgentRunId] = useState(null);
   const [reconnectedRun, setReconnectedRun] = useState(false);
   const agentRunIdRef = useRef(null);
-  const [agentHeadless] = useState(true); // no longer configurable — Bun.WebView has no headless mode
   const [agentMemory, setAgentMemory] = useState(() => localStorage.getItem('agent_memory') !== 'false');
   const [agentTrace, setAgentTrace] = useState([]);
   const [showReset, setShowReset] = useState(false);
