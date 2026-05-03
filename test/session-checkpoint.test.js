@@ -223,10 +223,11 @@ describe('runtime: session checkpoint integration', () => {
 
     // Snapshot save is fire-and-forget — poll until step 2 snapshot is written
     let snap2 = null;
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 20; i++) {
       await new Promise(r => setTimeout(r, 100));
       snap2 = await loadLatestHealthySnapshot(tmpDir, runId, 2);
-      if (snap2) break;
+      if (snap2 && snap2.step === 2) break;
+      snap2 = null;
     }
     expect(snap2).not.toBeNull();
     expect(snap2.step).toBe(2);
