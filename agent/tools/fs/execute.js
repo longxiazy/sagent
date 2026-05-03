@@ -37,6 +37,11 @@ const DANGEROUS_PATTERNS = [
   / id_rsa/,
   / id_dsa/,
   / authorized_keys/,
+  /^\/home\//i,           // 禁止访问其他用户的 HOME 目录
+  /^\/Users\//i,          // 禁止访问 macOS 系统目录
+  /^\/root\//i,           // 禁止访问 root HOME
+  /\/\.ssh\//i,           // 禁止访问任意 .ssh 子目录
+  /\/\.gnupg\//i,         // 禁止访问 GPG 密钥目录
 ];
 
 function assertSafePath(targetPath) {
