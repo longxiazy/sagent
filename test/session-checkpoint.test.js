@@ -221,12 +221,14 @@ describe('runtime: session checkpoint integration', () => {
       cleanup: noop,
     });
 
-    // Snapshot save is fire-and-forget — poll until step 2 snapshot is written
+    // Snapshot save is fire-and-forget — wait for IO then poll
+    await new Promise(r => setTimeout(r, 500));
     let snap2 = null;
-    for (let i = 0; i < 10; i++) {
-      await new Promise(r => setTimeout(r, 100));
+    for (let i = 0; i < 30; i++) {
       snap2 = await loadLatestHealthySnapshot(tmpDir, runId, 2);
-      if (snap2) break;
+      if (snap2 && snap2.step === 2) break;
+      snap2 = null;
+      await new Promise(r => setTimeout(r, 100));
     }
     expect(snap2).not.toBeNull();
     expect(snap2.step).toBe(2);
