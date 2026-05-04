@@ -2426,8 +2426,7 @@ export default function App() {
       setInput('');
       setAgentTrace([]);
     } else {
-      // Retry from checkpoint — clear old trace, update chat placeholder
-      setAgentTrace([]);
+      // Retry from checkpoint — keep filtered trace (handleRollback already removed steps > target)
       updateSession(sessionId, session => {
         const msgs = [...session.messages];
         msgs.push({ role: 'assistant', content: 'Desktop Agent 正在从检查点重新执行任务…', ts: Date.now() });
