@@ -134,7 +134,7 @@ async function resumeFromCheckpoint(cp) {
     log.error(`[Resume] 失败 run_id=${runId}:`, err.message);
     sendEvent({ type: 'error', runId, error: err.message });
   } finally {
-    await cleanupAgentRun(CHECKPOINT_DIR, runId, agentRunStore);
+    cleanupAgentRun(CHECKPOINT_DIR, runId, agentRunStore);
   }
 }
 

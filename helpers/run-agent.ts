@@ -34,9 +34,9 @@ export async function loadMemoryForPrompt(memoryDir: string) {
   }
 }
 
-export async function cleanupAgentRun(checkpointDir: string | undefined, runId: string, agentRunStore: any) {
+export function cleanupAgentRun(checkpointDir: string | undefined, runId: string, agentRunStore: any) {
   if (checkpointDir) {
-    await removeCheckpoint(checkpointDir, runId).catch(() => {});
+    removeCheckpoint(checkpointDir, runId).catch(() => {});
   }
   agentRunStore.closeRun(runId);
 }
