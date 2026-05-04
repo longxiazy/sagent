@@ -174,6 +174,7 @@ export async function saveHealthySnapshot({ dir, runId, step, history, state, re
     await writeFile(tmpFile, data, 'utf8');
     await rename(tmpFile, filePath);
   } catch {
+    await mkdir(cpDir, { recursive: true });
     await writeFile(filePath, data, 'utf8');
   }
 
