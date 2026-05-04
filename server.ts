@@ -40,7 +40,8 @@ import { createChatRouter } from './routes/chat.ts';
 import { createAgentRouter } from './routes/agent.ts';
 import { createCompletionsRouter } from './routes/completions.ts';
 import { listCheckpoints, clearCheckpoints, removeCheckpoint } from './agent/core/checkpoint.ts';
-import { loadMemory, buildMemoryPrompt, saveMemory } from './agent/core/memory.ts';
+import { loadMemory, saveMemory } from './agent/core/memory.ts';
+import { createBaseEventSender, loadMemoryForPrompt, cleanupAgentRun } from './helpers/run-agent.ts';
 import { padEndW, truncateW } from './agent/core/utils.ts';
 import { log } from './helpers/logger.ts';
 
@@ -90,44 +91,15 @@ async function resumeFromCheckpoint(cp) {
   const { runId, task, model, headless, history, step, maxSteps: _maxSteps, startedAt } = cp;
   log.info(`[Resume] 恢复运行 run_id=${runId} step=${step} task=${task.slice(0, 60)}…`);
 
-  const sendEvent = payload => {
-    agentRunStore.addEvent(runId, payload);
-    const run = agentRunStore.getRun(runId);
-    if (run?._reconnectWriters) {
-      for (const writer of run._reconnectWriters) {
-        writer(payload);
-      }
-    }
-  };
+  const sendEvent = createBaseEventSender(runId, agentRunStore);
 
-  // Load memory for system prompt
-  let systemPrompt = '';
-  try {
-    const memory = await loadMemory(MEMORY_DIR);
-    const memoryPrompt = buildMemoryPrompt(memory);
-    if (memoryPrompt) {
-      systemPrompt = memoryPrompt;
-    }
-  } catch (err) {
-    log.warn('Memory load failed on resume:', err.message);
-  }
+  const { systemPrompt } = await loadMemoryForPrompt(MEMORY_DIR);
 
-  // Replay historical steps as SSE events so frontend sees all previous steps
+  // Replay historical steps so frontend sees all previous steps
   sendEvent({ type: 'status', status: 'starting', runId, message: '准备启动桌面 Agent' });
   for (const h of history) {
-    sendEvent({
-      type: 'step',
-      step: h.step,
-      stage: 'action',
-      rationale: h.rationale,
-      action: h.action,
-    });
-    sendEvent({
-      type: 'step',
-      step: h.step,
-      stage: 'result',
-      result: h.result,
-    });
+    sendEvent({ type: 'step', step: h.step, stage: 'action', rationale: h.rationale, action: h.action });
+    sendEvent({ type: 'step', step: h.step, stage: 'result', result: h.result });
   }
   sendEvent({ type: 'status', status: 'resuming', runId, message: `从断点恢复（已完成 ${history.length} 步）` });
 
@@ -149,27 +121,20 @@ async function resumeFromCheckpoint(cp) {
       onEvent: sendEvent,
       cancelSignal: new AbortController().signal,
     });
-    sendEvent({
-      type: 'done',
-      runId,
-      answer: result.answer,
-      steps: result.steps,
-      meta: { elapsed_ms: Date.now() - startedAt, step_count: result.steps.length },
-    });
+    sendEvent({ type: 'done', runId, answer: result.answer, steps: result.steps, meta: { elapsed_ms: Date.now() - startedAt, step_count: result.steps.length } });
     if (cp.memory !== false) {
       try {
         const mem = await loadMemory(MEMORY_DIR);
         await saveMemory(MEMORY_DIR, mem);
-      } catch (err) {
+      } catch (err: any) {
         log.warn('[Resume] Memory save failed:', err.message);
       }
     }
-  } catch (err) {
+  } catch (err: any) {
     log.error(`[Resume] 失败 run_id=${runId}:`, err.message);
     sendEvent({ type: 'error', runId, error: err.message });
   } finally {
-    removeCheckpoint(CHECKPOINT_DIR, runId).catch(() => {});
-    agentRunStore.closeRun(runId);
+    await cleanupAgentRun(CHECKPOINT_DIR, runId, agentRunStore);
   }
 }
 
