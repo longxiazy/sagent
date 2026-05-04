@@ -37,8 +37,13 @@ export async function saveCheckpoint(dir: string, data: any) {
   await mkdir(cpDir, { recursive: true });
   const tmp = tmpPath(dir, data.runId);
   const dest = checkpointPath(dir, data.runId);
-  await writeFile(tmp, JSON.stringify(data), 'utf8');
-  await rename(tmp, dest);
+  const json = JSON.stringify(data);
+  try {
+    await writeFile(tmp, json, 'utf8');
+    await rename(tmp, dest);
+  } catch {
+    await writeFile(dest, json, 'utf8');
+  }
 }
 
 export async function listCheckpoints(dir: string) {
@@ -163,9 +168,14 @@ export async function saveHealthySnapshot({ dir, runId, step, history, state, re
   };
 
   const filePath = healthyPath(dir, runId, step);
-  const tmpFile = filePath + '.tmp';
-  await writeFile(tmpFile, JSON.stringify(snapshot), 'utf8');
-  await rename(tmpFile, filePath);
+  const data = JSON.stringify(snapshot);
+  try {
+    const tmpFile = filePath + '.tmp';
+    await writeFile(tmpFile, data, 'utf8');
+    await rename(tmpFile, filePath);
+  } catch {
+    await writeFile(filePath, data, 'utf8');
+  }
 
   await pruneSnapshots(dir, runId, 'healthy', KEEP_HEALTHY);
 }
