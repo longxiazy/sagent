@@ -222,7 +222,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         rollbackSuggestion,
       });
     } finally {
-      cleanupAgentRun(checkpointDir, runId, agentRunStore);
+      await cleanupAgentRun(checkpointDir, runId, agentRunStore);
     }
     const status = agentError
       ? cancelled || agentError.message === 'Agent 已取消'

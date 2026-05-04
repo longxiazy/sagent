@@ -221,3 +221,10 @@ export async function listSessionCheckpoints(dir: string, runId: string) {
 // ─── 导出常量 ────────────────────────────────────────────
 
 export { HEALTH_CHECKPOINT_INTERVAL, KEEP_HEALTHY, KEEP_FAILED };
+
+// ─── Session 快照清理（运行结束后调用）────────────────────────
+
+export async function removeSessionCheckpoints(dir: string, runId: string) {
+  const cpDir = sessionDir(dir, runId);
+  await rm(cpDir, { recursive: true, force: true });
+}

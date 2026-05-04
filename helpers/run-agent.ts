@@ -8,7 +8,7 @@
  */
 
 import { loadMemory, buildMemoryPrompt } from '../agent/core/memory.ts';
-import { removeCheckpoint } from '../agent/core/checkpoint.ts';
+import { removeCheckpoint, removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
 import { log } from './logger.ts';
 
 export function createBaseEventSender(runId: string, agentRunStore: any) {
@@ -34,9 +34,12 @@ export async function loadMemoryForPrompt(memoryDir: string) {
   }
 }
 
-export function cleanupAgentRun(checkpointDir: string | undefined, runId: string, agentRunStore: any) {
+export async function cleanupAgentRun(checkpointDir: string | undefined, runId: string, agentRunStore: any) {
   if (checkpointDir) {
-    removeCheckpoint(checkpointDir, runId).catch(() => {});
+    await Promise.all([
+      removeCheckpoint(checkpointDir, runId).catch(() => {}),
+      removeSessionCheckpoints(checkpointDir, runId).catch(() => {}),
+    ]);
   }
   agentRunStore.closeRun(runId);
 }
