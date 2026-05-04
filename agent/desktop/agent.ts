@@ -405,7 +405,7 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
       const raceAc = new AbortController();
 
       function launchModel(m) {
-        if (settled || cancelSignal.aborted) return;
+        if (settled || cancelSignal?.aborted) return;
         launched++;
         onEvent?.({ type: 'model_plan', stage: 'thinking', model: m, step });
         planWithTimeout(m, planCtx, cancelSignal, raceAc.signal)
@@ -445,7 +445,7 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
 
       let nextIndex = 0;
       function tryLaunchBatch(skipDelay = false) {
-        if (settled || cancelSignal.aborted || nextIndex >= activeModels.length) return;
+        if (settled || cancelSignal?.aborted || nextIndex >= activeModels.length) return;
 
         const isFirstBatch = nextIndex === 0;
         const batch = activeModels.slice(nextIndex, nextIndex + batchSize);

@@ -123,7 +123,7 @@ export async function runAgentRuntime({
           for (const h of snapshot.history) {
             history.push({ ...h });
           }
-          step = targetStep;
+          step = targetStep - 1;
           runRecord.pendingRollback = null;
           runRecord.rolledBack = true;
 

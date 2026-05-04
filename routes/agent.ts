@@ -391,7 +391,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
       startedAt: run.startedAt,
       model: run.meta?.model,
       task: run.meta?.task,
-    })}\n\n `);
+    })}\n\n`);
 
     // Register writer BEFORE snapshotting to avoid event gap
     let writer = null;

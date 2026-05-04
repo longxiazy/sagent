@@ -79,6 +79,7 @@ function assertSafeCommand(command) {
     /\$\(/.test(command) ||
     /\$\{/.test(command) ||
     /[^&]&[^&]/.test(command) ||
+    /\s&(\s|$)/.test(command) ||
     /&&|\|\|/.test(command) ||
     /[<>]\(/.test(command) ||
     /<<\s*\w/.test(command)

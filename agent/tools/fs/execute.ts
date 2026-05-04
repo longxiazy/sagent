@@ -31,7 +31,7 @@ function assertWithinSandbox(targetPath, sandboxPath) {
 }
 
 const DANGEROUS_PATTERNS = [
-  /^\.env$/i,
+  /^\.env(\.\w+)?$/i,
   /^\.ssh\//i,
   /^\.git\//i,
   / id_rsa/,
@@ -63,6 +63,7 @@ export async function executeFsAction(action) {
 
   if (action.type === 'read_file') {
     const targetPath = resolveInputPath(action.path);
+    assertSafePath(targetPath);
     const buffer = await fs.readFile(targetPath);
     const text = buffer.toString('utf8', 0, Math.min(buffer.length, action.maxBytes || 12000));
     return `文件 ${targetPath} 内容预览:\n${text}`;
