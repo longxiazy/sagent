@@ -101,7 +101,7 @@ async function resumeFromCheckpoint(cp) {
     sendEvent({ type: 'step', step: h.step, stage: 'action', rationale: h.rationale, action: h.action });
     sendEvent({ type: 'step', step: h.step, stage: 'result', result: h.result });
   }
-  sendEvent({ type: 'status', status: 'resuming', runId, message: `从断点恢复（已完成 ${history.length} 步）` });
+  sendEvent({ type: 'status', status: 'resuming', runId, message: `从断点恢复：从第 ${step + 1} 步继续执行任务「${task.slice(0, 60)}」` });
 
   try {
     const result = await runDesktopAgent({

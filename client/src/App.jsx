@@ -2427,9 +2427,11 @@ export default function App() {
       setAgentTrace([]);
     } else {
       // Retry from checkpoint — keep filtered trace (handleRollback already removed steps > target)
+      const cpStep = extraBody?.fromCheckpoint?.step;
       updateSession(sessionId, session => {
         const msgs = [...session.messages];
-        msgs.push({ role: 'assistant', content: 'Desktop Agent 正在从检查点重新执行任务…', ts: Date.now() });
+        const stepInfo = cpStep ? `从第 ${cpStep} 步` : '';
+        msgs.push({ role: 'assistant', content: `Desktop Agent 正在${stepInfo}重新执行任务：${text}`, ts: Date.now() });
         return touchSession(session, { messages: msgs });
       });
     }
