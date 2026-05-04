@@ -18,6 +18,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createBrowserSession, closeBrowserSession } from '../browser/webview-session.ts';
+import { safeNavigate } from '../browser/execute.ts';
 import { log } from '../../../helpers/logger.ts';
 
 const execFileAsync = promisify(execFile);
@@ -70,7 +71,7 @@ async function fetchWithBrowser(session, action) {
   const timeout = action.timeoutMs || BROWSER_TIMEOUT_MS;
 
   return withFetchView(session, async view => {
-    await withTimeout(view.navigate(url), timeout, `WebView 访问超时: ${url}`);
+    await withTimeout(safeNavigate(view, url), timeout, `WebView 访问超时: ${url}`);
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     if (action.extractLinks) {

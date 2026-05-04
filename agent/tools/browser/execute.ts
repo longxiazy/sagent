@@ -1,9 +1,39 @@
 import { getWebView } from './webview-session.ts';
 
 const ACTION_SETTLE_MS = 600;
+const NAV_RETRY_MS = 500;
+const NAV_MAX_RETRIES = 3;
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+export async function safeNavigate(view, url) {
+  for (let i = 0; i < NAV_MAX_RETRIES; i++) {
+    try {
+      return await view.navigate(url);
+    } catch (err) {
+      if (/already pending/i.test(err.message) && i < NAV_MAX_RETRIES - 1) {
+        await delay(NAV_RETRY_MS);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+async function safeEvaluate(view, script) {
+  for (let i = 0; i < NAV_MAX_RETRIES; i++) {
+    try {
+      return await view.evaluate(script);
+    } catch (err) {
+      if (/already pending/i.test(err.message) && i < NAV_MAX_RETRIES - 1) {
+        await delay(NAV_RETRY_MS);
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 function elementSelector(elementId) {
@@ -37,7 +67,7 @@ export async function executeBrowserAction(view, action) {
 async function _executeBrowserAction(view, action) {
   if (action.type === 'navigate') {
     try {
-      await view.navigate(action.url);
+      await safeNavigate(view, action.url);
       await delay(ACTION_SETTLE_MS);
       return `已打开 ${action.url}`;
     } catch (err) {
@@ -49,7 +79,7 @@ async function _executeBrowserAction(view, action) {
     const query = action.query || '';
     if (!query) throw new Error('google_search 缺少 query');
     const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-    await view.navigate(url);
+    await safeNavigate(view, url);
     await delay(ACTION_SETTLE_MS);
     return `已在浏览器打开 Google 搜索: "${query}"。`;
   }
@@ -71,7 +101,7 @@ async function _executeBrowserAction(view, action) {
     }
 
     const selector = elementSelector(action.elementId);
-    const elementInfo = await view.evaluate(queryElementScript(selector, `
+    const elementInfo = await safeEvaluate(view, queryElementScript(selector, `
       return {
         tagName: element.tagName.toLowerCase(),
         isEditable: Boolean(element.isContentEditable),
@@ -81,14 +111,14 @@ async function _executeBrowserAction(view, action) {
     await view.click(selector, { timeout: 10000 });
 
     if (elementInfo.tagName === 'input' || elementInfo.tagName === 'textarea') {
-      await view.evaluate(queryElementScript(selector, `
+      await safeEvaluate(view, queryElementScript(selector, `
         element.focus();
         element.value = '';
         element.dispatchEvent(new Event('input', { bubbles: true }));
       `));
       await view.type(selector, action.text || '');
     } else if (elementInfo.isEditable) {
-      await view.evaluate(queryElementScript(selector, `
+      await safeEvaluate(view, queryElementScript(selector, `
         element.focus();
         element.textContent = '';
       `));
@@ -113,13 +143,13 @@ async function _executeBrowserAction(view, action) {
   if (action.type === 'scroll') {
     const pixels = (action.amount || 3) * 300;
     const signedPixels = action.direction === 'up' ? -pixels : pixels;
-    await view.evaluate(`window.scrollBy(0, ${signedPixels})`);
+    await safeEvaluate(view, `window.scrollBy(0, ${signedPixels})`);
     await delay(400);
     return `已向${action.direction === 'up' ? '上' : '下'}滚动 ${action.amount || 3} 步`;
   }
 
   if (action.type === 'get_page_content') {
-    const text = await view.evaluate("document.body?.innerText || ''");
+    const text = await safeEvaluate(view, "document.body?.innerText || ''");
     return text.slice(0, 12000) || '页面内容为空';
   }
 

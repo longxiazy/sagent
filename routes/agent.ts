@@ -36,18 +36,18 @@ import { formatLogTime, buildAgentMetrics, buildSseWriter, logAgentEvent } from 
 import {
   loadMemory,
   saveMemory,
-  buildMemoryPrompt,
   extractConversationEntry,
   extractProjectKnowledge,
   compactConversationMemory,
   clearMemory,
   clearProjectKnowledge,
 } from '../agent/core/memory.ts';
-import { removeCheckpoint } from '../agent/core/checkpoint.ts';
 import {
+  removeCheckpoint,
   listSessionCheckpoints,
   loadLatestHealthySnapshot,
-} from '../agent/core/session-checkpoint.ts';
+} from '../agent/core/checkpoint.ts';
+import { createBaseEventSender, loadMemoryForPrompt, cleanupAgentRun } from '../helpers/run-agent.ts';
 import { summarizeText } from '../agent/core/ai-client.ts';
 import { log } from '../helpers/logger.ts';
 
@@ -124,6 +124,7 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     const modelsUsed = new Set();
     const stepModels = {};
 
+    const baseSendEvent = createBaseEventSender(runId, agentRunStore);
     const sendEvent = payload => {
       if (payload.type === 'step') {
         observedStepCount = Math.max(observedStepCount, payload.step || 0);
@@ -138,18 +139,11 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         modelsUsed.add(payload.model);
       }
       logAgentEvent(payload);
-      agentRunStore.addEvent(runId, payload);
+      baseSendEvent(payload);
       if (payload.type === 'model_plan' || payload.type === 'session_checkpoint') {
         log.debug(`[SSE] write type=${payload.type} step=${payload.step} stage=${payload.stage ?? '-'} model=${payload.model ?? '-'} writableEnded=${res.writableEnded} writableFinished=${res.writableFinished}`);
       }
       rawSendEvent(payload);
-      // Forward to any reconnected clients
-      const run = agentRunStore.getRun(runId);
-      if (run?._reconnectWriters) {
-        for (const writer of run._reconnectWriters) {
-          writer(payload);
-        }
-      }
     };
 
     sendEvent({
@@ -164,15 +158,9 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
     let memory = null;
     let systemPrompt = '';
     if (useMemory) {
-      try {
-        memory = await loadMemory(memoryDir);
-        const memoryPrompt = buildMemoryPrompt(memory);
-        if (memoryPrompt) {
-          systemPrompt = memoryPrompt;
-        }
-      } catch (err) {
-        log.error('Memory load failed:', err.message);
-      }
+      const loaded = await loadMemoryForPrompt(memoryDir);
+      memory = loaded.memory;
+      systemPrompt = loaded.systemPrompt;
     }
 
     let agentResult = null;
@@ -234,67 +222,64 @@ export function createAgentRouter({ runDesktopAgent, agentRunStore, approvalStor
         rollbackSuggestion,
       });
     } finally {
-      if (checkpointDir) {
-        removeCheckpoint(checkpointDir, runId).catch(() => {});
-      }
-      const status = agentError
-        ? cancelled || agentError.message === 'Agent 已取消'
-          ? 'cancelled'
-          : 'error'
-        : 'done';
-      const metrics = buildAgentMetrics(startedAt, {
-        stepCount: Math.max(completedStepCount, observedStepCount),
-        status,
-      });
+      await cleanupAgentRun(checkpointDir, runId, agentRunStore);
+    }
+    const status = agentError
+      ? cancelled || agentError.message === 'Agent 已取消'
+        ? 'cancelled'
+        : 'error'
+      : 'done';
+    const metrics = buildAgentMetrics(startedAt, {
+      stepCount: Math.max(completedStepCount, observedStepCount),
+      status,
+    });
 
-      const usedModels = [...modelsUsed].map((m: any) => (m as string).split('/').pop()).join(',');
-      const statusIcon = status === 'done' ? '✅' : status === 'cancelled' ? '⛔' : '❌';
-      const elapsedSec = (metrics.elapsed_ms / 1000).toFixed(1);
-      const statusLine = `  ${statusIcon} Agent ${status.toUpperCase()}  ${elapsedSec}s  ${metrics.step_count} steps  ${usedModels}`;
-      const runLine = `  run: ${runId}`;
-      const answerLine = finalAnswer ? `  answer: ${safeJson(cleanText(finalAnswer, 80))}` : '';
-      const errorLine = agentError ? `  error: ${safeJson(agentError.message)}` : '';
-      const innerLines = [statusLine, runLine, answerLine, errorLine].filter(Boolean);
-      const W = Math.max(...innerLines.map(displayWidth)) + 4;
-      const bRow = `  ${'═'.repeat(W)}`;
-      const box = [
-        `  ╔${bRow.slice(2)}╗`,
-        ...innerLines.map(l => `  ║${padEndW(l, W)}║`),
-        `  ╚${bRow.slice(2)}╝`,
-      ].join('\n');
-      log.info(`\n${box}`);
-      clearInterval(heartbeat);
-      agentRunStore.closeRun(runId);
-      approvalStore.rejectAll();
-      res.end();
+    const usedModels = [...modelsUsed].map((m: any) => (m as string).split('/').pop()).join(',');
+    const statusIcon = status === 'done' ? '✅' : status === 'cancelled' ? '⛔' : '❌';
+    const elapsedSec = (metrics.elapsed_ms / 1000).toFixed(1);
+    const statusLine = `  ${statusIcon} Agent ${status.toUpperCase()}  ${elapsedSec}s  ${metrics.step_count} steps  ${usedModels}`;
+    const runLine = `  run: ${runId}`;
+    const answerLine = finalAnswer ? `  answer: ${safeJson(cleanText(finalAnswer, 80))}` : '';
+    const errorLine = agentError ? `  error: ${safeJson(agentError.message)}` : '';
+    const innerLines = [statusLine, runLine, answerLine, errorLine].filter(Boolean);
+    const W = Math.max(...innerLines.map(displayWidth)) + 4;
+    const bRow = `  ${'═'.repeat(W)}`;
+    const box = [
+      `  ╔${bRow.slice(2)}╗`,
+      ...innerLines.map(l => `  ║${padEndW(l, W)}║`),
+      `  ╚${bRow.slice(2)}╝`,
+    ].join('\n');
+    log.info(`\n${box}`);
+    clearInterval(heartbeat);
+    approvalStore.rejectAll();
+    res.end();
 
-      // Async memory save — don't block the response
-      if (memory) {
-        (async () => {
-          try {
-            const answer = finalAnswer || (agentError ? `失败: ${agentError.message.slice(0, 60)}` : '无结果');
-            const steps = agentResult?.steps || [];
-            const entry = extractConversationEntry({ task: normalizedTask, result: { answer, steps }, model, stepModels });
-            memory.conversation.push(entry);
-            extractProjectKnowledge(memory, { task: normalizedTask, result: { answer, steps } });
-            const modelCounts: Record<string, number> = {};
-            for (const m of Object.values(stepModels)) {
-              modelCounts[m as string] = (modelCounts[m as string] || 0) + 1;
-            }
-            const summaryModel = Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || modelConfig?.[0]?.id;
-            const modelStats = Object.entries(modelCounts).map(([m, c]) => `${m.split('/').pop()}×${c}`).join(', ');
-            log.info(`[Memory] 开始压缩记忆 ${memory.conversation.length} 条, 摘要模型: ${summaryModel?.split('/').pop() || '无'} (本轮 ${modelStats || '无竞速'})`);
-            const memStart = Date.now();
-            await compactConversationMemory(memory, {
-              summarizeFn: summaryModel ? (text: string) => summarizeText({ text, openai_client, anthropic_client, model: summaryModel }) : undefined,
-            });
-            await saveMemory(memoryDir, memory);
-            log.info(`[Memory] 压缩完成，保留 ${memory.conversation.length} 条, 耗时 ${Date.now() - memStart}ms, 摘要长度 ${memory.conversationSummary.length}`);
-          } catch (err) {
-            log.error('Memory save failed:', err.message);
+    // Async memory save — don't block the response
+    if (memory) {
+      (async () => {
+        try {
+          const answer = finalAnswer || (agentError ? `失败: ${agentError.message.slice(0, 60)}` : '无结果');
+          const steps = agentResult?.steps || [];
+          const entry = extractConversationEntry({ task: normalizedTask, result: { answer, steps }, model, stepModels });
+          memory.conversation.push(entry);
+          extractProjectKnowledge(memory, { task: normalizedTask, result: { answer, steps } });
+          const modelCounts: Record<string, number> = {};
+          for (const m of Object.values(stepModels)) {
+            modelCounts[m as string] = (modelCounts[m as string] || 0) + 1;
           }
-        })();
-      }
+          const summaryModel = Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || modelConfig?.[0]?.id;
+          const modelStats = Object.entries(modelCounts).map(([m, c]) => `${m.split('/').pop()}×${c}`).join(', ');
+          log.info(`[Memory] 开始压缩记忆 ${memory.conversation.length} 条, 摘要模型: ${summaryModel?.split('/').pop() || '无'} (本轮 ${modelStats || '无竞速'})`);
+          const memStart = Date.now();
+          await compactConversationMemory(memory, {
+            summarizeFn: summaryModel ? (text: string) => summarizeText({ text, openai_client, anthropic_client, model: summaryModel }) : undefined,
+          });
+          await saveMemory(memoryDir, memory);
+          log.info(`[Memory] 压缩完成，保留 ${memory.conversation.length} 条, 耗时 ${Date.now() - memStart}ms, 摘要长度 ${memory.conversationSummary.length}`);
+        } catch (err) {
+          log.error('Memory save failed:', err.message);
+        }
+      })();
     }
     return;
   });

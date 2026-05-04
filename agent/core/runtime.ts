@@ -33,7 +33,7 @@ import {
   saveHealthySnapshot,
   loadLatestHealthySnapshot,
   HEALTH_CHECKPOINT_INTERVAL,
-} from "./session-checkpoint.js";
+} from "./checkpoint.js";
 
 const MAX_HISTORY_STEPS = Number(process.env.AGENT_MAX_HISTORY_STEPS || 20);
 const MAX_RESULT_CHARS = Number(process.env.AGENT_MAX_RESULT_CHARS || 1000);

@@ -4,12 +4,10 @@ import path from 'node:path';
 import os from 'node:os';
 import {
   saveHealthySnapshot,
-  saveFailedSnapshot,
   loadLatestHealthySnapshot,
   listSessionCheckpoints,
-  clearSessionCheckpoints,
   KEEP_HEALTHY,
-} from '../agent/core/session-checkpoint.ts';
+} from '../agent/core/checkpoint.ts';
 import { runAgentRuntime } from '../agent/core/runtime.ts';
 
 let tmpDir;
@@ -116,33 +114,18 @@ describe('sanitizeState', () => {
 });
 
 describe('listSessionCheckpoints', () => {
-  it('lists both healthy and failed checkpoints sorted by step', async () => {
+  it('lists healthy checkpoints sorted by step', async () => {
     const runId = 'run_list';
     await saveHealthySnapshot({ dir: tmpDir, runId, step: 2, history: [], state: null, result: 'ok' });
-    await saveFailedSnapshot({ dir: tmpDir, runId, step: 5, history: [], error: new Error('boom'), state: null });
     await saveHealthySnapshot({ dir: tmpDir, runId, step: 4, history: [], state: null, result: 'ok' });
+    await saveHealthySnapshot({ dir: tmpDir, runId, step: 6, history: [], state: null, result: 'ok' });
 
     const list = await listSessionCheckpoints(tmpDir, runId);
     expect(list).toHaveLength(3);
     expect(list[0].step).toBe(2);
     expect(list[0].type).toBe('healthy');
     expect(list[1].step).toBe(4);
-    expect(list[2].step).toBe(5);
-    expect(list[2].type).toBe('failed');
-    expect(list[2].error).toBe('boom');
-  });
-});
-
-describe('clearSessionCheckpoints', () => {
-  it('removes the entire checkpoint directory', async () => {
-    const runId = 'run_clear';
-    await saveHealthySnapshot({ dir: tmpDir, runId, step: 2, history: [], state: null, result: 'ok' });
-
-    const cpDir = path.join(tmpDir, 'session-checkpoints', runId);
-    await fs.access(cpDir);
-
-    await clearSessionCheckpoints(tmpDir, runId);
-    await expect(fs.access(cpDir)).rejects.toThrow();
+    expect(list[2].step).toBe(6);
   });
 });
 
