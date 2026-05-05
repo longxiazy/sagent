@@ -1,7 +1,7 @@
 /**
  * Chat Tool Executor — Chat 模式下的工具执行器（只读子集）
  *
- * Chat 模式支持有限的工具调用（search_files, read_file, list_dir, http_fetch, run_safe），
+ * Chat 模式支持有限的工具调用（search_files, read_file, list_dir, run_safe），
  * 这些都是只读/安全的操作，不需要用户审批，结果截断到 12KB 防止上下文爆炸。
  *
  * 与 Agent 模式的区别：
@@ -13,7 +13,6 @@
  */
 
 import { executeFsAction } from '../tools/fs/execute.ts';
-import { executeFetchAction } from '../tools/fetch/execute.ts';
 import { executeTerminalAction } from '../tools/terminal/run.ts';
 
 export async function executeChatTool(name, input) {
@@ -27,9 +26,6 @@ export async function executeChatTool(name, input) {
   }
   if (name === 'list_dir') {
     return truncate(await executeFsAction({ tool: 'fs', type: 'list_dir', ...input }), MAX_RESULT);
-  }
-  if (name === 'http_fetch') {
-    return truncate(await executeFetchAction({ tool: 'fetch', type: 'http_fetch', ...input }, null, null), MAX_RESULT);
   }
   if (name === 'run_safe') {
     return truncate(await executeTerminalAction({ tool: 'terminal', type: 'run_safe', ...input }), MAX_RESULT);

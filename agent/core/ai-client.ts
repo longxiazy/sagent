@@ -95,10 +95,9 @@ export function buildDesktopAgentSystemPrompt(systemPrompt) {
     '3. 文件写入、终端确认命令、桌面键鼠输入可能需要用户批准，被拒绝后请尝试替代方案。',
     '4. cd/pushd/popd 等目录切换命令使用 run_review，需要用户审批。',
     '5. answer 用简体中文，简洁直接。',
-    '6. 获取网页信息时优先用 http_fetch（快，不开浏览器）。需要搜索时优先使用 google_search 工具，它会用浏览器打开 Google 并提取搜索结果。http_fetch 也可用于搜索（构造搜索 URL，设 extractLinks=true 提取链接），但 Google 等搜索引擎可能需要浏览器。',
-    '7. http_fetch 返回空内容或失败时，才切换 browser.navigate 或 google_search。浏览器操作开销大，仅在 JS 动态渲染、需登录、需交互时使用。',
-    '8. 需要用户输入或确认偏好时使用 ask_user，不要自行假设。',
-    '9. 执行中发现重要信息或潜在问题时使用 notify_user 主动告知用户。',
+    '6. 禁止使用 Google、百度、Bing 等搜索引擎网站搜索信息，这些网站会触发反爬机制导致任务失败。需要获取网页内容时使用 navigate 或 http_fetch 打开目标页面。',
+    '7. 需要用户输入或确认偏好时使用 ask_user，不要自行假设。',
+    '8. 执行中发现重要信息或潜在问题时使用 notify_user 主动告知用户。',
     systemPrompt ? `附加约束：${systemPrompt}` : '',
   ]
     .filter(Boolean)

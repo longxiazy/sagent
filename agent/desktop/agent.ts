@@ -37,7 +37,6 @@ import { executeBrowserAction } from '../tools/browser/execute.ts';
 import { captureBrowserObservation, summarizeBrowserObservation } from '../tools/browser/observe.ts';
 import { closeBrowserSession, createBrowserSession } from '../tools/browser/webview-session.ts';
 import { executeFsAction } from '../tools/fs/execute.ts';
-import { executeFetchAction } from '../tools/fetch/execute.ts';
 import { createDomainRules } from '../tools/fetch/domain-rules.ts';
 import { executeMacOSAction } from '../tools/macos/execute.ts';
 import { observeMacOSDesktop } from '../tools/macos/observe.ts';
@@ -91,9 +90,9 @@ function buildNvidiaTaskMessages({ task, systemPrompt, step, history, observatio
         '{"rationale":"点击桌面坐标","action":{"tool":"macos","type":"click_at","x":640,"y":480}}',
         '{"rationale":"向下滚动页面","action":{"tool":"browser","type":"scroll","direction":"down","amount":3}}',
         '{"rationale":"获取浏览器当前页面文本内容","action":{"tool":"browser","type":"get_page_content"}}',
-        '{"rationale":"抓取网页内容","action":{"tool":"fetch","type":"http_fetch","url":"https://example.com"}}',
-        '{"rationale":"搜索并提取链接","action":{"tool":"fetch","type":"http_fetch","url":"https://www.google.com/search?q=关键词","extractLinks":true}}',
-        '{"rationale":"并发抓取多个页面","action":{"tool":"fetch","type":"parallel_fetch","urls":["https://example.com/a","https://example.com/b"]}}',
+        '{"rationale":"抓取网页内容","action":{"tool":"browser","type":"http_fetch","url":"https://example.com"}}',
+        '{"rationale":"搜索并提取链接","action":{"tool":"browser","type":"http_fetch","url":"https://example.com/search?q=关键词","extractLinks":true}}',
+        '{"rational":"并发抓取多个页面","action":{"tool":"browser","type":"parallel_fetch","urls":["https://example.com/a","https://example.com/b"]}}',
         '{"rationale":"向用户提问","action":{"tool":"core","type":"ask_user","question":"你希望使用什么命名规范？"}}',
         '{"rationale":"发现重要问题需告知用户","action":{"tool":"core","type":"notify_user","message":"发现 3 个硬编码 API 密钥","level":"warning"}}',
         '{"rationale":"完成任务","action":{"type":"finish","answer":"最终结果"}}',
@@ -104,9 +103,9 @@ function buildNvidiaTaskMessages({ task, systemPrompt, step, history, observatio
         '3. 文件写入、终端确认命令、桌面键鼠输入可能需要用户批准，被拒绝后请尝试替代方案。',
         '4. cd/pushd/popd 等目录切换命令使用 run_review，会触发用户审批。',
         '5. answer 用简体中文，简洁直接。',
-        '6. 获取网页信息优先用 http_fetch（快，不开浏览器）。搜索时构造搜索 URL，设 extractLinks=true 提取结果链接。',
-        '7. http_fetch 失败或返回空内容时，才切换 browser.navigate。浏览器仅在 JS 动态渲染、需登录、需交互时使用。',
-        '8. 需要同时获取多个页面时，优先使用 parallel_fetch 并发抓取（最多5个URL），比逐个抓取快很多。',
+        '6. 禁止使用 Google、百度、Bing 等搜索引擎网站搜索信息，这些网站会触发反爬机制导致任务失败。需要获取网页内容时使用 http_fetch 或 navigate 打开目标页面。',
+        '7. http_fetch 和 navigate 都通过浏览器执行，可以处理需要 JS 渲染的页面。',
+        '8. 需要同时获取多个页面时，使用 parallel_fetch 并发抓取（最多5个URL）。',
         '9. 需要用户输入或确认偏好时使用 ask_user。',
         '10. 发现重要信息或问题时使用 notify_user 主动告知用户。',
         systemPrompt ? `附加约束：${systemPrompt}` : '',
@@ -572,7 +571,6 @@ export function createDesktopAgentRunner({
         return executeBrowserAction(session.view, action);
       },
       fs: async (_state, action) => executeFsAction(action),
-      fetch: async (state, action) => executeFetchAction(action, state.browserSession, domainRules),
       terminal: async (_state, action) => executeTerminalAction(action),
       macos: async (state, action) =>
         executeMacOSAction(action, {

@@ -130,13 +130,10 @@ describe('Bun.WebView browser actions', () => {
       .resolves.toContain('已向下滚动 2 步');
     await expect(executeBrowserAction(view, { type: 'get_page_content' }))
       .resolves.toBe('页面正文');
-    await expect(executeBrowserAction(view, { type: 'google_search', query: 'sagent' }))
-      .resolves.toContain('Google 搜索');
 
     expect(view.calls).toContainEqual(['navigate', 'https://example.com']);
     expect(view.calls).toContainEqual(['click', '[data-agent-node-id="2"]', { timeout: 10000 }]);
     expect(view.calls).toContainEqual(['type', '[data-agent-node-id="3"]', 'hello']);
     expect(view.calls).toContainEqual(['press', 'Enter']);
-    expect(view.calls).toContainEqual(['navigate', 'https://www.google.com/search?q=sagent']);
   });
 });

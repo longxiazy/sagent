@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, Component, useMemo } from 'react';
 import {
-  Menu, Timer, Trash2, Square, Brain, ChevronDown, ChevronUp,
+  Menu, Timer, Trash2, Square, Brain, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp,
   Copy, Check, Send, RotateCcw, Monitor, Loader2,
 } from 'lucide-react';
 import hljs from 'highlight.js/lib/core';
@@ -1041,22 +1041,25 @@ const PLAN_STAGE_ICON = {
 
 // 单个模型卡片负责展示某一步里某个模型的“决策快照”：
 // 当前状态、理由、动作、tokens，以及在竞速模式下是否被采纳。
-function ModelPlanCard({ event, isWinner, modelList, result }) {
+function ModelPlanCard({ event, isWinner, modelList, result, forceExpanded, onManualToggle }) {
   const label = getModelLabel(event.model, modelList);
   const stage = event.stage;
   const [showReasoning, setShowReasoning] = useState(false);
   const [showFullResult, setShowFullResult] = useState(false);
   const [expanded, setExpanded] = useState(isWinner || stage === 'failed');
+  const effectiveExpanded = forceExpanded != null ? forceExpanded : expanded;
+  const effectiveShowReasoning = forceExpanded === true ? true : showReasoning;
+  const effectiveShowFullResult = forceExpanded === true ? true : showFullResult;
 
   if (stage === 'start') return null;
 
   return (
-    <div className={`model-card ${stage} ${isWinner ? 'winner' : ''} ${expanded ? 'expanded' : ''}`} onClick={() => setExpanded(v => !v)}>
+    <div className={`model-card ${stage} ${isWinner ? 'winner' : ''} ${effectiveExpanded ? 'expanded' : ''}`} onClick={() => { if (forceExpanded != null) onManualToggle?.(); setExpanded(v => !v); }}>
       <div className="model-card-head">
         <span className="model-card-icon">{PLAN_STAGE_ICON[stage] || '·'}</span>
         <span className="model-card-label">{label}</span>
         <span className={`model-card-status ${stage}`}>{PLAN_STAGE_LABELS[stage] || stage}</span>
-        <span className="model-card-expand-icon">{expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}</span>
+        <span className="model-card-expand-icon">{effectiveExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}</span>
       </div>
       {stage === 'pending' && (
         <div className="model-card-body">
@@ -1080,9 +1083,9 @@ function ModelPlanCard({ event, isWinner, modelList, result }) {
           {event.reasoning && (
             <div className="model-card-reasoning">
               <button className="model-card-reasoning-toggle" onClick={() => setShowReasoning(v => !v)}>
-                思考过程 {showReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                思考过程 {effectiveShowReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
               </button>
-              {showReasoning && (
+              {effectiveShowReasoning && (
                 <pre className="model-card-reasoning-text">{event.reasoning}</pre>
               )}
             </div>
@@ -1097,10 +1100,10 @@ function ModelPlanCard({ event, isWinner, modelList, result }) {
           {isWinner && result && (
             <div className="model-card-result">
               <span className="model-card-result-label">执行结果</span>
-              <p>{showFullResult || result.length <= 50 ? result : result.slice(0, 50) + '…'}</p>
+              <p>{effectiveShowFullResult || result.length <= 50 ? result : result.slice(0, 50) + '…'}</p>
               {result.length > 50 && (
                 <button className="model-card-result-toggle" onClick={() => setShowFullResult(v => !v)}>
-                  {showFullResult ? '收起' : '展开全部'}
+                  {effectiveShowFullResult ? '收起' : '展开全部'}
                 </button>
               )}
             </div>
@@ -1128,9 +1131,9 @@ function ModelPlanCard({ event, isWinner, modelList, result }) {
           {event.reasoning && (
             <div className="model-card-reasoning">
               <button className="model-card-reasoning-toggle" onClick={() => setShowReasoning(v => !v)}>
-                思考过程 {showReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                思考过程 {effectiveShowReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
               </button>
-              {showReasoning && (
+              {effectiveShowReasoning && (
                 <pre className="model-card-reasoning-text">{event.reasoning}</pre>
               )}
             </div>
@@ -1155,7 +1158,7 @@ function ModelPlanCard({ event, isWinner, modelList, result }) {
 
 // 多模型一步会产生多条 model_plan 事件。这个组件负责把零散事件重新聚合成
 // 一个“按 step 分组”的展示块，让用户能看到同一步里不同模型如何竞争/投票。
-function ModelPlanGroup({ trace, step, models, modelList, running }) {
+function ModelPlanGroup({ trace, step, models, modelList, running, cardsExpanded, onManualToggle }) {
   let strategyMode = 'race';
   let consensusEvent = null;
   const modelEvents = {};
@@ -1208,6 +1211,8 @@ function ModelPlanGroup({ trace, step, models, modelList, running }) {
             modelList={modelList}
             strategy={strategyMode}
             result={winnerModel === m ? stepResult : null}
+            forceExpanded={cardsExpanded}
+            onManualToggle={onManualToggle}
           />
         ))}
       </div>
@@ -1223,6 +1228,8 @@ function ModelPlanGroup({ trace, step, models, modelList, running }) {
                 modelList={modelList}
                 strategy={strategyMode}
                 result={null}
+                forceExpanded={cardsExpanded}
+                onManualToggle={onManualToggle}
               />
             ))}
           </div>
@@ -1379,6 +1386,8 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
   const pauseRef = useRef(null);
   const [elapsed, setElapsed] = useState(0);
   const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [cardsExpanded, setCardsExpanded] = useState(null); // null=auto, true=all open, false=all closed
+  const hasModelCards = trace.some(e => e.type === 'model_plan' && e.stage === 'start' && e.models?.length > 0);
 
   // ESC closes lightbox
   useEffect(() => {
@@ -1434,6 +1443,9 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
     traceBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [trace]);
 
+  // Reset cards expanded state when running changes to true (new run)
+  if (running && cardsExpanded !== null) setCardsExpanded(null);
+
   if (mode !== 'agent') {
     return null;
   }
@@ -1466,6 +1478,16 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
             </button>
           )}
           <div className="agent-head-actions">
+            {hasModelCards && !collapsed && (
+              <>
+                <button className="agent-collapse-btn agent-expand-all" onClick={e => { e.stopPropagation(); setCardsExpanded(true); }} title="全部展开">
+                  <ChevronsDown size={12} />
+                </button>
+                <button className="agent-collapse-btn agent-collapse-all" onClick={e => { e.stopPropagation(); setCardsExpanded(false); }} title="全部折叠">
+                  <ChevronsUp size={12} />
+                </button>
+              </>
+            )}
             {trace.length > 0 && (
               <button className="agent-collapse-btn agent-tablet-only" onClick={e => { e.stopPropagation(); onToggleCollapse(); }} title={collapsed ? '展开' : '收起'}>
                 {collapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
@@ -1520,7 +1542,7 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
             // (other stages like thinking/success/failed are collected inside ModelPlanGroup)
             if (event.type === 'model_plan' && event.stage !== 'start' && event.stage !== 'consensus') return null;
             if (event.type === 'model_plan' && event.stage === 'start') {
-              return <ModelPlanGroup key={`model-plan-step-${event.step || index}`} trace={trace} step={event.step} models={event.models} modelList={modelList} running={running} />;
+              return <ModelPlanGroup key={`model-plan-step-${event.step || index}`} trace={trace} step={event.step} models={event.models} modelList={modelList} running={running} cardsExpanded={cardsExpanded} onManualToggle={() => setCardsExpanded(null)} />;
             }
             // For multi-model steps, skip separate action/result items (shown inside model cards)
             if (event.type === 'step' && (event.stage === 'action' || event.stage === 'result') && multiModelSteps.has(event.step)) {

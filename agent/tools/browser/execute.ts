@@ -75,15 +75,6 @@ async function _executeBrowserAction(view, action) {
     }
   }
 
-  if (action.type === 'google_search') {
-    const query = action.query || '';
-    if (!query) throw new Error('google_search 缺少 query');
-    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-    await safeNavigate(view, url);
-    await delay(ACTION_SETTLE_MS);
-    return `已在浏览器打开 Google 搜索: "${query}"。`;
-  }
-
   if (action.type === 'click') {
     if (!action.elementId) {
       throw new Error('click 缺少 elementId');
@@ -155,6 +146,63 @@ async function _executeBrowserAction(view, action) {
 
   if (action.type === 'finish') {
     return action.answer || '任务已完成';
+  }
+
+  if (action.type === 'http_fetch') {
+    if (!action.url) throw new Error('http_fetch 缺少 url');
+    const url = /^https?:\/\//i.test(action.url) ? action.url : `https://${action.url}`;
+    try {
+      await safeNavigate(view, url);
+      await delay(1000);
+    } catch (err) {
+      return `http_fetch ${url}: 浏览器访问失败 (${(err.message || '').slice(0, 100)})。`;
+    }
+    if (action.extractLinks) {
+      const { content, links } = await safeEvaluate(view, `(() => {
+        const bodyText = document.body?.innerText || '';
+        const anchors = Array.from(document.querySelectorAll('a[href]'));
+        const extracted = [];
+        for (const a of anchors) {
+          const href = a.href;
+          const label = (a.textContent || '').trim();
+          if (href && href.startsWith('http') && label.length > 3 && label.length < 120) {
+            extracted.push({ url: href, title: label });
+          }
+        }
+        return { content: bodyText, links: extracted };
+      })()`);
+      let result = `搜索结果 ${url}:\n\n链接列表:\n`;
+      for (const link of links.slice(0, 10)) {
+        result += `- [${link.title}](${link.url})\n`;
+      }
+      result += `\n页面摘要: ${content.slice(0, 3000)}`;
+      return result;
+    }
+    const text = await safeEvaluate(view, "document.body?.innerText || ''");
+    const cleaned = text.replace(/\s+/g, ' ').trim();
+    const truncated = cleaned.length > 24000
+      ? cleaned.slice(0, 24000) + '\n...(内容已截断)'
+      : cleaned;
+    return truncated || `http_fetch ${url}: 页面内容为空。`;
+  }
+
+  if (action.type === 'parallel_fetch') {
+    const urls = Array.isArray(action.urls) ? action.urls : [];
+    if (urls.length === 0) throw new Error('parallel_fetch 缺少 urls');
+    const results = [];
+    for (const u of urls.slice(0, 5)) {
+      const url = /^https?:\/\//i.test(u) ? u : `https://${u}`;
+      try {
+        await safeNavigate(view, url);
+        await delay(1000);
+        const text = await safeEvaluate(view, "document.body?.innerText || ''");
+        const cleaned = text.replace(/\s+/g, ' ').trim();
+        results.push(`http_fetch ${url}:\n${cleaned.slice(0, 24000) || '页面内容为空'}`);
+      } catch (err) {
+        results.push(`http_fetch ${url}: 失败 (${(err.message || '').slice(0, 80)})`);
+      }
+    }
+    return results.join('\n\n---\n\n');
   }
 
   throw new Error(`不支持的动作类型: ${action.type}`);

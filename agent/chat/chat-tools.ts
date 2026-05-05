@@ -6,7 +6,7 @@
 
 import { createModelTools } from '../core/tool-definitions.ts';
 
-const CHAT_TOOL_NAMES = new Set(['search_files', 'read_file', 'list_dir', 'http_fetch', 'run_safe']);
+const CHAT_TOOL_NAMES = new Set(['search_files', 'read_file', 'list_dir', 'run_safe']);
 
 export function createChatTools() {
   return createModelTools().filter(t => CHAT_TOOL_NAMES.has(t.name));

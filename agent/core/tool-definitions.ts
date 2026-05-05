@@ -23,17 +23,6 @@ export function createModelTools() {
       },
     },
     {
-      name: 'google_search',
-      description: '用系统默认浏览器打开 Google 搜索指定关键词。自动打开浏览器，等待后返回提示。之后需要用 capture_screen 截图查看搜索结果，再根据截图中的信息继续操作。',
-      input_schema: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: '搜索关键词' },
-        },
-        required: ['query'],
-      },
-    },
-    {
       name: 'click',
       description: '点击网页元素（通过 elementId）',
       input_schema: {
@@ -117,7 +106,7 @@ export function createModelTools() {
     },
     {
       name: 'http_fetch',
-      description: '快速抓取网页内容（不开浏览器，<1s）。适合静态页面、新闻、文档。JS 动态页面、需登录页面不适用，此时请切换 browser.navigate。extractLinks=true 时提取页面中的链接列表（用于搜索结果页）。',
+      description: '用浏览器打开 URL 并提取页面文本内容。extractLinks=true 时提取页面中的链接列表（用于搜索结果页）。',
       input_schema: {
         type: 'object',
         properties: {
@@ -129,7 +118,7 @@ export function createModelTools() {
     },
     {
       name: 'parallel_fetch',
-      description: '并发抓取多个网页内容。同时请求多个 URL，比逐个 http_fetch 快得多。适合需要同时获取多个页面信息的场景。所有 URL 并行执行。',
+      description: '用浏览器依次打开多个 URL 并提取内容。适合需要获取多个页面信息的场景。',
       input_schema: {
         type: 'object',
         properties: {
