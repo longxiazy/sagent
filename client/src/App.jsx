@@ -1443,10 +1443,8 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
     traceBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [trace]);
 
-  // Reset cards expanded state on new run
-  useEffect(() => {
-    if (running) setCardsExpanded(null);
-  }, [running]);
+  // Reset cards expanded state when running changes to true (new run)
+  if (running && cardsExpanded !== null) setCardsExpanded(null);
 
   if (mode !== 'agent') {
     return null;
