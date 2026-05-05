@@ -1116,9 +1116,10 @@ function ModelPlanCard({ event, isWinner, modelList, result, forceExpanded, onMa
           )}
         </div>
       )}
-      {stage === 'failed' && event.error && (
+      {stage === 'failed' && (event.error || event.rationale) && (
         <div className="model-card-body">
-          <p className="model-card-error">{event.error}</p>
+          {event.rationale && <p>{event.rationale}</p>}
+          {event.error && <p className="model-card-error">{event.error}</p>}
         </div>
       )}
       {stage === 'discarded' && event.rationale && (
