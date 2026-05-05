@@ -1393,6 +1393,7 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
   const [elapsed, setElapsed] = useState(0);
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [cardsExpanded, setCardsExpanded] = useState(null); // null=auto, true=all open, false=all closed
+  const prevRunningRef = useRef(running);
   const hasModelCards = trace.some(e => e.type === 'model_plan' && e.stage === 'start' && e.models?.length > 0);
 
   // ESC closes lightbox
@@ -1449,8 +1450,9 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
     traceBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [trace]);
 
-  // Reset cards expanded state when running changes to true (new run)
-  if (running && cardsExpanded !== null) setCardsExpanded(null);
+  // Reset cards expanded state when a new run starts (running: false→true)
+  if (running && !prevRunningRef.current && cardsExpanded !== null) setCardsExpanded(null);
+  prevRunningRef.current = running;
 
   if (mode !== 'agent') {
     return null;
@@ -1487,10 +1489,10 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
             {hasModelCards && !collapsed && (
               <>
                 <button className="agent-collapse-btn agent-expand-all" onClick={e => { e.stopPropagation(); setCardsExpanded(true); }} title="全部展开">
-                  <ChevronsDown size={12} />
+                  <ChevronsDown size={12} /> 展开
                 </button>
                 <button className="agent-collapse-btn agent-collapse-all" onClick={e => { e.stopPropagation(); setCardsExpanded(false); }} title="全部折叠">
-                  <ChevronsUp size={12} />
+                  <ChevronsUp size={12} /> 折叠
                 </button>
               </>
             )}
