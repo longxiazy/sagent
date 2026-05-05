@@ -91,7 +91,7 @@ Agent 每完成一步都会将状态写入 `data/checkpoints/` 目录（原子�
 ## 常用命令
 
 ```bash
-npm run build        # 构建前端
+npm run build        # 后端类型检查 + 构建前端
 npm run sandbox      # 沙盒模式启动（推荐）
 npm run dev          # 无沙盒启动
 npm run stop         # 停止前后端

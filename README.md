@@ -91,7 +91,7 @@ Successfully completed tasks automatically clean up their checkpoints.
 ## Common Commands
 
 ```bash
-npm run build    # Build frontend
+npm run build    # Type-check backend and build frontend
 npm run sandbox  # Start with sandbox (recommended)
 npm run dev      # Start without sandbox
 npm run stop     # Stop frontend and backend
