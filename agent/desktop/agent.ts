@@ -32,105 +32,24 @@ import { createActionRouter } from '../core/router.ts';
 import { runAgentRuntime } from '../core/runtime.ts';
 import { normalizeDesktopAgentDecision } from '../core/schemas.ts';
 import { displayWidth, padEndW } from '../core/utils.ts';
+import { aggregateModelResults } from '../core/multi-model.ts';
+import {
+  buildClaudeTaskMessages,
+  buildDesktopAgentSystemPrompt,
+  buildNvidiaTaskMessages,
+} from '../core/prompts.ts';
 import { createAgentAuthorizer } from '../policy/approvals.ts';
 import { executeBrowserAction } from '../tools/browser/execute.ts';
-import { captureBrowserObservation, summarizeBrowserObservation } from '../tools/browser/observe.ts';
 import { closeBrowserSession, createBrowserSession } from '../tools/browser/webview-session.ts';
 import { executeFsAction } from '../tools/fs/execute.ts';
 import { createDomainRules } from '../tools/fetch/domain-rules.ts';
 import { executeIdeAction } from '../tools/ide/execute.ts';
-import { buildIdePromptLines, isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
 import { executeMacOSAction } from '../tools/macos/execute.ts';
-import { observeMacOSDesktop } from '../tools/macos/observe.ts';
 import { executeTerminalAction } from '../tools/terminal/run.ts';
-import { isClaudeModel, buildDesktopAgentSystemPrompt, claudeAgentPlan } from '../core/ai-client.ts';
+import { observeDesktopAgent } from './observer.ts';
+import { isClaudeModel, claudeAgentPlan } from '../core/ai-client.ts';
 import { saveCheckpoint } from '../core/checkpoint.ts';
 import { log } from '../../helpers/logger.ts';
-
-function buildClaudeTaskMessages({ task, step, history, observation, conversationHistory }) {
-  const messages = [];
-  if (conversationHistory?.length) {
-    for (const msg of conversationHistory) {
-      messages.push({ role: msg.role, content: msg.content });
-    }
-  }
-  messages.push({
-    role: 'user',
-    content: JSON.stringify({ task, step, history, observation }, null, 2),
-  });
-  return messages;
-}
-
-function buildNvidiaTaskMessages({ task, systemPrompt, step, history, observation, conversationHistory }) {
-  const ideEnabled = isIdeMcpEnabled();
-  const ideLines = buildIdePromptLines();
-  const conversationSummary = conversationHistory?.length
-    ? '\n\n之前的对话（供参考）：\n' + conversationHistory
-        .map(m => `${m.role === 'user' ? '用户' : '助手'}: ${m.content}`)
-        .join('\n')
-    : '';
-  return [
-    {
-      role: 'system',
-      content: [
-        '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。',
-        '你只能输出一个 JSON 对象，不要输出 Markdown，不要解释。',
-        '可用动作示例：',
-        '{"rationale":"打开网页","action":{"tool":"browser","type":"navigate","url":"https://example.com"}}',
-        '{"rationale":"点击网页元素","action":{"tool":"browser","type":"click","elementId":"3"}}',
-        '{"rationale":"读取目录","action":{"tool":"fs","type":"list_dir","path":"."}}',
-        '{"rationale":"读取文件","action":{"tool":"fs","type":"read_file","path":"README.md"}}',
-        '{"rationale":"写文件","action":{"tool":"fs","type":"write_file","path":"notes.txt","content":"内容","append":false}}',
-        '{"rationale":"搜索文件内容","action":{"tool":"fs","type":"search_files","query":"关键词","path":".","include":"*.js"}}',
-        '{"rationale":"运行只读命令","action":{"tool":"terminal","type":"run_safe","command":"pwd"}}',
-        '{"rationale":"运行需确认命令","action":{"tool":"terminal","type":"run_confirmed","command":"git status"}}',
-        '{"rationale":"切换目录","action":{"tool":"terminal","type":"run_review","command":"cd /path/to/dir"}}',
-        '{"rationale":"切换应用","action":{"tool":"macos","type":"activate_app","app":"Finder"}}',
-        '{"rationale":"打开应用","action":{"tool":"macos","type":"open_app","app":"Google Chrome"}}',
-        '{"rationale":"列出窗口","action":{"tool":"macos","type":"list_windows"}}',
-        '{"rationale":"屏幕截图","action":{"tool":"macos","type":"capture_screen"}}',
-        '{"rationale":"桌面输入文字","action":{"tool":"macos","type":"type_text","text":"hello"}}',
-        '{"rationale":"桌面按键","action":{"tool":"macos","type":"press_key","key":"enter","modifiers":["command"]}}',
-        '{"rationale":"点击桌面坐标","action":{"tool":"macos","type":"click_at","x":640,"y":480}}',
-        '{"rationale":"向下滚动页面","action":{"tool":"browser","type":"scroll","direction":"down","amount":3}}',
-        '{"rationale":"获取浏览器当前页面文本内容","action":{"tool":"browser","type":"get_page_content"}}',
-        '{"rationale":"抓取网页内容","action":{"tool":"browser","type":"http_fetch","url":"https://example.com"}}',
-        '{"rationale":"搜索并提取链接","action":{"tool":"browser","type":"http_fetch","url":"https://example.com/search?q=关键词","extractLinks":true}}',
-        '{"rational":"并发抓取多个页面","action":{"tool":"browser","type":"parallel_fetch","urls":["https://example.com/a","https://example.com/b"]}}',
-        ...(ideEnabled
-          ? [
-              '{"rationale":"查看 IDE 可用工具","action":{"tool":"ide","type":"ide_list_tools"}}',
-              '{"rationale":"调用 IDE 工具获取运行配置","action":{"tool":"ide","type":"ide_call_tool","toolName":"get_run_configurations","arguments":{}}}',
-            ]
-          : []),
-        '{"rationale":"向用户提问","action":{"tool":"core","type":"ask_user","question":"你希望使用什么命名规范？"}}',
-        '{"rationale":"发现重要问题需告知用户","action":{"tool":"core","type":"notify_user","message":"发现 3 个硬编码 API 密钥","level":"warning"}}',
-        '{"rationale":"完成任务","action":{"type":"finish","answer":"最终结果"}}',
-        '重要：每个步骤必须且只能输出一个 JSON 动作。如果你已经收集到足够信息并可以直接回答用户问题，请使用 finish 动作输出答案。绝对不要在 JSON 之外输出解释文字。',
-        '规则：',
-        '1. 只有 observation.browser.elements 中存在的 elementId 才能用于 browser.click / browser.type。',
-        '2. 优先使用已知信息，不要重复无意义截图或重复读同一文件。',
-        '3. 文件写入、终端确认命令、桌面键鼠输入可能需要用户批准，被拒绝后请尝试替代方案。',
-        '4. cd/pushd/popd 等目录切换命令使用 run_review，会触发用户审批。',
-        '5. answer 用简体中文，简洁直接。',
-        '6. 禁止使用 Google、百度、Bing 等搜索引擎网站搜索信息，这些网站会触发反爬机制导致任务失败。需要获取网页内容时使用 http_fetch 或 navigate 打开目标页面。',
-        '7. http_fetch 和 navigate 都通过浏览器执行，可以处理需要 JS 渲染的页面。',
-        '8. 需要同时获取多个页面时，使用 parallel_fetch 并发抓取（最多5个URL）。',
-        '9. 需要用户输入或确认偏好时使用 ask_user。',
-        '10. 发现重要信息或问题时使用 notify_user 主动告知用户。',
-        ...ideLines,
-        systemPrompt ? `附加约束：${systemPrompt}` : '',
-        conversationSummary,
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    },
-    {
-      role: 'user',
-      content: JSON.stringify({ task, step, history, observation }, null, 2),
-    },
-  ];
-}
 
 function toolUseToNormalizedDecision(toolUse) {
   const { name, input } = toolUse;
@@ -191,71 +110,6 @@ async function singleModelPlan({ model, openai_client, anthropic_client, modelCo
     if (cancelSignal) cancelSignal.removeEventListener('abort', onUserCancel);
     if (raceSignal) raceSignal.removeEventListener('abort', onRaceAbort);
   }
-}
-
-function aggregateResults(modelResults: any[]) {
-  // modelResults: [{ model, rationale, action, usage }, ...]
-  if (modelResults.length === 0) return null;
-  if (modelResults.length === 1) {
-    const r = modelResults[0];
-    const key = `${r.action?.tool || 'core'}.${r.action?.type || 'unknown'}`;
-    return {
-      ...r,
-      consensus: {
-        agreed: 1,
-        total: 1,
-        unanimous: true,
-        actionKey: key,
-        allResults: modelResults.map(x => ({
-          model: x.model,
-          rationale: x.rationale,
-          actionKey: `${x.action?.tool || 'core'}.${x.action?.type || 'unknown'}`,
-          action: x.action,
-          usage: x.usage,
-        })),
-      },
-    };
-  }
-
-  // Group by action key: `${tool}.${type}`
-  const groups: Record<string, any[]> = {};
-  for (const r of modelResults) {
-    const key = `${r.action?.tool || 'core'}.${r.action?.type || 'unknown'}`;
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(r);
-  }
-
-  // Find largest group (majority vote)
-  let bestKey = null;
-  let bestCount = 0;
-  for (const [key, items] of Object.entries(groups)) {
-    if (items.length > bestCount) {
-      bestCount = items.length;
-      bestKey = key;
-    }
-  }
-
-  const consensus = groups[bestKey];
-  const isUnanimous = consensus.length === modelResults.length;
-
-  // Pick the first result from the winning group as the decision
-  const winner = consensus[0];
-  return {
-    ...winner,
-    consensus: {
-      agreed: bestCount,
-      total: modelResults.length,
-      unanimous: isUnanimous,
-      actionKey: bestKey,
-      allResults: modelResults.map(r => ({
-        model: r.model,
-        rationale: r.rationale,
-        actionKey: `${r.action?.tool || 'core'}.${r.action?.type || 'unknown'}`,
-        action: r.action,
-        usage: r.usage,
-      })),
-    },
-  };
 }
 
 const DEFAULT_MODEL_TIMEOUT_MS = 10_000;
@@ -382,7 +236,7 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
         throw new Error(`所有模型均失败: ${activeModels.join(', ')}`);
       }
 
-      const aggregated = aggregateResults(successes);
+      const aggregated = aggregateModelResults(successes);
       // Fix total to include all active models (not just successes)
       if (aggregated.consensus) {
         aggregated.consensus.total = activeModels.length;
@@ -479,36 +333,6 @@ function buildDesktopPlanner({ openai_client, anthropic_client, modelConfig, bla
 
       tryLaunchBatch();
     });
-  };
-}
-
-async function observeDesktopAgent(state) {
-  const [desktop, browserRaw] = await Promise.all([
-    state.observeDesktop
-      ? observeMacOSDesktop({ runId: state.runId })
-      : Promise.resolve({ frontmostApp: '', frontmostWindowTitle: '', windows: [] }),
-    state.browserSession
-      ? captureBrowserObservation(state.browserSession.view)
-      : Promise.resolve(null),
-  ]);
-
-  const browser = browserRaw ? summarizeBrowserObservation(browserRaw) : null;
-
-  return {
-    desktop,
-    browser,
-    filesystem: {
-      cwd: process.cwd(),
-      note: '使用 fs 工具可读取或写入文件',
-    },
-    terminal: {
-      cwd: process.cwd(),
-      note: 'run_safe 仅允许运行只读命令',
-    },
-    title: browser?.title || desktop.frontmostWindowTitle || desktop.frontmostApp || 'Desktop',
-    url: browser?.url || '',
-    text: [desktop.frontmostApp, desktop.frontmostWindowTitle].filter(Boolean).join(' · '),
-    elements: browser?.elements || [],
   };
 }
 

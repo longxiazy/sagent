@@ -6,7 +6,7 @@ import {
   clearMemory,
   clearProjectKnowledge,
 } from '../agent/core/memory.ts';
-import { summarizeText } from '../agent/core/ai-client.ts';
+import { summarizeText } from '../agent/core/summarizer.ts';
 import { log } from '../helpers/logger.ts';
 import type { AgentRouterContext } from './agent-types.ts';
 
