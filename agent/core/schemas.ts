@@ -107,6 +107,28 @@ function normalizeBrowserAction(type, action) {
     return { tool: 'browser', type, direction, amount };
   }
 
+  if (type === 'http_fetch') {
+    const url = typeof action.url === 'string' ? action.url.trim() : '';
+    if (!url) throw new Error('http_fetch 缺少 url');
+    return {
+      tool: 'browser',
+      type,
+      url: /^https?:\/\//i.test(url) ? url : `https://${url}`,
+      extractLinks: Boolean(action.extractLinks),
+    };
+  }
+
+  if (type === 'parallel_fetch') {
+    const urls = Array.isArray(action.urls) ? action.urls.map(u => typeof u === 'string' ? u.trim() : '').filter(Boolean) : [];
+    if (urls.length === 0) throw new Error('parallel_fetch 缺少 urls');
+    return {
+      tool: 'browser',
+      type,
+      urls: urls.map(u => /^https?:\/\//i.test(u) ? u : `https://${u}`),
+      extractLinks: Boolean(action.extractLinks),
+    };
+  }
+
   throw new Error(`不支持的浏览器动作: ${type}`);
 }
 
@@ -246,52 +268,6 @@ function normalizeCoreAction(type, action) {
   throw new Error(`不支持的核心动作: ${type}`);
 }
 
-function normalizeFetchAction(type, action) {
-  // Fix models that put extractLinks into the URL: "url":"...&extractLinks":true}
-  if (typeof action.url === 'string' && /[&?]extractLinks[=:]/i.test(action.url)) {
-    action.url = action.url.replace(/[&?]extractLinks[=:]["']?true["']?/gi, '');
-    if (action.extractLinks === undefined) {
-      action.extractLinks = true;
-    }
-  }
-
-  if (type === 'parallel_fetch') {
-    const urls = Array.isArray(action.urls) ? action.urls : [];
-    if (urls.length === 0) {
-      throw new Error('parallel_fetch 缺少 urls');
-    }
-    return {
-      tool: 'fetch',
-      type,
-      urls: urls.map(u => {
-        const url = typeof u === 'string' ? u.trim() : '';
-        if (!url) return null;
-        return /^https?:\/\//i.test(url) ? url : `https://${url}`;
-      }).filter(Boolean),
-      extractLinks: Boolean(action.extractLinks),
-    };
-  }
-
-  if (type !== 'http_fetch') {
-    throw new Error(`不支持的抓取动作: ${type}`);
-  }
-
-  const url = typeof action.url === 'string' ? action.url.trim() : '';
-  if (!url) {
-    throw new Error('http_fetch 缺少 url');
-  }
-
-  return {
-    tool: 'fetch',
-    type,
-    url: /^https?:\/\//i.test(url) ? url : `https://${url}`,
-    extractLinks: Boolean(action.extractLinks),
-    timeoutMs: Number.isFinite(Number(action.timeoutMs))
-      ? Math.min(Math.max(Number(action.timeoutMs), 3000), 20000)
-      : 10000,
-  };
-}
-
 export function normalizeDesktopAgentDecision(payload) {
   const action = payload?.action;
   if (!action || typeof action !== 'object') {
@@ -303,10 +279,12 @@ export function normalizeDesktopAgentDecision(payload) {
     throw new Error('action.type 不能为空');
   }
 
-  const tool = String(action.tool || inferTool(type)).trim();
-  if (!tool) {
+  const rawTool = String(action.tool || inferTool(type)).trim();
+  if (!rawTool) {
     throw new Error(`无法根据动作类型推断 tool: ${type}`);
   }
+  // fetch 已合并到 browser（统一走 WebView）
+  const tool = rawTool === 'fetch' ? 'browser' : rawTool;
 
   let normalizedAction;
   if (tool === 'browser') {
@@ -319,8 +297,6 @@ export function normalizeDesktopAgentDecision(payload) {
     normalizedAction = normalizeMacOsAction(type, action);
   } else if (tool === 'core') {
     normalizedAction = normalizeCoreAction(type, action);
-  } else if (tool === 'fetch') {
-    normalizedAction = normalizeFetchAction(type, action);
   } else {
     throw new Error(`不支持的工具: ${tool}`);
   }

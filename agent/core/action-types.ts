@@ -18,6 +18,8 @@ export const ACTION_TYPE_TO_TOOL = {
   wait: 'browser',
   scroll: 'browser',
   get_page_content: 'browser',
+  http_fetch: 'browser',
+  parallel_fetch: 'browser',
   // fs
   list_dir: 'fs',
   read_file: 'fs',
@@ -35,9 +37,6 @@ export const ACTION_TYPE_TO_TOOL = {
   type_text: 'macos',
   press_key: 'macos',
   click_at: 'macos',
-  // fetch
-  http_fetch: 'fetch',
-  parallel_fetch: 'fetch',
   // core
   finish: 'core',
   ask_user: 'core',

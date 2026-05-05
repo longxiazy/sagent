@@ -37,7 +37,6 @@ import { executeBrowserAction } from '../tools/browser/execute.ts';
 import { captureBrowserObservation, summarizeBrowserObservation } from '../tools/browser/observe.ts';
 import { closeBrowserSession, createBrowserSession } from '../tools/browser/webview-session.ts';
 import { executeFsAction } from '../tools/fs/execute.ts';
-import { executeFetchAction } from '../tools/fetch/execute.ts';
 import { createDomainRules } from '../tools/fetch/domain-rules.ts';
 import { executeMacOSAction } from '../tools/macos/execute.ts';
 import { observeMacOSDesktop } from '../tools/macos/observe.ts';
@@ -572,7 +571,6 @@ export function createDesktopAgentRunner({
         return executeBrowserAction(session.view, action);
       },
       fs: async (_state, action) => executeFsAction(action),
-      fetch: async (state, action) => executeFetchAction(action, state.browserSession, domainRules),
       terminal: async (_state, action) => executeTerminalAction(action),
       macos: async (state, action) =>
         executeMacOSAction(action, {

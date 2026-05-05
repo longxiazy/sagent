@@ -36,6 +36,7 @@ import { createApprovalStore } from './agent/core/approval-store.ts';
 import { initLlmLogger } from './agent/core/llm-logger.ts';
 import { createDesktopAgentRunner } from './agent/desktop/agent.ts';
 import { createClients, loadModelConfig, loadAgentMultiModels, isClaudeModel } from './agent/core/ai-client.ts';
+import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
 import { createChatRouter } from './routes/chat.ts';
 import { createAgentRouter } from './routes/agent.ts';
 import { createCompletionsRouter } from './routes/completions.ts';
@@ -58,6 +59,7 @@ const CHECKPOINT_DIR = MEMORY_DIR;
 const AGENT_RESUME = process.env.AGENT_RESUME !== 'false';
 
 initLlmLogger(MEMORY_DIR);
+initWebViewDataStore(MEMORY_DIR);
 
 const AGENT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS || 8);
 const agentRunStore = createAgentRunStore();
