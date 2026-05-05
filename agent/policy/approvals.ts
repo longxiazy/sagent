@@ -39,7 +39,10 @@ export function createAgentAuthorizer({
         action,
         message: policy.reason,
       });
-      throw new Error(policy.reason);
+      return {
+        status: 'rejected',
+        message: policy.reason,
+      };
     }
 
     const { approvalId, promise } = approvalStore.request({
