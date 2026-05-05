@@ -30,6 +30,7 @@ import { displayWidth, padEndW } from './utils.ts';
 import { log } from '../../helpers/logger.ts';
 import { retryAsync } from '../../helpers/retry.ts';
 import { createModelTools, toolToClaudeTool } from './tool-definitions.ts';
+import { buildIdePromptLines } from '../tools/ide/mcp-client.ts';
 
 export { createModelTools } from './tool-definitions.ts';
 
@@ -86,6 +87,7 @@ export function createClients() {
 }
 
 export function buildDesktopAgentSystemPrompt(systemPrompt) {
+  const ideLines = buildIdePromptLines();
   const base = [
     '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。',
     '通过工具调用完成任务，只能使用提供的工具，不要输出 JSON 以外的文本。',
@@ -98,6 +100,7 @@ export function buildDesktopAgentSystemPrompt(systemPrompt) {
     '6. 禁止使用 Google、百度、Bing 等搜索引擎网站搜索信息，这些网站会触发反爬机制导致任务失败。需要获取网页内容时使用 navigate 或 http_fetch 打开目标页面。',
     '7. 需要用户输入或确认偏好时使用 ask_user，不要自行假设。',
     '8. 执行中发现重要信息或潜在问题时使用 notify_user 主动告知用户。',
+    ...ideLines,
     systemPrompt ? `附加约束：${systemPrompt}` : '',
   ]
     .filter(Boolean)

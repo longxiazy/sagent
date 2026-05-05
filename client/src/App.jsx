@@ -132,6 +132,12 @@ const SUGGESTIONS = {
     { title: '查空目录', text: '列出当前项目下所有空的文件夹' },
     { title: '查TODO', text: '搜索所有源代码文件中的 TODO 和 FIXME 注释' },
     { title: '查console.log', text: '搜索前端代码中所有 console.log 调用' },
+    { title: '查IDE报错', text: '帮我看看这个项目在 IDEA 里哪些文件有报错或 warning' },
+    { title: '查运行配置', text: '看看这个项目在 IDEA 里有哪些运行配置，哪个最适合本地启动' },
+    { title: '查项目结构', text: '从项目结构和依赖关系上分析一下这个仓库的主要模块' },
+    { title: '查符号影响', text: '按 IDE 的理解帮我判断这个类改名会影响哪些地方' },
+    { title: '查编辑上下文', text: '看看 IDEA 当前打开了哪些文件，并判断我现在最可能在处理什么问题' },
+    { title: '查重构方案', text: '这个改动涉及引用关系，尽量按更安全的重构方式处理' },
     { title: '查依赖版本', text: '检查 package.json 中依赖的最新版本' },
     { title: '查安全漏洞', text: '运行 npm audit 检查项目依赖的安全问题' },
     { title: '查代码行数', text: '统计项目中各类型文件的代码行数' },
@@ -1815,6 +1821,7 @@ export default function App() {
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [input, setInput] = useState('');
   const [mode, setMode] = useState(() => localStorage.getItem(LAST_MODE_KEY) || 'chat');
+  const [suggestionSeed, setSuggestionSeed] = useState(0);
   const [streaming, setStreaming] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentStopping, setAgentStopping] = useState(false);
@@ -2653,7 +2660,7 @@ export default function App() {
     const pool = SUGGESTIONS[mode];
     const count = mode === 'agent' ? 8 : 4;
     return shuffled(pool).slice(0, count);
-  }, [mode]);
+  }, [mode, activeSession.id, suggestionSeed]);
 
   const modeSwitch = !sessionStarted && (
     <div className="mode-switch" aria-label="模式切换">
@@ -2817,6 +2824,18 @@ export default function App() {
                 {memoryToggle}
                 {sendButton}
               </div>
+            </div>
+
+            <div className="suggestions-head">
+              <span className="suggestions-label">{mode === 'agent' ? '试试这些任务' : '试试这些问题'}</span>
+              <button
+                className="suggestions-refresh"
+                onClick={() => setSuggestionSeed(v => v + 1)}
+                disabled={sessionLocked}
+                title="换一组"
+              >
+                <RotateCcw size={12} /> 换一组
+              </button>
             </div>
 
             <div className="suggestions">

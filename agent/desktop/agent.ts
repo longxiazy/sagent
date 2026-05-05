@@ -38,6 +38,8 @@ import { captureBrowserObservation, summarizeBrowserObservation } from '../tools
 import { closeBrowserSession, createBrowserSession } from '../tools/browser/webview-session.ts';
 import { executeFsAction } from '../tools/fs/execute.ts';
 import { createDomainRules } from '../tools/fetch/domain-rules.ts';
+import { executeIdeAction } from '../tools/ide/execute.ts';
+import { buildIdePromptLines, isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
 import { executeMacOSAction } from '../tools/macos/execute.ts';
 import { observeMacOSDesktop } from '../tools/macos/observe.ts';
 import { executeTerminalAction } from '../tools/terminal/run.ts';
@@ -60,6 +62,8 @@ function buildClaudeTaskMessages({ task, step, history, observation, conversatio
 }
 
 function buildNvidiaTaskMessages({ task, systemPrompt, step, history, observation, conversationHistory }) {
+  const ideEnabled = isIdeMcpEnabled();
+  const ideLines = buildIdePromptLines();
   const conversationSummary = conversationHistory?.length
     ? '\n\n之前的对话（供参考）：\n' + conversationHistory
         .map(m => `${m.role === 'user' ? '用户' : '助手'}: ${m.content}`)
@@ -93,6 +97,12 @@ function buildNvidiaTaskMessages({ task, systemPrompt, step, history, observatio
         '{"rationale":"抓取网页内容","action":{"tool":"browser","type":"http_fetch","url":"https://example.com"}}',
         '{"rationale":"搜索并提取链接","action":{"tool":"browser","type":"http_fetch","url":"https://example.com/search?q=关键词","extractLinks":true}}',
         '{"rational":"并发抓取多个页面","action":{"tool":"browser","type":"parallel_fetch","urls":["https://example.com/a","https://example.com/b"]}}',
+        ...(ideEnabled
+          ? [
+              '{"rationale":"查看 IDE 可用工具","action":{"tool":"ide","type":"ide_list_tools"}}',
+              '{"rationale":"调用 IDE 工具获取运行配置","action":{"tool":"ide","type":"ide_call_tool","toolName":"get_run_configurations","arguments":{}}}',
+            ]
+          : []),
         '{"rationale":"向用户提问","action":{"tool":"core","type":"ask_user","question":"你希望使用什么命名规范？"}}',
         '{"rationale":"发现重要问题需告知用户","action":{"tool":"core","type":"notify_user","message":"发现 3 个硬编码 API 密钥","level":"warning"}}',
         '{"rationale":"完成任务","action":{"type":"finish","answer":"最终结果"}}',
@@ -108,6 +118,7 @@ function buildNvidiaTaskMessages({ task, systemPrompt, step, history, observatio
         '8. 需要同时获取多个页面时，使用 parallel_fetch 并发抓取（最多5个URL）。',
         '9. 需要用户输入或确认偏好时使用 ask_user。',
         '10. 发现重要信息或问题时使用 notify_user 主动告知用户。',
+        ...ideLines,
         systemPrompt ? `附加约束：${systemPrompt}` : '',
         conversationSummary,
       ]
@@ -571,6 +582,7 @@ export function createDesktopAgentRunner({
         return executeBrowserAction(session.view, action);
       },
       fs: async (_state, action) => executeFsAction(action),
+      ide: async (_state, action) => executeIdeAction(action),
       terminal: async (_state, action) => executeTerminalAction(action),
       macos: async (state, action) =>
         executeMacOSAction(action, {
