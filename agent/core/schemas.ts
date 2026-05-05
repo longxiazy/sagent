@@ -235,21 +235,21 @@ function normalizeMacOsAction(type, action) {
 }
 
 function normalizeIdeAction(type, action) {
-  if (type === 'ide_list_tools') {
+  if (type === 'ide_list_tools' || type === 'list_tools') {
     return {
       tool: 'ide',
-      type,
+      type: 'ide_list_tools',
       refresh: Boolean(action.refresh),
     };
   }
 
-  if (type === 'ide_call_tool') {
+  if (type === 'ide_call_tool' || type === 'call_tool') {
     const args = action.arguments && typeof action.arguments === 'object' && !Array.isArray(action.arguments)
       ? action.arguments
       : {};
     return {
       tool: 'ide',
-      type,
+      type: 'ide_call_tool',
       toolName: typeof action.toolName === 'string' ? action.toolName.trim() : '',
       arguments: args,
       refreshTools: Boolean(action.refreshTools),

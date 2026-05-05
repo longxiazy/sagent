@@ -39,6 +39,8 @@ export const ACTION_TYPE_TO_TOOL = {
   // ide
   ide_list_tools: 'ide',
   ide_call_tool: 'ide',
+  list_tools: 'ide',
+  call_tool: 'ide',
   // core
   finish: 'core',
   ask_user: 'core',
