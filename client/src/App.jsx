@@ -1449,9 +1449,6 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
     traceBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [trace]);
 
-  // Reset cards expanded state when running changes to true (new run)
-  if (running && cardsExpanded !== null) setCardsExpanded(null);
-
   if (mode !== 'agent') {
     return null;
   }
@@ -1487,10 +1484,10 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
             {hasModelCards && !collapsed && (
               <>
                 <button className="agent-collapse-btn agent-expand-all" onClick={e => { e.stopPropagation(); setCardsExpanded(true); }} title="全部展开">
-                  <ChevronsDown size={12} />
+                  <ChevronsDown size={12} /> 展开
                 </button>
                 <button className="agent-collapse-btn agent-collapse-all" onClick={e => { e.stopPropagation(); setCardsExpanded(false); }} title="全部折叠">
-                  <ChevronsUp size={12} />
+                  <ChevronsUp size={12} /> 折叠
                 </button>
               </>
             )}

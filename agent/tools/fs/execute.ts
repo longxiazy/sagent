@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -92,24 +92,61 @@ export async function executeFsAction(action) {
     const maxResults = action.maxResults || 20;
     const include = action.include || '*';
     const args = ['-rn', '--color=never', '-E', query, '--include', include, targetPath];
-    try {
-      const { stdout } = await execFileAsync('grep', args, {
-        maxBuffer: 512 * 1024,
-        timeout: 10000,
+
+    const lines = await new Promise<string[]>((resolve, reject) => {
+      const proc = spawn('grep', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const collected: string[] = [];
+      let buf = '';
+      const timer = setTimeout(() => {
+        proc.kill();
+        resolve(collected);
+      }, 10000);
+
+      proc.stdout.on('data', (chunk: Buffer) => {
+        buf += chunk.toString();
+        let idx: number;
+        while ((idx = buf.indexOf('\n')) !== -1) {
+          const line = buf.slice(0, idx);
+          buf = buf.slice(idx + 1);
+          if (line) {
+            collected.push(line);
+            if (collected.length >= maxResults + 100) {
+              clearTimeout(timer);
+              proc.kill();
+              resolve(collected);
+            }
+          }
+        }
       });
-      const lines = stdout.split('\n').filter(Boolean);
-      const truncated = lines.slice(0, maxResults);
-      const header = `搜索 "${query}" 在 ${targetPath} (${include})，找到 ${lines.length} 个结果:`;
-      if (lines.length > maxResults) {
-        return `${header}\n${truncated.join('\n')}\n... (截断，共 ${lines.length} 个结果)`;
-      }
-      return `${header}\n${truncated.join('\n')}`;
-    } catch (err) {
-      if (err.code === 1 || (err.stderr && err.stderr === '')) {
-        return `搜索 "${query}" 在 ${targetPath} (${include}): 未找到匹配`;
-      }
-      throw new Error(`搜索失败: ${err.message}`, { cause: err });
+
+      proc.stderr.on('data', () => {});
+
+      proc.on('close', (code: number) => {
+        clearTimeout(timer);
+        if (buf) collected.push(buf);
+        if (code === 1 && collected.length === 0) {
+          resolve([]);
+        } else {
+          resolve(collected);
+        }
+      });
+
+      proc.on('error', (err: Error) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+
+    if (lines.length === 0) {
+      return `搜索 "${query}" 在 ${targetPath} (${include}): 未找到匹配`;
     }
+
+    const truncated = lines.slice(0, maxResults);
+    const header = `搜索 "${query}" 在 ${targetPath} (${include})，找到 ${lines.length} 个结果:`;
+    if (lines.length > maxResults) {
+      return `${header}\n${truncated.join('\n')}\n... (截断，共 ${lines.length} 个结果)`;
+    }
+    return `${header}\n${truncated.join('\n')}`;
   }
 
   throw new Error(`不支持的文件动作: ${action.type}`);

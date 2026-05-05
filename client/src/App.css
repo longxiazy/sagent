@@ -1319,8 +1319,9 @@ textarea {
 }
 
 .agent-collapse-btn {
-  width: 24px;
+  min-width: 24px;
   height: 24px;
+  padding: 0 6px;
   border-radius: var(--r-sm);
   border: 1px solid var(--c-border);
   background: var(--c-surface);
