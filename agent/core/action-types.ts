@@ -12,7 +12,6 @@
 export const ACTION_TYPE_TO_TOOL = {
   // browser
   navigate: 'browser',
-  google_search: 'browser',
   click: 'browser',
   type: 'browser',
   wait: 'browser',

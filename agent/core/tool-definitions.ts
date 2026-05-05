@@ -23,17 +23,6 @@ export function createModelTools() {
       },
     },
     {
-      name: 'google_search',
-      description: '用系统默认浏览器打开 Google 搜索指定关键词。自动打开浏览器，等待后返回提示。之后需要用 capture_screen 截图查看搜索结果，再根据截图中的信息继续操作。',
-      input_schema: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: '搜索关键词' },
-        },
-        required: ['query'],
-      },
-    },
-    {
       name: 'click',
       description: '点击网页元素（通过 elementId）',
       input_schema: {

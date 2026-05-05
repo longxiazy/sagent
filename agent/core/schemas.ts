@@ -64,14 +64,6 @@ function normalizeBrowserAction(type, action) {
     };
   }
 
-  if (type === 'google_search') {
-    return {
-      tool: 'browser',
-      type,
-      query: typeof action.query === 'string' ? action.query.trim() : '',
-    };
-  }
-
   if (type === 'click') {
     return {
       tool: 'browser',

@@ -2585,6 +2585,11 @@ textarea:disabled {
     display: none;
   }
 
+  .agent-collapse-btn.agent-expand-all,
+  .agent-collapse-btn.agent-collapse-all {
+    display: inline-flex;
+  }
+
   .agent-panel.collapsed .agent-panel-head { cursor: default; }
   .agent-panel.collapsed .agent-trace { display: flex; }
 

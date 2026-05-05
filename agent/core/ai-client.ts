@@ -95,7 +95,7 @@ export function buildDesktopAgentSystemPrompt(systemPrompt) {
     '3. 文件写入、终端确认命令、桌面键鼠输入可能需要用户批准，被拒绝后请尝试替代方案。',
     '4. cd/pushd/popd 等目录切换命令使用 run_review，需要用户审批。',
     '5. answer 用简体中文，简洁直接。',
-    '6. 需要搜索信息时使用 google_search 工具（浏览器打开 Google，Cookie 持久化，最可靠）。需要获取网页内容时使用 navigate 打开 URL，再用 get_page_content 提取文本。',
+    '6. 禁止使用 Google、百度、Bing 等搜索引擎网站搜索信息，这些网站会触发反爬机制导致任务失败。需要获取网页内容时使用 navigate 或 http_fetch 打开目标页面。',
     '7. 需要用户输入或确认偏好时使用 ask_user，不要自行假设。',
     '8. 执行中发现重要信息或潜在问题时使用 notify_user 主动告知用户。',
     systemPrompt ? `附加约束：${systemPrompt}` : '',

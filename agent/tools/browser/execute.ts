@@ -75,15 +75,6 @@ async function _executeBrowserAction(view, action) {
     }
   }
 
-  if (action.type === 'google_search') {
-    const query = action.query || '';
-    if (!query) throw new Error('google_search 缺少 query');
-    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-    await safeNavigate(view, url);
-    await delay(ACTION_SETTLE_MS);
-    return `已在浏览器打开 Google 搜索: "${query}"。`;
-  }
-
   if (action.type === 'click') {
     if (!action.elementId) {
       throw new Error('click 缺少 elementId');
