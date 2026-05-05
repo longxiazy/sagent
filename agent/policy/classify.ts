@@ -12,6 +12,41 @@ function matchesDangerousCommand(command) {
   return false;
 }
 
+const SAFE_IDE_TOOLS = new Set([
+  'get_run_configurations',
+  'get_file_problems',
+  'get_project_dependencies',
+  'get_project_modules',
+  'find_files_by_glob',
+  'find_files_by_name_keyword',
+  'get_all_open_file_paths',
+  'list_directory_tree',
+  'get_file_text_by_path',
+  'search_in_files_by_regex',
+  'search_in_files_by_text',
+  'get_symbol_info',
+  'get_repositories',
+  'list_database_connections',
+  'test_database_connection',
+  'list_database_schemas',
+  'list_schema_object_kinds',
+  'list_schema_objects',
+  'list_recent_sql_queries',
+  'preview_table_data',
+  'open_file_in_editor',
+]);
+
+const CONFIRM_IDE_TOOLS = new Set([
+  'execute_run_configuration',
+  'create_new_file',
+  'reformat_file',
+  'replace_text_in_file',
+  'rename_refactoring',
+  'execute_terminal_command',
+  'cancel_sql_query',
+  'execute_sql_query',
+]);
+
 export function classifyAgentAction(action) {
   const tool = action?.tool || '';
   const type = action?.type || '';
@@ -104,6 +139,33 @@ export function classifyAgentAction(action) {
     return {
       level: 'confirm',
       reason: `即将执行桌面输入动作: ${type}`,
+    };
+  }
+
+  if (tool === 'ide' && type === 'ide_list_tools') {
+    return {
+      level: 'safe',
+      reason: '只读取 IDE MCP 工具元数据',
+    };
+  }
+
+  if (tool === 'ide' && type === 'ide_call_tool') {
+    const toolName = String(action.toolName || '').trim();
+    if (SAFE_IDE_TOOLS.has(toolName)) {
+      return {
+        level: 'safe',
+        reason: `只读 IDE 工具: ${toolName}`,
+      };
+    }
+    if (CONFIRM_IDE_TOOLS.has(toolName)) {
+      return {
+        level: 'confirm',
+        reason: `即将执行 IDE 工具: ${toolName}`,
+      };
+    }
+    return {
+      level: 'confirm',
+      reason: `即将执行未知风险级别的 IDE 工具: ${toolName || '未命名工具'}`,
     };
   }
 

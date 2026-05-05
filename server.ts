@@ -37,6 +37,7 @@ import { initLlmLogger } from './agent/core/llm-logger.ts';
 import { createDesktopAgentRunner } from './agent/desktop/agent.ts';
 import { createClients, loadModelConfig, loadAgentMultiModels, isClaudeModel } from './agent/core/ai-client.ts';
 import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
+import { loadIdeMcpConfig } from './agent/tools/ide/mcp-client.ts';
 import { createChatRouter } from './routes/chat.ts';
 import { createAgentRouter } from './routes/agent.ts';
 import { createCompletionsRouter } from './routes/completions.ts';
@@ -142,6 +143,7 @@ async function resumeFromCheckpoint(cp) {
 
 app.listen(Number(PORT), HOST, async () => {
   const multiModels = loadAgentMultiModels();
+  const ideConfig = loadIdeMcpConfig();
   const W = 56;
   const rowPad = (s, n) => padEndW(truncateW(s, n), n);
   const row = (k, v) => `  │  ${rowPad(k, 28)}${rowPad(String(v), W - 32)}│`;
@@ -165,6 +167,8 @@ app.listen(Number(PORT), HOST, async () => {
   ${row('AGENT_OBSERVE_DESKTOP', process.env.AGENT_OBSERVE_DESKTOP || false)}
   ${row('AGENT_RESUME', AGENT_RESUME)}
   ${row('CHROME_PATH', process.env.AGENT_BROWSER_PATH || 'auto')}
+  ${ideConfig.enabled ? row('IDE_MCP', `${ideConfig.transport} @ ${ideConfig.transport === 'stdio' ? ideConfig.command : (ideConfig.url || `${ideConfig.host}:${ideConfig.port}${ideConfig.ssePath}`)}`) : row('IDE_MCP', 'disabled')}
+  ${ideConfig.enabled ? row('IDE_PROJECT_PATH', ideConfig.projectPath) : ''}
   ${hLine}
   ${row('NVIDIA_API_KEY', process.env.NVIDIA_API_KEY ? '✓ configured' : '✗ not set')}
   ${row('ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY ? '✓ configured' : '✗ not set')}

@@ -9,8 +9,10 @@
  *   - agent/chat/chat-tools.js 从中过滤出 Chat 模式的安全子集
  */
 
+import { isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
+
 export function createModelTools() {
-  return [
+  const tools: any[] = [
     {
       name: 'navigate',
       description: '在浏览器中打开指定 URL',
@@ -280,6 +282,40 @@ export function createModelTools() {
       },
     },
   ];
+
+  if (isIdeMcpEnabled()) {
+    tools.splice(tools.length - 1, 0,
+      {
+        name: 'ide_list_tools',
+        description: '列出当前 JetBrains IDE 暴露的 MCP 工具及参数。连接 JetBrains IDE 时，优先先调用它了解可用 IDE 能力。',
+        input_schema: {
+          type: 'object',
+          properties: {
+            refresh: { type: 'boolean', description: '是否强制重新拉取 IDE 工具列表' },
+          },
+        },
+      },
+      {
+        name: 'ide_call_tool',
+        description: '调用 JetBrains IDE 的某个 MCP 工具。toolName 必须来自 ide_list_tools，arguments 传该工具要求的参数对象。',
+        input_schema: {
+          type: 'object',
+          properties: {
+            toolName: { type: 'string', description: 'IDE MCP 工具名称，例如 get_run_configurations、get_file_problems、rename_refactoring' },
+            arguments: {
+              type: 'object',
+              description: '传给 IDE MCP 工具的参数对象；如果工具支持 projectPath 且未传入，会自动补齐',
+              additionalProperties: true,
+            },
+            refreshTools: { type: 'boolean', description: '调用前是否刷新一次 IDE 工具列表' },
+          },
+          required: ['toolName'],
+        },
+      }
+    );
+  }
+
+  return tools;
 }
 
 export function toolToClaudeTool(tool) {

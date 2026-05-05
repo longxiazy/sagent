@@ -234,6 +234,31 @@ function normalizeMacOsAction(type, action) {
   throw new Error(`不支持的 macOS 动作: ${type}`);
 }
 
+function normalizeIdeAction(type, action) {
+  if (type === 'ide_list_tools') {
+    return {
+      tool: 'ide',
+      type,
+      refresh: Boolean(action.refresh),
+    };
+  }
+
+  if (type === 'ide_call_tool') {
+    const args = action.arguments && typeof action.arguments === 'object' && !Array.isArray(action.arguments)
+      ? action.arguments
+      : {};
+    return {
+      tool: 'ide',
+      type,
+      toolName: typeof action.toolName === 'string' ? action.toolName.trim() : '',
+      arguments: args,
+      refreshTools: Boolean(action.refreshTools),
+    };
+  }
+
+  throw new Error(`不支持的 IDE 动作: ${type}`);
+}
+
 function normalizeCoreAction(type, action) {
   if (type === 'finish') {
     return {
@@ -287,6 +312,8 @@ export function normalizeDesktopAgentDecision(payload) {
     normalizedAction = normalizeTerminalAction(type, action);
   } else if (tool === 'macos') {
     normalizedAction = normalizeMacOsAction(type, action);
+  } else if (tool === 'ide') {
+    normalizedAction = normalizeIdeAction(type, action);
   } else if (tool === 'core') {
     normalizedAction = normalizeCoreAction(type, action);
   } else {

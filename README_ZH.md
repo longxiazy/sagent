@@ -1,7 +1,7 @@
 <div align="center">
   <img src="client/public/favicon.svg" width="64" height="64" alt="sagent logo">
   <h1>sagent</h1>
-  <p>多模型 AI 聊天 + 桌面 Agent，支持浏览器自动化、文件操作、终端命令、macOS 控制。</p>
+  <p>多模型 AI 聊天 + 桌面 Agent，支持浏览器自动化、文件操作、终端命令、macOS 控制，以及 JetBrains IDE MCP 接入。</p>
 </div>
 
 > **仅支持 macOS**。Agent 需要操控本地浏览器和系统，目前只在 Mac 上测试通过。
@@ -58,7 +58,24 @@ AGENT_RESUME=true                # 后端重启后自动恢复未完成的 Agent
 AGENT_STAGGER_DELAY=3            # 批次间隔秒数
 AGENT_BATCH_SIZE=2               # 每批启动模型数
 # AGENT_MULTI_MODELS=moonshotai/kimi-k2.5,qwen/qwen3.5-397b-a17b
+
+# JetBrains IDE MCP（可选）
+IDE_MCP_ENABLED=true
+IDE_MCP_TRANSPORT=sse
+IDE_MCP_URL=http://127.0.0.1:6365/sse
+IDE_PROJECT_PATH=/path/to/your/project
+# 或者使用 IDE 里复制出来的 stdio 配置：
+# IDE_MCP_TRANSPORT=stdio
+# IDE_MCP_COMMAND=npx
+# IDE_MCP_ARGS=["-y","@jetbrains/mcp-proxy"]
 ```
+
+当 `IDE_MCP_ENABLED=true` 时，Agent 会额外暴露两个工具：
+
+- `ide_list_tools`：查看当前 JetBrains IDE 暴露出来的 MCP 工具列表
+- `ide_call_tool`：按工具名调用具体 IDE MCP 工具，并传入对应参数对象
+
+建议先在 JetBrains IDE 的 `Settings | Tools | MCP Server` 中启用 MCP Server，再用 `Copy SSE Config` 或 `Copy Stdio Config` 把连接信息同步到 `.env`。如果 IDE 里显示的地址或端口不是 `127.0.0.1:6365/sse`，以 IDE 提供的配置为准。
 
 ## 后端重启恢复
 

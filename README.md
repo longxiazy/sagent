@@ -1,7 +1,7 @@
 <div align="center">
   <img src="client/public/favicon.svg" width="64" height="64" alt="sagent logo">
   <h1>sagent</h1>
-  <p>Multi-model AI chat + desktop Agent with browser automation, file operations, terminal commands, and macOS control.</p>
+  <p>Multi-model AI chat + desktop Agent with browser automation, file operations, terminal commands, macOS control, and JetBrains IDE MCP support.</p>
 </div>
 
 > **macOS only.** The Agent needs to control the local browser and system, currently tested on Mac only.
@@ -58,7 +58,24 @@ AGENT_RESUME=true              # Auto-resume interrupted tasks after backend res
 AGENT_STAGGER_DELAY=3          # Delay between batches in seconds
 AGENT_BATCH_SIZE=2             # Models launched per batch
 # AGENT_MULTI_MODELS=moonshotai/kimi-k2.5,qwen/qwen3.5-397b-a17b
+
+# JetBrains IDE MCP (optional)
+IDE_MCP_ENABLED=true
+IDE_MCP_TRANSPORT=sse
+IDE_MCP_URL=http://127.0.0.1:6365/sse
+IDE_PROJECT_PATH=/path/to/your/project
+# Or use stdio copied from the IDE:
+# IDE_MCP_TRANSPORT=stdio
+# IDE_MCP_COMMAND=npx
+# IDE_MCP_ARGS=["-y","@jetbrains/mcp-proxy"]
 ```
+
+When `IDE_MCP_ENABLED=true`, the Agent exposes two extra tools:
+
+- `ide_list_tools`: discover the MCP tools currently exposed by JetBrains IDE
+- `ide_call_tool`: call a specific IDE MCP tool with its argument object
+
+Tip: in JetBrains IDE, open `Settings | Tools | MCP Server`, enable it, then use `Copy SSE Config` or `Copy Stdio Config` and mirror the connection details into `.env`. If your IDE shows a different URL or port than `127.0.0.1:6365/sse`, prefer the IDE-provided value.
 
 ## Recovery After Backend Restart
 
