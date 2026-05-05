@@ -5,8 +5,9 @@ function matchesDangerousCommand(command) {
   if (/\|\s*(rm|sudo|dd|mkfs|bash|sh|zsh|python|perl|ruby|node)\b/i.test(command)) return true;
   // Block output redirection to system paths
   if (/>\s*\/(etc|usr|boot|system)/i.test(command)) return true;
-  // Block command chaining with ; (sneaky injection)
-  if (/;/.test(command)) return true;
+  // Block command chaining with ; (outside quoted strings)
+  const unquoted = command.replace(/'(?:[^'\\]|\\.)*'/g, '""').replace(/"(?:[^"\\]|\\.)*"/g, '""');
+  if (/;/.test(unquoted)) return true;
   // Block process substitution
   if (/[<>]\(/.test(command)) return true;
   return false;
