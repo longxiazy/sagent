@@ -220,6 +220,46 @@ textarea {
   border-top: 1px solid var(--c-border);
 }
 
+.suggestions-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.suggestions-label {
+  font-size: var(--f-sm);
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.suggestions-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  color: var(--c-text-muted);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--ease);
+}
+
+.suggestions-refresh:hover:not(:disabled) {
+  color: var(--c-primary);
+  border-color: var(--c-primary-light);
+  background: rgba(83, 74, 183, 0.05);
+}
+
+.suggestions-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .suggestions {
   width: 100%;
   display: grid;
