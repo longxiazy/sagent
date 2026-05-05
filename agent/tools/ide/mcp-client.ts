@@ -6,6 +6,7 @@ const DEFAULT_PROTOCOL_VERSIONS = ['2025-03-26', '2024-11-05'];
 const DEFAULT_SSE_HOST = '127.0.0.1';
 const DEFAULT_SSE_PORT = 6365;
 const DEFAULT_SSE_PATH = '/sse';
+const SSE_ENDPOINT_WAIT_MS = 250;
 const DEFAULT_STDIO_COMMAND = 'npx';
 const DEFAULT_STDIO_ARGS = ['-y', '@jetbrains/mcp-proxy'];
 const CLIENT_INFO = { name: 'sagent', version: '1.0.0' };
@@ -64,12 +65,71 @@ function buildMessagesUrl(config, streamUrl) {
   return null;
 }
 
+export function buildSsePostCandidates(config, streamUrl) {
+  const candidates = [];
+  const seen = new Set();
+
+  const push = value => {
+    const normalized = typeof value === 'string' && value.trim() ? value.trim() : '';
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    candidates.push(normalized);
+  };
+
+  push(config.messagesUrl);
+
+  if (streamUrl.endsWith('/sse')) {
+    const base = streamUrl.slice(0, -4);
+    push(`${base}/message`);
+    push(`${base}/messages`);
+    push(`${base}/mcp`);
+  }
+
+  push(buildMessagesUrl(config, streamUrl));
+  return candidates;
+}
+
 function safeJson(value) {
   try {
     return JSON.stringify(value, null, 2);
   } catch {
     return String(value);
   }
+}
+
+function summarizeRpcParams(params, max = 600) {
+  return truncateText(safeJson(params || {}), max);
+}
+
+function summarizeRpcMessage(message, max = 800) {
+  return truncateText(safeJson(message || {}), max);
+}
+
+function logIdeRequest(transport, target, method, params, extra = '') {
+  log.info(`[IDE MCP][${transport}] -> ${target} method=${method}${extra ? ` ${extra}` : ''} params=${summarizeRpcParams(params)}`);
+}
+
+function logIdeResponse(transport, target, method, status, body = '') {
+  const suffix = body ? ` body=${truncateText(body, 400)}` : '';
+  log.info(`[IDE MCP][${transport}] <- ${target} method=${method} status=${status}${suffix}`);
+}
+
+function logIdeInboundEvent(transport, eventName, data) {
+  log.info(`[IDE MCP][${transport}] event=${eventName} data=${truncateText(data, 500)}`);
+}
+
+function logIdeInboundMessage(transport, message) {
+  if (message?.error) {
+    log.info(`[IDE MCP][${transport}] inbound error id=${message.id ?? 'n/a'} payload=${summarizeRpcMessage(message.error, 600)}`);
+    return;
+  }
+  if (message?.result !== undefined) {
+    log.info(`[IDE MCP][${transport}] inbound result id=${message.id ?? 'n/a'} payload=${summarizeRpcMessage(message.result, 1000)}`);
+    return;
+  }
+  log.info(`[IDE MCP][${transport}] inbound payload=${summarizeRpcMessage(message, 1000)}`);
 }
 
 function extractSchema(tool) {
@@ -251,6 +311,7 @@ class StdioTransport {
     }
 
     this.connectPromise = new Promise<void>((resolve, reject) => {
+      log.info(`[IDE MCP][stdio] spawn command=${this.config.command} args=${safeJson(this.config.args)} cwd=${this.config.cwd}`);
       const child = spawn(this.config.command, this.config.args, {
         cwd: this.config.cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -440,6 +501,7 @@ class StdioTransport {
     }
 
     const id = this.nextId++;
+    logIdeRequest('stdio', 'stdio', method, params, `id=${id}`);
     return new Promise(async (resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
@@ -485,6 +547,7 @@ class SseTransport {
   config: any;
   streamUrl: string;
   postUrl: string | null;
+  fallbackPostUrls: string[];
   pending: Map<any, any>;
   nextId: number;
   initialized: boolean;
@@ -494,11 +557,13 @@ class SseTransport {
   endpointResolve: ((value: string | PromiseLike<string>) => void) | null;
   endpointReject: ((reason?: any) => void) | null;
   abortController: AbortController | null;
+  endpointFallbackTimer: ReturnType<typeof setTimeout> | null;
 
   constructor(config) {
     this.config = config;
     this.streamUrl = buildSseUrl(config);
-    this.postUrl = buildMessagesUrl(config, this.streamUrl);
+    this.postUrl = config.messagesUrl || null;
+    this.fallbackPostUrls = buildSsePostCandidates(config, this.streamUrl);
     this.pending = new Map();
     this.nextId = 1;
     this.initialized = false;
@@ -508,6 +573,7 @@ class SseTransport {
     this.endpointResolve = null;
     this.endpointReject = null;
     this.abortController = null;
+    this.endpointFallbackTimer = null;
   }
 
   async ensureStreamOpen(): Promise<string> {
@@ -525,9 +591,16 @@ class SseTransport {
 
     if (this.postUrl) {
       this.endpointResolve?.(this.postUrl);
+    } else if (this.fallbackPostUrls[0]) {
+      this.endpointFallbackTimer = setTimeout(() => {
+        if (!this.postUrl && this.fallbackPostUrls[0]) {
+          this.endpointResolve?.(this.fallbackPostUrls[0]);
+        }
+      }, SSE_ENDPOINT_WAIT_MS);
     }
 
     this.abortController = new AbortController();
+    log.info(`[IDE MCP][sse] opening stream url=${this.streamUrl} fallbackPostUrls=${safeJson(this.fallbackPostUrls)}`);
 
     this.streamPromise = fetch(this.streamUrl, {
       headers: { Accept: 'text/event-stream' },
@@ -605,14 +678,22 @@ class SseTransport {
       return;
     }
 
+    logIdeInboundEvent('sse', eventName, data);
+
     if (eventName === 'endpoint') {
+      if (this.endpointFallbackTimer) {
+        clearTimeout(this.endpointFallbackTimer);
+        this.endpointFallbackTimer = null;
+      }
       this.postUrl = new URL(data, this.streamUrl).toString();
+      log.info(`[IDE MCP][sse] endpoint event -> ${this.postUrl}`);
       this.endpointResolve?.(this.postUrl);
       return;
     }
 
     try {
       const message = JSON.parse(data);
+      logIdeInboundMessage('sse', message);
       this.handleIncomingMessage(message);
     } catch (err) {
       log.warn(`[IDE MCP][SSE] 无法解析事件: ${truncateText(data, 240)} (${err.message})`);
@@ -654,25 +735,46 @@ class SseTransport {
 
   async postJsonRpc(message) {
     const endpoint = await this.ensureStreamOpen();
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        accept: 'application/json, text/event-stream',
-      },
-      body: JSON.stringify(message),
-    });
+    const candidates = [endpoint, this.postUrl, ...this.fallbackPostUrls]
+      .filter((value, index, array) => typeof value === 'string' && value && array.indexOf(value) === index);
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new Error(`HTTP ${response.status}: ${truncateText(body, 240)}`);
+    let lastError = null;
+    const method = message?.method || 'unknown';
+    const params = message?.params || {};
+
+    for (const candidate of candidates) {
+      logIdeRequest('sse', candidate, method, params, message?.id !== undefined ? `id=${message.id}` : 'notification=true');
+      const response = await fetch(candidate, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        },
+        body: JSON.stringify(message),
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        logIdeResponse('sse', candidate, method, response.status, body);
+        lastError = new Error(`HTTP ${response.status}: ${truncateText(body, 240)}`);
+        if (response.status === 404) {
+          continue;
+        }
+        throw lastError;
+      }
+
+      this.postUrl = candidate;
+      logIdeResponse('sse', candidate, method, response.status);
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const json = await response.json();
+        log.info(`[IDE MCP][sse] json response method=${method} payload=${summarizeRpcMessage(json)}`);
+        this.handleIncomingMessage(json);
+      }
+      return;
     }
 
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const json = await response.json();
-      this.handleIncomingMessage(json);
-    }
+    throw lastError || new Error('IDE MCP SSE 消息发送失败');
   }
 
   async ensureInitialized() {
@@ -752,6 +854,10 @@ class SseTransport {
   }
 
   async close() {
+    if (this.endpointFallbackTimer) {
+      clearTimeout(this.endpointFallbackTimer);
+      this.endpointFallbackTimer = null;
+    }
     this.abortController?.abort();
     this.abortController = null;
     this.rejectAllPending(new Error('IDE MCP SSE 客户端已关闭'));
