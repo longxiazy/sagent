@@ -1393,7 +1393,6 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
   const [elapsed, setElapsed] = useState(0);
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [cardsExpanded, setCardsExpanded] = useState(null); // null=auto, true=all open, false=all closed
-  const prevRunningRef = useRef(running);
   const hasModelCards = trace.some(e => e.type === 'model_plan' && e.stage === 'start' && e.models?.length > 0);
 
   // ESC closes lightbox
@@ -1449,10 +1448,6 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
   useEffect(() => {
     traceBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [trace]);
-
-  // Reset cards expanded state when a new run starts (running: false→true)
-  if (running && !prevRunningRef.current && cardsExpanded !== null) setCardsExpanded(null);
-  prevRunningRef.current = running;
 
   if (mode !== 'agent') {
     return null;
