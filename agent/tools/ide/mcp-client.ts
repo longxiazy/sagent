@@ -614,11 +614,13 @@ class SseTransport {
       })
       .catch(err => {
         const error = new Error(`IDE MCP SSE 连接失败: ${err.message}`);
+        log.warn(`[IDE MCP][sse] stream failed url=${this.streamUrl} reason=${error.message}`);
         this.endpointReject?.(error);
         this.rejectAllPending(error);
-        throw error;
+        return;
       })
       .finally(() => {
+        log.info(`[IDE MCP][sse] stream closed url=${this.streamUrl}`);
         this.streamPromise = null;
       });
 
