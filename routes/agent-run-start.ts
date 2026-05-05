@@ -1,29 +1,11 @@
 import { Router } from 'express';
-import { loadLatestHealthySnapshot } from '../agent/core/checkpoint.ts';
-import { loadMemoryForPrompt, cleanupAgentRun } from '../helpers/run-agent.ts';
+import { loadMemoryForPrompt } from '../helpers/run-agent.ts';
 import { log } from '../helpers/logger.ts';
 import type { AgentRouterContext } from './agent-types.ts';
 import { persistAgentRunMemory } from './agent-run-memory-persist.ts';
 import { createAgentRunSession } from './agent-run-session.ts';
-
-async function resolveCheckpointSeed(checkpointDir: string, fromCheckpoint: any) {
-  let checkpointInitialStep;
-  let checkpointInitialHistory;
-
-  if (fromCheckpoint && checkpointDir) {
-    const cpRunId = fromCheckpoint.runId;
-    const cpStep = fromCheckpoint.step;
-    if (typeof cpRunId === 'string' && typeof cpStep === 'number') {
-      const snapshot = await loadLatestHealthySnapshot(checkpointDir, cpRunId, cpStep);
-      if (snapshot) {
-        checkpointInitialStep = snapshot.step + 1;
-        checkpointInitialHistory = snapshot.history || [];
-      }
-    }
-  }
-
-  return { checkpointInitialStep, checkpointInitialHistory };
-}
+import { parseAgentRunRequest, resolveCheckpointSeed } from './agent-run-request.ts';
+import { executeAgentRun } from './agent-run-execution.ts';
 
 export function createAgentRunStartRouter({
   runDesktopAgent,
@@ -39,21 +21,11 @@ export function createAgentRunStartRouter({
   const defaultModel = modelConfig?.[0]?.id || 'minimaxai/minimax-m2.7';
 
   router.post('/api/agent', async (req, res) => {
-    const {
-      task,
-      model = defaultModel,
-      models: reqModels,
-      strategy = 'race',
-      headless,
-      memory: useMemory = true,
-      messages: conversationHistory,
-      fromCheckpoint,
-    } = req.body ?? {};
-    const agentModels = Array.isArray(reqModels) && reqModels.length > 0 ? reqModels : [model];
-
-    if (typeof task !== 'string' || !task.trim()) {
-      return res.status(400).json({ error: 'task 不能为空' });
+    const parsed = parseAgentRunRequest(req.body, defaultModel);
+    if ('error' in parsed) {
+      return res.status(400).json({ error: parsed.error });
     }
+    const { task, model, agentModels, strategy, headless, useMemory, conversationHistory, fromCheckpoint } = parsed;
 
     const activeRun = agentRunStore.getActiveRun();
     if (activeRun) {
@@ -91,70 +63,28 @@ export function createAgentRunStartRouter({
       systemPrompt = loaded.systemPrompt;
     }
 
-    let agentResult = null;
-    try {
-      agentResult = await runDesktopAgent({
-        task: normalizedTask,
-        model,
-        models: agentModels,
-        strategy,
-        systemPrompt,
-        headless: agentHeadless,
-        runId,
-        runRecord,
-        onEvent: session.sendEvent,
-        cancelSignal: runRecord.cancelAc.signal,
-        conversationHistory: Array.isArray(conversationHistory) ? conversationHistory : [],
-        memory: useMemory,
-        initialStep: checkpointInitialStep,
-        initialHistory: checkpointInitialHistory,
-      });
-
-      finalAnswer = agentResult.answer;
-
-      const { completedStepCount, observedStepCount, modelsUsed } = session.getTrackingState();
-      session.sendEvent({
-        type: 'done',
-        runId,
-        answer: agentResult.answer,
-        steps: agentResult.steps,
-        meta: {
-          elapsed_ms: Date.now() - startedAt,
-          step_count: Math.max(completedStepCount, observedStepCount),
-          models_used: [...modelsUsed],
-        },
-      });
-    } catch (err: any) {
-      agentError = err;
-      log.error('Desktop agent error:', err?.message || err);
-      let rollbackSuggestion = null;
-      if (checkpointDir) {
-        try {
-          const { completedStepCount, observedStepCount } = session.getTrackingState();
-          const latestStep = Math.max(completedStepCount, observedStepCount) - 1;
-          const snapshot = await loadLatestHealthySnapshot(checkpointDir, runId, latestStep);
-          if (snapshot) {
-            const lastStep = snapshot.history.length > 0 ? snapshot.history[snapshot.history.length - 1] : null;
-            rollbackSuggestion = {
-              step: snapshot.step,
-              lastAction: lastStep ? { type: lastStep.action?.type, tool: lastStep.action?.tool } : null,
-              lastRationale: lastStep?.rationale?.slice(0, 200) || null,
-              lastResult: lastStep?.result?.slice(0, 200) || null,
-            };
-          }
-        } catch {
-          // ignore snapshot load failure
-        }
-      }
-      session.sendEvent({
-        type: 'error',
-        runId,
-        error: err.message,
-        rollbackSuggestion,
-      });
-    } finally {
-      await cleanupAgentRun(checkpointDir, runId, agentRunStore);
-    }
+    const result = await executeAgentRun({
+      runDesktopAgent,
+      task: normalizedTask,
+      model,
+      models: agentModels,
+      strategy,
+      systemPrompt,
+      headless: agentHeadless,
+      runId,
+      runRecord,
+      session,
+      cancelSignal: runRecord.cancelAc.signal,
+      conversationHistory,
+      useMemory,
+      checkpointInitialStep,
+      checkpointInitialHistory,
+      checkpointDir,
+      agentRunStore,
+    });
+    const { agentResult, finalAnswer: nextFinalAnswer, agentError: nextAgentError } = result;
+    finalAnswer = nextFinalAnswer;
+    agentError = nextAgentError;
     session.close({ finalAnswer, agentError, approvalStore });
 
     if (memory) {
