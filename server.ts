@@ -183,6 +183,9 @@ app.listen(Number(PORT), HOST, async () => {
       if (needsNvidia && !openai_client) {
         console.log(`[Resume] 跳过: ${cp.runId} 需要 NVIDIA_API_KEY 但未配置，清理 checkpoint`);
         await clearCheckpoints(CHECKPOINT_DIR);
+      } else if (cp.history?.some(h => h.action?.type === 'finish')) {
+        console.log(`[Resume] ${cp.runId} 已完成（含 finish 动作），跳过恢复，清理 checkpoint`);
+        await clearCheckpoints(CHECKPOINT_DIR);
       } else {
         console.log(`[Resume] 发现 ${checkpoints.length} 个未完成任务，恢复最后一个: ${cp.runId}`);
         agentRunStore.createRun({ model: cp.model, task: cp.task }, cp.startedAt, cp.runId);
