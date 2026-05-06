@@ -67,7 +67,7 @@ export function createClients() {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
   const openai_client = nvidiaKey
-    ? new OpenAI({ apiKey: nvidiaKey, baseURL: 'https://integrate.api.nvidia.com/v1' })
+    ? new OpenAI({ apiKey: nvidiaKey, baseURL: 'https://integrate.api.nvidia.com/v1', maxRetries: 0 })
     : null;
 
   const anthropic_client = anthropicKey
