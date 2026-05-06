@@ -19,18 +19,13 @@
  *   - routes/agent.js 异步记忆保存: summarizeText() 用于压缩对话记忆
  *
  * TODO / 拆分建议 Refactor suggestions:
- *   - 将 summarizeText() 拆到 agent/core/summarizer.js（摘要逻辑与客户端管理解耦）
- *   - 将 buildDesktopAgentSystemPrompt() 拆到 agent/core/prompts.js（Prompt 模板集中管理）
  */
 
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { logLlmRequest, logLlmResponse } from './llm-logger.ts';
-import { displayWidth, padEndW } from './utils.ts';
-import { log } from '../../helpers/logger.ts';
 import { retryAsync } from '../../helpers/retry.ts';
 import { createModelTools, toolToClaudeTool } from './tool-definitions.ts';
-import { buildIdePromptLines } from '../tools/ide/mcp-client.ts';
 
 export { createModelTools } from './tool-definitions.ts';
 
@@ -86,28 +81,6 @@ export function createClients() {
   return { openai_client, anthropic_client };
 }
 
-export function buildDesktopAgentSystemPrompt(systemPrompt) {
-  const ideLines = buildIdePromptLines();
-  const base = [
-    '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。',
-    '通过工具调用完成任务，只能使用提供的工具，不要输出 JSON 以外的文本。',
-    '规则：',
-    '1. 只有 observation.browser.elements 中存在的 elementId 才能用于 click/type。',
-    '2. 优先使用已知信息，不要重复无意义截图或重复读同一文件。任务一旦完成，必须立即返回 {"action":{"tool":"core","type":"finish","answer":"结果"}}，绝不能重复执行已成功的动作。',
-    '3. 文件写入、终端确认命令、桌面键鼠输入可能需要用户批准，被拒绝后请尝试替代方案。',
-    '4. cd/pushd/popd 等目录切换命令使用 run_review，需要用户审批。',
-    '5. answer 用简体中文，简洁直接。',
-    '6. 禁止使用 Google、百度、Bing 等搜索引擎网站搜索信息，这些网站会触发反爬机制导致任务失败。需要获取网页内容时使用 navigate 或 http_fetch 打开目标页面。',
-    '7. 需要用户输入或确认偏好时使用 ask_user，不要自行假设。',
-    '8. 执行中发现重要信息或潜在问题时使用 notify_user 主动告知用户。',
-    ...ideLines,
-    systemPrompt ? `附加约束：${systemPrompt}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
-  return base;
-}
-
 export async function claudeAgentPlan({
   client,
   model,
@@ -161,54 +134,4 @@ export async function claudeAgentPlan({
   }
 
   throw new Error(`Claude 未返回有效工具调用，停止原因: ${message.stop_reason}`);
-}
-
-export async function summarizeText({ text, openai_client, anthropic_client, model }) {
-  const shortModel = model?.split('/').pop() || '?';
-  const startTime = Date.now();
-  const reqLine = `  >>> 记忆摘要 REQUEST  ${shortModel}  input=${text.length}字`;
-  const w = Math.max(displayWidth(reqLine) + 4, 52);
-  log.info(`\n  ${'╔' + '═'.repeat(w) + '╗'}\n  ║${padEndW(reqLine, w)}║\n  ${'╚' + '═'.repeat(w) + '╝'}`);
-
-  const prompt = `请用简洁的中文提炼以下 Agent 任务记录的关键信息。要求：
-1. 相同或相似主题的任务合并为一条，不要重复
-2. 每个任务一行，格式：任务→结果要点
-3. 保留重要的事实、数据和结论
-4. 去除冗余细节
-
-${text}`;
-  try {
-    let result;
-    const useClaude = isClaudeModel(model, null);
-    if (useClaude && anthropic_client) {
-      const resp = await retryAsync(() => anthropic_client.messages.create({
-        model,
-        max_tokens: 800,
-        temperature: 0.1,
-        messages: [{ role: 'user', content: prompt }],
-      }));
-      result = resp.content.find(b => b.type === 'text')?.text || text.slice(0, 300);
-    } else if (openai_client) {
-      const resp = await retryAsync(() => openai_client.chat.completions.create({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-        max_tokens: 800,
-      }));
-      result = resp.choices[0]?.message?.content || text.slice(0, 300);
-    } else {
-      result = text.slice(0, 300);
-    }
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    const resLine = `  <<< 记忆摘要 RESPONSE ${shortModel}  ${elapsed}s  output=${result.length}字`;
-    const rw = Math.max(displayWidth(resLine) + 4, 52);
-    log.info(`\n  ${'╔' + '═'.repeat(rw) + '╗'}\n  ║${padEndW(resLine, rw)}║\n  ${'╚' + '═'.repeat(rw) + '╝'}`);
-    return result;
-  } catch (err) {
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    const errLine = `  !!! 记忆摘要 FAILED   ${shortModel}  ${elapsed}s  ${err.message.slice(0, 60)}`;
-    const ew = Math.max(displayWidth(errLine) + 4, 52);
-    log.warn(`\n  ${'╔' + '═'.repeat(ew) + '╗'}\n  ║${padEndW(errLine, ew)}║\n  ${'╚' + '═'.repeat(ew) + '╝'}`);
-    throw err;
-  }
 }

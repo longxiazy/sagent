@@ -1,8 +1,15 @@
 import { Router } from 'express';
 import { safeJson } from '../agent/core/utils.ts';
-import { isClaudeModel } from '../agent/core/ai-client.ts';
 import { buildOpenAiError, createStreamingCompletionFactory } from '../helpers/streaming.ts';
 import { log } from '../helpers/logger.ts';
+import {
+  handleClaudeCompletionJson,
+  handleClaudeCompletionStream,
+  handleOpenAiCompletionJson,
+  handleOpenAiCompletionStream,
+  writeCompletionStreamError,
+} from './completions-handlers.ts';
+import { requireLlmClient } from './llm-route-utils.ts';
 
 export function createCompletionsRouter({ openai_client, anthropic_client, modelConfig }) {
   const router = Router();
@@ -45,113 +52,59 @@ export function createCompletionsRouter({ openai_client, anthropic_client, model
     log.info(`[${time}] POST /v1/chat/completions model=${model} stream=${Boolean(stream)} messages=${safeJson(messages)}`);
 
     try {
-      if (isClaudeModel(model, modelConfig) && !anthropic_client) throw new Error('未配置 ANTHROPIC_API_KEY');
-      if (!isClaudeModel(model, modelConfig) && !openai_client) throw new Error('未配置 NVIDIA_API_KEY');
+      const { useClaude, client } = requireLlmClient({
+        model,
+        modelConfig,
+        openai_client,
+        anthropic_client,
+      });
+
       if (!stream) {
-        if (isClaudeModel(model, modelConfig)) {
-          const response = await anthropic_client.messages.create({
+        if (useClaude) {
+          return res.json(await handleClaudeCompletionJson({
+            client,
             model,
+            messages,
             max_tokens,
             temperature,
-            messages,
-          });
-          const text = response.content.find(b => b.type === 'text')?.text || '';
-          return res.json({
-            id: `chatcmpl-${Date.now()}`,
-            object: 'chat.completion',
-            created: Math.floor(Date.now() / 1000),
-            model,
-            choices: [{
-              index: 0,
-              message: { role: 'assistant', content: text },
-              finish_reason: response.stop_reason || 'stop',
-            }],
-            usage: {
-              prompt_tokens: response.usage?.input_tokens || 0,
-              completion_tokens: response.usage?.output_tokens || 0,
-              total_tokens: (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0),
-            },
-          });
+          }));
         }
-        const completion = await openai_client.chat.completions.create({
+        return res.json(await handleOpenAiCompletionJson({
+          client,
           model,
           messages,
           temperature,
           top_p,
           max_tokens,
-        });
-        return res.json(completion);
+        }));
       }
 
-      if (isClaudeModel(model, modelConfig)) {
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-        res.flushHeaders();
-
-        let idx = 0;
-        const stream2 = anthropic_client.messages.stream({
-          model,
-          max_tokens,
-          temperature,
-          messages,
-        });
-
-        for await (const event of stream2) {
-          if (event.type === 'content_block_delta') {
-            if (event.delta.type === 'text_delta') {
-              res.write(`data: ${JSON.stringify({
-                id: `chatcmpl-${Date.now()}`,
-                object: 'chat.chunk',
-                created: Math.floor(Date.now() / 1000),
-                model,
-                choices: [{ index: idx, delta: { content: event.delta.text }, finish_reason: null }],
-              })}\n\n`);
-            }
-          } else if (event.type === 'message_delta') {
-            res.write(`data: ${JSON.stringify({
-              id: `chatcmpl-${Date.now()}`,
-              object: 'chat.chunk',
-              created: Math.floor(Date.now() / 1000),
-              model,
-              choices: [{ index: idx, delta: {}, finish_reason: event.delta?.stop_reason || 'stop' }],
-            })}\n\n`);
-          }
-        }
-        res.write('data: [DONE]\n\n');
-        return res.end();
-      }
-
-      const completion = await createStreamingCompletion(
-        {
+      if (useClaude) {
+        return handleClaudeCompletionStream({
+          client,
           model,
           messages,
-          temperature,
-          top_p,
           max_tokens,
-        },
-        { includeUsage: true }
-      );
-
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.flushHeaders();
-
-      for await (const chunk of completion) {
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+          temperature,
+          res,
+        });
       }
 
-      res.write('data: [DONE]\n\n');
-      res.end();
-    } catch (err) {
+      return handleOpenAiCompletionStream({
+        createStreamingCompletion,
+        model,
+        messages,
+        temperature,
+        top_p,
+        max_tokens,
+        res,
+      });
+    } catch (err: any) {
       log.error('API error:', err);
 
       const error = buildOpenAiError(err.message);
       if (stream && res.headersSent) {
-        res.write(`data: ${JSON.stringify(error.body)}\n\n`);
-        res.write('data: [DONE]\n\n');
-        return res.end();
+        return writeCompletionStreamError(res, err);
       }
 
       return res.status(error.status).json(error.body);

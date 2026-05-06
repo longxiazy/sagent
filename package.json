@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"bun server.js\" \"cd client && npm run dev\"",
-    "sandbox": "concurrently \"sandbox-exec -f sandbox.sb -D HOME=$HOME -D PROJECT_DIR=$(pwd) $(which bun) server.js\" \"cd client && npm run dev\"",
-    "build": "cd client && npm run build",
+    "dev": "concurrently \"bun server.ts\" \"cd client && npm run dev\"",
+    "sandbox": "concurrently \"sandbox-exec -f sandbox.sb -D HOME=$HOME -D PROJECT_DIR=$(pwd) $(which bun) server.ts\" \"cd client && npm run dev\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build:client": "cd client && npm run build",
+    "build": "npm run typecheck && npm run build:client",
     "lint": "eslint .",
     "stop": "kill -9 $(lsof -ti :3001) $(lsof -ti :5173) 2>/dev/null; echo 'stopped'",
     "test": "vitest run"
