@@ -45,6 +45,22 @@ const CONFIRM_IDE_TOOLS = new Set([
   'execute_sql_query',
 ]);
 
+const SAFE_CHROME_TOOLS = new Set([
+  'take_snapshot',
+  'take_screenshot',
+  'list_pages',
+  'get_console_message',
+  'list_console_messages',
+  'list_network_requests',
+  'get_network_request',
+  'wait_for',
+  'lighthouse_audit',
+  'performance_start_trace',
+  'performance_stop_trace',
+  'performance_analyze_insight',
+  'take_memory_snapshot',
+]);
+
 export function classifyAgentAction(action) {
   const tool = action?.tool || '';
   const type = action?.type || '';
@@ -164,6 +180,27 @@ export function classifyAgentAction(action) {
     return {
       level: 'confirm',
       reason: `即将执行未知风险级别的 IDE 工具: ${toolName || '未命名工具'}`,
+    };
+  }
+
+  if (tool === 'chrome' && type === 'chrome_list_tools') {
+    return {
+      level: 'safe',
+      reason: '只读取 Chrome MCP 工具元数据',
+    };
+  }
+
+  if (tool === 'chrome' && type === 'chrome_call_tool') {
+    const toolName = String(action.toolName || '').trim();
+    if (SAFE_CHROME_TOOLS.has(toolName)) {
+      return {
+        level: 'safe',
+        reason: `只读 Chrome 工具: ${toolName}`,
+      };
+    }
+    return {
+      level: 'confirm',
+      reason: `即将执行 Chrome 工具: ${toolName || '未命名工具'}`,
     };
   }
 

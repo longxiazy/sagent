@@ -10,6 +10,7 @@
  */
 
 import { isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
+import { isChromeMcpEnabled } from '../tools/chrome/mcp-client.ts';
 
 export function createModelTools() {
   const tools: any[] = [
@@ -308,6 +309,38 @@ export function createModelTools() {
               additionalProperties: true,
             },
             refreshTools: { type: 'boolean', description: '调用前是否刷新一次 IDE 工具列表' },
+          },
+          required: ['toolName'],
+        },
+      }
+    );
+  }
+
+  if (isChromeMcpEnabled()) {
+    tools.splice(tools.length - 1, 0,
+      {
+        name: 'chrome_list_tools',
+        description: '列出当前 Chrome DevTools MCP 暴露的工具及参数。可查看浏览器操作、截图、网络检查等可用能力。',
+        input_schema: {
+          type: 'object',
+          properties: {
+            refresh: { type: 'boolean', description: '是否强制重新拉取 Chrome 工具列表' },
+          },
+        },
+      },
+      {
+        name: 'chrome_call_tool',
+        description: '调用 Chrome DevTools MCP 的某个工具。toolName 必须来自 chrome_list_tools，arguments 传该工具要求的参数对象。',
+        input_schema: {
+          type: 'object',
+          properties: {
+            toolName: { type: 'string', description: 'Chrome MCP 工具名称，例如 take_snapshot、click、fill、navigate_page' },
+            arguments: {
+              type: 'object',
+              description: '传给 Chrome MCP 工具的参数对象',
+              additionalProperties: true,
+            },
+            refreshTools: { type: 'boolean', description: '调用前是否刷新一次 Chrome 工具列表' },
           },
           required: ['toolName'],
         },

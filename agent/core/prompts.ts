@@ -1,7 +1,9 @@
 import { buildIdePromptLines, isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
+import { buildChromePromptLines, isChromeMcpEnabled } from '../tools/chrome/mcp-client.ts';
 
 export function buildDesktopAgentSystemPrompt(systemPrompt: string | null) {
   const ideLines = buildIdePromptLines();
+  const chromeLines = buildChromePromptLines();
   return [
     '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。',
     '通过工具调用完成任务，只能使用提供的工具，不要输出 JSON 以外的文本。',
@@ -15,6 +17,7 @@ export function buildDesktopAgentSystemPrompt(systemPrompt: string | null) {
     '7. 需要用户输入或确认偏好时使用 ask_user，不要自行假设。',
     '8. 执行中发现重要信息或潜在问题时使用 notify_user 主动告知用户。',
     ...ideLines,
+    ...chromeLines,
     systemPrompt ? `附加约束：${systemPrompt}` : '',
   ]
     .filter(Boolean)
@@ -64,6 +67,8 @@ export function buildNvidiaTaskMessages({
 }) {
   const ideEnabled = isIdeMcpEnabled();
   const ideLines = buildIdePromptLines();
+  const chromeEnabled = isChromeMcpEnabled();
+  const chromeLines = buildChromePromptLines();
   const conversationSummary = conversationHistory?.length
     ? '\n\n之前的对话（供参考）：\n' + conversationHistory
         .map(message => `${message.role === 'user' ? '用户' : '助手'}: ${message.content}`)
@@ -104,6 +109,12 @@ export function buildNvidiaTaskMessages({
               '{"rationale":"调用 IDE 工具获取运行配置","action":{"tool":"ide","type":"ide_call_tool","toolName":"get_run_configurations","arguments":{}}}',
             ]
           : []),
+        ...(chromeEnabled
+          ? [
+              '{"rationale":"查看 Chrome DevTools 可用工具","action":{"tool":"chrome","type":"chrome_list_tools"}}',
+              '{"rationale":"调用 Chrome 工具截图","action":{"tool":"chrome","type":"chrome_call_tool","toolName":"take_screenshot","arguments":{}}}',
+            ]
+          : []),
         '{"rationale":"向用户提问","action":{"tool":"core","type":"ask_user","question":"你希望使用什么命名规范？"}}',
         '{"rationale":"发现重要问题需告知用户","action":{"tool":"core","type":"notify_user","message":"发现 3 个硬编码 API 密钥","level":"warning"}}',
         '{"rationale":"完成任务","action":{"type":"finish","answer":"最终结果"}}',
@@ -120,6 +131,7 @@ export function buildNvidiaTaskMessages({
         '9. 需要用户输入或确认偏好时使用 ask_user。',
         '10. 发现重要信息或问题时使用 notify_user 主动告知用户。',
         ...ideLines,
+        ...chromeLines,
         systemPrompt ? `附加约束：${systemPrompt}` : '',
         conversationSummary,
       ]
