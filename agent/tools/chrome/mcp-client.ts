@@ -8,7 +8,7 @@ const DEFAULT_SSE_PORT = 3099;
 const DEFAULT_SSE_PATH = '/sse';
 const SSE_ENDPOINT_WAIT_MS = 250;
 const DEFAULT_STDIO_COMMAND = 'npx';
-const DEFAULT_STDIO_ARGS = ['-y', '@anthropic-ai/chrome-devtools-mcp@latest'];
+const DEFAULT_STDIO_ARGS = ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'];
 const CLIENT_INFO = { name: 'sagent', version: '1.0.0' };
 
 let sharedClientPromise = null;
@@ -316,7 +316,7 @@ class StdioTransport {
       child.once('error', onError);
       child.stdout.on('data', chunk => this.handleStdout(chunk));
       child.stderr.on('data', chunk => {
-        log.debug(`[Chrome MCP][stderr] ${truncateText(chunk.toString().trim(), 400)}`);
+        log.warn(`[Chrome MCP][stderr] ${truncateText(chunk.toString().trim(), 400)}`);
       });
       child.on('exit', (code, signal) => {
         const error = new Error(`Chrome MCP stdio 进程已退出 (code=${code ?? 'null'}, signal=${signal ?? 'null'})`);
@@ -339,35 +339,53 @@ class StdioTransport {
   handleStdout(chunk) {
     this.buffer = Buffer.concat([this.buffer, Buffer.from(chunk)]);
 
-    while (true) {
-      const headerEnd = this.findHeaderEnd(this.buffer);
-      if (headerEnd < 0) {
-        return;
+    while (this.buffer.length > 0) {
+      const text = this.buffer.toString('utf8');
+
+      // Try Content-Length framing first
+      if (text.startsWith('Content-Length:') || text.startsWith('content-length:')) {
+        const headerEnd = this.findHeaderEnd(this.buffer);
+        if (headerEnd < 0) return;
+
+        const separatorLength = this.buffer[headerEnd] === 13 ? 4 : 2;
+        const headerText = this.buffer.slice(0, headerEnd).toString('utf8');
+        const contentLength = this.getContentLength(headerText);
+        if (!Number.isFinite(contentLength) || contentLength < 0) {
+          log.warn(`[Chrome MCP][stdio] 无效 Content-Length header: ${truncateText(headerText, 200)}`);
+          this.buffer = Buffer.alloc(0);
+          return;
+        }
+
+        const bodyStart = headerEnd + separatorLength;
+        const bodyEnd = bodyStart + contentLength;
+        if (this.buffer.length < bodyEnd) return;
+
+        const body = this.buffer.slice(bodyStart, bodyEnd).toString('utf8');
+        this.buffer = this.buffer.slice(bodyEnd);
+
+        try {
+          const message = JSON.parse(body);
+          this.handleIncomingMessage(message);
+        } catch (err) {
+          log.warn(`[Chrome MCP][stdio] JSON 解析失败: ${err.message}`);
+        }
+        continue;
       }
 
-      const separatorLength = this.buffer[headerEnd] === 13 ? 4 : 2;
-      const headerText = this.buffer.slice(0, headerEnd).toString('utf8');
-      const contentLength = this.getContentLength(headerText);
-      if (!Number.isFinite(contentLength) || contentLength < 0) {
-        this.rejectAllPending(new Error(`Chrome MCP 响应缺少 Content-Length: ${headerText}`));
-        this.buffer = Buffer.alloc(0);
-        return;
-      }
+      // Fallback: newline-delimited JSON (NDJSON)
+      const newlineIdx = text.indexOf('\n');
+      if (newlineIdx < 0) return;
 
-      const bodyStart = headerEnd + separatorLength;
-      const bodyEnd = bodyStart + contentLength;
-      if (this.buffer.length < bodyEnd) {
-        return;
-      }
+      const line = text.slice(0, newlineIdx).trim();
+      this.buffer = Buffer.from(text.slice(newlineIdx + 1), 'utf8');
 
-      const body = this.buffer.slice(bodyStart, bodyEnd).toString('utf8');
-      this.buffer = this.buffer.slice(bodyEnd);
+      if (!line) continue;
 
       try {
-        const message = JSON.parse(body);
+        const message = JSON.parse(line);
         this.handleIncomingMessage(message);
       } catch (err) {
-        this.rejectAllPending(new Error(`Chrome MCP 响应 JSON 解析失败: ${err.message}`));
+        log.warn(`[Chrome MCP][stdio] NDJSON 解析失败: ${truncateText(line, 200)}`);
       }
     }
   }
@@ -425,10 +443,9 @@ class StdioTransport {
 
   async sendRaw(message) {
     await this.ensureConnected();
-    const payload = Buffer.from(JSON.stringify(message), 'utf8');
-    const framed = Buffer.from(`Content-Length: ${payload.length}\r\n\r\n`, 'utf8');
+    const payload = Buffer.from(JSON.stringify(message) + '\n', 'utf8');
     return new Promise<void>((resolve, reject) => {
-      this.child.stdin.write(Buffer.concat([framed, payload]), err => {
+      this.child.stdin.write(payload, err => {
         if (err) {
           reject(err);
           return;
