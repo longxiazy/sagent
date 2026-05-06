@@ -1,4 +1,5 @@
 import { getWebView } from './webview-session.ts';
+import { isChromeMcpEnabled } from '../chrome/mcp-client.ts';
 
 const ACTION_SETTLE_MS = 600;
 const NAV_RETRY_MS = 500;
@@ -36,6 +37,52 @@ async function safeEvaluate(view, script) {
   }
 }
 
+const BLOCKED_PATTERNS = [
+  /just a moment/i,
+  /checking your browser/i,
+  /verify you are human/i,
+  /are you a robot/i,
+  /cf-browser-verification/i,
+  /cloudflare.*challenge/i,
+  /access denied/i,
+  /403 forbidden/i,
+  /blocked/i,
+  /rate.?limit/i,
+  /too many requests/i,
+  /please.*captcha/i,
+  /recaptcha/i,
+  /hcaptcha/i,
+  /请完成验证/i,
+  /人机验证/i,
+];
+
+function detectBlockedPage(view) {
+  return view.evaluate(`(() => {
+    const title = document.title || '';
+    const url = window.location.href || '';
+    const body = (document.body?.innerText || '').slice(0, 2000);
+    return { title, url, body };
+  })()`);
+}
+
+function checkBlocked(title, url, body) {
+  const text = `${title} ${url} ${body}`;
+  for (const pattern of BLOCKED_PATTERNS) {
+    if (pattern.test(text)) return true;
+  }
+  if (/^about:/.test(url) && !body.trim()) return false;
+  const blockedUrls = ['/challenge', '/captcha', '/verify', '/blocked', '/sorry'];
+  for (const segment of blockedUrls) {
+    if (url.toLowerCase().includes(segment)) return true;
+  }
+  return false;
+}
+
+function blockedHint() {
+  if (!isChromeMcpEnabled()) return '';
+  return '\n\n⚠️ 页面可能被反爬拦截，建议改用 Chrome MCP 工具（chrome_call_tool → navigate_page / take_snapshot）操作真实 Chrome 浏览器访问。';
+}
+
 function elementSelector(elementId) {
   const id = String(elementId).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   return `[data-agent-node-id="${id}"]`;
@@ -69,6 +116,12 @@ async function _executeBrowserAction(view, action) {
     try {
       await safeNavigate(view, action.url);
       await delay(ACTION_SETTLE_MS);
+      try {
+        const { title, url, body } = await detectBlockedPage(view);
+        if (checkBlocked(title, url, body)) {
+          return `已打开 ${action.url}，但页面可能被反爬拦截（标题: ${title.slice(0, 80)}）。${blockedHint()}`;
+        }
+      } catch { /* ignore detection failure */ }
       return `已打开 ${action.url}`;
     } catch (err) {
       return `无法打开 ${action.url}: ${err.message?.slice(0, 150) || '连接失败'}。请尝试其他网址或使用 fetch 工具。`;
@@ -157,6 +210,12 @@ async function _executeBrowserAction(view, action) {
     } catch (err) {
       return `http_fetch ${url}: 浏览器访问失败 (${(err.message || '').slice(0, 100)})。`;
     }
+    try {
+      const pageInfo = await detectBlockedPage(view);
+      if (checkBlocked(pageInfo.title, pageInfo.url, pageInfo.body)) {
+        return `http_fetch ${url} 被反爬拦截（标题: ${pageInfo.title.slice(0, 80)}）。${blockedHint()}`;
+      }
+    } catch { /* ignore detection failure */ }
     if (action.extractLinks) {
       const { content, links } = await safeEvaluate(view, `(() => {
         const bodyText = document.body?.innerText || '';
