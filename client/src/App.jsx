@@ -2786,7 +2786,7 @@ export default function App() {
           onDelete={handleDeleteSession}
           onClearAll={handleClearAllSessions}
           onSelect={(id) => { handleSelectSession(id); if (window.innerWidth < 768) setShowSessions(false); }}
-          locked={sessionLocked || (sessions.length > 0 && sessions[0].messages.length === 0)}
+          locked={sessionLocked}
           showMemoryPanel={showMemoryPanel}
           onToggleMemory={() => setShowMemoryPanel(v => !v)}
         />
