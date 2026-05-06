@@ -2294,6 +2294,10 @@ export default function App() {
       return;
     }
 
+    if (sessions.length > 0 && sessions[0].messages.length === 0) {
+      return;
+    }
+
     const nextSession = createSession();
 
     setChatState(prev =>
@@ -2782,7 +2786,7 @@ export default function App() {
           onDelete={handleDeleteSession}
           onClearAll={handleClearAllSessions}
           onSelect={(id) => { handleSelectSession(id); if (window.innerWidth < 768) setShowSessions(false); }}
-          locked={sessionLocked}
+          locked={sessionLocked || (sessions.length > 0 && sessions[0].messages.length === 0)}
           showMemoryPanel={showMemoryPanel}
           onToggleMemory={() => setShowMemoryPanel(v => !v)}
         />
