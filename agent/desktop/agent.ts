@@ -34,6 +34,7 @@ import { executeBrowserAction } from '../tools/browser/execute.ts';
 import { executeFsAction } from '../tools/fs/execute.ts';
 import { createDomainRules } from '../tools/fetch/domain-rules.ts';
 import { executeIdeAction } from '../tools/ide/execute.ts';
+import { executeChromeAction } from '../tools/chrome/execute.ts';
 import { executeMacOSAction } from '../tools/macos/execute.ts';
 import { executeTerminalAction } from '../tools/terminal/run.ts';
 import { createSharedBrowserSessionManager } from './browser-session-manager.ts';
@@ -81,6 +82,7 @@ export function createDesktopAgentRunner({
       },
       fs: async (_state, action) => executeFsAction(action),
       ide: async (_state, action) => executeIdeAction(action),
+      chrome: async (_state, action) => executeChromeAction(action),
       terminal: async (_state, action) => executeTerminalAction(action),
       macos: async (state, action) =>
         executeMacOSAction(action, {
@@ -159,7 +161,7 @@ export function createDesktopAgentRunner({
       shouldObserve: (lastAction) => {
         if (!lastAction) return false;
         const tool = lastAction.tool || '';
-        return tool !== 'fs' && tool !== 'terminal';
+        return tool !== 'fs' && tool !== 'terminal' && tool !== 'ide' && tool !== 'chrome';
       },
       execute: async (state, action, context) => routeAction(state, action, context),
       cleanup: async state => {

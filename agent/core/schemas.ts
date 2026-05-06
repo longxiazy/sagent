@@ -259,6 +259,31 @@ function normalizeIdeAction(type, action) {
   throw new Error(`不支持的 IDE 动作: ${type}`);
 }
 
+function normalizeChromeAction(type, action) {
+  if (type === 'chrome_list_tools' || type === 'chrome_list') {
+    return {
+      tool: 'chrome',
+      type: 'chrome_list_tools',
+      refresh: Boolean(action.refresh),
+    };
+  }
+
+  if (type === 'chrome_call_tool' || type === 'chrome_call') {
+    const args = action.arguments && typeof action.arguments === 'object' && !Array.isArray(action.arguments)
+      ? action.arguments
+      : {};
+    return {
+      tool: 'chrome',
+      type: 'chrome_call_tool',
+      toolName: typeof action.toolName === 'string' ? action.toolName.trim() : '',
+      arguments: args,
+      refreshTools: Boolean(action.refreshTools),
+    };
+  }
+
+  throw new Error(`不支持的 Chrome 动作: ${type}`);
+}
+
 function normalizeCoreAction(type, action) {
   if (type === 'finish') {
     return {
@@ -314,6 +339,8 @@ export function normalizeDesktopAgentDecision(payload) {
     normalizedAction = normalizeMacOsAction(type, action);
   } else if (tool === 'ide') {
     normalizedAction = normalizeIdeAction(type, action);
+  } else if (tool === 'chrome') {
+    normalizedAction = normalizeChromeAction(type, action);
   } else if (tool === 'core') {
     normalizedAction = normalizeCoreAction(type, action);
   } else {

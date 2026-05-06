@@ -41,6 +41,11 @@ export const ACTION_TYPE_TO_TOOL = {
   ide_call_tool: 'ide',
   list_tools: 'ide',
   call_tool: 'ide',
+  // chrome
+  chrome_list_tools: 'chrome',
+  chrome_call_tool: 'chrome',
+  chrome_list: 'chrome',
+  chrome_call: 'chrome',
   // core
   finish: 'core',
   ask_user: 'core',
