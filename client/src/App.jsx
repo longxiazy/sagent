@@ -2498,7 +2498,7 @@ export default function App() {
         strategy: selectedAgentModels.length > 1 ? agentStrategy : 'race',
         memory: agentMemory,
         signal: controller.signal,
-        messages: isRetry ? [] : history.slice(-10),
+        messages: isRetry ? [] : messages.filter(m => m.role === 'user').slice(-5).map(m => ({ role: m.role, content: m.content })),
         ...extraBody,
         async onEvent(event) {
           console.log(`[AgentUI] event type=${event.type} step=${event.step ?? '-'} stage=${event.stage ?? '-'} model=${event.model || '-'}`);

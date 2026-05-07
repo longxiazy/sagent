@@ -46,7 +46,7 @@ export function buildClaudeTaskMessages({
   }
   messages.push({
     role: 'user',
-    content: JSON.stringify({ task, step, history, observation }, null, 2),
+    content: JSON.stringify({ task, step, history, observation }),
   });
   return messages;
 }
@@ -138,7 +138,7 @@ export function buildNvidiaTaskMessages({
         conversationSummary,
       ]
         .filter(Boolean)
-        .join('\n'),
+        .join(' '),
     },
     {
       role: 'user',
