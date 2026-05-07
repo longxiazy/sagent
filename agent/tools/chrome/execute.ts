@@ -89,15 +89,15 @@ export async function executeChromeAction(action) {
       `结果:\n${content}`,
     ];
 
-    // navigate_page / new_page 成功后自动截图，让 LLM 立即看到页面
+    // navigate_page / new_page 成功后自动获取页面快照，让 LLM 立即看到页面内容
     const NAVIGATE_TOOLS = new Set(['navigate_page', 'new_page']);
     if (!result?.isError && NAVIGATE_TOOLS.has(toolName)) {
       try {
-        const screenshotResult = await client.callTool('take_screenshot', {});
-        const screenshotContent = extractToolContent(screenshotResult);
-        parts.push(`\n[自动截图]\n${screenshotContent}`);
+        const snapshotResult = await client.callTool('take_snapshot', {});
+        const snapshotContent = extractToolContent(snapshotResult);
+        parts.push(`\n[页面快照]\n${snapshotContent}`);
       } catch {
-        parts.push('\n[自动截图失败，页面可能仍在加载]');
+        parts.push('\n[页面快照获取失败，页面可能仍在加载]');
       }
     }
 
