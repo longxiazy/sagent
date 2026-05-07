@@ -117,26 +117,25 @@ export async function runAgentRuntime({
       if (sessionCheckpointDir && runRecord && shouldRollback(runRecord)) {
         const targetStep = runRecord.pendingRollback;
         log.info(`[Runtime] 执行回滚到第 ${targetStep} 步, dir=${sessionCheckpointDir}, runId=${runRecord.runId}`);
-        const snapshot = await loadLatestHealthySnapshot(sessionCheckpointDir, runRecord.runId, targetStep);
+        const snapshot = await loadLatestHealthySnapshot(sessionCheckpointDir, runRecord.runId, targetStep - 1);
         if (snapshot) {
           history.length = 0;
           for (const h of snapshot.history) {
             history.push({ ...h });
           }
-          step = targetStep - 1;
-          runRecord.pendingRollback = null;
-          runRecord.rolledBack = true;
-
-          onEvent?.({
-            type: "rollback",
-            targetStep,
-            message: `已回滚到第 ${targetStep} 步`,
-          });
-          continue;
         } else {
-          log.warn(`[Runtime] 回滚失败: 未找到第 ${targetStep} 步的健康快照`);
-          runRecord.pendingRollback = null;
+          history.length = 0;
         }
+        step = targetStep - 1;
+        runRecord.pendingRollback = null;
+        runRecord.rolledBack = true;
+
+        onEvent?.({
+          type: "rollback",
+          targetStep,
+          message: `已回滚到第 ${targetStep} 步`,
+        });
+        continue;
       }
 
       // ---- 观察 ----

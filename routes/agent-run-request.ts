@@ -36,10 +36,15 @@ export async function resolveCheckpointSeed(checkpointDir: string, fromCheckpoin
     const cpRunId = fromCheckpoint.runId;
     const cpStep = fromCheckpoint.step;
     if (typeof cpRunId === 'string' && typeof cpStep === 'number') {
-      const snapshot = await loadLatestHealthySnapshot(checkpointDir, cpRunId, cpStep);
+      // 加载目标步骤前一步的快照，保留之前的上下文，从目标步重新执行
+      const snapshot = await loadLatestHealthySnapshot(checkpointDir, cpRunId, cpStep - 1);
       if (snapshot) {
-        checkpointInitialStep = snapshot.step + 1;
+        checkpointInitialStep = cpStep;
         checkpointInitialHistory = snapshot.history || [];
+      } else {
+        // 目标是第 1 步且无更早快照 → 从头开始
+        checkpointInitialStep = 1;
+        checkpointInitialHistory = [];
       }
     }
   }
