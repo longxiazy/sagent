@@ -2470,15 +2470,10 @@ export default function App() {
       setInput('');
       setAgentTrace([]);
     } else {
-      // Retry from checkpoint — remove old agent answers for this task to avoid duplicates
+      // Retry from checkpoint — keep filtered trace (handleRollback already removed steps > target)
       const cpStep = extraBody?.fromCheckpoint?.step;
       updateSession(sessionId, session => {
         const msgs = [...session.messages];
-        // 从后往前移除该任务的所有旧助手回复（含 placeholder 和已完成答案）
-        const taskIdx = msgs.findLastIndex(m => m.role === 'user' && m.content === text);
-        if (taskIdx >= 0) {
-          msgs.splice(taskIdx + 1); // 移除用户消息之后的所有消息
-        }
         const stepInfo = cpStep ? `从第 ${cpStep} 步` : '';
         msgs.push({ role: 'assistant', content: `Desktop Agent 正在${stepInfo}重新执行任务：${text}`, ts: Date.now() });
         return touchSession(session, { messages: msgs });
@@ -2503,7 +2498,7 @@ export default function App() {
         strategy: selectedAgentModels.length > 1 ? agentStrategy : 'race',
         memory: agentMemory,
         signal: controller.signal,
-        messages: history.slice(-10),
+        messages: isRetry ? [] : history.slice(-10),
         ...extraBody,
         async onEvent(event) {
           console.log(`[AgentUI] event type=${event.type} step=${event.step ?? '-'} stage=${event.stage ?? '-'} model=${event.model || '-'}`);
