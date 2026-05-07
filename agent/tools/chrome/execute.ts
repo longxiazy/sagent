@@ -7,7 +7,7 @@ import {
   summarizeChromeTool,
 } from './mcp-client.ts';
 
-const MAX_TEXT = 24000;
+const MAX_TEXT = 48000;
 
 function truncate(text, max = MAX_TEXT) {
   const value = String(text || '');
