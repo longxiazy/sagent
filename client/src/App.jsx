@@ -563,7 +563,7 @@ function CopyButton({ text }) {
   };
 
   return (
-    <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={handle} title="复制">
+    <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={(e) => { e.stopPropagation(); handle(); }} title="复制">
       {copied ? <Check size={14} /> : <Copy size={14} />}
     </button>
   );
@@ -1059,12 +1059,22 @@ function ModelPlanCard({ event, isWinner, modelList, result, forceExpanded, onMa
 
   if (stage === 'start') return null;
 
+  // 拼接整个决策节点的可复制文本
+  const copyText = [
+    event.rationale,
+    event.reasoning,
+    event.action ? JSON.stringify(event.action, null, 2) : '',
+    event.error,
+    result,
+  ].filter(Boolean).join('\n\n');
+
   return (
     <div className={`model-card ${stage} ${isWinner ? 'winner' : ''} ${effectiveExpanded ? 'expanded' : ''}`} onClick={() => { if (forceExpanded != null) onManualToggle?.(); setExpanded(v => !v); }}>
       <div className="model-card-head">
         <span className="model-card-icon">{PLAN_STAGE_ICON[stage] || '·'}</span>
         <span className="model-card-label">{label}</span>
         <span className={`model-card-status ${stage}`}>{PLAN_STAGE_LABELS[stage] || stage}</span>
+        {copyText && <CopyButton text={copyText} />}
         <span className="model-card-expand-icon">{effectiveExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}</span>
       </div>
       {stage === 'pending' && (
