@@ -1,16 +1,22 @@
 import { Router } from 'express';
 import type { AgentRouterContext } from './agent-types.ts';
+import { removeCheckpoint, removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
 
-export function createAgentRunControlRouter({ agentRunStore, approvalStore }: AgentRouterContext) {
+export function createAgentRunControlRouter({ agentRunStore, approvalStore, checkpointDir }: AgentRouterContext) {
   const router = Router();
 
-  router.post('/api/agent/cancel', (req, res) => {
+  router.post('/api/agent/cancel', async (req, res) => {
     const { runId } = req.body ?? {};
     if (typeof runId !== 'string' || !runId) {
       return res.status(400).json({ error: 'runId 不能为空' });
     }
     agentRunStore.cancelRun(runId);
     approvalStore.rejectAll();
+    // 立即清理 checkpoint，防止重启后恢复已取消的任务
+    await Promise.all([
+      removeCheckpoint(checkpointDir, runId),
+      removeSessionCheckpoints(checkpointDir, runId),
+    ]);
     return res.json({ ok: true });
   });
 
