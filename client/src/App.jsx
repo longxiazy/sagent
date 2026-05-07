@@ -1175,7 +1175,7 @@ function ModelPlanCard({ event, isWinner, modelList, result, forceExpanded, onMa
 
 // 多模型一步会产生多条 model_plan 事件。这个组件负责把零散事件重新聚合成
 // 一个“按 step 分组”的展示块，让用户能看到同一步里不同模型如何竞争/投票。
-function ModelPlanGroup({ trace, step, models, modelList, running, cardsExpanded, onManualToggle }) {
+function ModelPlanGroup({ trace, step, models, modelList, running, cardsExpanded, onManualToggle, onRollback, rollbackLoading }) {
   let strategyMode = 'race';
   let consensusEvent = null;
   const modelEvents = {};
@@ -1219,6 +1219,9 @@ function ModelPlanGroup({ trace, step, models, modelList, running, cardsExpanded
       <span className="agent-trace-badge plan">
         {strategyMode === 'vote' ? '投票' : '决策'}
       </span>
+      <button className="trace-rollback-btn" onClick={(e) => { e.stopPropagation(); onRollback?.(step); }} disabled={rollbackLoading} title={`从 Step ${step} 重新执行`}>
+        <RotateCcw size={10} />
+      </button>
       <div className="model-plan-cards">
         {visibleModels.map(m => (
           <ModelPlanCard
@@ -1556,7 +1559,7 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
             // (other stages like thinking/success/failed are collected inside ModelPlanGroup)
             if (event.type === 'model_plan' && event.stage !== 'start' && event.stage !== 'consensus') return null;
             if (event.type === 'model_plan' && event.stage === 'start') {
-              return <ModelPlanGroup key={`model-plan-step-${event.step || index}`} trace={trace} step={event.step} models={event.models} modelList={modelList} running={running} cardsExpanded={cardsExpanded} onManualToggle={() => setCardsExpanded(null)} />;
+              return <ModelPlanGroup key={`model-plan-step-${event.step || index}`} trace={trace} step={event.step} models={event.models} modelList={modelList} running={running} cardsExpanded={cardsExpanded} onManualToggle={() => setCardsExpanded(null)} onRollback={onRollback} rollbackLoading={rollbackLoading} />;
             }
             // For multi-model steps, skip separate action/result items (shown inside model cards)
             if (event.type === 'step' && (event.stage === 'action' || event.stage === 'result') && multiModelSteps.has(event.step)) {
@@ -1655,6 +1658,9 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
                           </span>
                         </span>
                       )}
+                      <button className="trace-rollback-btn" onClick={(e) => { e.stopPropagation(); onRollback(event.step); }} disabled={rollbackLoading} title={`从 Step ${event.step} 重新执行`}>
+                        <RotateCcw size={10} />
+                      </button>
                     </div>
                     {event.rationale && <p>{event.rationale}</p>}
                     <pre className="agent-json">{JSON.stringify(event.action, null, 2)}</pre>
@@ -1795,9 +1801,6 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
                   <div className="agent-trace-content">
                     <strong>Step {event.step} 健康快照已保存</strong>
                   </div>
-                  <button className="trace-rollback-btn" onClick={() => onRollback(event.step)} disabled={rollbackLoading || running} title={`回滚到 Step ${event.step}`}>
-                    <RotateCcw size={10} />
-                  </button>
                 </>
               )}
             </div>

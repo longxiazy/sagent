@@ -162,6 +162,11 @@ export async function runAgentRuntime({
 
       const compactHistory = compressHistory(history, MAX_HISTORY_STEPS);
 
+      // ---- 决策前再次检查取消 ----
+      if (cancelled()) {
+        throw new Error("Agent 已取消");
+      }
+
       // ---- 决策 ----
       const decision = await decide({
         task,
