@@ -6,6 +6,7 @@ import { persistAgentRunMemory } from './agent-run-memory-persist.ts';
 import { createAgentRunSession } from './agent-run-session.ts';
 import { parseAgentRunRequest, resolveCheckpointSeed } from './agent-run-request.ts';
 import { executeAgentRun } from './agent-run-execution.ts';
+import { removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
 
 export function createAgentRunStartRouter({
   runDesktopAgent,
@@ -33,6 +34,16 @@ export function createAgentRunStartRouter({
     }
 
     const { checkpointInitialStep, checkpointInitialHistory } = await resolveCheckpointSeed(checkpointDir, fromCheckpoint);
+
+    // 清理上一个 run 的 session snapshots（fromCheckpoint 回滚时保留当前 run 的快照）
+    const prevRunId = fromCheckpoint?.runId;
+    if (checkpointDir && !fromCheckpoint) {
+      const { listSessionCheckpointRuns } = await import('../agent/core/checkpoint.ts');
+      const runs = await listSessionCheckpointRuns(checkpointDir);
+      for (const rid of runs) {
+        removeSessionCheckpoints(checkpointDir, rid).catch(() => {});
+      }
+    }
 
     const normalizedTask = task.trim();
     const agentHeadless = typeof headless === 'boolean' ? headless : process.env.AGENT_HEADLESS === 'true';
