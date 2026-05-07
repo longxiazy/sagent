@@ -243,9 +243,54 @@ export function createDesktopPlanner({
     return new Promise((resolve, reject) => {
       let settled = false;
       let launched = 0;
+      let pendingFinishResult: any = null;
+      let pendingFinishModel: string | null = null;
       const failures: string[] = [];
       const timers: NodeJS.Timeout[] = [];
       const raceAc = new AbortController();
+
+      // 用 setTimeout 延迟 resolve：如果第一个结果不是 finish，等一小段时间看是否有 finish
+      let resolveTimer: NodeJS.Timeout | null = null;
+      const FINISH_WAIT_MS = 3000;
+
+      function doResolve(result: any) {
+        if (resolveTimer) { clearTimeout(resolveTimer); resolveTimer = null; }
+        settled = true;
+        raceAc.abort();
+        timers.forEach(timer => clearTimeout(timer));
+        resolve(result);
+      }
+
+      function onModelResult(candidate: string, result: any) {
+        const isFinish = result.action?.type === 'finish';
+
+        if (settled) {
+          onEvent?.({ type: 'model_plan', stage: 'cancelled', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
+          return;
+        }
+
+        if (isFinish) {
+          // finish 优先：立即采纳
+          log.info(`[MultiModel] ${candidate} 返回 finish，立即采纳`);
+          onEvent?.({ type: 'model_plan', stage: 'winner', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
+          doResolve(result);
+          return;
+        }
+
+        // 非 finish 结果
+        log.info(`[MultiModel] 使用 ${candidate} 的结果（${activeModels.join(', ')}）`);
+        onEvent?.({ type: 'model_plan', stage: 'winner', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
+
+        // 延迟 resolve：给其他模型一点时间返回 finish
+        pendingFinishResult = result;
+        pendingFinishModel = candidate;
+        if (resolveTimer) clearTimeout(resolveTimer);
+        resolveTimer = setTimeout(() => {
+          if (!settled && pendingFinishResult) {
+            doResolve(pendingFinishResult);
+          }
+        }, FINISH_WAIT_MS);
+      }
 
       function launchModel(candidate: string) {
         if (settled || cancelSignal?.aborted) return;
@@ -253,16 +298,7 @@ export function createDesktopPlanner({
         onEvent?.({ type: 'model_plan', stage: 'thinking', model: candidate, step });
         planWithTimeout(candidate, planCtx, cancelSignal, raceAc.signal)
           .then(result => {
-            if (settled) {
-              onEvent?.({ type: 'model_plan', stage: 'cancelled', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
-              return;
-            }
-            settled = true;
-            raceAc.abort();
-            timers.forEach(timer => clearTimeout(timer));
-            log.info(`[MultiModel] 使用 ${candidate} 的结果（${activeModels.join(', ')}）`);
-            onEvent?.({ type: 'model_plan', stage: 'winner', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
-            resolve(result);
+            onModelResult(candidate, result);
           })
           .catch((err: any) => {
             if (settled) {
