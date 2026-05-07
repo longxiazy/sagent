@@ -1820,22 +1820,22 @@ textarea {
     border-radius: var(--r-sm);
     cursor: pointer;
   }
+}
 
-  .model-card-body {
-    display: none;
-  }
+.model-card-body {
+  display: none;
+}
 
-  .model-card.expanded .model-card-body {
-    display: block;
-  }
+.model-card.expanded .model-card-body {
+  display: block;
+}
 
-  .model-card-json {
-    display: none;
-  }
+.model-card-json {
+  display: none;
+}
 
-  .model-card.expanded .model-card-json {
-    display: block;
-  }
+.model-card.expanded .model-card-json {
+  display: block;
 }
 
 .model-card-icon { font-size: 12px; }

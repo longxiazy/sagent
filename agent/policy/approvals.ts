@@ -1,17 +1,58 @@
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import { classifyAgentAction } from './classify.ts';
 import { cleanText } from '../core/utils.ts';
 import { log } from '../../helpers/logger.ts';
 
-function sendMacosNotification(title, body) {
-  if (process.platform !== 'darwin') {
-    log.warn(`[Notification] macOS 通知不可用，当前平台: ${process.platform}`);
-    return;
-  }
+const HOST = `http://127.0.0.1:${process.env.PORT || 3001}`;
+
+function showApprovalDialog(runId: string, approvalId: string, message: string) {
+  if (process.platform !== 'darwin') return;
+  const safeMsg = message.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').slice(0, 200);
+  // 异步弹对话框，用户点击后回调 API
+  const script = `
+    set dialogResult to display alert "Agent 审批请求" message "${safeMsg}" as informational buttons {"拒绝", "批准"} default button "批准" cancel button "拒绝" giving up after 120
+    if button returned of dialogResult is "批准" then
+      return "approve"
+    else
+      return "reject"
+    end if`;
+  const child = spawn('osascript', ['-e', script], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let stdout = '';
+  child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
+  child.on('close', (code: number) => {
+    const decision = code === 0 ? 'approve' : 'reject';
+    log.info(`[ApprovalDialog] 用户${decision === 'approve' ? '批准' : '拒绝'} runId=${runId}`);
+    // 调 API 解除审批阻塞
+    const body = JSON.stringify({ runId, approvalId, decision });
+    spawn('curl', ['-s', '-X', 'POST', `${HOST}/api/agent/approvals`, '-H', 'Content-Type: application/json', '-d', body], { stdio: 'ignore' });
+  });
+}
+
+function showQuestionDialog(runId: string, approvalId: string, question: string) {
+  if (process.platform !== 'darwin') return;
+  const safeQ = question.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').slice(0, 200);
+  const script = `
+    set dialogResult to display dialog "${safeQ}" default answer "" with title "Agent 提问" buttons {"跳过", "回答"} default button "回答" cancel button "跳过" giving up after 120
+    set userResponse to text returned of dialogResult
+    if userResponse is "" then return "__skip__"
+    return userResponse`;
+  const child = spawn('osascript', ['-e', script], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let stdout = '';
+  child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
+  child.on('close', (code: number) => {
+    const response = code === 0 ? stdout.trim() : '';
+    log.info(`[QuestionDialog] 用户回答: ${response || '(跳过)'} runId=${runId}`);
+    const body = JSON.stringify({ runId, approvalId, response: response === '__skip__' ? '' : response });
+    spawn('curl', ['-s', '-X', 'POST', `${HOST}/api/agent/question`, '-H', 'Content-Type: application/json', '-d', body], { stdio: 'ignore' });
+  });
+}
+
+function sendMacosNotification(title: string, body: string) {
+  if (process.platform !== 'darwin') return;
   const script = `display notification "${body.replace(/"/g, '\\"')}" with title "${title.replace(/"/g, '\\"')}" sound name "Glass"`;
   try {
     spawn('osascript', ['-e', script], { stdio: 'ignore' });
-  } catch (err) {
+  } catch (err: any) {
     log.warn(`[Notification] osascript 调用失败: ${err.message}`);
   }
 }
@@ -63,15 +104,11 @@ export function createAgentAuthorizer({
     });
 
     if (isQuestion) {
-      sendMacosNotification(
-        'Desktop Agent 提问',
-        `${cleanText(action.question, 120)}`
-      );
+      sendMacosNotification('Desktop Agent 提问', `${cleanText(action.question, 120)}`);
+      showQuestionDialog(runId, approvalId, cleanText(action.question, 200));
     } else {
-      sendMacosNotification(
-        'Desktop Agent 需要审批',
-        `${cleanText(policy.reason, 120)}\n\nrunId: ${runId}`
-      );
+      sendMacosNotification('Desktop Agent 需要审批', `${cleanText(policy.reason, 120)}`);
+      showApprovalDialog(runId, approvalId, cleanText(policy.reason, 200));
     }
 
     const decision = await promise;
