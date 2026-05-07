@@ -142,7 +142,7 @@ export function buildNvidiaTaskMessages({
     },
     {
       role: 'user',
-      content: JSON.stringify({ task, step, history, observation }, null, 2),
+      content: JSON.stringify({ task, step, history, observation }),
     },
   ];
 }
