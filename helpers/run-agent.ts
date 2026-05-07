@@ -34,12 +34,14 @@ export async function loadMemoryForPrompt(memoryDir: string) {
   }
 }
 
-export async function cleanupAgentRun(checkpointDir: string | undefined, runId: string, agentRunStore: any) {
+export async function cleanupAgentRun(checkpointDir: string | undefined, runId: string, agentRunStore: any, { removeSnapshots = false }: { removeSnapshots?: boolean } = {}) {
   if (checkpointDir) {
-    await Promise.all([
-      removeCheckpoint(checkpointDir, runId).catch(() => {}),
-      removeSessionCheckpoints(checkpointDir, runId).catch(() => {}),
-    ]);
+    // step-level checkpoint 只用于崩溃恢复，任务完成后可删除
+    await removeCheckpoint(checkpointDir, runId).catch(() => {});
+    // session snapshots 用于回滚，只在启动新任务时才清理
+    if (removeSnapshots) {
+      await removeSessionCheckpoints(checkpointDir, runId).catch(() => {});
+    }
   }
   agentRunStore.closeRun(runId);
 }

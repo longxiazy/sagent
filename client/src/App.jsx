@@ -563,7 +563,7 @@ function CopyButton({ text }) {
   };
 
   return (
-    <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={handle} title="复制">
+    <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={(e) => { e.stopPropagation(); handle(); }} title="复制">
       {copied ? <Check size={14} /> : <Copy size={14} />}
     </button>
   );
@@ -1059,12 +1059,22 @@ function ModelPlanCard({ event, isWinner, modelList, result, forceExpanded, onMa
 
   if (stage === 'start') return null;
 
+  // 拼接整个决策节点的可复制文本
+  const copyText = [
+    event.rationale,
+    event.reasoning,
+    event.action ? JSON.stringify(event.action, null, 2) : '',
+    event.error,
+    result,
+  ].filter(Boolean).join('\n\n');
+
   return (
     <div className={`model-card ${stage} ${isWinner ? 'winner' : ''} ${effectiveExpanded ? 'expanded' : ''}`} onClick={() => { if (forceExpanded != null) onManualToggle?.(); setExpanded(v => !v); }}>
       <div className="model-card-head">
         <span className="model-card-icon">{PLAN_STAGE_ICON[stage] || '·'}</span>
         <span className="model-card-label">{label}</span>
         <span className={`model-card-status ${stage}`}>{PLAN_STAGE_LABELS[stage] || stage}</span>
+        {copyText && <CopyButton text={copyText} />}
         <span className="model-card-expand-icon">{effectiveExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}</span>
       </div>
       {stage === 'pending' && (
@@ -1165,7 +1175,7 @@ function ModelPlanCard({ event, isWinner, modelList, result, forceExpanded, onMa
 
 // 多模型一步会产生多条 model_plan 事件。这个组件负责把零散事件重新聚合成
 // 一个“按 step 分组”的展示块，让用户能看到同一步里不同模型如何竞争/投票。
-function ModelPlanGroup({ trace, step, models, modelList, running, cardsExpanded, onManualToggle }) {
+function ModelPlanGroup({ trace, step, models, modelList, running, cardsExpanded, onManualToggle, onRollback, rollbackLoading }) {
   let strategyMode = 'race';
   let consensusEvent = null;
   const modelEvents = {};
@@ -1209,6 +1219,9 @@ function ModelPlanGroup({ trace, step, models, modelList, running, cardsExpanded
       <span className="agent-trace-badge plan">
         {strategyMode === 'vote' ? '投票' : '决策'}
       </span>
+      <button className="trace-rollback-btn" onClick={(e) => { e.stopPropagation(); onRollback?.(step); }} disabled={rollbackLoading} title={`从 Step ${step} 重新执行`}>
+        <RotateCcw size={10} />
+      </button>
       <div className="model-plan-cards">
         {visibleModels.map(m => (
           <ModelPlanCard
@@ -1546,7 +1559,7 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
             // (other stages like thinking/success/failed are collected inside ModelPlanGroup)
             if (event.type === 'model_plan' && event.stage !== 'start' && event.stage !== 'consensus') return null;
             if (event.type === 'model_plan' && event.stage === 'start') {
-              return <ModelPlanGroup key={`model-plan-step-${event.step || index}`} trace={trace} step={event.step} models={event.models} modelList={modelList} running={running} cardsExpanded={cardsExpanded} onManualToggle={() => setCardsExpanded(null)} />;
+              return <ModelPlanGroup key={`model-plan-step-${event.step || index}`} trace={trace} step={event.step} models={event.models} modelList={modelList} running={running} cardsExpanded={cardsExpanded} onManualToggle={() => setCardsExpanded(null)} onRollback={onRollback} rollbackLoading={rollbackLoading} />;
             }
             // For multi-model steps, skip separate action/result items (shown inside model cards)
             if (event.type === 'step' && (event.stage === 'action' || event.stage === 'result') && multiModelSteps.has(event.step)) {
@@ -1645,6 +1658,9 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
                           </span>
                         </span>
                       )}
+                      <button className="trace-rollback-btn" onClick={(e) => { e.stopPropagation(); onRollback(event.step); }} disabled={rollbackLoading} title={`从 Step ${event.step} 重新执行`}>
+                        <RotateCcw size={10} />
+                      </button>
                     </div>
                     {event.rationale && <p>{event.rationale}</p>}
                     <pre className="agent-json">{JSON.stringify(event.action, null, 2)}</pre>
@@ -1785,9 +1801,6 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
                   <div className="agent-trace-content">
                     <strong>Step {event.step} 健康快照已保存</strong>
                   </div>
-                  <button className="trace-rollback-btn" onClick={() => onRollback(event.step)} disabled={rollbackLoading || running} title={`回滚到 Step ${event.step}`}>
-                    <RotateCcw size={10} />
-                  </button>
                 </>
               )}
             </div>
@@ -2485,7 +2498,7 @@ export default function App() {
         strategy: selectedAgentModels.length > 1 ? agentStrategy : 'race',
         memory: agentMemory,
         signal: controller.signal,
-        messages: history.slice(-10),
+        messages: isRetry ? [] : messages.filter(m => m.role === 'user').slice(-5).map(m => ({ role: m.role, content: m.content })),
         ...extraBody,
         async onEvent(event) {
           console.log(`[AgentUI] event type=${event.type} step=${event.step ?? '-'} stage=${event.stage ?? '-'} model=${event.model || '-'}`);

@@ -1868,6 +1868,9 @@ textarea {
 
 .model-card-body { margin-top: 4px; }
 .model-card-body p { margin: 0; color: var(--c-text-secondary); line-height: 1.3; font-size: 11px; }
+.model-card-head .copy-btn { opacity: 0; width: 22px; height: 22px; border-radius: 4px; margin-left: auto; }
+.model-card:hover .model-card-head .copy-btn { opacity: 1; }
+.model-card-head .copy-btn.copied { opacity: 1; }
 
 .model-card-thinking {
   display: flex;

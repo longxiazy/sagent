@@ -7,7 +7,7 @@ import {
   summarizeChromeTool,
 } from './mcp-client.ts';
 
-const MAX_TEXT = 24000;
+const MAX_TEXT = 48000;
 
 function truncate(text, max = MAX_TEXT) {
   const value = String(text || '');
@@ -83,11 +83,25 @@ export async function executeChromeAction(action) {
     const content = extractToolContent(result);
     const status = result?.isError ? '失败' : '完成';
 
-    return truncate([
+    const parts = [
       `Chrome 工具 ${toolName} 执行${status}`,
       `参数: ${serializeChromePayload(args)}`,
       `结果:\n${content}`,
-    ].join('\n\n'));
+    ];
+
+    // navigate_page / new_page 成功后自动获取页面快照，让 LLM 立即看到页面内容
+    const NAVIGATE_TOOLS = new Set(['navigate_page', 'new_page']);
+    if (!result?.isError && NAVIGATE_TOOLS.has(toolName)) {
+      try {
+        const snapshotResult = await client.callTool('take_snapshot', {});
+        const snapshotContent = extractToolContent(snapshotResult);
+        parts.push(`\n[页面快照]\n${snapshotContent}`);
+      } catch {
+        parts.push('\n[页面快照获取失败，页面可能仍在加载]');
+      }
+    }
+
+    return truncate(parts.join('\n\n'));
   }
 
   throw new Error(formatChromeMcpError(new Error(`不支持的 Chrome 动作类型: ${action.type}`), 'Chrome MCP'));

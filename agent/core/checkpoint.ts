@@ -94,6 +94,16 @@ function sessionDir(dir: string, runId: string) {
   return join(dir, 'session-checkpoints', runId);
 }
 
+export async function listSessionCheckpointRuns(dir: string) {
+  const scDir = join(dir, 'session-checkpoints');
+  try {
+    const entries = await readdir(scDir);
+    return entries.filter(e => !e.startsWith('.'));
+  } catch {
+    return [];
+  }
+}
+
 function healthyPath(dir: string, runId: string, step: number) {
   return join(sessionDir(dir, runId), `session-healthy-${step}.json`);
 }

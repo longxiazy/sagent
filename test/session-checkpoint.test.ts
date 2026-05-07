@@ -260,7 +260,7 @@ describe('runtime: session checkpoint integration', () => {
 
     const result = await runAgentRuntime({
       task: 'test',
-      maxSteps: 3,
+      maxSteps: 101,
       onEvent,
       cancelSignal,
       sessionCheckpointDir: tmpDir,
@@ -274,8 +274,9 @@ describe('runtime: session checkpoint integration', () => {
     });
 
     expect(runRecord.pendingRollback).toBeNull();
-    expect(evtLog.some(e => e.type === 'rollback')).toBe(false);
-    // Runtime returns result, it doesn't emit 'done' event itself
+    // 即使无快照，回滚仍会执行（清空 history，从 targetStep 重新开始）
+    expect(evtLog.some(e => e.type === 'rollback')).toBe(true);
+    expect(evtLog.find(e => e.type === 'rollback').targetStep).toBe(99);
     expect(result.answer).toBe('done');
     // Wait for fire-and-forget snapshot writes to complete
     await new Promise(r => setTimeout(r, 200));
