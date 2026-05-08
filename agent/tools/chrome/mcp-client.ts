@@ -1,4 +1,5 @@
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
+import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { log } from '../../../helpers/logger.ts';
@@ -12,6 +13,28 @@ const DEFAULT_STDIO_COMMAND = 'npx';
 const DEFAULT_STDIO_ARGS = ['-y', 'chrome-devtools-mcp@latest'];
 const CLIENT_INFO = { name: 'sagent', version: '1.0.0' };
 const IS_WINDOWS = process.platform === 'win32';
+
+function killOrphanChrome() {
+  const profileDir = path.join(os.homedir(), '.cache', 'chrome-devtools-mcp', 'chrome-profile');
+  if (!fs.existsSync(profileDir)) return;
+
+  if (IS_WINDOWS) {
+    spawn('pwsh', ['-NoProfile', '-Command',
+      `Get-Process chrome -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*chrome-profile*' } | Stop-Process -Force`],
+      { stdio: 'ignore' });
+    return;
+  }
+
+  try {
+    const pids = execSync(
+      `pgrep -f 'Google Chrome.*chrome-profile' 2>/dev/null || true`,
+      { encoding: 'utf8' },
+    ).trim();
+    if (!pids) return;
+    spawn('bash', ['-c', `pkill -f 'Google Chrome.*chrome-profile' 2>/dev/null || true`], { stdio: 'ignore' });
+    log.info(`[Chrome MCP] 已清理孤儿 Chrome 进程 (PIDs: ${pids.replace(/\n/g, ',')})`);
+  } catch { /* ignore */ }
+}
 
 let sharedClientPromise = null;
 let sharedClientKey = '';
@@ -288,14 +311,51 @@ class ChromeMcpClient {
       // MCP returns tool errors as { isError: true } in a successful JSON-RPC response,
       // not as a JSON-RPC error — so we must check result.isError explicitly.
       if (result?.isError && this._isChromeConnectionResult(result)) {
+        if (this._isAlreadyRunningResult(result)) {
+          return await this._recoverFromAlreadyRunning(toolName, toolArgs);
+        }
         return await this._retryWithoutAutoConnect(toolName, toolArgs);
       }
       return result;
     } catch (err) {
       if (this._isChromeConnectionError(err)) {
+        if (this._isAlreadyRunningErrorMsg(err)) {
+          return await this._recoverFromAlreadyRunning(toolName, toolArgs);
+        }
         return await this._retryWithoutAutoConnect(toolName, toolArgs);
       }
       throw err;
+    }
+  }
+
+  async _recoverFromAlreadyRunning(toolName, toolArgs) {
+    log.info(`[Chrome MCP] 检测到 Chrome already running 冲突，清理孤儿进程后重试`);
+    killOrphanChrome();
+    await new Promise(r => setTimeout(r, 2000));
+    // Reset transport so MCP server launches a fresh Chrome
+    this.transport.close?.().catch(() => {});
+    this.toolsCache = null;
+    const client = await getSharedChromeMcpClient(this.config);
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 3000;
+
+    for (let attempt = 0; ; attempt++) {
+      const result = await client.transport.request('tools/call', {
+        name: toolName,
+        arguments: toolArgs || {},
+      });
+
+      if (!result?.isError) {
+        return result;
+      }
+
+      if (attempt >= MAX_RETRIES - 1) {
+        log.info(`[Chrome MCP] 清理 Chrome 后工具调用 ${toolName} 仍失败（已重试 ${MAX_RETRIES} 次）`);
+        return result;
+      }
+
+      log.info(`[Chrome MCP] 等待浏览器启动，${RETRY_DELAY_MS}ms 后重试 ${toolName}（第 ${attempt + 1}/${MAX_RETRIES} 次）`);
+      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
     }
   }
 
@@ -337,14 +397,27 @@ class ChromeMcpClient {
       : '';
     return text.includes('Could not connect to Chrome')
       || text.includes('DevToolsActivePort')
-      || text.includes('Could not find');
+      || text.includes('Could not find')
+      || text.includes('already running');
   }
 
   _isChromeConnectionError(err) {
     const msg = err?.message || '';
     return msg.includes('Could not connect to Chrome')
       || msg.includes('DevToolsActivePort')
-      || msg.includes('Could not find');
+      || msg.includes('Could not find')
+      || msg.includes('already running');
+  }
+
+  _isAlreadyRunningResult(result) {
+    const text = Array.isArray(result?.content)
+      ? result.content.map(c => c?.text || '').join(' ')
+      : '';
+    return text.includes('already running');
+  }
+
+  _isAlreadyRunningErrorMsg(err) {
+    return (err?.message || '').includes('already running');
   }
 
   _stripAutoConnect() {
@@ -354,6 +427,7 @@ class ChromeMcpClient {
     }
     config.args = config.args.filter(a => a !== '--autoConnect');
     // Close and reset so the next request spawns a fresh MCP process without --autoConnect
+    killOrphanChrome();
     this.transport.close?.().catch(() => {});
     this.toolsCache = null;
     sharedClientPromise = null;
@@ -362,6 +436,7 @@ class ChromeMcpClient {
   }
 
   async close() {
+    killOrphanChrome();
     await this.transport.close?.();
   }
 }
