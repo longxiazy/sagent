@@ -13,6 +13,14 @@ import bash from 'highlight.js/lib/languages/bash';
 import sql from 'highlight.js/lib/languages/sql';
 import 'highlight.js/styles/github.css';
 import './App.css';
+import { streamAgentRun, streamChatCompletion, submitAgentApproval, submitAgentQuestion } from './api/streams.js';
+import { AgentPane } from './components/AgentPane.jsx';
+import { ChatPane } from './components/ChatPane.jsx';
+import { SessionSidebar } from './components/SessionSidebar.jsx';
+import { useAgentRun } from './hooks/useAgentRun.js';
+import { createSession, getSessionTitle, normalizeChatState, touchSession, useChatSessions } from './hooks/useChatSessions.js';
+import { booleanStorage, jsonStorage, usePersistentState } from './hooks/usePersistentState.js';
+import { useResponsiveLayout } from './hooks/useResponsiveLayout.js';
 
 hljs.registerLanguage('javascript', javascript);
 hljs.registerLanguage('js', javascript);
@@ -48,10 +56,6 @@ class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
-
-const API_URL = '/api/chat';
-const AGENT_API_URL = '/api/agent';
-const AGENT_APPROVAL_API_URL = '/api/agent/approvals';
 
 const DEFAULT_MODELS = [
   { id: 'minimaxai/minimax-m2.7', label: 'MiniMax M2.7' },
@@ -163,142 +167,11 @@ function shuffled(arr) {
   return a;
 }
 
-const LEGACY_MESSAGES_KEY = 'nvidia_chat_messages';
-const LEGACY_MODEL_KEY = 'nvidia_chat_model';
-const SESSIONS_KEY = 'nvidia_chat_sessions';
-const ACTIVE_SESSION_KEY = 'nvidia_chat_active_session';
-const LAST_MODE_KEY = 'nvidia_chat_last_mode';
 const PHONE_BREAKPOINT = 640;
 const TABLET_BREAKPOINT = 768;
 const DOCKED_LAYOUT_BREAKPOINT = 1100;
 const APP_BG_COLOR = '#f5f5fa';
 const APP_SURFACE_COLOR = '#ffffff';
-
-// 会话 id 会同时承担 React key、本地持久化索引、切换会话时的主键。
-// 这里不要求全局唯一，只要在当前浏览器存储范围内稳定即可。
-function generateSessionId() {
-  return `session_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-// 浏览器本地存储里的消息历史可能来自旧版本、异常写入，或者手工改动。
-// 统一做一次清洗，后面的 UI/流式更新逻辑就可以直接假设结构正常。
-function normalizeMessages(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .filter(item => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string')
-    .map(item => ({
-      role: item.role,
-      content: item.content,
-      ...(item.ts ? { ts: item.ts } : {}),
-    }));
-}
-
-function createSession({
-  id = generateSessionId(),
-  messages = [],
-  model,
-  agentTrace = [],
-  createdAt = Date.now(),
-  updatedAt = Date.now(),
-} = {}) {
-  return {
-    id,
-    messages: normalizeMessages(messages),
-    model: model || DEFAULT_MODELS[0].id,
-    agentTrace: Array.isArray(agentTrace) ? agentTrace : [],
-    createdAt,
-    updatedAt,
-  };
-}
-
-// 统一修正整个聊天状态的外形：
-// 1. sessions 至少保留一个
-// 2. activeSessionId 必须落在现有 sessions 里
-// 3. 每个 session 都走 createSession，保证字段完整
-function normalizeChatState(rawState) {
-  const sessions = Array.isArray(rawState?.sessions)
-    ? rawState.sessions
-        .map(session => {
-          if (!session || typeof session !== 'object') {
-            return null;
-          }
-
-          return createSession({
-            id: typeof session.id === 'string' && session.id ? session.id : undefined,
-            messages: session.messages,
-            model: session.model,
-            agentTrace: session.agentTrace,
-            createdAt: Number.isFinite(session.createdAt) ? session.createdAt : Date.now(),
-            updatedAt: Number.isFinite(session.updatedAt) ? session.updatedAt : Date.now(),
-          });
-        })
-        .filter(Boolean)
-    : [];
-
-  const nextSessions = sessions.length > 0 ? sessions : [createSession()];
-  const activeSessionId = nextSessions.some(session => session.id === rawState?.activeSessionId)
-    ? rawState.activeSessionId
-    : nextSessions[0].id;
-
-  return { sessions: nextSessions, activeSessionId };
-}
-
-// 首先尝试读取新版多会话结构；如果不存在，再从旧版单会话存储迁移。
-// 这样老用户刷新后不会丢历史，同时后续代码始终只处理新版状态。
-function loadChatState() {
-  try {
-    const storedSessions = JSON.parse(localStorage.getItem(SESSIONS_KEY) || 'null');
-    if (Array.isArray(storedSessions) && storedSessions.length > 0) {
-      return normalizeChatState({
-        sessions: storedSessions,
-        activeSessionId: localStorage.getItem(ACTIVE_SESSION_KEY),
-      });
-    }
-  } catch {
-    // ignore malformed storage and fall back to migration/default state
-  }
-
-  let legacyMessages = [];
-  try {
-    legacyMessages = JSON.parse(localStorage.getItem(LEGACY_MESSAGES_KEY) || '[]');
-  } catch {
-    legacyMessages = [];
-  }
-
-  const migratedSession = createSession({
-    messages: legacyMessages,
-    model: localStorage.getItem(LEGACY_MODEL_KEY) || DEFAULT_MODELS[0].id,
-  });
-
-  return normalizeChatState({
-    sessions: [migratedSession],
-    activeSessionId: migratedSession.id,
-  });
-}
-
-// 对单个 session 做浅更新，同时刷新 updatedAt，保证会话排序或后续扩展
-// 可以依赖这个时间戳，而不是到处手动补 Date.now()。
-function touchSession(session, patch = {}) {
-  return {
-    ...session,
-    ...patch,
-    updatedAt: Date.now(),
-  };
-}
-
-function getSessionTitle(messages) {
-  const firstUserMessage = messages.find(item => item.role === 'user' && item.content.trim());
-  if (!firstUserMessage) {
-    return '新对话';
-  }
-
-  const text = firstUserMessage.content.replace(/\s+/g, ' ').trim();
-  return text.length > 20 ? `${text.slice(0, 20)}…` : text;
-}
-
 
 function formatMsgTime(ts) {
   if (!ts) return '';
@@ -309,190 +182,6 @@ function formatMsgTime(ts) {
     hour12: false,
     timeZone: 'Asia/Shanghai',
   }).format(ts);
-}
-
-// 通用 SSE 读取器。Chat / Agent 两种流式接口都走这里，
-// 上层只关心“每收到一个 data 事件该怎么处理”。
-async function streamSseJson({ url, body, signal, onEvent }) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal,
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    try {
-      const parsed = JSON.parse(errorText);
-      throw new Error(parsed.error || `HTTP ${res.status}`);
-    } catch (parseErr) {
-      if (parseErr.message && !parseErr.message.startsWith('HTTP')) throw parseErr;
-      throw new Error(errorText || `HTTP ${res.status}`);
-    }
-  }
-
-  if (!res.body) {
-    throw new Error('响应流不可用');
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  const handleEvent = async rawEvent => {
-    const line = rawEvent
-      .split('\n')
-      .map(item => item.trim())
-      .find(item => item.startsWith('data: '));
-
-    if (!line) {
-      return;
-    }
-
-    const json = JSON.parse(line.slice(6));
-    if (json.error && !json.type) {
-      throw new Error(json.error);
-    }
-    await onEvent?.(json);
-  };
-
-  const flushBuffer = async final => {
-    const events = buffer.split('\n\n');
-    buffer = final ? '' : events.pop() ?? '';
-    for (const rawEvent of events) {
-      if (rawEvent.trim()) {
-        await handleEvent(rawEvent);
-      }
-    }
-  };
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-    buffer += decoder.decode(value, { stream: true });
-    await flushBuffer(false);
-  }
-
-  buffer += decoder.decode();
-  await flushBuffer(true);
-}
-
-// 普通对话的流式包装。它只负责把 token 增量回调给调用方，
-// 不关心 UI 更新方式，方便 sendChatMessage 统一处理消息替换。
-async function streamChatCompletion({
-  messages,
-  model,
-  signal,
-  temperature = 1,
-  top_p = 0.95,
-  max_tokens = 8192,
-  onContent,
-  onDone,
-}) {
-  let donePayload = null;
-
-  await streamSseJson({
-    url: API_URL,
-    body: { messages, model, temperature, top_p, max_tokens },
-    signal,
-    onEvent(json) {
-      if (json.content) {
-        onContent?.(json.content);
-      }
-      if (json.done) {
-        donePayload = json;
-        onDone?.(json);
-      }
-    },
-  });
-
-  return donePayload;
-}
-
-// Agent 的首个 POST 既负责发起任务，也承载最初的一段 SSE。
-// 如果这段连接中途断开，但服务端 run 已经创建成功，就退化为
-// 通过 runId 继续订阅 /stream/:runId，而不是直接把整次任务判失败。
-async function streamAgentRun({ task, model, models, strategy, memory, signal, onEvent, messages, ...extra }) {
-  let runId = null;
-  let gotDone = false;
-
-  const wrappedEvent = (event) => {
-    if (event.runId) runId = event.runId;
-    if (event.type === 'done' || event.type === 'error') gotDone = true;
-    onEvent(event);
-  };
-
-  try {
-    await streamSseJson({
-      url: AGENT_API_URL,
-      body: { task, model, models, strategy, memory, messages, ...extra },
-      signal,
-      onEvent: wrappedEvent,
-    });
-  } catch {
-    // initial POST may fail/disconnect, fall through to reconnect
-  }
-
-  // If SSE disconnected before done, reconnect to the stream
-  if (!gotDone && runId && !signal.aborted) {
-    try {
-      const res = await fetch(`/api/agent/stream/${runId}`, { signal });
-      if (!res.ok) return;
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          const dataLine = line.replace(/^data:\s*/, '');
-          if (!dataLine || dataLine === '[DONE]') continue;
-          try {
-            const event = JSON.parse(dataLine);
-            wrappedEvent(event);
-          } catch { /* skip malformed */ }
-        }
-      }
-    } catch {
-      // reconnect also failed
-    }
-  }
-}
-
-async function submitAgentApproval({ runId, approvalId, decision }) {
-  const res = await fetch(AGENT_APPROVAL_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ runId, approvalId, decision }),
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(errorText || `HTTP ${res.status}`);
-  }
-
-  return res.json();
-}
-
-async function submitAgentQuestion({ runId, approvalId, response }) {
-  const res = await fetch('/api/agent/question', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ runId, approvalId, response }),
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(errorText || `HTTP ${res.status}`);
-  }
-
-  return res.json();
 }
 
 const PANEL_MIN = 280;
@@ -1822,45 +1511,70 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
 }
 
 export default function App() {
-  // chatState 是“会话级业务状态”的根对象：消息历史、会话列表、当前激活会话。
-  // 其余 state 大多是 UI 控件状态或运行时状态。
-  const [chatState, setChatState] = useState(loadChatState);
+  const {
+    setChatState,
+    sessions,
+    activeSession,
+    messages,
+    chatModel,
+    updateSession,
+  } = useChatSessions();
   const [availableModels, setAvailableModels] = useState(DEFAULT_MODELS);
   // availableModels 在首屏渲染时先用 DEFAULT_MODELS 占位；
   // modelsLoaded 用来区分“占位值”和“真实从后端拿到的列表”，
   // 避免启动阶段误把用户已选的多模型裁成一个。
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [input, setInput] = useState('');
-  const [mode, setMode] = useState(() => localStorage.getItem(LAST_MODE_KEY) || 'chat');
+  const [mode, setMode] = usePersistentState('nvidia_chat_last_mode', 'chat');
   const [suggestionSeed, setSuggestionSeed] = useState(0);
-  const [streaming, setStreaming] = useState(false);
-  const [agentRunning, setAgentRunning] = useState(false);
-  const [agentStopping, setAgentStopping] = useState(false);
-  const [_agentRunId, setAgentRunId] = useState(null);
-  const [reconnectedRun, setReconnectedRun] = useState(false);
-  const agentRunIdRef = useRef(null);
-  const [agentMemory, setAgentMemory] = useState(() => localStorage.getItem('agent_memory') !== 'false');
-  const [agentTrace, setAgentTrace] = useState([]);
+  const {
+    streaming,
+    setStreaming,
+    agentRunning,
+    setAgentRunning,
+    agentStopping,
+    setAgentStopping,
+    setAgentRunId,
+    reconnectedRun,
+    setReconnectedRun,
+    agentTrace,
+    setAgentTrace,
+    pendingApproval,
+    setPendingApproval,
+    approvalSubmitting,
+    setApprovalSubmitting,
+    agentCollapsed,
+    setAgentCollapsed,
+    showMemoryPanel,
+    setShowMemoryPanel,
+    rollbackLoading,
+    setRollbackLoading,
+    agentMobileTab,
+    setAgentMobileTab,
+    pendingQuestion,
+    setPendingQuestion,
+    questionSubmitting,
+    setQuestionSubmitting,
+    agentStartedAt,
+    setAgentStartedAt,
+    agentRunIdRef,
+    agentAbortRef,
+    approvalRequestRef,
+    questionRequestRef,
+    touchStartRef,
+    reconnectTaskRef,
+    lastAgentTaskRef,
+  } = useAgentRun();
+  const [agentMemory, setAgentMemory] = usePersistentState('agent_memory', true, booleanStorage);
   const [showReset, setShowReset] = useState(false);
-  const [pendingApproval, setPendingApproval] = useState(null);
-  const [approvalSubmitting, setApprovalSubmitting] = useState(false);
-  const [agentCollapsed, setAgentCollapsed] = useState(false);
-  const [showMemoryPanel, setShowMemoryPanel] = useState(false);
-  const [rollbackLoading, setRollbackLoading] = useState(false);
-  const [agentMobileTab, setAgentMobileTab] = useState('agent');
-  const touchStartRef = useRef(null);
-  const [pendingQuestion, setPendingQuestion] = useState(null);
-  const [questionSubmitting, setQuestionSubmitting] = useState(false);
-  const [showSessions, setShowSessions] = useState(window.innerWidth >= DOCKED_LAYOUT_BREAKPOINT);
-  const [agentStartedAt, setAgentStartedAt] = useState(null);
+  const { showSessions, setShowSessions } = useResponsiveLayout({
+    dockedBreakpoint: DOCKED_LAYOUT_BREAKPOINT,
+    tabletBreakpoint: TABLET_BREAKPOINT,
+    panelSizeKey: PANEL_SIZE_KEY,
+  });
   // Agent 的模型集合、策略、headless、memory 目前是“应用级偏好”，
   // 不跟随 chat session 存储；chat session 只保存单模型对话所用的 model。
-  const [selectedAgentModels, setSelectedAgentModels] = useState(() => {
-    try {
-      const saved = localStorage.getItem('agent_models');
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
+  const [selectedAgentModels, setSelectedAgentModels] = usePersistentState('agent_models', [], jsonStorage);
   // Filter out models no longer available
   useEffect(() => {
     if (!modelsLoaded) {
@@ -1873,22 +1587,14 @@ export default function App() {
       const valid = selectedAgentModels.filter(m => availableModels.some(avail => avail.id === m));
       if (valid.length !== selectedAgentModels.length) {
         setSelectedAgentModels(valid);
-        localStorage.setItem('agent_models', JSON.stringify(valid));
       }
     }
-  }, [availableModels, modelsLoaded, selectedAgentModels]);
-  const [agentStrategy, setAgentStrategy] = useState(() => localStorage.getItem('agent_strategy') || 'race');
+  }, [availableModels, modelsLoaded, selectedAgentModels, setSelectedAgentModels]);
+  const [agentStrategy, setAgentStrategy] = usePersistentState('agent_strategy', 'race');
 
   const abortRef = useRef(null);
-  const agentAbortRef = useRef(null);
-  // 当前待审批/待回答的问题不只要进 state 展示，还要持有 resolve，
-  // 方便 UI 按钮点击后继续推进被 Promise 阻塞的 Agent 流程。
-  const approvalRequestRef = useRef(null);
-  const questionRequestRef = useRef(null);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
-  const reconnectTaskRef = useRef(null);
-  const lastAgentTaskRef = useRef(null);
 
   // 拉取后端可用模型。这里除了更新下拉/模型标签，
   // 还要顺手修正那些引用了已下线模型的历史聊天会话。
@@ -1916,26 +1622,10 @@ export default function App() {
       .finally(() => {
         setModelsLoaded(true);
       });
-  }, []);
+  }, [setChatState]);
 
-  const { sessions, activeSessionId } = chatState;
-  const activeSession = sessions.find(session => session.id === activeSessionId) || sessions[0];
-  const messages = activeSession.messages;
-  const chatModel = activeSession.model;
   const selectedChatModelLabel = availableModels.find(item => item.id === chatModel)?.label || chatModel;
   const sessionLocked = streaming || agentRunning;
-
-  // 会话历史和当前激活会话 id 都是持久化状态；这里统一落盘。
-  useEffect(() => {
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
-    localStorage.setItem(ACTIVE_SESSION_KEY, activeSession.id);
-    localStorage.removeItem(LEGACY_MESSAGES_KEY);
-    localStorage.removeItem(LEGACY_MODEL_KEY);
-  }, [activeSession.id, sessions]);
-
-  useEffect(() => {
-    localStorage.setItem(LAST_MODE_KEY, mode);
-  }, [mode]);
 
   // 在移动端/窄屏时，会话侧栏和 Agent 面板会改变页面主色块区域。
   // 同步 <meta name="theme-color"> 是为了让浏览器地址栏颜色也跟着切换。
@@ -2105,6 +1795,8 @@ export default function App() {
       aborted = true;
       controller.abort();
     };
+  // 这段只负责页面首次加载后的运行态接回；依赖更新不应该重新订阅同一个 run。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -2132,6 +1824,8 @@ export default function App() {
     setAgentStartedAt(null);
     setPendingApproval(null);
     approvalRequestRef.current = null;
+  // 这里按会话切换同步 trace，不能跟随消息增量每次重置运行态。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession.id]);
 
   // Keyboard shortcuts: Cmd/Ctrl+Shift+E collapse panel, Cmd/Ctrl+Shift+M toggle memory
@@ -2151,7 +1845,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [mode]);
+  }, [mode, setAgentCollapsed, setShowMemoryPanel, setShowSessions, showMemoryPanel]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -2174,49 +1868,7 @@ export default function App() {
       agentAbortRef.current?.abort();
       approvalRequestRef.current?.resolve?.('reject');
     };
-  }, []);
-
-  const updateSession = (sessionId, updater) => {
-    setChatState(prev =>
-      normalizeChatState({
-        ...prev,
-        sessions: prev.sessions.map(session => (session.id === sessionId ? updater(session) : session)),
-      })
-    );
-  };
-
-  // Restore saved agent panel width on mount
-  useEffect(() => {
-    const saved = localStorage.getItem(PANEL_SIZE_KEY);
-    if (saved && window.innerWidth >= DOCKED_LAYOUT_BREAKPOINT) {
-      const panel = document.querySelector('.layout-body > .agent-panel-wrap');
-      if (panel) panel.style.flex = `0 0 ${saved}px`;
-    }
-  }, []);
-
-  useEffect(() => {
-    // 这里统一处理窗口宽度变化带来的布局状态同步：
-    // - 面板宽度在桌面端恢复拖拽值
-    // - 平板/手机端自动关闭侧栏
-    const syncResponsiveState = () => {
-      const panel = document.querySelector('.layout-body > .agent-panel-wrap');
-      if (panel) {
-        if (window.innerWidth >= DOCKED_LAYOUT_BREAKPOINT) {
-          const saved = localStorage.getItem(PANEL_SIZE_KEY);
-          panel.style.flex = saved ? `0 0 ${saved}px` : '';
-        } else {
-          panel.style.flex = '';
-        }
-      }
-
-      if (window.innerWidth < TABLET_BREAKPOINT) {
-        setShowSessions(false);
-      }
-    };
-
-    window.addEventListener('resize', syncResponsiveState);
-    return () => window.removeEventListener('resize', syncResponsiveState);
-  }, []);
+  }, [agentAbortRef, approvalRequestRef]);
 
   const stopGeneration = () => abortRef.current?.abort();
   const stopAgent = () => {
@@ -2672,6 +2324,8 @@ export default function App() {
   const sessionStarted = messages.length > 0;
 
   const suggestions = useMemo(() => {
+    void activeSession.id;
+    void suggestionSeed;
     const pool = SUGGESTIONS[mode];
     const count = mode === 'agent' ? 8 : 4;
     return shuffled(pool).slice(0, count);
@@ -2691,7 +2345,6 @@ export default function App() {
   const toggleAgentModel = id => {
     setSelectedAgentModels(prev => {
       const next = prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id];
-      localStorage.setItem('agent_models', JSON.stringify(next));
       return next;
     });
   };
@@ -2704,7 +2357,6 @@ export default function App() {
       const swap = idx + dir;
       if (swap < 0 || swap >= next.length) return prev;
       [next[idx], next[swap]] = [next[swap], next[idx]];
-      localStorage.setItem('agent_models', JSON.stringify(next));
       return next;
     });
   };
@@ -2741,13 +2393,13 @@ export default function App() {
           <div className="strategy-toggle">
             <button
               className={`strategy-btn ${agentStrategy === 'race' ? 'active' : ''}`}
-              onClick={() => { setAgentStrategy('race'); localStorage.setItem('agent_strategy', 'race'); }}
+              onClick={() => setAgentStrategy('race')}
               disabled={sessionLocked}
               title="按优先级分批启动，先到先得"
             >竞速</button>
             <button
               className={`strategy-btn ${agentStrategy === 'vote' ? 'active' : ''}`}
-              onClick={() => { setAgentStrategy('vote'); localStorage.setItem('agent_strategy', 'vote'); }}
+              onClick={() => setAgentStrategy('vote')}
               disabled={sessionLocked}
               title="等待所有模型完成，投票选最优"
             >汇总</button>
@@ -2778,7 +2430,7 @@ export default function App() {
   const memoryToggle = mode === 'agent' && !sessionStarted && (
     <button
       className={`toolbar-chip ${agentMemory ? 'active' : ''}`}
-      onClick={() => { setAgentMemory(v => { const n = !v; localStorage.setItem('agent_memory', String(n)); return n; }); }}
+      onClick={() => setAgentMemory(v => !v)}
       title={agentMemory ? '使用历史记忆辅助任务' : '不使用记忆'}
     >
       <Brain size={12} /> {agentMemory ? '记忆开' : '记忆关'}
@@ -2790,7 +2442,7 @@ export default function App() {
   return (
     <ErrorBoundary>
     <div className="app-shell">
-      <div className={`sidebar ${showSessions ? 'open' : ''}`}>
+      <SessionSidebar open={showSessions} onClose={() => setShowSessions(false)}>
         <SessionList
           sessions={sessions}
           activeSessionId={activeSession.id}
@@ -2803,12 +2455,7 @@ export default function App() {
           showMemoryPanel={showMemoryPanel}
           onToggleMemory={() => setShowMemoryPanel(v => !v)}
         />
-      </div>
-      <button
-        className={`sidebar-backdrop ${showSessions ? 'visible' : ''}`}
-        onClick={() => setShowSessions(false)}
-        aria-label="关闭会话列表"
-      />
+      </SessionSidebar>
 
       <div className="main-area">
       {showHero ? (
@@ -2892,37 +2539,13 @@ export default function App() {
 
           <div className={`layout-body ${mode === 'agent' ? 'agent-layout' : 'chat-layout'}`}>
           {mode === 'agent' && (
-            <>
-              <div className="agent-mobile-tabs">
-                <button className={`agent-mobile-tab ${agentMobileTab === 'agent' ? 'active' : ''}`} onClick={() => setAgentMobileTab('agent')}>
-                  Agent{agentRunning && <span className="tab-status-dot" />}
-                </button>
-                {agentTrace.length > 0 && (() => {
-                  const lastStep = agentTrace.reduce((max, e) => (e.step != null ? Math.max(max, e.step) : max), 0);
-                  const totalTokens = agentTrace.reduce((sum, e) => {
-                    if (e.type === 'step' && e.stage === 'action' && e.usage) return sum + e.usage.prompt_tokens + e.usage.completion_tokens;
-                    return sum;
-                  }, 0);
-                  const doneEvent = [...agentTrace].reverse().find(e => e.type === 'done');
-                  const stepCount = doneEvent?.meta?.step_count || lastStep;
-                  return (
-                    <div className="agent-mobile-metrics">
-                      {lastStep > 0 && <span className="agent-mobile-metric">Step {lastStep}/{stepCount}</span>}
-                      {totalTokens > 0 && <span className="agent-mobile-metric">{totalTokens > 999 ? `${(totalTokens / 1000).toFixed(1)}k` : totalTokens} tok</span>}
-                    </div>
-                  );
-                })()}
-                <button className={`agent-mobile-tab ${agentMobileTab === 'chat' ? 'active' : ''}`} onClick={() => setAgentMobileTab('chat')}>对话</button>
-              </div>
-              <div className={`agent-panel-wrap ${agentMobileTab === 'chat' ? 'mobile-hidden' : ''}`}
-                onTouchStart={e => { touchStartRef.current = e.touches[0].clientX; }}
-                onTouchEnd={e => {
-                  if (touchStartRef.current == null) return;
-                  const delta = e.changedTouches[0].clientX - touchStartRef.current;
-                  if (delta < -60 && agentMobileTab === 'agent') setAgentMobileTab('chat');
-                  touchStartRef.current = null;
-                }}
-              >
+            <AgentPane
+              agentMobileTab={agentMobileTab}
+              setAgentMobileTab={setAgentMobileTab}
+              agentRunning={agentRunning}
+              agentTrace={agentTrace}
+              touchStartRef={touchStartRef}
+              agentPanel={(
                 <AgentPanel
                   mode={mode}
                   running={agentRunning}
@@ -2937,69 +2560,33 @@ export default function App() {
                   onRollback={handleRollback}
                   rollbackLoading={rollbackLoading}
                 />
-              </div>
-
-              <ResizeDivider side="agent" />
-            </>
+              )}
+              resizeDivider={<ResizeDivider side="agent" />}
+            />
           )}
 
           {messages.length > 0 && (
-            <div className={`chat-panel-wrap ${mode === 'agent' && agentMobileTab === 'agent' ? 'mobile-hidden' : ''}`}
-              onTouchStart={e => { touchStartRef.current = e.touches[0].clientX; }}
-              onTouchEnd={e => {
-                if (touchStartRef.current == null) return;
-                const delta = e.changedTouches[0].clientX - touchStartRef.current;
-                if (delta > 60 && agentMobileTab === 'chat') setAgentMobileTab('agent');
-                touchStartRef.current = null;
-              }}
-            >
-              <div className="messages">
-              {messages.map((msg, i) => (
-                <div key={i} className={`bubble-row ${msg.role}`}>
-                  {msg.role === 'assistant' && (
-                    <>
-                      <div className={`bubble assistant ${hasThinkContent(msg.content) ? 'has-think' : ''}`}>
-                        <MessageContent role="assistant" content={msg.content} showCursor={streaming && i === messages.length - 1} />
-                        {msg.ts && <div className="msg-time">{formatMsgTime(msg.ts)}</div>}
-                      </div>
-                      <CopyButton text={msg.content} />
-                    </>
-                  )}
-                  {msg.role === 'user' && (
-                    <>
-                      <CopyButton text={msg.content} />
-                      <div className="bubble user">
-                        <MessageContent role="user" content={msg.content} />
-                        {msg.ts && <div className="msg-time">{formatMsgTime(msg.ts)}</div>}
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
-              <div ref={bottomRef} />
-              <div className="input-area">
-                <div className="input-card">
-                  <textarea
-                    ref={textareaRef}
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder={
-                      mode === 'agent'
-                        ? '描述要让 Agent 完成的任务…'
-                        : '输入消息…'
-                    }
-                    rows={1}
-                    disabled={sessionLocked}
-                  />
-                  <div className="input-toolbar">
-                    {memoryToggle}
-                    {sendButton}
-                  </div>
-                </div>
-              </div>
-              </div>
-            </div>
+            <ChatPane
+              hidden={mode === 'agent' && agentMobileTab === 'agent'}
+              messages={messages}
+              streaming={streaming}
+              bottomRef={bottomRef}
+              textareaRef={textareaRef}
+              inputValue={input}
+              setInput={setInput}
+              handleKeyDown={handleKeyDown}
+              placeholder={mode === 'agent' ? '描述要让 Agent 完成的任务…' : '输入消息…'}
+              disabled={sessionLocked}
+              memoryToggle={memoryToggle}
+              sendButton={sendButton}
+              touchStartRef={touchStartRef}
+              agentMobileTab={agentMobileTab}
+              setAgentMobileTab={setAgentMobileTab}
+              renderMessageContent={props => <MessageContent {...props} />}
+              renderCopyButton={props => <CopyButton {...props} />}
+              hasThinkContent={hasThinkContent}
+              formatMsgTime={formatMsgTime}
+            />
           )}
 
           </div>
