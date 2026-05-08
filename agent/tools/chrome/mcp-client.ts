@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import fs from 'node:fs';
 import { log } from '../../../helpers/logger.ts';
 
 const DEFAULT_PROTOCOL_VERSIONS = ['2025-03-26', '2024-11-05'];
@@ -8,8 +9,9 @@ const DEFAULT_SSE_PORT = 3099;
 const DEFAULT_SSE_PATH = '/sse';
 const SSE_ENDPOINT_WAIT_MS = 250;
 const DEFAULT_STDIO_COMMAND = 'npx';
-const DEFAULT_STDIO_ARGS = ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'];
+const DEFAULT_STDIO_ARGS = ['-y', 'chrome-devtools-mcp@latest'];
 const CLIENT_INFO = { name: 'sagent', version: '1.0.0' };
+const IS_WINDOWS = process.platform === 'win32';
 
 let sharedClientPromise = null;
 let sharedClientKey = '';
@@ -23,6 +25,26 @@ function toAbsolutePath(rawPath, fallback = process.cwd()) {
     return fallback;
   }
   return path.isAbsolute(rawPath) ? path.normalize(rawPath) : path.resolve(fallback, rawPath);
+}
+
+function resolveCommandOnWindows(command, args) {
+  if (!IS_WINDOWS) {
+    return { command, args };
+  }
+  if (path.extname(command)) {
+    return { command, args };
+  }
+  const binDir = path.resolve('node_modules', '.bin');
+  const base = path.basename(command);
+  const cmdPath = path.join(binDir, base + '.cmd');
+  if (!fs.existsSync(cmdPath)) {
+    return { command, args };
+  }
+  const pkgJs = path.resolve('node_modules', base, 'build', 'src', 'bin', base + '.js');
+  if (fs.existsSync(pkgJs)) {
+    return { command: 'node', args: [pkgJs, ...args] };
+  }
+  return { command, args };
 }
 
 function parseArgs(value) {
@@ -255,11 +277,88 @@ class ChromeMcpClient {
     return tools.find(tool => tool?.name === toolName) || null;
   }
 
-  async callTool(toolName, args) {
-    return this.transport.request('tools/call', {
+  async callTool(toolName, toolArgs) {
+    const doCall = async () => this.transport.request('tools/call', {
       name: toolName,
-      arguments: args || {},
+      arguments: toolArgs || {},
     });
+
+    try {
+      const result = await doCall();
+      // MCP returns tool errors as { isError: true } in a successful JSON-RPC response,
+      // not as a JSON-RPC error — so we must check result.isError explicitly.
+      if (result?.isError && this._isChromeConnectionResult(result)) {
+        return await this._retryWithoutAutoConnect(toolName, toolArgs);
+      }
+      return result;
+    } catch (err) {
+      if (this._isChromeConnectionError(err)) {
+        return await this._retryWithoutAutoConnect(toolName, toolArgs);
+      }
+      throw err;
+    }
+  }
+
+  async _retryWithoutAutoConnect(toolName, toolArgs) {
+    if (!this._stripAutoConnect()) {
+      throw new Error('Chrome MCP 连接失败且无法回退');
+    }
+    log.info(`[Chrome MCP] 工具调用 ${toolName} 连接失败，移除 --autoConnect 重试（将自动启动浏览器）`);
+    const client = await getSharedChromeMcpClient(this.config);
+
+    // Without --autoConnect, the MCP server launches Chrome in the background.
+    // Chrome needs time to start, so retry the tool call on error.
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 3000;
+
+    for (let attempt = 0; ; attempt++) {
+      const result = await client.transport.request('tools/call', {
+        name: toolName,
+        arguments: toolArgs || {},
+      });
+
+      if (!result?.isError) {
+        return result;
+      }
+
+      if (attempt >= MAX_RETRIES - 1) {
+        log.info(`[Chrome MCP] 工具调用 ${toolName} 浏览器启动后仍失败（已重试 ${MAX_RETRIES} 次）`);
+        return result;
+      }
+
+      log.info(`[Chrome MCP] 等待浏览器启动，${RETRY_DELAY_MS}ms 后重试 ${toolName}（第 ${attempt + 1}/${MAX_RETRIES} 次）`);
+      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+    }
+  }
+
+  _isChromeConnectionResult(result) {
+    const text = Array.isArray(result?.content)
+      ? result.content.map(c => c?.text || '').join(' ')
+      : '';
+    return text.includes('Could not connect to Chrome')
+      || text.includes('DevToolsActivePort')
+      || text.includes('Could not find');
+  }
+
+  _isChromeConnectionError(err) {
+    const msg = err?.message || '';
+    return msg.includes('Could not connect to Chrome')
+      || msg.includes('DevToolsActivePort')
+      || msg.includes('Could not find');
+  }
+
+  _stripAutoConnect() {
+    const config = this.transport?.config;
+    if (!config || !Array.isArray(config.args) || !config.args.includes('--autoConnect')) {
+      return false;
+    }
+    config.args = config.args.filter(a => a !== '--autoConnect');
+    // Close and reset so the next request spawns a fresh MCP process without --autoConnect
+    this.transport.close?.().catch(() => {});
+    this.toolsCache = null;
+    sharedClientPromise = null;
+    sharedClientKey = '';
+    return true;
   }
 
   async close() {
@@ -289,8 +388,14 @@ class StdioTransport {
   }
 
   async ensureConnected() {
-    if (this.child) {
+    if (this.child && !this.child.stdin?.destroyed) {
       return;
+    }
+    if (this.child?.stdin?.destroyed) {
+      this.child = null;
+      this.initialized = false;
+      this.initializePromise = null;
+      this.connectPromise = null;
     }
     if (this.connectPromise) {
       return this.connectPromise;
@@ -298,7 +403,8 @@ class StdioTransport {
 
     this.connectPromise = new Promise<void>((resolve, reject) => {
       log.info(`[Chrome MCP][stdio] spawn command=${this.config.command} args=${safeJson(this.config.args)} cwd=${this.config.cwd}`);
-      const child = spawn(this.config.command, this.config.args, {
+      const resolved = resolveCommandOnWindows(this.config.command, this.config.args);
+      const child = spawn(resolved.command, resolved.args, {
         cwd: this.config.cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: process.env,
@@ -324,6 +430,7 @@ class StdioTransport {
         this.child = null;
         this.initialized = false;
         this.initializePromise = null;
+        this.connectPromise = null;
       });
 
       this.child = child;
@@ -443,10 +550,18 @@ class StdioTransport {
 
   async sendRaw(message) {
     await this.ensureConnected();
+    if (!this.child || this.child.stdin?.destroyed) {
+      throw new Error('Chrome MCP stdio 连接已断开，请重试');
+    }
     const payload = Buffer.from(JSON.stringify(message) + '\n', 'utf8');
     return new Promise<void>((resolve, reject) => {
       this.child.stdin.write(payload, err => {
         if (err) {
+          if (err.code === 'ERR_STREAM_DESTROYED') {
+            this.child = null;
+            this.initialized = false;
+            this.initializePromise = null;
+          }
           reject(err);
           return;
         }
@@ -479,6 +594,30 @@ class StdioTransport {
           return;
         } catch (err) {
           lastError = err;
+        }
+      }
+
+      // If --autoConnect was used and failed, retry without it so the MCP server
+      // launches its own Chrome instance in the background
+      if (this.config.args?.includes('--autoConnect')) {
+        log.info('[Chrome MCP][stdio] --autoConnect 连接失败，移除该参数重试（将自动启动浏览器）');
+        await this.close();
+        this.config = { ...this.config, args: this.config.args.filter(a => a !== '--autoConnect') };
+        await this.ensureConnected();
+
+        for (const version of DEFAULT_PROTOCOL_VERSIONS) {
+          try {
+            await this.sendRequest('initialize', {
+              protocolVersion: version,
+              capabilities: {},
+              clientInfo: CLIENT_INFO,
+            }, { skipInit: true });
+            await this.sendNotification('notifications/initialized', {});
+            this.initialized = true;
+            return;
+          } catch (err) {
+            lastError = err;
+          }
         }
       }
 
@@ -885,10 +1024,12 @@ export function createChromeMcpClient(config = loadChromeMcpConfig()) {
 }
 
 export async function getSharedChromeMcpClient(config = loadChromeMcpConfig()) {
-  const key = clientKey(config);
-  if (sharedClientPromise && sharedClientKey === key) {
+  // Reuse existing client even if config key differs (e.g. _stripAutoConnect removed
+  // --autoConnect at runtime but loadChromeMcpConfig() re-reads it from .env).
+  if (sharedClientPromise) {
     return sharedClientPromise;
   }
+  const key = clientKey(config);
 
   if (sharedClientPromise && sharedClientKey !== key) {
     try {

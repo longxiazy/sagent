@@ -1,8 +1,8 @@
 import { log } from './logger.ts';
 
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 4;
 const BASE_DELAY_MS = 1000;
-const RATE_LIMIT_BASE_MS = 5000;
+const RATE_LIMIT_BASE_MS = 30000;
 
 function isRetryableError(err) {
   const msg = err?.message || '';
