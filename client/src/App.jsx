@@ -1396,11 +1396,6 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
                         })}
                       </div>
                     )}
-                    {event.answer && (
-                      <div className="agent-done-answer">
-                        <MarkdownBlock content={event.answer} />
-                      </div>
-                    )}
                   </div>
                 </>
               )}
