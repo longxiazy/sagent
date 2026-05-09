@@ -12,6 +12,7 @@
 import { mkdir, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { log } from '../../helpers/logger.ts';
+import { extractErrorDiagnostics, formatErrorDiagnostics } from '../../helpers/retry.ts';
 
 let logDir = 'data/llm-logs';
 
@@ -69,4 +70,10 @@ export function logLlmResponse(model, response) {
   enqueueLog(join(todayDir(), modelFileName(model)), line);
   const tokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || usage.output_tokens || 0);
   log.debug(`[LLM] ← ${model} tokens=${tokens}`);
+}
+
+export function logLlmError(model, err, context = {}) {
+  const line = JSON.stringify({ time: timeStr(), type: 'error', model, context, error: extractErrorDiagnostics(err) });
+  enqueueLog(join(todayDir(), modelFileName(model)), line);
+  log.warn(`[LLM] ✕ ${model} ${formatErrorDiagnostics(err)}`);
 }
