@@ -36,7 +36,7 @@ import {
 } from "./checkpoint.js";
 
 const MAX_HISTORY_STEPS = Number(process.env.AGENT_MAX_HISTORY_STEPS || 20);
-const MAX_RESULT_CHARS = Number(process.env.AGENT_MAX_RESULT_CHARS || 1000);
+const MAX_RESULT_CHARS = Number(process.env.AGENT_MAX_RESULT_CHARS || 5000);
 
 function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
   // Progressive truncation: recent steps keep more context, old steps get shorter results
@@ -44,7 +44,7 @@ function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
     // Last 3 steps: full (up to MAX_RESULT_CHARS)
     // Steps 4-10: 500 chars
     // Steps 11+: 200 chars
-    const limit = remaining <= 3 ? MAX_RESULT_CHARS : remaining <= 10 ? 500 : 200;
+    const limit = remaining <= 3 ? MAX_RESULT_CHARS : remaining <= 10 ? 2500 : 1000;
     const str = h.result == null ? '' : String(h.result);
     if (str.length <= limit) return h;
     return { ...h, result: str.slice(0, limit) + '…[truncated]' };

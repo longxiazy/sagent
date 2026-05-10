@@ -1753,7 +1753,7 @@ export default function App() {
               if (event.type === 'rollback') {
                 setAgentTrace(prev => {
                   const target = event.targetStep;
-                  return prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step <= target);
+                  return prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step < target);
                 });
               }
 
@@ -1886,7 +1886,7 @@ export default function App() {
 
   const handleRollback = async targetStep => {
     const rid = agentRunIdRef.current;
-    console.log('[Rollback] targetStep:', targetStep, 'runId:', rid, 'running:', agentRunning);
+    console.log('[Rollback] targetStep:', targetStep, 'runId:', rid, 'running:', agentRunning, 'traceLen:', agentTrace.length);
     if (!rid) {
       console.warn('[Rollback] no runId, cannot rollback');
       return;
@@ -1895,6 +1895,7 @@ export default function App() {
     try {
       if (agentRunning) {
         // Running task — use pendingRollback for in-place rollback
+        console.log('[Rollback] calling POST /api/agent/rollback');
         const res = await fetch('/api/agent/rollback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1906,7 +1907,12 @@ export default function App() {
         }
       } else {
         // Finished task — restart from checkpoint
-        setAgentTrace(prev => prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step <= targetStep));
+        console.log('[Rollback] finished task, filtering trace and restarting from checkpoint');
+        setAgentTrace(prev => {
+          const filtered = prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step < targetStep);
+          console.log('[Rollback] trace filtered:', prev.length, '->', filtered.length);
+          return filtered;
+        });
         await sendAgentTask(lastAgentTaskRef.current || '继续任务', {
           fromCheckpoint: { runId: rid, step: targetStep },
         });
