@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import type { AgentRouterContext } from './agent-types.ts';
 import { removeCheckpoint, removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
+import { readTraceEvents } from '../helpers/trace-store.ts';
 import { log } from '../helpers/logger.ts';
 
-export function createAgentRunControlRouter({ agentRunStore, approvalStore, checkpointDir }: AgentRouterContext) {
+export function createAgentRunControlRouter({ agentRunStore, approvalStore, checkpointDir, memoryDir }: AgentRouterContext) {
   const router = Router();
 
   router.post('/api/agent/cancel', async (req, res) => {
@@ -45,11 +46,28 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
   });
 
   router.get('/api/agent/stream/:runId', (req, res) => {
+    (async () => {
     const { runId } = req.params;
     const run = agentRunStore.getRun(runId);
     if (!run) {
-      return res.status(404).json({ error: '运行不存在' });
+      const traceEvents = await readTraceEvents(memoryDir, runId);
+      if (traceEvents.length === 0) {
+        return res.status(404).json({ error: '运行不存在' });
+      }
+
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+      res.socket?.setNoDelay(true);
+
+      for (const event of traceEvents) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+      res.end();
+      return;
     }
+    await Promise.allSettled(run.traceWrites || []);
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -81,15 +99,23 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
       });
     }
 
-    const replayCount = run.events.length;
-    for (let i = 0; i < replayCount; i++) {
-      res.write(`data: ${JSON.stringify(run.events[i])}\n\n`);
+    const traceEvents = await readTraceEvents(memoryDir, runId);
+    const replayEvents = traceEvents.length > 0 ? traceEvents : run.events;
+    for (const event of replayEvents) {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
     }
 
     if (run.status !== 'running' || run.cancelAc.signal.aborted) {
       res.end();
     }
     return;
+    })().catch((err: any) => {
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      } else if (!res.writableEnded) {
+        res.end();
+      }
+    });
   });
 
   return router;

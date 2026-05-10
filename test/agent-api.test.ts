@@ -101,3 +101,32 @@ describe('GET /api/agent/memory', () => {
     expect(res.body.projectKnowledge).toBeDefined();
   });
 });
+
+describe('GET /api/agent/traces/:runId', () => {
+  it('returns persisted trace events for an agent run', async () => {
+    const res = await request(app)
+      .post('/api/agent')
+      .send({ task: 'trace test', model: 'test-model', memory: false })
+      .buffer(true)
+      .parse((response, callback) => {
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', chunk => {
+          body += chunk;
+        });
+        response.on('end', () => callback(null, body));
+      });
+
+    expect(res.status).toBe(200);
+    const responseText = typeof res.text === 'string' ? res.text : String(res.body || '');
+    const runIdMatch = responseText.match(/"runId":"([^"]+)"/);
+    expect(runIdMatch).toBeTruthy();
+    const runId = runIdMatch![1];
+
+    const traceRes = await request(app).get(`/api/agent/traces/${runId}`);
+    expect(traceRes.status).toBe(200);
+    expect(traceRes.body.runId).toBe(runId);
+    expect(traceRes.body.events.some((event: any) => event.type === 'status')).toBe(true);
+    expect(traceRes.body.events.some((event: any) => event.type === 'done')).toBe(true);
+  });
+});

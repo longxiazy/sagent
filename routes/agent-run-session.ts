@@ -12,6 +12,7 @@ export function createAgentRunSession({
   runId,
   startedAt,
   agentRunStore,
+  memoryDir,
 }: {
   req: any;
   res: any;
@@ -21,6 +22,7 @@ export function createAgentRunSession({
   runId: string;
   startedAt: number;
   agentRunStore: any;
+  memoryDir?: string;
 }) {
   let completedStepCount = 0;
   let observedStepCount = 0;
@@ -48,7 +50,7 @@ export function createAgentRunSession({
   );
 
   const rawSendEvent = buildSseWriter(res);
-  const baseSendEvent = createBaseEventSender(runId, agentRunStore);
+  const baseSendEvent = createBaseEventSender(runId, agentRunStore, memoryDir);
   const sendEvent = (payload: any) => {
     if (payload.type === 'step') {
       observedStepCount = Math.max(observedStepCount, payload.step || 0);

@@ -30,6 +30,7 @@ export function createSession({
   messages = [],
   model,
   agentTrace = [],
+  agentRunId = null,
   createdAt = Date.now(),
   updatedAt = Date.now(),
 } = {}) {
@@ -38,6 +39,7 @@ export function createSession({
     messages: normalizeMessages(messages),
     model: model || DEFAULT_MODEL_ID,
     agentTrace: Array.isArray(agentTrace) ? agentTrace : [],
+    agentRunId: typeof agentRunId === 'string' ? agentRunId : null,
     createdAt,
     updatedAt,
   };
@@ -56,6 +58,7 @@ export function normalizeChatState(rawState) {
             messages: session.messages,
             model: session.model,
             agentTrace: session.agentTrace,
+            agentRunId: session.agentRunId,
             createdAt: Number.isFinite(session.createdAt) ? session.createdAt : Date.now(),
             updatedAt: Number.isFinite(session.updatedAt) ? session.updatedAt : Date.now(),
           });

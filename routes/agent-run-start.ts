@@ -64,6 +64,7 @@ export function createAgentRunStartRouter({
       runId,
       startedAt,
       agentRunStore,
+      memoryDir,
     });
 
     let memory = null;

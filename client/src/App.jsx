@@ -13,7 +13,7 @@ import bash from 'highlight.js/lib/languages/bash';
 import sql from 'highlight.js/lib/languages/sql';
 import 'highlight.js/styles/github.css';
 import './App.css';
-import { streamAgentRun, streamChatCompletion, submitAgentApproval, submitAgentQuestion } from './api/streams.js';
+import { fetchAgentTrace, streamAgentRun, streamChatCompletion, submitAgentApproval, submitAgentQuestion } from './api/streams.js';
 import { AgentPane } from './components/AgentPane.jsx';
 import { ChatPane } from './components/ChatPane.jsx';
 import { SessionSidebar } from './components/SessionSidebar.jsx';
@@ -1684,6 +1684,7 @@ export default function App() {
               { role: 'user', content: task, ts: data.startedAt || Date.now() },
               { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() },
             ],
+            agentRunId: data.runId,
           });
           return normalizeChatState({
             sessions: [cleanSession, ...prev.sessions],
@@ -1768,7 +1769,7 @@ export default function App() {
                     msgs.push({ role: 'user', content: reconnectTaskRef.current || data.task || 'Agent 任务', ts: data.startedAt || Date.now() });
                     msgs.push({ role: 'assistant', content: event.answer || 'Agent 已完成任务。', ts: Date.now() });
                   }
-                  return touchSession(session, { messages: msgs });
+                  return touchSession(session, { messages: msgs, agentRunId: data.runId });
                 });
               }
 
@@ -1802,13 +1803,23 @@ export default function App() {
     // 普通切换会话时，Agent trace 跟着 active session 走；
     // 但如果当前正处在“刷新后重连中的运行态”，不要被旧 session 覆盖掉。
     if (agentRunning) return;
+    const controller = new AbortController();
     const savedTrace = activeSession.agentTrace || [];
+    const savedRunId = activeSession.agentRunId || savedTrace.find(e => e.runId)?.runId || null;
     setAgentTrace(savedTrace);
-    // Recover runId from saved trace (survives page refresh / backend restart)
-    const runEvent = savedTrace.find(e => e.runId);
-    if (runEvent) {
-      agentRunIdRef.current = runEvent.runId;
-      setAgentRunId(runEvent.runId);
+    if (savedRunId) {
+      agentRunIdRef.current = savedRunId;
+      setAgentRunId(savedRunId);
+      fetchAgentTrace(savedRunId, { signal: controller.signal })
+        .then(events => {
+          if (events.length === 0 || controller.signal.aborted) return;
+          setAgentTrace(events);
+          updateSession(activeSession.id, session => touchSession(session, {
+            agentRunId: savedRunId,
+            agentTrace: events,
+          }));
+        })
+        .catch(() => {});
     } else {
       agentRunIdRef.current = null;
       setAgentRunId(null);
@@ -1819,6 +1830,7 @@ export default function App() {
     setAgentStartedAt(null);
     setPendingApproval(null);
     approvalRequestRef.current = null;
+    return () => controller.abort();
   // 这里按会话切换同步 trace，不能跟随消息增量每次重置运行态。
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession.id]);
@@ -2118,10 +2130,14 @@ export default function App() {
       updateSession(sessionId, session =>
         touchSession(session, {
           messages: [...history, { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() }],
+          agentTrace: [],
+          agentRunId: null,
         })
       );
       setInput('');
       setAgentTrace([]);
+      agentRunIdRef.current = null;
+      setAgentRunId(null);
     } else {
       // Retry from checkpoint — keep filtered trace (handleRollback already removed steps > target)
       const cpStep = extraBody?.fromCheckpoint?.step;
@@ -2165,9 +2181,10 @@ export default function App() {
             return [...prev, event];
           });
 
-          if (event.runId && !agentRunIdRef.current) {
+          if (event.runId && event.runId !== agentRunIdRef.current) {
             agentRunIdRef.current = event.runId;
             setAgentRunId(event.runId);
+            updateSession(sessionId, session => touchSession(session, { agentRunId: event.runId }));
           }
 
           if (event.type === 'approval_required') {
@@ -2206,7 +2223,7 @@ export default function App() {
                     ts: Date.now(),
                   };
                 }
-                return touchSession(session, { messages: nextMessages, agentTrace: prev });
+                return touchSession(session, { messages: nextMessages, agentTrace: prev, agentRunId: agentRunIdRef.current });
               });
               return prev;
             });
@@ -2226,7 +2243,7 @@ export default function App() {
                     ts: Date.now(),
                   };
                 }
-                return touchSession(session, { messages: nextMessages, agentTrace: prev });
+                return touchSession(session, { messages: nextMessages, agentTrace: prev, agentRunId: agentRunIdRef.current });
               });
               return prev;
             });
@@ -2267,9 +2284,9 @@ export default function App() {
               } else {
                 next[lastIdx] = { role: 'assistant', content: `⚠️ Desktop Agent 失败：${errorEvent.error || '连接中断'}`, ts: Date.now() };
               }
-              return touchSession(session, { messages: next, agentTrace: prev });
+              return touchSession(session, { messages: next, agentTrace: prev, agentRunId: agentRunIdRef.current });
             }
-            return touchSession(session, { agentTrace: prev });
+            return touchSession(session, { agentTrace: prev, agentRunId: agentRunIdRef.current });
           });
         } else if (prev.length === 0 || !prev.some(e => e.type === 'done' || e.type === 'error')) {
           // No events received at all or SSE disconnected without done/error
@@ -2279,9 +2296,9 @@ export default function App() {
             if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].content.includes('正在执行任务')) {
               const next = [...msgs];
               next[lastIdx] = { role: 'assistant', content: '⚠️ Desktop Agent 连接中断，未收到执行结果。', ts: Date.now() };
-              return touchSession(session, { messages: next, agentTrace: prev });
+              return touchSession(session, { messages: next, agentTrace: prev, agentRunId: agentRunIdRef.current });
             }
-            return touchSession(session, { agentTrace: prev });
+            return touchSession(session, { agentTrace: prev, agentRunId: agentRunIdRef.current });
           });
         }
         return prev;

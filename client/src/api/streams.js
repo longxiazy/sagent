@@ -177,3 +177,16 @@ export async function submitAgentQuestion({ runId, approvalId, response }) {
 
   return res.json();
 }
+
+export async function fetchAgentTrace(runId, { signal } = {}) {
+  if (!runId) return [];
+
+  const res = await fetch(`/api/agent/traces/${encodeURIComponent(runId)}`, { signal });
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(errorText || `HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  return Array.isArray(data.events) ? data.events : [];
+}
