@@ -407,9 +407,10 @@ function renderMarkdown(text) {
     // unordered list
     if (/^[-*]\s/.test(line)) {
       const items = [];
-      while (i < lines.length && /^[-*]\s/.test(lines[i])) {
-        items.push(lines[i].replace(/^[-*]\s+/, ''));
-        i++;
+      while (i < lines.length) {
+        if (/^[-*]\s/.test(lines[i])) { items.push(lines[i].replace(/^[-*]\s+/, '')); i++; }
+        else if (!lines[i].trim()) { i++; }
+        else break;
       }
       blocks.push({ type: 'ul', items });
       continue;
@@ -418,9 +419,10 @@ function renderMarkdown(text) {
     // ordered list
     if (/^\d+\.\s/.test(line)) {
       const items = [];
-      while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
-        items.push(lines[i].replace(/^\d+\.\s+/, ''));
-        i++;
+      while (i < lines.length) {
+        if (/^\d+\.\s/.test(lines[i])) { items.push(lines[i].replace(/^\d+\.\s+/, '')); i++; }
+        else if (!lines[i].trim()) { i++; }
+        else break;
       }
       blocks.push({ type: 'ol', items });
       continue;
