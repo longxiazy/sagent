@@ -28,12 +28,7 @@ export function createAgentRunSession({
   let observedStepCount = 0;
   const modelsUsed = new Set();
   const stepModels: Record<number, string> = {};
-
-  req.on('close', () => {
-    if (!res.writableEnded) {
-      log.debug(`[${formatLogTime()}] POST /api/agent client_disconnected model=${model} run_id=${runId}`);
-    }
-  });
+  let sseClosed = false;
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -41,8 +36,17 @@ export function createAgentRunSession({
   res.flushHeaders();
   res.socket?.setNoDelay(true);
   const heartbeat = setInterval(() => {
-    if (!res.writableEnded) res.write(': heartbeat\n\n');
+    if (!sseClosed && !res.writableEnded) {
+      try { res.write(': heartbeat\n\n'); } catch { sseClosed = true; clearInterval(heartbeat); }
+    }
   }, 15000);
+
+  req.on('close', () => {
+    if (sseClosed) return;
+    sseClosed = true;
+    clearInterval(heartbeat);
+    log.debug(`[${formatLogTime()}] POST /api/agent client_disconnected model=${model} run_id=${runId}`);
+  });
 
   log.info(
     `[${formatLogTime()}] POST /api/agent model=${model} headless=${agentHeadless} task=${safeJson(normalizedTask)} ` +
@@ -66,10 +70,9 @@ export function createAgentRunSession({
     }
     logAgentEvent(payload);
     baseSendEvent(payload);
-    if (payload.type === 'model_plan' || payload.type === 'session_checkpoint') {
-      log.debug(`[SSE] write type=${payload.type} step=${payload.step} stage=${payload.stage ?? '-'} model=${payload.model ?? '-'} writableEnded=${res.writableEnded} writableFinished=${res.writableFinished}`);
+    if (!sseClosed && !res.writableEnded) {
+      try { rawSendEvent(payload); } catch { sseClosed = true; }
     }
-    rawSendEvent(payload);
   };
 
   sendEvent({
@@ -118,7 +121,10 @@ export function createAgentRunSession({
     log.info(`\n${box}`);
     clearInterval(heartbeat);
     approvalStore.rejectAll();
-    res.end();
+    if (!sseClosed && !res.writableEnded) {
+      try { res.end(); } catch {}
+    }
+    sseClosed = true;
   }
 
   return { sendEvent, getTrackingState, close };
