@@ -95,11 +95,13 @@ async function resumeFromCheckpoint(cp) {
   const { runId, task, model, headless, history, step, maxSteps: _maxSteps, startedAt } = cp;
   log.info(`[Resume] 恢复运行 run_id=${runId} step=${step} task=${task.slice(0, 60)}…`);
 
-  const sendEvent = createBaseEventSender(runId, agentRunStore, MEMORY_DIR);
+  // 回放历史事件不需要写 trace 文件（已经存在），只写内存 run-store 供 SSE 重连用
+  const sendEvent = createBaseEventSender(runId, agentRunStore);
+  const sendEventWithTrace = createBaseEventSender(runId, agentRunStore, MEMORY_DIR);
 
   const { systemPrompt } = await loadMemoryForPrompt(MEMORY_DIR);
 
-  // Replay historical steps so frontend sees all previous steps
+  // Replay historical steps so frontend sees all previous steps (memory-only, no trace write)
   sendEvent({ type: 'status', status: 'starting', runId, message: '准备启动桌面 Agent' });
   for (const h of history) {
     sendEvent({ type: 'step', step: h.step, stage: 'action', rationale: h.rationale, action: h.action });
@@ -122,10 +124,10 @@ async function resumeFromCheckpoint(cp) {
       initialHistory: history,
       conversationHistory: cp.conversationHistory || [],
       memory: cp.memory !== false,
-      onEvent: sendEvent,
+      onEvent: sendEventWithTrace,
       cancelSignal: new AbortController().signal,
     });
-    sendEvent({ type: 'done', runId, answer: result.answer, steps: result.steps, meta: { elapsed_ms: Date.now() - startedAt, step_count: result.steps.length } });
+    sendEventWithTrace({ type: 'done', runId, answer: result.answer, steps: result.steps, meta: { elapsed_ms: Date.now() - startedAt, step_count: result.steps.length } });
     if (cp.memory !== false) {
       try {
         const mem = await loadMemory(MEMORY_DIR);
@@ -136,7 +138,7 @@ async function resumeFromCheckpoint(cp) {
     }
   } catch (err: any) {
     log.error(`[Resume] 失败 run_id=${runId}:`, err.message);
-    sendEvent({ type: 'error', runId, error: err.message });
+    sendEventWithTrace({ type: 'error', runId, error: err.message });
   } finally {
     await cleanupAgentRun(CHECKPOINT_DIR, runId, agentRunStore);
   }

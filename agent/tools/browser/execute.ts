@@ -4,18 +4,31 @@ import { isChromeMcpEnabled } from '../chrome/mcp-client.ts';
 const ACTION_SETTLE_MS = 600;
 const NAV_RETRY_MS = 500;
 const NAV_MAX_RETRIES = 3;
+const FETCH_TIMEOUT_MS = 15000;
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    clearTimeout(timer);
+    // Give the underlying operation time to settle so WebView clears its pending state
+    return promise.catch(() => {});
+  });
+}
+
 export async function safeNavigate(view, url) {
-  for (let i = 0; i < NAV_MAX_RETRIES; i++) {
+  for (let i = 0; i < NAV_MAX_RETRIES + 5; i++) {
     try {
       return await view.navigate(url);
     } catch (err) {
-      if (/already pending/i.test(err.message) && i < NAV_MAX_RETRIES - 1) {
-        await delay(NAV_RETRY_MS);
+      if (/already pending/i.test(err.message)) {
+        await delay(1000);
         continue;
       }
       throw err;
@@ -114,7 +127,7 @@ export async function executeBrowserAction(view, action) {
 async function _executeBrowserAction(view, action) {
   if (action.type === 'navigate') {
     try {
-      await safeNavigate(view, action.url);
+      await withTimeout(safeNavigate(view, action.url), FETCH_TIMEOUT_MS, `导航超时: ${action.url}`);
       await delay(ACTION_SETTLE_MS);
       try {
         const { title, url, body } = await detectBlockedPage(view);
@@ -205,7 +218,7 @@ async function _executeBrowserAction(view, action) {
     if (!action.url) throw new Error('http_fetch 缺少 url');
     const url = /^https?:\/\//i.test(action.url) ? action.url : `https://${action.url}`;
     try {
-      await safeNavigate(view, url);
+      await withTimeout(safeNavigate(view, url), FETCH_TIMEOUT_MS, `访问超时: ${url}`);
       await delay(1000);
     } catch (err) {
       return `http_fetch ${url}: 浏览器访问失败 (${(err.message || '').slice(0, 100)})。`;
@@ -252,7 +265,7 @@ async function _executeBrowserAction(view, action) {
     for (const u of urls.slice(0, 5)) {
       const url = /^https?:\/\//i.test(u) ? u : `https://${u}`;
       try {
-        await safeNavigate(view, url);
+        await withTimeout(safeNavigate(view, url), FETCH_TIMEOUT_MS, `访问超时: ${url}`);
         await delay(1000);
         const text = await safeEvaluate(view, "document.body?.innerText || ''");
         const cleaned = text.replace(/\s+/g, ' ').trim();

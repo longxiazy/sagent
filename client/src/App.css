@@ -1130,6 +1130,8 @@ textarea {
 .md-body p { margin: 0 0 8px; }
 .md-body p:last-child { margin-bottom: 0; }
 .md-body ul, .md-body ol { padding-left: 20px; margin: 6px 0; }
+.md-body ul { list-style: disc; }
+.md-body ol { list-style: decimal; }
 .md-body li { margin: 3px 0; }
 .md-body h1, .md-body h2, .md-body h3 { font-weight: 500; margin: 12px 0 6px; }
 .md-body h1 { font-size: 17px; }
