@@ -13,7 +13,7 @@
 
 import { cleanText, safeJson } from './utils.ts';
 import { createModelResponseParser } from './nvidia-response-parsers.ts';
-import { logLlmRequest, logLlmResponse } from './llm-logger.ts';
+import { logLlmError, logLlmRequest, logLlmResponse } from './llm-logger.ts';
 import { retryAsync } from '../../helpers/retry.ts';
 import { log } from '../../helpers/logger.ts';
 
@@ -39,8 +39,23 @@ export function createJsonPlanner({
       messages,
     };
     const reqOpts = signal ? { signal } : undefined;
+    const retryContext = {
+      operation: 'desktop.plan',
+      phase: 'initial',
+      provider: 'openai-compatible',
+      model,
+      step: context.step,
+      message_count: messages.length,
+      max_tokens: maxTokens,
+    };
 
-    const response = await retryAsync(() => client.chat.completions.create(createOpts, reqOpts));
+    let response;
+    try {
+      response = await retryAsync(() => client.chat.completions.create(createOpts, reqOpts), undefined, retryContext);
+    } catch (err) {
+      logLlmError(model, err, retryContext);
+      throw err;
+    }
 
     logLlmResponse(model, response);
 
@@ -73,7 +88,16 @@ export function createJsonPlanner({
         messages: retryMessages,
       };
 
-      const retryResponse = await retryAsync(() => client.chat.completions.create(retryOpts, reqOpts));
+      const retryContext = {
+        operation: 'desktop.plan',
+        phase: 'parser-retry',
+        provider: 'openai-compatible',
+        model,
+        step: context.step,
+        message_count: retryMessages.length,
+        max_tokens: maxTokens,
+      };
+      const retryResponse = await retryAsync(() => client.chat.completions.create(retryOpts, reqOpts), undefined, retryContext);
       const retryParsed = parser(retryResponse);
 
       if (!retryParsed.parseFailed) {
@@ -81,6 +105,13 @@ export function createJsonPlanner({
         return { ...result, usage: retryParsed.usage || parsed.usage, reasoning: retryParsed.reasoning || null };
       }
     } catch (retryErr) {
+      logLlmError(model, retryErr, {
+        operation: 'desktop.plan',
+        phase: 'parser-retry',
+        provider: 'openai-compatible',
+        model,
+        step: context.step,
+      });
       log.warn(`[Planner] 重试也失败: ${retryErr.message}`);
     }
 

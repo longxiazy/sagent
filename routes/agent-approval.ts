@@ -22,8 +22,9 @@ export function createAgentApprovalRouter({ approvalStore }: AgentRouterContext)
     try {
       approvalStore.resolve(approvalId, decision);
       return res.json({ ok: true });
-    } catch (err: any) {
-      return res.status(404).json({ error: err.message });
+    } catch {
+      // Approval may have been cleared by rejectAll() after run ended
+      return res.json({ ok: true, stale: true });
     }
   });
 
@@ -45,8 +46,8 @@ export function createAgentApprovalRouter({ approvalStore }: AgentRouterContext)
     try {
       approvalStore.resolve(approvalId, response.trim());
       return res.json({ ok: true });
-    } catch (err: any) {
-      return res.status(404).json({ error: err.message });
+    } catch {
+      return res.json({ ok: true, stale: true });
     }
   });
 

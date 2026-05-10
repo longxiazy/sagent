@@ -9,7 +9,7 @@
     "build:client": "cd client && npm run build",
     "build": "npm run typecheck && npm run build:client",
     "lint": "eslint .",
-    "stop": "kill -9 $(lsof -ti :3001) $(lsof -ti :5173) 2>/dev/null; echo 'stopped'",
+    "stop": "node scripts/stop.js",
     "test": "vitest run"
   },
   "dependencies": {

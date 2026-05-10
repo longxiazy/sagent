@@ -9,6 +9,7 @@ import {
 } from '../core/prompts.ts';
 import { isClaudeModel, claudeAgentPlan } from '../core/ai-client.ts';
 import { log } from '../../helpers/logger.ts';
+import { extractErrorDiagnostics } from '../../helpers/retry.ts';
 
 export const DEFAULT_MODEL_TIMEOUT_MS = 10_000;
 
@@ -101,6 +102,7 @@ function logModelFailure(model: string, elapsedMs: number, err: any) {
   const errLine = `  !!! LLM FAILED   ${shortModel}  ${elapsed}s  ${err.message.slice(0, 60)}`;
   const width = Math.max(displayWidth(errLine) + 4, 52);
   log.warn(`\n  ${'╔' + '═'.repeat(width) + '╗'}\n  ║${padEndW(errLine, width)}║\n  ${'╚' + '═'.repeat(width) + '╝'}`);
+  log.warn(`[LLM Failure] model=${model} elapsed=${elapsed}s diagnostics=${JSON.stringify(extractErrorDiagnostics(err))}`);
 }
 
 export function createDesktopPlanner({
@@ -189,7 +191,7 @@ export function createDesktopPlanner({
         onEvent?.({ type: 'model_plan', stage: 'thinking', model: candidate, step });
       }
 
-      const settled = await Promise.allSettled(
+      const votePromise = Promise.allSettled(
         activeModels.map((candidate: string) =>
           planWithTimeout(candidate, planCtx, cancelSignal, undefined)
             .then(result => {
@@ -208,6 +210,18 @@ export function createDesktopPlanner({
             })
         )
       );
+
+      // Race the vote against cancel so we don't wait for all models to timeout
+      const cancelPromise = cancelSignal
+        ? new Promise<typeof votePromise>((_, reject) => {
+            if (cancelSignal.aborted) { reject(new Error('Agent 已取消')); return; }
+            const onAbort = () => { cancelSignal.removeEventListener('abort', onAbort); reject(new Error('Agent 已取消')); };
+            cancelSignal.addEventListener('abort', onAbort);
+            votePromise.finally(() => cancelSignal.removeEventListener('abort', onAbort));
+          })
+        : new Promise(() => {});
+
+      const settled = await Promise.race([votePromise, cancelPromise]) as PromiseSettledResult<any>[];
 
       const successes = settled
         .filter((result: any) => result.status === 'fulfilled' && result.value !== null)
@@ -247,6 +261,19 @@ export function createDesktopPlanner({
       const timers: NodeJS.Timeout[] = [];
       const raceAc = new AbortController();
 
+      // Reject immediately if already cancelled, or on future cancel
+      if (cancelSignal?.aborted) {
+        reject(new Error('Agent 已取消'));
+        return;
+      }
+      const onCancel = () => {
+        if (settled) return;
+        settled = true;
+        timers.forEach(timer => clearTimeout(timer));
+        reject(new Error('Agent 已取消'));
+      };
+      cancelSignal?.addEventListener('abort', onCancel);
+
       function launchModel(candidate: string) {
         if (settled || cancelSignal?.aborted) return;
         launched++;
@@ -260,6 +287,7 @@ export function createDesktopPlanner({
             settled = true;
             raceAc.abort();
             timers.forEach(timer => clearTimeout(timer));
+            cancelSignal?.removeEventListener('abort', onCancel);
             log.info(`[MultiModel] 使用 ${candidate} 的结果（${activeModels.join(', ')}）`);
             onEvent?.({ type: 'model_plan', stage: 'winner', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
             resolve(result);
@@ -280,6 +308,7 @@ export function createDesktopPlanner({
               tryLaunchBatch(true);
             }
             if (!settled && launched === activeModels.length && launched === failures.length) {
+              cancelSignal?.removeEventListener('abort', onCancel);
               reject(new Error(`所有模型均失败: ${failures.join(', ')}`));
             }
           });

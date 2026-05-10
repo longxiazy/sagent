@@ -95,7 +95,7 @@ async function resumeFromCheckpoint(cp) {
   const { runId, task, model, headless, history, step, maxSteps: _maxSteps, startedAt } = cp;
   log.info(`[Resume] 恢复运行 run_id=${runId} step=${step} task=${task.slice(0, 60)}…`);
 
-  const sendEvent = createBaseEventSender(runId, agentRunStore);
+  const sendEvent = createBaseEventSender(runId, agentRunStore, MEMORY_DIR);
 
   const { systemPrompt } = await loadMemoryForPrompt(MEMORY_DIR);
 

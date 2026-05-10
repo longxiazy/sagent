@@ -9,12 +9,20 @@
 
 import { loadMemory, buildMemoryPrompt } from '../agent/core/memory.ts';
 import { removeCheckpoint, removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
+import { appendTraceEvent } from './trace-store.ts';
 import { log } from './logger.ts';
 
-export function createBaseEventSender(runId: string, agentRunStore: any) {
+export function createBaseEventSender(runId: string, agentRunStore: any, memoryDir?: string) {
   return (payload: any) => {
     agentRunStore.addEvent(runId, payload);
+    const traceWrite = appendTraceEvent(memoryDir, runId, payload).catch((err: any) => {
+      log.warn(`[TraceStore] append failed runId=${runId}: ${err.message}`);
+    });
     const run = agentRunStore.getRun(runId);
+    if (run) {
+      run.traceWrites = run.traceWrites || [];
+      run.traceWrites.push(traceWrite);
+    }
     if (run?._reconnectWriters) {
       for (const writer of run._reconnectWriters) {
         writer(payload);
