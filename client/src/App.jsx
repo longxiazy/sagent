@@ -1248,7 +1248,7 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
             // (other stages like thinking/success/failed are collected inside ModelPlanGroup)
             if (event.type === 'model_plan' && event.stage !== 'start' && event.stage !== 'consensus') return null;
             if (event.type === 'model_plan' && event.stage === 'start') {
-              return <ModelPlanGroup key={`model-plan-step-${event.step || index}`} trace={trace} step={event.step} models={event.models} modelList={modelList} running={running} cardsExpanded={cardsExpanded} onManualToggle={() => setCardsExpanded(null)} onRollback={onRollback} rollbackLoading={rollbackLoading} />;
+              return <ModelPlanGroup key={`model-plan-step-${event.step || index}-${index}`} trace={trace} step={event.step} models={event.models} modelList={modelList} running={running} cardsExpanded={cardsExpanded} onManualToggle={() => setCardsExpanded(null)} onRollback={onRollback} rollbackLoading={rollbackLoading} />;
             }
             // For multi-model steps, skip separate action/result items (shown inside model cards)
             if (event.type === 'step' && (event.stage === 'action' || event.stage === 'result') && multiModelSteps.has(event.step)) {
@@ -1813,10 +1813,14 @@ export default function App() {
       fetchAgentTrace(savedRunId, { signal: controller.signal })
         .then(events => {
           if (events.length === 0 || controller.signal.aborted) return;
-          setAgentTrace(events);
+          const deduped = events.filter((e, i) => {
+            const key = `${e.type}:${e.step ?? ''}:${e.stage ?? ''}:${e.model ?? ''}`;
+            return !events.slice(0, i).some(p => `${p.type}:${p.step ?? ''}:${p.stage ?? ''}:${p.model ?? ''}` === key);
+          });
+          setAgentTrace(deduped);
           updateSession(activeSession.id, session => touchSession(session, {
             agentRunId: savedRunId,
-            agentTrace: events,
+            agentTrace: deduped,
           }));
         })
         .catch(() => {});
