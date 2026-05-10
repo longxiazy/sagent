@@ -15,16 +15,20 @@ function withTimeout(promise, ms, message) {
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error(message)), ms);
   });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  return Promise.race([promise, timeout]).finally(() => {
+    clearTimeout(timer);
+    // Give the underlying operation time to settle so WebView clears its pending state
+    return promise.catch(() => {});
+  });
 }
 
 export async function safeNavigate(view, url) {
-  for (let i = 0; i < NAV_MAX_RETRIES; i++) {
+  for (let i = 0; i < NAV_MAX_RETRIES + 5; i++) {
     try {
       return await view.navigate(url);
     } catch (err) {
-      if (/already pending/i.test(err.message) && i < NAV_MAX_RETRIES - 1) {
-        await delay(NAV_RETRY_MS);
+      if (/already pending/i.test(err.message)) {
+        await delay(1000);
         continue;
       }
       throw err;
