@@ -1,7 +1,10 @@
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import { tmpdir } from 'node:os';
 
 const execFileAsync = promisify(execFile);
 
@@ -74,13 +77,32 @@ export async function executeFsAction(action) {
     const targetPath = resolveInputPath(action.path, sandbox);
     assertWithinSandbox(targetPath, sandbox);
     assertSafePath(targetPath);
+
+    const originalContent = existsSync(targetPath)
+      ? await fs.readFile(targetPath, 'utf8')
+      : null;
+    const fileExisted = existsSync(targetPath);
+
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
     if (action.append) {
       await fs.appendFile(targetPath, action.content, 'utf8');
       return `已追加写入文件 ${targetPath}`;
     }
     await fs.writeFile(targetPath, action.content, 'utf8');
-    return `已写入文件 ${targetPath}`;
+
+    // Generate diff preview when modifying an existing file
+    let diffPreview: string | null = null;
+    if (fileExisted && originalContent && originalContent !== action.content) {
+      try {
+        diffPreview = await generateUnifiedDiff(originalContent, action.content, targetPath);
+      } catch {
+        // diff generation is best-effort; don't fail the write
+      }
+    }
+
+    const changeSummary = buildChangeSummary(originalContent, action.content, fileExisted);
+    const diffSection = diffPreview ? `\n\nDiff 预览:\n\`\`\`diff\n${diffPreview}\n\`\`\`` : '';
+    return `已写入文件 ${targetPath}${changeSummary}${diffSection}`;
   }
 
   if (action.type === 'search_files') {
@@ -150,4 +172,44 @@ export async function executeFsAction(action) {
   }
 
   throw new Error(`不支持的文件动作: ${action.type}`);
+}
+
+// ── Diff / Change Summary helpers ──
+
+async function generateUnifiedDiff(original: string, updated: string, filePath: string): Promise<string> {
+  const origFile = path.join(tmpdir(), `sagent_diff_orig_${Math.random().toString(36).slice(2)}.txt`);
+  const updFile = path.join(tmpdir(), `sagent_diff_upd_${Math.random().toString(36).slice(2)}.txt`);
+  try {
+    writeFileSync(origFile, original, 'utf8');
+    writeFileSync(updFile, updated, 'utf8');
+    const { stdout } = await execFileAsync('diff', ['-u', origFile, updFile], { maxBuffer: 512 * 1024, timeout: 3000 });
+    // Replace temp file names with the real path for readability
+    return stdout
+      .replace(new RegExp(escapeRegex(origFile), 'g'), `a/${filePath}`)
+      .replace(new RegExp(escapeRegex(updFile), 'g'), `b/${filePath}`);
+  } finally {
+    try { await fs.unlink(origFile); } catch {}
+    try { await fs.unlink(updFile); } catch {}
+  }
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildChangeSummary(original: string | null, updated: string, existed: boolean): string {
+  if (!existed || !original) {
+    const lines = updated.split('\n').length;
+    const chars = updated.length;
+    return ` (新建文件, ${lines} 行, ${chars} 字符)`;
+  }
+  const origLines = original.split('\n').length;
+  const updLines = updated.split('\n').length;
+  const added = Math.max(0, updLines - origLines);
+  const removed = Math.max(0, origLines - updLines);
+  if (added === 0 && removed === 0) return '';
+  const parts: string[] = [];
+  if (added > 0) parts.push(`+${added}`);
+  if (removed > 0) parts.push(`-${removed}`);
+  return ` (${parts.join('/')} 行变更)`;
 }
