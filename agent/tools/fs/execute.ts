@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import { startSpan } from '../../helpers/telemetry.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -48,7 +49,17 @@ function assertSafePath(targetPath) {
   }
 }
 
-export async function executeFsAction(action) {
+export async function executeFsAction(action, context?: any) {
+  const telem = context?._telemetry;
+  const toolSpan = telem
+    ? startSpan(telem.traceId, `tool.fs.${action.type}`, telem.parentSpanId, {
+        'tool.name': 'fs',
+        'tool.action': action.type,
+        ...(action.path ? { 'fs.path': String(action.path).slice(0, 200) } : {}),
+      }, 'CLIENT')
+    : null;
+
+  try {
   if (action.type === 'list_dir') {
     const targetPath = resolveInputPath(action.path);
     const entries = await fs.readdir(targetPath, { withFileTypes: true });
@@ -150,4 +161,7 @@ export async function executeFsAction(action) {
   }
 
   throw new Error(`不支持的文件动作: ${action.type}`);
+  } finally {
+    toolSpan?.end();
+  }
 }

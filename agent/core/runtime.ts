@@ -34,6 +34,12 @@ import {
   loadLatestHealthySnapshot,
   HEALTH_CHECKPOINT_INTERVAL,
 } from "./checkpoint.js";
+import {
+  startTrace,
+  startSpan,
+  spanId as getSpanId,
+  isTelemetryEnabled,
+} from "../../helpers/telemetry.js";
 
 const MAX_HISTORY_STEPS = Number(process.env.AGENT_MAX_HISTORY_STEPS || 20);
 const MAX_RESULT_CHARS = Number(process.env.AGENT_MAX_RESULT_CHARS || 5000);
@@ -101,6 +107,14 @@ export async function runAgentRuntime({
   let finalAnswer = "";
   const state = await initialize?.({ task, onEvent });
 
+  // ── Telemetry: trace all agent runs ──
+  const telemEnabled = isTelemetryEnabled();
+  const telem = telemEnabled ? startTrace('agent.run', {
+    'agent.task': task.slice(0, 200),
+    'agent.max_steps': maxSteps,
+  }) : null;
+  const traceId = telem?.traceId ?? '';
+
   const cancelled = () => cancelSignal?.aborted;
 
   try {
@@ -108,6 +122,12 @@ export async function runAgentRuntime({
       if (cancelled()) {
         throw new Error("Agent 已取消");
       }
+
+      const stepSpan = telemEnabled
+        ? startSpan(traceId, 'agent.step', getSpanId(telem!.root), {
+            'agent.step.number': step,
+          })
+        : null;
 
       // ---- 检查外部回滚请求 ----
       if (runRecord && shouldRollback(runRecord) && !sessionCheckpointDir) {
@@ -166,7 +186,10 @@ export async function runAgentRuntime({
         throw new Error("Agent 已取消");
       }
 
-      // ---- 决策 ----
+      // ---- 决策 (telemetry: agent.plan span) ----
+      const planSpan = stepSpan
+        ? startSpan(traceId, 'agent.plan', getSpanId(stepSpan))
+        : null;
       const decision = await decide({
         task,
         step,
@@ -174,6 +197,7 @@ export async function runAgentRuntime({
         observation,
         state,
       });
+      planSpan?.end();
 
       if (cancelled()) {
         throw new Error("Agent 已取消");
@@ -217,7 +241,13 @@ export async function runAgentRuntime({
         usage: decision.usage || null,
       });
 
-      // ---- 执行 ----
+      // ---- 执行 (telemetry: agent.execute → tool.* spans) ----
+      const execSpan = stepSpan
+        ? startSpan(traceId, 'agent.execute', getSpanId(stepSpan), {
+            'tool.name': decision.action?.tool || '',
+            'tool.type': decision.action?.type || '',
+          })
+        : null;
       let result;
       try {
         result = await execute(state, decision.action, {
@@ -226,11 +256,15 @@ export async function runAgentRuntime({
           history,
           observation,
           authorization,
+          // Pass trace context so tools can create sub-spans
+          _telemetry: telemEnabled && execSpan ? { traceId, parentSpanId: getSpanId(execSpan) } : null,
         });
       } catch (execErr) {
+        execSpan?.setError(execErr.message);
         result = `执行失败: ${execErr.message}`;
         log.error(`[Runtime] step ${step} execute error: ${execErr.message}`);
       }
+      execSpan?.end();
 
       if (cancelled()) {
         throw new Error("Agent 已取消");
@@ -253,6 +287,8 @@ export async function runAgentRuntime({
           result,
         });
       }
+
+      stepSpan?.end();
 
       // ---- 原有 checkpoint（step 级） ----
       onCheckpoint?.(history, step);
@@ -289,11 +325,16 @@ export async function runAgentRuntime({
       finalAnswer = "已达到最大执行步数，任务未完全完成。";
     }
 
+    telem?.root.end();
+
     return {
       answer: finalAnswer,
       steps: history,
     };
   } finally {
+    if (telem && telemEnabled) {
+      telem.root.end();
+    }
     await cleanup?.(state);
   }
 }
