@@ -1976,14 +1976,6 @@ export default function App() {
       setRollbackLoading(false);
     }
   };
-  const requestAgentApproval = event =>
-    new Promise(resolve => {
-      approvalRequestRef.current = {
-        ...event,
-        resolve,
-      };
-      setPendingApproval(event);
-    });
 
   const handleApprovalDecision = async decision => {
     const request = approvalRequestRef.current;
@@ -2238,7 +2230,10 @@ export default function App() {
               message: event.message || '需要审批',
               kind: 'approval',
             });
-            await requestAgentApproval(event);
+            // 不要 await：决策完成统一靠后端发的 approval_result event 清理 state，
+            // 否则 SSE 处理会卡在 await 上、把 approval_result 事件也一起阻塞掉。
+            approvalRequestRef.current = { ...event, resolve: () => {} };
+            setPendingApproval(event);
             return;
           }
 
@@ -2249,11 +2244,20 @@ export default function App() {
               message: event.action?.question || event.message || 'Agent 有问题需要你回答',
               kind: 'question',
             });
-            await new Promise(resolve => {
-              questionRequestRef.current = { ...event, resolve };
-              setPendingQuestion(event);
-            });
+            // 同上：交给 user_response event 兜底清理
+            questionRequestRef.current = { ...event, resolve: () => {} };
+            setPendingQuestion(event);
             return;
+          }
+
+          if (event.type === 'approval_result') {
+            approvalRequestRef.current = null;
+            setPendingApproval(null);
+          }
+
+          if (event.type === 'user_response') {
+            questionRequestRef.current = null;
+            setPendingQuestion(null);
           }
 
           if (event.type === 'rollback') {
