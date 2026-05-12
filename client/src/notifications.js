@@ -15,11 +15,18 @@ export function notificationPermission() {
 }
 
 export async function ensureServiceWorker() {
-  if (!notificationsSupported()) return null;
+  if (!notificationsSupported()) {
+    console.warn('[Notifications] 当前浏览器不支持 Notification 或 ServiceWorker');
+    return null;
+  }
   if (!swRegistrationPromise) {
     swRegistrationPromise = navigator.serviceWorker
       .register('/sw.js')
-      .then(() => navigator.serviceWorker.ready)
+      .then(async reg => {
+        await navigator.serviceWorker.ready;
+        console.info('[Notifications] ServiceWorker 已注册', reg.scope);
+        return reg;
+      })
       .catch(err => {
         console.warn('[Notifications] ServiceWorker 注册失败', err);
         swRegistrationPromise = null;
@@ -47,12 +54,24 @@ function truncate(text, max = 160) {
 // 弹一条通知。kind: 'approval' | 'question'。审批带「允许/拒绝」按钮，
 // 问答仅作提醒（需要文本输入，通知里没法填）。
 export async function showAgentNotification({ runId, approvalId, message, kind = 'approval' }) {
-  if (!notificationsSupported()) return false;
-  if (Notification.permission !== 'granted') return false;
-  if (!runId || !approvalId) return false;
+  if (!notificationsSupported()) {
+    console.warn('[Notifications] showAgentNotification 跳过：浏览器不支持');
+    return false;
+  }
+  if (Notification.permission !== 'granted') {
+    console.warn(`[Notifications] showAgentNotification 跳过：权限是 ${Notification.permission}（需要先点页面上的"开启桌面通知"）`);
+    return false;
+  }
+  if (!runId || !approvalId) {
+    console.warn('[Notifications] showAgentNotification 跳过：缺 runId/approvalId', { runId, approvalId });
+    return false;
+  }
 
   const reg = await ensureServiceWorker();
-  if (!reg) return false;
+  if (!reg) {
+    console.warn('[Notifications] showAgentNotification 跳过：ServiceWorker 未就绪');
+    return false;
+  }
 
   const isQuestion = kind === 'question';
   const title = isQuestion ? 'Desktop Agent 提问' : 'Desktop Agent 需要审批';
@@ -72,6 +91,7 @@ export async function showAgentNotification({ runId, approvalId, message, kind =
       actions,
       data: { runId, approvalId, kind },
     });
+    console.info('[Notifications] 已弹出通知', { kind, approvalId });
     return true;
   } catch (err) {
     console.warn('[Notifications] showNotification 失败', err);

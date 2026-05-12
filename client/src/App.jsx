@@ -2232,27 +2232,23 @@ export default function App() {
           }
 
           if (event.type === 'approval_required') {
-            if (document.hidden) {
-              showAgentNotification({
-                runId: event.runId,
-                approvalId: event.approvalId,
-                message: event.message || '需要审批',
-                kind: 'approval',
-              });
-            }
+            showAgentNotification({
+              runId: event.runId,
+              approvalId: event.approvalId,
+              message: event.message || '需要审批',
+              kind: 'approval',
+            });
             await requestAgentApproval(event);
             return;
           }
 
           if (event.type === 'question_required') {
-            if (document.hidden) {
-              showAgentNotification({
-                runId: event.runId,
-                approvalId: event.approvalId,
-                message: event.action?.question || event.message || 'Agent 有问题需要你回答',
-                kind: 'question',
-              });
-            }
+            showAgentNotification({
+              runId: event.runId,
+              approvalId: event.approvalId,
+              message: event.action?.question || event.message || 'Agent 有问题需要你回答',
+              kind: 'question',
+            });
             await new Promise(resolve => {
               questionRequestRef.current = { ...event, resolve };
               setPendingQuestion(event);
