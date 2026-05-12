@@ -2531,10 +2531,22 @@ export default function App() {
       </SessionSidebar>
 
       <div className="main-area">
-      {agentRunning && notifyPerm === 'default' && notificationsSupported() && (
+      {agentRunning && notificationsSupported() && (notifyPerm === 'default' || notifyPerm === 'denied') && (
         <div className="notify-banner">
-          <span>桌面通知未开启，开启后 Agent 等待审批时会在桌面提醒你。</span>
-          <button className="notify-banner-btn" onClick={handleEnableNotifications}>开启桌面通知</button>
+          {notifyPerm === 'default' ? (
+            <>
+              <span>桌面通知未开启，开启后 Agent 等待审批时会在桌面提醒你。</span>
+              <button className="notify-banner-btn" onClick={handleEnableNotifications}>开启桌面通知</button>
+            </>
+          ) : (
+            <span>
+              桌面通知被浏览器阻止了。打开
+              {' '}
+              <code>chrome://settings/content/siteDetails?site={window.location.origin}</code>
+              {' '}
+              把「通知」改为「允许」，然后刷新页面。
+            </span>
+          )}
           <button className="notify-banner-close" onClick={() => setNotifyPerm('dismissed')} title="先不开">×</button>
         </div>
       )}
