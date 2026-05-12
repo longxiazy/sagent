@@ -62,6 +62,58 @@ export function isClaudeModel(model, modelConfig) {
   return model?.startsWith('claude-');
 }
 
+// ── API Key Validation ──
+// Validates configured API keys at startup for format issues and provides
+// user-friendly error messages instead of raw JavaScript stack traces.
+
+/**
+ * Validate configured API keys and exit gracefully if none are configured.
+ * Prints warnings for potential format issues (newlines, whitespace, suspicious length).
+ * Called during server startup in server.ts.
+ */
+export function validateApiKeys(): void {
+  const keys: { name: string; envVar: string }[] = [
+    { name: 'NVIDIA_API_KEY', envVar: 'NVIDIA_API_KEY' },
+    { name: 'ANTHROPIC_API_KEY', envVar: 'ANTHROPIC_API_KEY' },
+  ];
+
+  const warnings: string[] = [];
+  const configured: string[] = [];
+
+  for (const { name, envVar } of keys) {
+    const key = process.env[envVar];
+    if (!key || !key.trim()) continue;
+    configured.push(name);
+
+    if (key.includes('\n')) {
+      warnings.push(`${name} 包含换行符，可能导致认证失败`);
+    }
+    if (key.startsWith(' ') || key.endsWith(' ')) {
+      warnings.push(`${name} 前后包含多余空格，建议去除`);
+    }
+    if (key.length < 20) {
+      warnings.push(`${name} 长度异常（${key.length} 字符），请检查是否完整`);
+    }
+  }
+
+  if (warnings.length > 0) {
+    console.warn('\n⚠️  API Key 配置警告:');
+    for (const w of warnings) console.warn(`  ⚠  ${w}`);
+    console.warn();
+  }
+
+  if (configured.length === 0) {
+    console.error('\n❌ API Key 验证失败:');
+    console.error('  未配置任何 API Key。请至少设置 NVIDIA_API_KEY 或 ANTHROPIC_API_KEY 环境变量');
+    console.error();
+    console.error('  配置方式：');
+    console.error('    1. 创建 .env 文件：echo "NVIDIA_API_KEY=nvapi-xxx" > .env');
+    console.error('    2. 或设置环境变量：export NVIDIA_API_KEY="nvapi-xxx"');
+    console.error();
+    process.exit(1);
+  }
+}
+
 export function createClients() {
   const nvidiaKey = process.env.NVIDIA_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
@@ -75,7 +127,12 @@ export function createClients() {
     : null;
 
   if (!openai_client && !anthropic_client) {
-    throw new Error('至少需要配置 NVIDIA_API_KEY 或 ANTHROPIC_API_KEY');
+    console.error('\n❌ 配置错误：至少需要设置 NVIDIA_API_KEY 或 ANTHROPIC_API_KEY');
+    console.error('  配置方式：');
+    console.error('    1. 创建 .env 文件：echo "NVIDIA_API_KEY=nvapi-xxx" > .env');
+    console.error('    2. 或设置环境变量：export NVIDIA_API_KEY="nvapi-xxx"');
+    console.error();
+    process.exit(1);
   }
 
   return { openai_client, anthropic_client };

@@ -35,7 +35,7 @@ import { createAgentRunStore } from './helpers/run-store.ts';
 import { createApprovalStore } from './agent/core/approval-store.ts';
 import { initLlmLogger } from './agent/core/llm-logger.ts';
 import { createDesktopAgentRunner } from './agent/desktop/agent.ts';
-import { createClients, loadModelConfig, loadAgentMultiModels, isClaudeModel } from './agent/core/ai-client.ts';
+import { createClients, loadModelConfig, loadAgentMultiModels, isClaudeModel, validateApiKeys } from './agent/core/ai-client.ts';
 import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
 import { loadIdeMcpConfig } from './agent/tools/ide/mcp-client.ts';
 import { loadChromeMcpConfig } from './agent/tools/chrome/mcp-client.ts';
@@ -52,6 +52,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+validateApiKeys();
 const { openai_client, anthropic_client } = createClients();
 const modelConfig = loadModelConfig();
 
