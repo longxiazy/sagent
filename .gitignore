@@ -10,6 +10,7 @@ client/node_modules/
 # Vite 构建产物
 client/dist/
 client/.vite/
+agent/tools/macos/helper/bin/
 
 # 系统文件
 .DS_Store

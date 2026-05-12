@@ -7,9 +7,9 @@ const DEFAULT_HELPER_CANDIDATES = [
   path.resolve(process.cwd(), 'agent/tools/macos/helper/bin/macos-agent-helper'),
 ].filter(Boolean);
 
-function execFileJson(file: string, args: string[], payload: any = {}): Promise<any> {
+function execFileJson(file: string, args: string[], payload: any = {}, timeout = 12000): Promise<any> {
   return new Promise((resolve, reject) => {
-    const child = execFile(file, args, { timeout: 12000 }, (error, stdout, stderr) => {
+    const child = execFile(file, args, { timeout }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(stderr?.trim() || error.message));
         return;

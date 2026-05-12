@@ -102,10 +102,13 @@ export async function executeAgentRun({
       runId,
       answer: agentResult.answer,
       steps: agentResult.steps,
+      quality: agentResult.quality,
       meta: {
         elapsed_ms: Date.now() - runRecord.startedAt,
         step_count: Math.max(completedStepCount, observedStepCount),
         models_used: [...modelsUsed],
+        status: agentResult.quality?.status || 'done',
+        quality: agentResult.quality,
       },
     });
   } catch (err: any) {

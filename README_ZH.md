@@ -21,6 +21,8 @@ npm run sandbox                         # 需要 Bun 1.3+
 
 打开 http://localhost:5173
 
+Agent 等待审批时，sagent 会通过浏览器桌面通知提醒你，并提供「允许 / 拒绝」按钮（Chromium 内核浏览器支持）。首次出现审批请求时，页面上方会弹出小横条，点击「开启桌面通知」即可触发浏览器的权限请求。Safari / Firefox 桌面端不支持通知里的按钮，通知仍会弹出，点击通知会聚焦回 sagent 页面，在右侧审批面板上做决定即可。
+
 ## 安全：沙盒策略
 
 通过 `npm run sandbox` 启动时，Agent 在 macOS 沙盒内运行，权限由 `sandbox.sb` 文件控制。

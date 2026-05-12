@@ -34,6 +34,7 @@ import {
   loadLatestHealthySnapshot,
   HEALTH_CHECKPOINT_INTERVAL,
 } from "./checkpoint.js";
+import { assessResultQuality } from "./result-quality.ts";
 
 const MAX_HISTORY_STEPS = Number(process.env.AGENT_MAX_HISTORY_STEPS || 20);
 const MAX_RESULT_CHARS = Number(process.env.AGENT_MAX_RESULT_CHARS || 5000);
@@ -292,6 +293,7 @@ export async function runAgentRuntime({
     return {
       answer: finalAnswer,
       steps: history,
+      quality: assessResultQuality({ task, steps: history, answer: finalAnswer }),
     };
   } finally {
     await cleanup?.(state);

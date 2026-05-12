@@ -12,6 +12,33 @@ import { log } from '../../helpers/logger.ts';
 import { extractErrorDiagnostics } from '../../helpers/retry.ts';
 
 export const DEFAULT_MODEL_TIMEOUT_MS = 10_000;
+const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000;
+const SINGLE_MODEL_RATE_LIMIT_RETRY = 2;
+const SINGLE_MODEL_RETRY_BASE_BACKOFF_MS = 5_000;
+
+function isRateLimitError(err: any) {
+  const status = err?.status || err?.statusCode || err?.error?.status || err?.error?.statusCode;
+  const message = String(err?.message || '');
+  return status === 429 || /\b429\b|rate.?limit|too many requests/i.test(message);
+}
+
+function sleepWithCancel(ms: number, cancelSignal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (cancelSignal?.aborted) {
+      reject(new Error('Agent 已取消'));
+      return;
+    }
+    const onCancel = () => {
+      clearTimeout(timer);
+      reject(new Error('Agent 已取消'));
+    };
+    const timer = setTimeout(() => {
+      cancelSignal?.removeEventListener('abort', onCancel);
+      resolve();
+    }, ms);
+    cancelSignal?.addEventListener('abort', onCancel, { once: true });
+  });
+}
 
 function toolUseToNormalizedDecision(toolUse: any) {
   const { name, input } = toolUse;
@@ -113,7 +140,34 @@ export function createDesktopPlanner({
   modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS,
   staggerDelayMs = 0,
   batchSize = 1,
+  rateLimitCooldownMs = DEFAULT_RATE_LIMIT_COOLDOWN_MS,
 }: any) {
+  const modelCooldownUntil = new Map<string, number>();
+
+  function isModelCoolingDown(model: string) {
+    const until = modelCooldownUntil.get(model) || 0;
+    if (until <= Date.now()) {
+      modelCooldownUntil.delete(model);
+      return false;
+    }
+    return true;
+  }
+
+  function markModelRateLimited(model: string, err: any, onEvent?: any, step?: number) {
+    const until = Date.now() + rateLimitCooldownMs;
+    modelCooldownUntil.set(model, until);
+    const seconds = Math.ceil(rateLimitCooldownMs / 1000);
+    log.warn(`[MultiModel] ${model} 触发限流，暂停 ${seconds}s: ${err.message}`);
+    onEvent?.({
+      type: 'model_plan',
+      stage: 'rate_limited',
+      model,
+      step,
+      cooldown_ms: rateLimitCooldownMs,
+      error: String(err.message || err).slice(0, 160),
+    });
+  }
+
   function planWithTimeout(model: string, context: any, cancelSignal: AbortSignal, raceSignal?: AbortSignal) {
     const timeoutMs = typeof modelTimeoutMs === 'number' && modelTimeoutMs > 0 ? modelTimeoutMs : DEFAULT_MODEL_TIMEOUT_MS;
     const startedAt = Date.now();
@@ -153,29 +207,47 @@ export function createDesktopPlanner({
         throw new Error(err);
       }
       onEvent?.({ type: 'model_plan', stage: 'thinking', model, step });
-      try {
-        const result = await planWithTimeout(model, planCtx, cancelSignal, undefined);
-        onEvent?.({ type: 'model_plan', stage: 'success', model, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
-        return result;
-      } catch (err: any) {
-        if (err.message.includes('模型超时')) {
-          blacklistedModels.add(model);
-          log.warn(`[MultiModel] ${model} 超时，已加入黑名单`);
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const result = await planWithTimeout(model, planCtx, cancelSignal, undefined);
+          onEvent?.({ type: 'model_plan', stage: 'success', model, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
+          return result;
+        } catch (err: any) {
+          if (err.message.includes('模型超时')) {
+            blacklistedModels.add(model);
+            log.warn(`[MultiModel] ${model} 超时，已加入黑名单`);
+            onEvent?.({ type: 'model_plan', stage: 'failed', model, step, error: err.message });
+            throw err;
+          }
+          if (isRateLimitError(err) && attempt < SINGLE_MODEL_RATE_LIMIT_RETRY) {
+            const backoff = SINGLE_MODEL_RETRY_BASE_BACKOFF_MS * Math.pow(2, attempt);
+            log.warn(`[MultiModel] ${model} 触发限流，${Math.round(backoff / 1000)}s 后重试 (${attempt + 1}/${SINGLE_MODEL_RATE_LIMIT_RETRY})`);
+            onEvent?.({ type: 'model_plan', stage: 'rate_limited', model, step, cooldown_ms: backoff, error: String(err.message || err).slice(0, 160) });
+            await sleepWithCancel(backoff, cancelSignal);
+            onEvent?.({ type: 'model_plan', stage: 'thinking', model, step });
+            continue;
+          }
+          onEvent?.({ type: 'model_plan', stage: 'failed', model, step, error: err.message });
+          throw err;
         }
-        onEvent?.({ type: 'model_plan', stage: 'failed', model, step, error: err.message });
-        throw err;
       }
     }
 
     const allModels = [model, ...extraModels];
-    let activeModels = allModels.filter((candidate: string) => !blacklistedModels.has(candidate));
+    let activeModels = allModels.filter((candidate: string) => !blacklistedModels.has(candidate) && !isModelCoolingDown(candidate));
 
-    log.info(`[MultiModel] step=${step} allModels=[${allModels}] blacklisted=[${[...blacklistedModels]}] activeModels=[${activeModels}]`);
+    log.info(`[MultiModel] step=${step} allModels=[${allModels}] blacklisted=[${[...blacklistedModels]}] cooling=[${[...modelCooldownUntil.keys()]}] activeModels=[${activeModels}]`);
 
-    if (activeModels.length === 0) {
+    if (activeModels.length === 0 && allModels.every((candidate: string) => blacklistedModels.has(candidate))) {
       log.warn('[MultiModel] 所有模型均已被禁用，重置黑名单重试');
       blacklistedModels.clear();
       activeModels = [...allModels];
+    }
+
+    if (activeModels.length === 0) {
+      const err = '所有模型均处于限流冷却或禁用状态';
+      onEvent?.({ type: 'model_plan', stage: 'failed', step, error: err });
+      throw new Error(err);
     }
 
     onEvent?.({ type: 'model_plan', stage: 'start', models: allModels, strategy, step });
@@ -183,6 +255,8 @@ export function createDesktopPlanner({
     for (const candidate of allModels) {
       if (blacklistedModels.has(candidate)) {
         onEvent?.({ type: 'model_plan', stage: 'failed', model: candidate, step, error: '模型已被禁用（此前超时）' });
+      } else if (isModelCoolingDown(candidate)) {
+        onEvent?.({ type: 'model_plan', stage: 'rate_limited', model: candidate, step, error: '模型限流冷却中' });
       }
     }
 
@@ -200,6 +274,9 @@ export function createDesktopPlanner({
               return { ...result, model: candidate };
             })
             .catch((err: any) => {
+              if (isRateLimitError(err)) {
+                markModelRateLimited(candidate, err, onEvent, step);
+              }
               if (err.message.includes('模型超时')) {
                 blacklistedModels.add(candidate);
                 log.warn(`[MultiModel] ${candidate} 超时，已加入黑名单`);
@@ -300,6 +377,8 @@ export function createDesktopPlanner({
             if (err.message.includes('模型超时')) {
               blacklistedModels.add(candidate);
               log.warn(`[MultiModel] ${candidate} 超时，已加入黑名单`);
+            } else if (isRateLimitError(err)) {
+              markModelRateLimited(candidate, err, onEvent, step);
             }
             log.debug(`[MultiModel] ${candidate} 失败: ${err.message.slice(0, 80)}`);
             onEvent?.({ type: 'model_plan', stage: 'failed', model: candidate, step, error: err.message.slice(0, 120) });
