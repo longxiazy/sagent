@@ -14,6 +14,7 @@ import sql from 'highlight.js/lib/languages/sql';
 import 'highlight.js/styles/github.css';
 import './App.css';
 import { fetchAgentTrace, streamAgentRun, streamChatCompletion, submitAgentApproval, submitAgentQuestion } from './api/streams.js';
+import { ensureServiceWorker, notificationPermission, notificationsSupported, requestNotificationPermission, showAgentNotification } from './notifications.js';
 import { AgentPane } from './components/AgentPane.jsx';
 import { ChatPane } from './components/ChatPane.jsx';
 import { SessionSidebar } from './components/SessionSidebar.jsx';
@@ -654,19 +655,14 @@ function QuestionDialog({ question, submitting, onSubmit, onSkip }) {
 }
 
 
-function SessionList({ sessions, activeSessionId, modelList, onCreate, onDelete, onClearAll, onSelect, locked, showMemoryPanel, onToggleMemory }) {
+function SessionList({ sessions, activeSessionId, modelList, onDelete, onClearAll, onSelect, locked, showMemoryPanel, onToggleMemory }) {
   return (
     <aside className="session-panel">
       <div className="session-panel-header">
         <h2 className="session-panel-title">会话</h2>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button className={`session-memory-btn ${showMemoryPanel ? 'active' : ''}`} onClick={onToggleMemory} title="查看记忆">
-            <Brain size={13} />
-          </button>
-          <button className="session-create-btn" onClick={onCreate} disabled={locked} title="新建会话">
-            + 新建
-          </button>
-        </div>
+        <button className={`session-memory-btn ${showMemoryPanel ? 'active' : ''}`} onClick={onToggleMemory} title="查看记忆">
+          <Brain size={13} />
+        </button>
       </div>
 
       {showMemoryPanel ? (
@@ -722,6 +718,7 @@ const PLAN_STAGE_LABELS = {
   abandoned: '放弃',
   cancelled: '已取消',
   consensus: '共识',
+  rate_limited: '限流冷却',
 };
 
 const PLAN_STAGE_ICON = {
@@ -734,6 +731,7 @@ const PLAN_STAGE_ICON = {
   abandoned: '—',
   cancelled: '⊘',
   consensus: '★',
+  rate_limited: '⏸',
 };
 
 // 单个模型卡片负责展示某一步里某个模型的“决策快照”：
@@ -860,6 +858,14 @@ function ModelPlanCard({ event, isWinner, modelList, result, forceExpanded, onMa
           <p className="model-card-discarded">任务已取消</p>
         </div>
       )}
+      {stage === 'rate_limited' && (
+        <div className="model-card-body">
+          <p className="model-card-error">
+            {event.cooldown_ms ? `已限流，暂停 ${Math.round(event.cooldown_ms / 1000)}s` : '模型限流冷却中'}
+          </p>
+          {event.error && <p className="model-card-error">{event.error}</p>}
+        </div>
+      )}
     </div>
   );
 }
@@ -902,8 +908,8 @@ function ModelPlanGroup({ trace, step, models, modelList, running, cardsExpanded
     return ev;
   };
 
-  const visibleModels = models.filter(m => { const s = getEvent(m).stage; return s !== 'cancelled' && s !== 'failed'; });
-  const collapsedModels = models.filter(m => { const s = getEvent(m).stage; return s === 'cancelled' || s === 'failed'; });
+  const visibleModels = models.filter(m => { const s = getEvent(m).stage; return s !== 'cancelled' && s !== 'failed' && s !== 'rate_limited'; });
+  const collapsedModels = models.filter(m => { const s = getEvent(m).stage; return s === 'cancelled' || s === 'failed' || s === 'rate_limited'; });
 
   return (
     <div className="model-plan-group">
@@ -1111,6 +1117,12 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
   const lastStep = trace.reduce((max, e) => (e.step != null ? Math.max(max, e.step) : max), 0);
   const doneEvent = trace.find(e => e.type === 'done');
   const doneMeta = doneEvent?.meta || {};
+  const doneStatus = doneEvent?.quality?.status || doneMeta.status || 'done';
+  const doneStatusLabel = doneStatus === 'done_unverified'
+    ? '未核验完成'
+    : doneStatus === 'done_degraded'
+      ? '降级完成'
+      : '完成';
 
   // Detect if waiting for user question
   const hasPendingQuestion = running && trace.some(e => e.type === 'question_required') &&
@@ -1213,6 +1225,9 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
           )}
           {!running && doneMeta.step_count && (
             <span className="agent-metric">共 {doneMeta.step_count} 步</span>
+          )}
+          {!running && doneEvent && doneStatus !== 'done' && (
+            <span className="agent-metric">{doneStatusLabel}</span>
           )}
         </div>
       </div>
@@ -1386,10 +1401,19 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
 
               {event.type === 'done' && (
                 <>
-                  <span className="agent-trace-badge done">完成</span>
+                  <span className="agent-trace-badge done">
+                    {(event.quality?.status || event.meta?.status) === 'done_unverified'
+                      ? '未核验'
+                      : (event.quality?.status || event.meta?.status) === 'done_degraded'
+                        ? '降级完成'
+                        : '完成'}
+                  </span>
                   <div className="agent-trace-content">
                     <strong>Agent 已完成</strong>
                     {event.meta?.step_count && <span className="agent-trace-meta">共 {event.meta.step_count} 步</span>}
+                    {event.quality?.reasons?.length > 0 && (
+                      <p>{event.quality.reasons.join('；')}</p>
+                    )}
                     {event.meta?.models_used?.length > 0 && (
                       <div className="agent-models-used">
                         {event.meta.models_used.map(m => {
@@ -1588,6 +1612,17 @@ export default function App() {
     }
   }, [availableModels, modelsLoaded, selectedAgentModels, setSelectedAgentModels]);
   const [agentStrategy, setAgentStrategy] = usePersistentState('agent_strategy', 'race');
+
+  // 桌面通知权限：default = 未询问，granted = 已开，denied = 用户拒绝过。
+  // SW 在 App 挂载时静默注册，权限请求必须由用户点击触发。
+  const [notifyPerm, setNotifyPerm] = useState(() => notificationPermission());
+  useEffect(() => {
+    ensureServiceWorker();
+  }, []);
+  const handleEnableNotifications = async () => {
+    const result = await requestNotificationPermission();
+    setNotifyPerm(result);
+  };
 
   const abortRef = useRef(null);
   const bottomRef = useRef(null);
@@ -1941,14 +1976,6 @@ export default function App() {
       setRollbackLoading(false);
     }
   };
-  const requestAgentApproval = event =>
-    new Promise(resolve => {
-      approvalRequestRef.current = {
-        ...event,
-        resolve,
-      };
-      setPendingApproval(event);
-    });
 
   const handleApprovalDecision = async decision => {
     const request = approvalRequestRef.current;
@@ -1978,7 +2005,10 @@ export default function App() {
       return;
     }
 
-    if (sessions.length > 0 && sessions[0].messages.length === 0) {
+    const blankSession = sessions.find(session => session.messages.length === 0);
+    if (blankSession) {
+      handleSelectSession(blankSession.id);
+      if (window.innerWidth < 768) setShowSessions(false);
       return;
     }
 
@@ -2194,16 +2224,40 @@ export default function App() {
           }
 
           if (event.type === 'approval_required') {
-            await requestAgentApproval(event);
+            showAgentNotification({
+              runId: event.runId,
+              approvalId: event.approvalId,
+              message: event.message || '需要审批',
+              kind: 'approval',
+            });
+            // 不要 await：决策完成统一靠后端发的 approval_result event 清理 state，
+            // 否则 SSE 处理会卡在 await 上、把 approval_result 事件也一起阻塞掉。
+            approvalRequestRef.current = { ...event, resolve: () => {} };
+            setPendingApproval(event);
             return;
           }
 
           if (event.type === 'question_required') {
-            await new Promise(resolve => {
-              questionRequestRef.current = { ...event, resolve };
-              setPendingQuestion(event);
+            showAgentNotification({
+              runId: event.runId,
+              approvalId: event.approvalId,
+              message: event.action?.question || event.message || 'Agent 有问题需要你回答',
+              kind: 'question',
             });
+            // 同上：交给 user_response event 兜底清理
+            questionRequestRef.current = { ...event, resolve: () => {} };
+            setPendingQuestion(event);
             return;
+          }
+
+          if (event.type === 'approval_result') {
+            approvalRequestRef.current = null;
+            setPendingApproval(null);
+          }
+
+          if (event.type === 'user_response') {
+            questionRequestRef.current = null;
+            setPendingQuestion(null);
           }
 
           if (event.type === 'rollback') {
@@ -2471,7 +2525,6 @@ export default function App() {
           sessions={sessions}
           activeSessionId={activeSession.id}
           modelList={availableModels}
-          onCreate={handleCreateSession}
           onDelete={handleDeleteSession}
           onClearAll={handleClearAllSessions}
           onSelect={(id) => { handleSelectSession(id); if (window.innerWidth < 768) setShowSessions(false); }}
@@ -2482,6 +2535,30 @@ export default function App() {
       </SessionSidebar>
 
       <div className="main-area">
+      {agentRunning && notificationsSupported() && (notifyPerm === 'default' || notifyPerm === 'denied') && (
+        <div className="notify-banner">
+          {notifyPerm === 'default' ? (
+            <>
+              <span>桌面通知未开启，开启后 Agent 等待审批时会在桌面提醒你。</span>
+              <button className="notify-banner-btn" onClick={handleEnableNotifications}>开启桌面通知</button>
+            </>
+          ) : (
+            <span>
+              桌面通知被浏览器阻止了。打开
+              {' '}
+              <code>chrome://settings/content/siteDetails?site={window.location.origin}</code>
+              {' '}
+              把「通知」改为「允许」，然后刷新页面。
+            </span>
+          )}
+          <button className="notify-banner-close" onClick={() => setNotifyPerm('dismissed')} title="先不开">×</button>
+        </div>
+      )}
+      {showHero && (
+        <button className="page-create-btn" onClick={handleCreateSession} disabled={sessionLocked} title="新建会话">
+          + 新建
+        </button>
+      )}
       {showHero ? (
         <div className="hero-wrap">
           <div className="hero">
@@ -2548,6 +2625,9 @@ export default function App() {
             <div className="header-left">
               <button className="session-toggle-btn" onClick={() => setShowSessions(v => !v)} title="会话列表">
                 <Menu size={16} />
+              </button>
+              <button className="header-new-session-btn" onClick={handleCreateSession} disabled={sessionLocked} title="新建会话">
+                + 新建
               </button>
               <span className="header-session-title">{getSessionTitle(messages)}</span>
             </div>

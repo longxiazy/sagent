@@ -21,6 +21,8 @@ npm run sandbox       # Requires Bun 1.3+
 
 Open http://localhost:5173
 
+When the Agent needs your approval, sagent shows a browser desktop notification with **Allow / Reject** buttons (Chromium-based browsers). The first time the Agent requests approval you'll see a banner — click **Enable desktop notifications** and the browser will prompt for permission. On Safari/Firefox the notification still pops but without inline buttons — clicking it focuses sagent so you can decide in the side panel.
+
 ## Security: Sandbox Policy
 
 When started with `npm run sandbox`, the Agent runs inside the macOS sandbox, with permissions controlled by `sandbox.sb`.
