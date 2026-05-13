@@ -1,57 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-
-const SAFE_COMMANDS = new Set([
-  // 文件查看 / 搜索（只读）
-  'pwd',
-  'ls',
-  'cat',
-  'head',
-  'tail',
-  'wc',
-  'stat',
-  'date',
-  'echo',
-  'rg',
-  'find',
-  'which',
-  'git',
-  'grep',
-  'diff',
-  'sort',
-  'uniq',
-  'awk',
-  'sed',
-  'cut',
-  'tr',
-  'xargs',
-  'tee',
-  'tree',
-  'du',
-  'df',
-  'jq',
-  // 文件操作（低破坏性）
-  'mkdir',
-  'touch',
-  'cp',
-  'mv',
-  'ln',
-  'tar',
-  'gzip',
-  'gunzip',
-  'zip',
-  'unzip',
-  // 系统信息（只读）
-  'env',
-  'printenv',
-  'id',
-  'whoami',
-  'hostname',
-  'uname',
-  'ps',
-  'pgrep',
-  'pidof',
-]);
+import { SAFE_COMMANDS, SAFE_ENV_PREFIXES } from './safe-policy';
 
 function resolveCwd(value) {
   if (typeof value !== 'string' || !value.trim()) {
@@ -61,8 +10,15 @@ function resolveCwd(value) {
 }
 
 function getFirstToken(command) {
-  const match = command.trim().match(/^([^\s]+)/);
-  return match ? match[1] : '';
+  const tokens = command.trim().split(/\s+/);
+  for (const token of tokens) {
+    const m = token.match(/^([A-Za-z_][A-Za-z0-9_]*)=/);
+    if (m && SAFE_ENV_PREFIXES.has(m[1])) {
+      continue;
+    }
+    return token;
+  }
+  return '';
 }
 
 function assertSafeCommand(command) {
