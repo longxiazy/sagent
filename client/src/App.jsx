@@ -1098,6 +1098,7 @@ function MemoryPanel({ onClose }) {
 // - 在移动端和桌面端之间复用同一套事件展示逻辑
 function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onRollback, rollbackLoading }) {
   const traceBottomRef = useRef(null);
+  const traceStickyRef = useRef(true);
   const startTimeRef = useRef(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < PHONE_BREAKPOINT;
   const pauseRef = useRef(null);
@@ -1163,8 +1164,24 @@ function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onT
   }, [hasPendingQuestion]);
 
   useEffect(() => {
+    if (!traceStickyRef.current) return;
     traceBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [trace]);
+
+  // 用户在 trace 容器内手动滚动时维护 sticky 标志：距离底部 80px 内视为"在底部"。
+  // 容器是条件渲染的，trace 从空变非空时才挂上 scroll 监听。
+  const traceHasContent = trace.length > 0;
+  useEffect(() => {
+    if (!traceHasContent) return;
+    const scroller = traceBottomRef.current?.parentElement;
+    if (!scroller) return;
+    const onScroll = () => {
+      const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      traceStickyRef.current = distance <= 80;
+    };
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', onScroll);
+  }, [traceHasContent]);
 
   if (mode !== 'agent') {
     return null;
