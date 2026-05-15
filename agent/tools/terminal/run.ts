@@ -1,24 +1,12 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { SAFE_COMMANDS, SAFE_ENV_PREFIXES } from './safe-policy';
+import { SAFE_COMMANDS, getFirstToken } from './safe-policy';
 
 function resolveCwd(value) {
   if (typeof value !== 'string' || !value.trim()) {
     return process.cwd();
   }
   return path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
-}
-
-function getFirstToken(command) {
-  const tokens = command.trim().split(/\s+/);
-  for (const token of tokens) {
-    const m = token.match(/^([A-Za-z_][A-Za-z0-9_]*)=/);
-    if (m && SAFE_ENV_PREFIXES.has(m[1])) {
-      continue;
-    }
-    return token;
-  }
-  return '';
 }
 
 function assertSafeCommand(command) {
