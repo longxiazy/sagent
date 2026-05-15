@@ -72,3 +72,41 @@ export const SAFE_ENV_PREFIXES = new Set([
   'LC_CTYPE',            // 字符分类 locale
   'TZ',                  // 时区
 ]);
+
+// 取命令首词，跳过 SAFE_ENV_PREFIXES 列出的环境变量前缀（如 GIT_CONFIG_GLOBAL=...）。
+export function getFirstToken(command) {
+  const tokens = String(command || '').trim().split(/\s+/);
+  for (const token of tokens) {
+    const m = token.match(/^([A-Za-z_][A-Za-z0-9_]*)=/);
+    if (m && SAFE_ENV_PREFIXES.has(m[1])) {
+      continue;
+    }
+    return token;
+  }
+  return '';
+}
+
+// 命令是否可以走 run_safe 路径（首词在白名单且没有危险 shell 操作符）。
+// classify 阶段用它判断是否需要把 run_safe 升级到 run_confirmed 走审批。
+export function canRunSafe(command) {
+  const cmd = String(command || '');
+  const firstToken = getFirstToken(cmd);
+  if (!SAFE_COMMANDS.has(firstToken)) {
+    return false;
+  }
+  // 与 run.ts 内的危险操作符黑名单保持一致
+  if (
+    /[|;]/.test(cmd) ||
+    /`/.test(cmd) ||
+    /\$\(/.test(cmd) ||
+    /\$\{/.test(cmd) ||
+    /[^&]&[^&]/.test(cmd) ||
+    /\s&(\s|$)/.test(cmd) ||
+    /&&|\|\|/.test(cmd) ||
+    /[<>]\(/.test(cmd) ||
+    /<<\s*\w/.test(cmd)
+  ) {
+    return false;
+  }
+  return true;
+}

@@ -1,3 +1,5 @@
+import { canRunSafe } from '../tools/terminal/safe-policy.ts';
+
 function matchesDangerousCommand(command) {
   // Block truly dangerous commands: rm, reboot, sudo, etc.
   if (/\b(rm|rmdir|reboot|shutdown|launchctl|mkfs|diskutil|dd|sudo|chmod|chown)\b/i.test(command)) return true;
@@ -115,9 +117,24 @@ export function classifyAgentAction(action) {
   }
 
   if (tool === 'terminal' && type === 'run_safe') {
+    if (canRunSafe(action.command || '')) {
+      return {
+        level: 'safe',
+        reason: '只读终端命令',
+      };
+    }
+    // 命令本身在 run_safe 白名单之外（或含危险操作符），不直接报错让 LLM 多跑一轮，
+    // 改写为 run_confirmed 走审批流程 —— 危险命令检查仍在下方 run_confirmed 分支生效。
+    if (matchesDangerousCommand(action.command || '')) {
+      return {
+        level: 'blocked',
+        reason: `命令被策略阻止: ${action.command}`,
+      };
+    }
+    action.type = 'run_confirmed';
     return {
-      level: 'safe',
-      reason: '只读终端命令',
+      level: 'confirm',
+      reason: `即将执行终端命令: ${action.command}`,
     };
   }
 
