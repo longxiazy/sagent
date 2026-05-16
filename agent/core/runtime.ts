@@ -142,7 +142,8 @@ export async function runAgentRuntime({
       // ---- 观察 ----
       const lastAction =
         history.length > 0 ? history[history.length - 1].action : null;
-      const skipObservation = shouldObserve
+      // 第一步 lastAction 为 null 时永远不跳过，避免初始观察缺失
+      const skipObservation = shouldObserve && lastAction
         ? !shouldObserve(lastAction)
         : false;
       const observation = skipObservation
@@ -290,10 +291,28 @@ export async function runAgentRuntime({
       finalAnswer = "已达到最大执行步数，任务未完全完成。";
     }
 
+    const quality = assessResultQuality({ task, steps: history, answer: finalAnswer });
+
+    // 降级时在 answer 前置警告条，避免用户把不完整结果误认为正常完成
+    let answer = finalAnswer;
+    if (quality.degraded) {
+      const parts: string[] = [];
+      if (Array.isArray(quality.failure_steps) && quality.failure_steps.length > 0) {
+        parts.push(`${quality.failure_steps.length} 步执行失败（步骤 ${quality.failure_steps.join(', ')}）`);
+      }
+      if (quality.unverified) {
+        parts.push('未获得权威/官方信息来源');
+      }
+      if (parts.length > 0) {
+        const warning = `> ⚠️ ${parts.join('；')}，返回结果可能不完整或存在偏差，请谨慎参考。\n\n`;
+        answer = warning + answer;
+      }
+    }
+
     return {
-      answer: finalAnswer,
+      answer,
       steps: history,
-      quality: assessResultQuality({ task, steps: history, answer: finalAnswer }),
+      quality,
     };
   } finally {
     await cleanup?.(state);

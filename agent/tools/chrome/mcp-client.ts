@@ -329,34 +329,38 @@ class ChromeMcpClient {
   }
 
   async _recoverFromAlreadyRunning(toolName, toolArgs) {
-    log.info(`[Chrome MCP] 检测到 Chrome already running 冲突，清理孤儿进程后重试`);
-    killOrphanChrome();
-    await new Promise(r => setTimeout(r, 2000));
-    // Reset transport so MCP server launches a fresh Chrome
+    // 默认 profile 被用户自己的 Chrome 占用时，killOrphanChrome 会误杀用户进程；
+    // 改为加 --isolated 启动独立 profile，重启 MCP client 后重试
+    if (!this._addIsolatedFlag()) {
+      log.info(`[Chrome MCP] 已是 --isolated 模式但仍冲突，工具调用 ${toolName} 失败`);
+      throw new Error('Chrome MCP browser profile 冲突，且 --isolated 模式仍无法启动');
+    }
+    log.info(`[Chrome MCP] 检测到 Chrome already running 冲突，自动加 --isolated 重启 MCP client 后重试 ${toolName}`);
+    const client = await getSharedChromeMcpClient(this.config);
+    const result = await client.transport.request('tools/call', {
+      name: toolName,
+      arguments: toolArgs || {},
+    });
+    if (result?.isError) {
+      log.info(`[Chrome MCP] --isolated 模式下工具调用 ${toolName} 仍失败`);
+    }
+    return result;
+  }
+
+  _addIsolatedFlag() {
+    const config = this.transport?.config;
+    if (!config || !Array.isArray(config.args)) {
+      return false;
+    }
+    if (config.args.includes('--isolated')) {
+      return false;
+    }
+    config.args = [...config.args, '--isolated'];
     this.transport.close?.().catch(() => {});
     this.toolsCache = null;
-    const client = await getSharedChromeMcpClient(this.config);
-    const MAX_RETRIES = 3;
-    const RETRY_DELAY_MS = 3000;
-
-    for (let attempt = 0; ; attempt++) {
-      const result = await client.transport.request('tools/call', {
-        name: toolName,
-        arguments: toolArgs || {},
-      });
-
-      if (!result?.isError) {
-        return result;
-      }
-
-      if (attempt >= MAX_RETRIES - 1) {
-        log.info(`[Chrome MCP] 清理 Chrome 后工具调用 ${toolName} 仍失败（已重试 ${MAX_RETRIES} 次）`);
-        return result;
-      }
-
-      log.info(`[Chrome MCP] 等待浏览器启动，${RETRY_DELAY_MS}ms 后重试 ${toolName}（第 ${attempt + 1}/${MAX_RETRIES} 次）`);
-      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
-    }
+    sharedClientPromise = null;
+    sharedClientKey = '';
+    return true;
   }
 
   async _retryWithoutAutoConnect(toolName, toolArgs) {

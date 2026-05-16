@@ -1,13 +1,21 @@
 import { getWebView } from './webview-session.ts';
 import { isChromeMcpEnabled } from '../chrome/mcp-client.ts';
+import { log } from '../../../helpers/logger.ts';
 
 const ACTION_SETTLE_MS = 600;
 const NAV_RETRY_MS = 500;
 const NAV_MAX_RETRIES = 3;
 const FETCH_TIMEOUT_MS = 15000;
+const FETCH_TIMEOUT_RETRY_MS = 25000;
+const FETCH_RETRY_BACKOFF_MS = 800;
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isTimeoutError(err) {
+  const msg = (err?.message || String(err || '')).toLowerCase();
+  return /超时|timeout|timed out|etimedout/.test(msg);
 }
 
 function withTimeout(promise, ms, message) {
@@ -20,6 +28,26 @@ function withTimeout(promise, ms, message) {
     // Give the underlying operation time to settle so WebView clears its pending state
     return promise.catch(() => {});
   });
+}
+
+// 浏览器冷启动期的偶发超时往往一次重试就成功（trace 中 fabiaoqing 连续两次超时第三次成功）
+// 仅对超时错误重试 1 次，证书/DNS/HTTP 错误不重试
+async function navigateWithRetry(view, url, firstTimeoutMs, retryTimeoutMs, errMessage) {
+  try {
+    return await withTimeout(safeNavigate(view, url), firstTimeoutMs, errMessage);
+  } catch (err) {
+    if (!isTimeoutError(err)) throw err;
+    await delay(FETCH_RETRY_BACKOFF_MS);
+    try {
+      const result = await withTimeout(safeNavigate(view, url), retryTimeoutMs, errMessage);
+      return result;
+    } catch (err2) {
+      if (isTimeoutError(err2)) {
+        throw new Error(`${err2.message} (已自动重试 1 次)`);
+      }
+      throw err2;
+    }
+  }
 }
 
 export async function safeNavigate(view, url) {
@@ -200,9 +228,23 @@ async function _executeBrowserAction(view, action) {
   if (action.type === 'scroll') {
     const pixels = (action.amount || 3) * 300;
     const signedPixels = action.direction === 'up' ? -pixels : pixels;
+    // 滚动前后各取一次文本快照，用于判断懒加载是否真的触发
+    const beforeText = await safeEvaluate(view, "(document.body?.innerText || '').slice(0, 4000)");
     await safeEvaluate(view, `window.scrollBy(0, ${signedPixels})`);
-    await delay(400);
-    return `已向${action.direction === 'up' ? '上' : '下'}滚动 ${action.amount || 3} 步`;
+    // 1200ms 比原 400ms 更稳，给懒加载/异步渲染留时间
+    await delay(1200);
+    const afterText = await safeEvaluate(view, "(document.body?.innerText || '').slice(0, 4000)");
+    let result = `已向${action.direction === 'up' ? '上' : '下'}滚动 ${action.amount || 3} 步`;
+    const lengthDelta = Math.abs((afterText?.length || 0) - (beforeText?.length || 0));
+    const unchanged =
+      beforeText && afterText &&
+      lengthDelta < 20 &&
+      beforeText.slice(0, 200) === afterText.slice(0, 200) &&
+      beforeText.slice(-200) === afterText.slice(-200);
+    if (unchanged) {
+      result += '\n⚠️ 滚动后页面内容未变化（可能已到底部或懒加载未触发）';
+    }
+    return result;
   }
 
   if (action.type === 'get_page_content') {
@@ -218,10 +260,10 @@ async function _executeBrowserAction(view, action) {
     if (!action.url) throw new Error('http_fetch 缺少 url');
     const url = /^https?:\/\//i.test(action.url) ? action.url : `https://${action.url}`;
     try {
-      await withTimeout(safeNavigate(view, url), FETCH_TIMEOUT_MS, `访问超时: ${url}`);
+      await navigateWithRetry(view, url, FETCH_TIMEOUT_MS, FETCH_TIMEOUT_RETRY_MS, `访问超时: ${url}`);
       await delay(1000);
     } catch (err) {
-      return `http_fetch ${url}: 浏览器访问失败 (${(err.message || '').slice(0, 100)})。`;
+      return `http_fetch ${url}: 浏览器访问失败 (${(err.message || '').slice(0, 120)})。`;
     }
     try {
       const pageInfo = await detectBlockedPage(view);
@@ -265,13 +307,13 @@ async function _executeBrowserAction(view, action) {
     for (const u of urls.slice(0, 5)) {
       const url = /^https?:\/\//i.test(u) ? u : `https://${u}`;
       try {
-        await withTimeout(safeNavigate(view, url), FETCH_TIMEOUT_MS, `访问超时: ${url}`);
+        await navigateWithRetry(view, url, FETCH_TIMEOUT_MS, FETCH_TIMEOUT_RETRY_MS, `访问超时: ${url}`);
         await delay(1000);
         const text = await safeEvaluate(view, "document.body?.innerText || ''");
         const cleaned = text.replace(/\s+/g, ' ').trim();
         results.push(`http_fetch ${url}:\n${cleaned.slice(0, 24000) || '页面内容为空'}`);
       } catch (err) {
-        results.push(`http_fetch ${url}: 失败 (${(err.message || '').slice(0, 80)})`);
+        results.push(`http_fetch ${url}: 失败 (${(err.message || '').slice(0, 100)})`);
       }
     }
     return results.join('\n\n---\n\n');
