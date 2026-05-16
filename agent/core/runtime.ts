@@ -124,10 +124,13 @@ export async function runAgentRuntime({
           for (const h of snapshot.history) {
             history.push({ ...h });
           }
+          // 从快照步骤继续（而非 targetStep - 1），避免跳步
+          step = snapshot.step;
         } else {
           history.length = 0;
+          // 无快照时从 targetStep - 1 开始（用户想回滚到 step N，从 N-1 后继续）
+          step = targetStep - 1;
         }
-        step = targetStep - 1;
         runRecord.pendingRollback = null;
         runRecord.rolledBack = true;
 
