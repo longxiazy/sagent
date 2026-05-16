@@ -154,6 +154,11 @@ export async function executeBrowserAction(view, action) {
 
 async function _executeBrowserAction(view, action) {
   if (action.type === 'navigate') {
+    // 内置浏览器不支持 file:// 协议，拦截并给出可操作建议
+    if (/^(file:\/\/|https?:\/\/file)/.test(action.url || '')) {
+      const localPath = (action.url || '').replace(/^https?:\/\/file\/\/\/|^file:\/\/\/?/, '/');
+      return `内置浏览器不支持打开本地文件。请使用 notify_user 告知用户文件路径（${localPath}），或使用 terminal run_confirmed 执行 open "${localPath}" 让系统默认浏览器打开。`;
+    }
     try {
       await withTimeout(safeNavigate(view, action.url), FETCH_TIMEOUT_MS, `导航超时: ${action.url}`);
       await delay(ACTION_SETTLE_MS);
