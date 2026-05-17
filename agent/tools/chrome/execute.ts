@@ -15,6 +15,7 @@ function truncate(text, max = MAX_TEXT) {
 }
 
 function formatToolList(tools, config) {
+  // chrome_list_tools 面向模型展示工具摘要，只保留名称、参数字段和描述。
   const header = [
     `Chrome DevTools MCP 已连接 (${config.transport})`,
     `可用工具数: ${tools.length}`,
@@ -30,6 +31,7 @@ function formatToolList(tools, config) {
 }
 
 function extractToolContent(result) {
+  // MCP 工具结果可能同时包含 content 和 structuredContent，这里统一压成文本。
   const chunks = [];
 
   if (Array.isArray(result?.content)) {
@@ -59,7 +61,21 @@ export async function executeChromeAction(action) {
   }
 
   const config = loadChromeMcpConfig();
-  const client = await getSharedChromeMcpClient(config);
+  let client;
+  try {
+    // 复用共享 MCP client，避免每次 Chrome 动作都重新拉起 MCP 进程或 SSE 流。
+    client = await getSharedChromeMcpClient(config);
+  } catch (err: any) {
+    if (err.message?.includes('error -54') || err.message?.includes('xattr')) {
+      return [
+        '⚠️ Chrome 浏览器因 macOS 权限问题无法启动（error -54）',
+        '已自动回退到内置 HTTP 客户端，可继续使用 browser.http_fetch 等工具。',
+        '如需修复 Chrome，请在终端执行:',
+        '  xattr -cr /Applications/Google\\ Chrome.app',
+      ].join('\n');
+    }
+    throw err;
+  }
 
   if (action.type === 'chrome_list_tools') {
     const tools = await client.listTools({ refresh: Boolean(action.refresh) });
@@ -79,7 +95,21 @@ export async function executeChromeAction(action) {
 
     const args = action.arguments && typeof action.arguments === 'object' && !Array.isArray(action.arguments)
       ? action.arguments : {};
-    const result = await client.callTool(toolName, args);
+    let result;
+    try {
+      // 这里保留原始 MCP tool 调用语义，错误恢复由 mcp-client.ts 统一处理。
+      result = await client.callTool(toolName, args);
+    } catch (err: any) {
+      if (err.message?.includes('error -54') || err.message?.includes('xattr')) {
+        return [
+          '⚠️ Chrome 浏览器因 macOS 权限问题无法启动（error -54）',
+          '已自动回退到内置 HTTP 客户端，可继续使用 browser.http_fetch 等工具。',
+          '如需修复 Chrome，请在终端执行:',
+          '  xattr -cr /Applications/Google\\ Chrome.app',
+        ].join('\n');
+      }
+      throw err;
+    }
     const content = extractToolContent(result);
     const status = result?.isError ? '失败' : '完成';
 

@@ -15,6 +15,7 @@ const CLIENT_INFO = { name: 'sagent', version: '1.0.0' };
 const IS_WINDOWS = process.platform === 'win32';
 
 function killOrphanChrome() {
+  // chrome-devtools-mcp 会使用固定 profile；重启 transport 前先清理它遗留的 Chrome。
   const profileDir = path.join(os.homedir(), '.cache', 'chrome-devtools-mcp', 'chrome-profile');
   if (!fs.existsSync(profileDir)) return;
 
@@ -51,6 +52,7 @@ function toAbsolutePath(rawPath, fallback = process.cwd()) {
 }
 
 function resolveCommandOnWindows(command, args) {
+  // Windows 下 npm bin shim 可能无法直接作为 stdio MCP 进程稳定启动。
   if (!IS_WINDOWS) {
     return { command, args };
   }
@@ -71,6 +73,7 @@ function resolveCommandOnWindows(command, args) {
 }
 
 function parseArgs(value) {
+  // CHROME_MCP_ARGS 支持 JSON 数组；解析失败时兼容简单空格分隔写法。
   if (Array.isArray(value)) {
     return value.map(item => String(item));
   }
@@ -111,6 +114,7 @@ function buildMessagesUrl(config, streamUrl) {
 }
 
 export function buildSsePostCandidates(config, streamUrl) {
+  // 不同 MCP SSE 实现使用 /message、/messages 或事件下发 endpoint。
   const candidates = [];
   const seen = new Set();
 
@@ -197,6 +201,7 @@ function clientKey(config) {
 }
 
 export function isChromeMcpEnabled(env = process.env) {
+  // 显式开关优先；只要配置了任一连接参数，也视为用户想启用 Chrome MCP。
   if (envFlag(env.CHROME_MCP_ENABLED)) {
     return true;
   }
@@ -221,6 +226,7 @@ export function buildChromePromptLines(env = process.env) {
 }
 
 export function loadChromeMcpConfig(env = process.env) {
+  // 默认使用 SSE；设置 CHROME_MCP_TRANSPORT=stdio 时改走本地子进程。
   const transport = String(env.CHROME_MCP_TRANSPORT || '').trim().toLowerCase() === 'stdio' ? 'stdio' : 'sse';
   const host = String(env.CHROME_MCP_HOST || DEFAULT_SSE_HOST).trim() || DEFAULT_SSE_HOST;
   const port = Number(env.CHROME_MCP_PORT || DEFAULT_SSE_PORT) || DEFAULT_SSE_PORT;
@@ -257,6 +263,9 @@ function createJsonRpcError(message, code = -32000, data = null) {
 }
 
 class ChromeMcpClient {
+  // macOS quarantine 等启动错误通常不会自愈；缓存后避免每步反复拉起 Chrome。
+  static _fatalChromeError: string | null = null;
+
   config: any;
   transport: any;
   toolsCache: any[] | null;
@@ -267,7 +276,17 @@ class ChromeMcpClient {
     this.toolsCache = null;
   }
 
+  _isFatalLaunchError(err: any): boolean {
+    const msg = err?.message || '';
+    return msg.includes('error -54')
+      || msg.includes('LSOpenURLsWithCompletionHandler')
+      || msg.includes('is damaged')
+      || msg.includes('cannot be opened')
+      || msg.includes('is corrupted');
+  }
+
   async listTools({ refresh = false } = {}) {
+    // tools/list 可能分页；缓存结果给 getTool 和后续 chrome_list_tools 复用。
     if (!refresh && this.toolsCache) {
       return this.toolsCache;
     }
@@ -301,6 +320,11 @@ class ChromeMcpClient {
   }
 
   async callTool(toolName, toolArgs) {
+    // callTool 是上层唯一入口，集中处理 MCP 工具错误和 Chrome 启动恢复。
+    if (ChromeMcpClient._fatalChromeError) {
+      throw new Error(ChromeMcpClient._fatalChromeError);
+    }
+
     const doCall = async () => this.transport.request('tools/call', {
       name: toolName,
       arguments: toolArgs || {},
@@ -311,6 +335,9 @@ class ChromeMcpClient {
       // MCP returns tool errors as { isError: true } in a successful JSON-RPC response,
       // not as a JSON-RPC error — so we must check result.isError explicitly.
       if (result?.isError && this._isChromeConnectionResult(result)) {
+        if (this._isFatalLaunchResult(result)) {
+          throw new Error(this._setFatalError(result));
+        }
         if (this._isAlreadyRunningResult(result)) {
           return await this._recoverFromAlreadyRunning(toolName, toolArgs);
         }
@@ -318,6 +345,9 @@ class ChromeMcpClient {
       }
       return result;
     } catch (err) {
+      if (this._isFatalLaunchError(err)) {
+        throw new Error(this._setFatalError(err));
+      }
       if (this._isChromeConnectionError(err)) {
         if (this._isAlreadyRunningErrorMsg(err)) {
           return await this._recoverFromAlreadyRunning(toolName, toolArgs);
@@ -348,6 +378,7 @@ class ChromeMcpClient {
   }
 
   _addIsolatedFlag() {
+    // --isolated 让 chrome-devtools-mcp 使用独立 profile，避免占用用户日常 Chrome。
     const config = this.transport?.config;
     if (!config || !Array.isArray(config.args)) {
       return false;
@@ -364,6 +395,7 @@ class ChromeMcpClient {
   }
 
   async _retryWithoutAutoConnect(toolName, toolArgs) {
+    // --autoConnect 连接现有 Chrome 失败时，退回让 MCP 自己启动浏览器。
     if (!this._stripAutoConnect()) {
       throw new Error('Chrome MCP 连接失败且无法回退');
     }
@@ -385,6 +417,11 @@ class ChromeMcpClient {
         return result;
       }
 
+      // 检测 macOS 致命错误（如 error -54），直接失败不重试
+      if (this._isFatalLaunchResult(result)) {
+        throw new Error(this._setFatalError(result));
+      }
+
       if (attempt >= MAX_RETRIES - 1) {
         log.info(`[Chrome MCP] 工具调用 ${toolName} 浏览器启动后仍失败（已重试 ${MAX_RETRIES} 次）`);
         return result;
@@ -393,6 +430,26 @@ class ChromeMcpClient {
       log.info(`[Chrome MCP] 等待浏览器启动，${RETRY_DELAY_MS}ms 后重试 ${toolName}（第 ${attempt + 1}/${MAX_RETRIES} 次）`);
       await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
     }
+  }
+
+  _isFatalLaunchResult(result) {
+    const text = Array.isArray(result?.content)
+      ? result.content.map(c => c?.text || '').join(' ')
+      : '';
+    return text.includes('error -54')
+      || text.includes('LSOpenURLsWithCompletionHandler')
+      || text.includes('is damaged')
+      || text.includes('is corrupted');
+  }
+
+  _setFatalError(err: any): string {
+    const msg = err?.message || String(err);
+    ChromeMcpClient._fatalChromeError =
+      'Chrome 因 macOS 权限问题无法启动，请运行以下命令修复:\n'
+      + '  xattr -cr /Applications/Google\\ Chrome.app\n'
+      + `错误详情: ${msg}`;
+    log.error(`[Chrome MCP] ${ChromeMcpClient._fatalChromeError}`);
+    return ChromeMcpClient._fatalChromeError;
   }
 
   _isChromeConnectionResult(result) {
@@ -425,6 +482,7 @@ class ChromeMcpClient {
   }
 
   _stripAutoConnect() {
+    // 修改运行时 config 后重置共享 client，下一次请求会用新参数重建 transport。
     const config = this.transport?.config;
     if (!config || !Array.isArray(config.args) || !config.args.includes('--autoConnect')) {
       return false;
@@ -445,6 +503,7 @@ class ChromeMcpClient {
   }
 }
 
+// 通过本地子进程与 chrome-devtools-mcp 通信，适合由本应用直接管理 MCP 生命周期。
 class StdioTransport {
   config: any;
   child: any;
@@ -467,6 +526,7 @@ class StdioTransport {
   }
 
   async ensureConnected() {
+    // 建立进程只负责启动 stdio 通道；MCP initialize 在 ensureInitialized 中完成。
     if (this.child && !this.child.stdin?.destroyed) {
       return;
     }
@@ -523,6 +583,7 @@ class StdioTransport {
   }
 
   handleStdout(chunk) {
+    // 兼容两种常见 MCP stdio framing：Content-Length 和 NDJSON。
     this.buffer = Buffer.concat([this.buffer, Buffer.from(chunk)]);
 
     while (this.buffer.length > 0) {
@@ -595,6 +656,7 @@ class StdioTransport {
   }
 
   handleIncomingMessage(message) {
+    // 当前客户端只主动发请求；服务端反向请求统一返回 method not found。
     if (message?.method && message?.id !== undefined) {
       this.sendRaw({
         jsonrpc: '2.0',
@@ -628,6 +690,7 @@ class StdioTransport {
   }
 
   async sendRaw(message) {
+    // stdio transport 只负责 JSON-RPC 序列化和写入，不触发 initialize。
     await this.ensureConnected();
     if (!this.child || this.child.stdin?.destroyed) {
       throw new Error('Chrome MCP stdio 连接已断开，请重试');
@@ -650,6 +713,7 @@ class StdioTransport {
   }
 
   async ensureInitialized() {
+    // 依次尝试新旧 MCP protocolVersion，兼容不同版本的 chrome-devtools-mcp。
     if (this.initialized) {
       return;
     }
@@ -717,6 +781,7 @@ class StdioTransport {
   }
 
   async sendRequest(method, params, { skipInit = false } = {}) {
+    // pending map 将 JSON-RPC response id 映射回调用方 Promise。
     if (!skipInit) {
       await this.ensureInitialized();
     }
@@ -764,6 +829,7 @@ class StdioTransport {
   }
 }
 
+// 连接外部 MCP SSE server：GET 订阅事件流，POST 发送 JSON-RPC 消息。
 class SseTransport {
   config: any;
   streamUrl: string;
@@ -798,6 +864,7 @@ class SseTransport {
   }
 
   async ensureStreamOpen(): Promise<string> {
+    // SSE server 可能通过 endpoint 事件告知 POST 地址；否则短暂等待后用候选地址。
     if (this.streamPromise) {
       if (!this.endpointPromise) {
         throw new Error('Chrome MCP SSE endpoint 尚未初始化');
@@ -852,6 +919,7 @@ class SseTransport {
   }
 
   async consumeStream(body) {
+    // SSE 事件以空行分隔；每个完整事件块交给 handleSseEvent 解析。
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -879,6 +947,7 @@ class SseTransport {
   }
 
   handleSseEvent(block) {
+    // endpoint 事件更新 POST 地址；普通 message 事件承载 JSON-RPC payload。
     const lines = block.split(/\r?\n/);
     let eventName = 'message';
     const dataLines = [];
@@ -957,6 +1026,7 @@ class SseTransport {
   }
 
   async postJsonRpc(message) {
+    // 某些 server 的 messages 路径不同，404 时尝试下一个候选地址。
     const endpoint = await this.ensureStreamOpen();
     const candidates = [endpoint, this.postUrl, ...this.fallbackPostUrls]
       .filter((value, index, array) => typeof value === 'string' && value && array.indexOf(value) === index);
@@ -1001,6 +1071,7 @@ class SseTransport {
   }
 
   async ensureInitialized() {
+    // 与 stdio 一样，SSE transport 初始化后才允许发送普通 MCP 请求。
     if (this.initialized) {
       return;
     }
@@ -1088,6 +1159,10 @@ class SseTransport {
     this.initializePromise = null;
     this.streamPromise = null;
   }
+}
+
+export function resetFatalChromeError() {
+  ChromeMcpClient._fatalChromeError = null;
 }
 
 export function createChromeMcpClient(config = loadChromeMcpConfig()) {
