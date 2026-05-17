@@ -39,6 +39,12 @@ import { assessResultQuality } from "./result-quality.ts";
 const MAX_HISTORY_STEPS = Number(process.env.AGENT_MAX_HISTORY_STEPS || 20);
 const MAX_RESULT_CHARS = Number(process.env.AGENT_MAX_RESULT_CHARS || 5000);
 
+function actionTargetUrl(action) {
+  if (typeof action?.url === 'string' && action.url) return action.url;
+  if (typeof action?.arguments?.url === 'string' && action.arguments.url) return action.arguments.url;
+  return null;
+}
+
 function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
   // Progressive truncation: recent steps keep more context, old steps get shorter results
   const truncateEntry = (h, remaining) => {
@@ -195,12 +201,13 @@ export async function runAgentRuntime({
 
       if (authorization?.status === "rejected") {
         const result = authorization.message || "操作未获批准";
+        const url = actionTargetUrl(decision.action) || observation?.url;
         history.push({
           step,
           rationale: decision.rationale,
           action: decision.action,
           result,
-          url: observation?.url,
+          url,
           title: observation?.title,
         });
 
@@ -246,7 +253,7 @@ export async function runAgentRuntime({
         rationale: decision.rationale,
         action: decision.action,
         result,
-        url: observation?.url,
+        url: actionTargetUrl(decision.action) || observation?.url,
         title: observation?.title,
       });
 

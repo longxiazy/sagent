@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createModelTools } from '../agent/core/tool-definitions.ts';
 import { normalizeDesktopAgentDecision } from '../agent/core/schemas.ts';
 import { classifyAgentAction } from '../agent/policy/classify.ts';
+import { executeChromeAction } from '../agent/tools/chrome/execute.ts';
 import {
   loadChromeMcpConfig,
   resetChromeMcpClientForTests,
@@ -144,5 +145,19 @@ describe('Chrome MCP config', () => {
     const config = loadChromeMcpConfig();
 
     expect(config.enabled).toBe(true);
+  });
+});
+
+describe('Chrome MCP search-engine guard', () => {
+  it('blocks search engine navigation before connecting to MCP', async () => {
+    process.env.CHROME_MCP_ENABLED = 'true';
+
+    const result = await executeChromeAction({
+      type: 'chrome_call_tool',
+      toolName: 'navigate_page',
+      arguments: { url: 'https://www.baidu.com/s?wd=杭州必去十大景点' },
+    });
+
+    expect(result).toContain('已阻止访问搜索引擎搜索页');
   });
 });

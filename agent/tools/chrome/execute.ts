@@ -8,10 +8,40 @@ import {
 } from './mcp-client.ts';
 
 const MAX_TEXT = 48000;
+const SEARCH_ENGINE_HOSTS = [
+  /(^|\.)baidu\.com$/i,
+  /(^|\.)google\.[^/]+$/i,
+  /(^|\.)bing\.com$/i,
+];
 
 function truncate(text, max = MAX_TEXT) {
   const value = String(text || '');
   return value.length > max ? `${value.slice(0, max)}\n...(内容已截断)` : value;
+}
+
+function normalizeHttpUrl(rawUrl) {
+  return /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+}
+
+function isBlockedSearchEngineUrl(rawUrl) {
+  if (!rawUrl) return false;
+  try {
+    const parsed = new URL(normalizeHttpUrl(rawUrl));
+    const hostMatches = SEARCH_ENGINE_HOSTS.some(pattern => pattern.test(parsed.hostname));
+    if (!hostMatches) return false;
+    const path = parsed.pathname.toLowerCase();
+    return path === '/s' || path === '/search' || parsed.searchParams.has('q') || parsed.searchParams.has('wd');
+  } catch {
+    return false;
+  }
+}
+
+function blockedSearchEngineResult(url) {
+  return [
+    `已阻止访问搜索引擎搜索页: ${url}`,
+    'Google、百度、Bing 等搜索页容易触发反爬/验证码，且通常不是可靠的一手来源。',
+    '请直接抓取目标站点 URL；如果需要多源搜索，请使用 browser.parallel_fetch 抓取多个候选来源页面。',
+  ].join('\n');
 }
 
 function formatToolList(tools, config) {
@@ -61,6 +91,16 @@ export async function executeChromeAction(action) {
   }
 
   const config = loadChromeMcpConfig();
+  if (action.type === 'chrome_call_tool') {
+    const toolName = String(action.toolName || '').trim();
+    const args = action.arguments && typeof action.arguments === 'object' && !Array.isArray(action.arguments)
+      ? action.arguments : {};
+    const targetUrl = typeof args.url === 'string' ? args.url : '';
+    if ((toolName === 'navigate_page' || toolName === 'new_page') && isBlockedSearchEngineUrl(targetUrl)) {
+      return blockedSearchEngineResult(targetUrl);
+    }
+  }
+
   let client;
   try {
     // 复用共享 MCP client，避免每次 Chrome 动作都重新拉起 MCP 进程或 SSE 流。

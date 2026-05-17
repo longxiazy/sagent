@@ -21,7 +21,7 @@ const OFFICIAL_HOST_PATTERNS = [
 ];
 
 const FAILURE_PATTERNS = [
-  /执行失败|操作失败|访问失败|导航超时|访问超时|timeout|timed out|404 Not Found|403 Forbidden|already running|反爬|验证码|人机验证|页面内容为空|未找到|不存在|撤稿|删除|rate.?limit|429/i,
+  /执行失败|操作失败|访问失败|导航超时|访问超时|timeout|timed out|404 Not Found|403 Forbidden|already running|反爬|验证码|人机验证|安全验证|滑块|页面内容为空|未找到|不存在|撤稿|删除|rate.?limit|429|请求已中断|Web应用防护|Web安全风险|访问不合规|已阻止访问搜索引擎/i,
 ];
 
 function textOf(value: any) {
@@ -51,7 +51,7 @@ function hasOfficialUrl(value: any) {
 
 function resultHasUsableOfficialContent(step: any) {
   const result = textOf(step?.result);
-  const url = textOf(step?.url || step?.action?.url);
+  const url = textOf(step?.url || step?.action?.url || step?.action?.arguments?.url);
   if (!hasOfficialUrl(url) && !hasOfficialUrl(result)) {
     return false;
   }

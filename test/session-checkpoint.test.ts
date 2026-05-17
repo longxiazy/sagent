@@ -138,6 +138,29 @@ const events = () => {
 };
 
 describe('runtime: session checkpoint integration', () => {
+  it('records action target URL in history instead of the previous observation URL', async () => {
+    const cancelSignal = new AbortController().signal;
+    const result = await runAgentRuntime({
+      task: 'fetch target page',
+      maxSteps: 2,
+      onEvent: noop,
+      cancelSignal,
+      initialize: noop,
+      observe: () => ({ url: 'https://previous.example/', title: 'Previous' }),
+      decide: ({ step }) => step === 1
+        ? {
+            action: { tool: 'browser', type: 'http_fetch', url: 'https://target.example/page' },
+            rationale: 'fetch target',
+          }
+        : { action: { type: 'finish', answer: 'done' }, rationale: 'done' },
+      authorize: noop,
+      execute: () => 'target content',
+      cleanup: noop,
+    });
+
+    expect(result.steps[0].url).toBe('https://target.example/page');
+  });
+
   it('saves snapshots at interval steps', async () => {
     const runId = 'run_rt2';
     const runRecord = { runId, pendingRollback: null };

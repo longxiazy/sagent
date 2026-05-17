@@ -9,6 +9,12 @@ const FETCH_TIMEOUT_MS = 15000;
 const FETCH_TIMEOUT_RETRY_MS = 25000;
 const FETCH_RETRY_BACKOFF_MS = 800;
 
+const SEARCH_ENGINE_HOSTS = [
+  /(^|\.)baidu\.com$/i,
+  /(^|\.)google\.[^/]+$/i,
+  /(^|\.)bing\.com$/i,
+];
+
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -28,6 +34,31 @@ function withTimeout(promise, ms, message) {
     // Give the underlying operation time to settle so WebView clears its pending state
     return promise.catch(() => {});
   });
+}
+
+function normalizeHttpUrl(rawUrl) {
+  return /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+}
+
+function isBlockedSearchEngineUrl(rawUrl) {
+  if (!rawUrl) return false;
+  try {
+    const parsed = new URL(normalizeHttpUrl(rawUrl));
+    const hostMatches = SEARCH_ENGINE_HOSTS.some(pattern => pattern.test(parsed.hostname));
+    if (!hostMatches) return false;
+    const path = parsed.pathname.toLowerCase();
+    return path === '/s' || path === '/search' || parsed.searchParams.has('q') || parsed.searchParams.has('wd');
+  } catch {
+    return false;
+  }
+}
+
+function blockedSearchEngineResult(url) {
+  return [
+    `已阻止访问搜索引擎搜索页: ${url}`,
+    'Google、百度、Bing 等搜索页容易触发反爬/验证码，且通常不是可靠的一手来源。',
+    '请直接抓取目标站点 URL；如果需要多源搜索，请使用 parallel_fetch 抓取多个候选来源页面。',
+  ].join('\n');
 }
 
 // 浏览器冷启动期的偶发超时往往一次重试就成功（trace 中 fabiaoqing 连续两次超时第三次成功）
@@ -95,6 +126,13 @@ const BLOCKED_PATTERNS = [
   /hcaptcha/i,
   /请完成验证/i,
   /人机验证/i,
+  /安全验证/i,
+  /拖动.*滑块/i,
+  /滑块/i,
+  /请求已中断/i,
+  /Web应用防护/i,
+  /Web安全风险/i,
+  /访问不合规/i,
 ];
 
 function detectBlockedPage(view) {
@@ -122,6 +160,36 @@ function checkBlocked(title, url, body) {
 function blockedHint() {
   if (!isChromeMcpEnabled()) return '';
   return '\n\n⚠️ 页面可能被反爬拦截，建议改用 Chrome MCP 工具（chrome_call_tool → navigate_page / take_snapshot）操作真实 Chrome 浏览器访问。';
+}
+
+async function extractPageTextOrLinks(view, url, extractLinks) {
+  if (extractLinks) {
+    const { content, links } = await safeEvaluate(view, `(() => {
+      const bodyText = document.body?.innerText || '';
+      const anchors = Array.from(document.querySelectorAll('a[href]'));
+      const extracted = [];
+      for (const a of anchors) {
+        const href = a.href;
+        const label = (a.textContent || '').trim();
+        if (href && href.startsWith('http') && label.length > 3 && label.length < 120) {
+          extracted.push({ url: href, title: label });
+        }
+      }
+      return { content: bodyText, links: extracted };
+    })()`);
+    let result = `搜索结果 ${url}:\n\n链接列表:\n`;
+    for (const link of links.slice(0, 10)) {
+      result += `- [${link.title}](${link.url})\n`;
+    }
+    result += `\n页面摘要: ${content.slice(0, 3000)}`;
+    return result;
+  }
+
+  const text = await safeEvaluate(view, "document.body?.innerText || ''");
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  return cleaned.length > 24000
+    ? cleaned.slice(0, 24000) + '\n...(内容已截断)'
+    : cleaned;
 }
 
 function elementSelector(elementId) {
@@ -158,6 +226,9 @@ async function _executeBrowserAction(view, action) {
     if (/^(file:\/\/|https?:\/\/file)/.test(action.url || '')) {
       const localPath = (action.url || '').replace(/^https?:\/\/file\/\/\/|^file:\/\/\/?/, '/');
       return `内置浏览器不支持打开本地文件。请使用 notify_user 告知用户文件路径（${localPath}），或使用 terminal run_confirmed 执行 open "${localPath}" 让系统默认浏览器打开。`;
+    }
+    if (isBlockedSearchEngineUrl(action.url)) {
+      return blockedSearchEngineResult(action.url);
     }
     try {
       await withTimeout(safeNavigate(view, action.url), FETCH_TIMEOUT_MS, `导航超时: ${action.url}`);
@@ -263,7 +334,10 @@ async function _executeBrowserAction(view, action) {
 
   if (action.type === 'http_fetch') {
     if (!action.url) throw new Error('http_fetch 缺少 url');
-    const url = /^https?:\/\//i.test(action.url) ? action.url : `https://${action.url}`;
+    const url = normalizeHttpUrl(action.url);
+    if (isBlockedSearchEngineUrl(url)) {
+      return blockedSearchEngineResult(url);
+    }
     try {
       await navigateWithRetry(view, url, FETCH_TIMEOUT_MS, FETCH_TIMEOUT_RETRY_MS, `访问超时: ${url}`);
       await delay(1000);
@@ -276,33 +350,8 @@ async function _executeBrowserAction(view, action) {
         return `http_fetch ${url} 被反爬拦截（标题: ${pageInfo.title.slice(0, 80)}）。${blockedHint()}`;
       }
     } catch { /* ignore detection failure */ }
-    if (action.extractLinks) {
-      const { content, links } = await safeEvaluate(view, `(() => {
-        const bodyText = document.body?.innerText || '';
-        const anchors = Array.from(document.querySelectorAll('a[href]'));
-        const extracted = [];
-        for (const a of anchors) {
-          const href = a.href;
-          const label = (a.textContent || '').trim();
-          if (href && href.startsWith('http') && label.length > 3 && label.length < 120) {
-            extracted.push({ url: href, title: label });
-          }
-        }
-        return { content: bodyText, links: extracted };
-      })()`);
-      let result = `搜索结果 ${url}:\n\n链接列表:\n`;
-      for (const link of links.slice(0, 10)) {
-        result += `- [${link.title}](${link.url})\n`;
-      }
-      result += `\n页面摘要: ${content.slice(0, 3000)}`;
-      return result;
-    }
-    const text = await safeEvaluate(view, "document.body?.innerText || ''");
-    const cleaned = text.replace(/\s+/g, ' ').trim();
-    const truncated = cleaned.length > 24000
-      ? cleaned.slice(0, 24000) + '\n...(内容已截断)'
-      : cleaned;
-    return truncated || `http_fetch ${url}: 页面内容为空。`;
+    const content = await extractPageTextOrLinks(view, url, action.extractLinks);
+    return content || `http_fetch ${url}: 页面内容为空。`;
   }
 
   if (action.type === 'parallel_fetch') {
@@ -310,13 +359,21 @@ async function _executeBrowserAction(view, action) {
     if (urls.length === 0) throw new Error('parallel_fetch 缺少 urls');
     const results = [];
     for (const u of urls.slice(0, 5)) {
-      const url = /^https?:\/\//i.test(u) ? u : `https://${u}`;
+      const url = normalizeHttpUrl(u);
+      if (isBlockedSearchEngineUrl(url)) {
+        results.push(blockedSearchEngineResult(url));
+        continue;
+      }
       try {
         await navigateWithRetry(view, url, FETCH_TIMEOUT_MS, FETCH_TIMEOUT_RETRY_MS, `访问超时: ${url}`);
         await delay(1000);
-        const text = await safeEvaluate(view, "document.body?.innerText || ''");
-        const cleaned = text.replace(/\s+/g, ' ').trim();
-        results.push(`http_fetch ${url}:\n${cleaned.slice(0, 24000) || '页面内容为空'}`);
+        const pageInfo = await detectBlockedPage(view);
+        if (checkBlocked(pageInfo.title, pageInfo.url, pageInfo.body)) {
+          results.push(`http_fetch ${url} 被反爬拦截（标题: ${pageInfo.title.slice(0, 80)}）。${blockedHint()}`);
+          continue;
+        }
+        const content = await extractPageTextOrLinks(view, url, action.extractLinks);
+        results.push(`http_fetch ${url}:\n${content || '页面内容为空'}`);
       } catch (err) {
         results.push(`http_fetch ${url}: 失败 (${(err.message || '').slice(0, 100)})`);
       }
