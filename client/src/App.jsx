@@ -1849,6 +1849,78 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 手机后台/切 tab 时浏览器会冻结 JS、节流网络，SSE reader 可能在后台错过
+  // done/error 事件；切回前台时如果前端还以为任务在跑，就调一次持久化的 trace
+  // 接口兜底：trace 里如果已经包含 done/error，把 answer 灌回对应 session 并
+  // 把 running 状态收掉，避免出现"任务已结束但 UI 一直转圈"。
+  useEffect(() => {
+    if (!agentRunning) return;
+    let cancelled = false;
+
+    const checkOnVisible = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const rid = agentRunIdRef.current;
+      if (!rid) return;
+      let events;
+      try {
+        events = await fetchAgentTrace(rid);
+      } catch {
+        return;
+      }
+      if (cancelled || !Array.isArray(events) || events.length === 0) return;
+
+      const terminal = events.find(e => e.type === 'done' || e.type === 'error');
+      if (!terminal) return;
+
+      setAgentTrace(prev => {
+        if (prev.some(e => e.type === terminal.type)) return prev;
+        return [...prev, terminal];
+      });
+
+      const content = terminal.type === 'done'
+        ? (terminal.answer || 'Agent 已完成任务。')
+        : `⚠️ Desktop Agent 失败：${terminal.error || '未知错误'}`;
+
+      setChatState(prev => {
+        let changed = false;
+        const sessions = prev.sessions.map(session => {
+          if (session.agentRunId !== rid) return session;
+          const msgs = [...session.messages];
+          let idx = -1;
+          for (let i = msgs.length - 1; i >= 0; i -= 1) {
+            if (msgs[i].role === 'assistant' && msgs[i].content?.includes('正在执行任务')) {
+              idx = i;
+              break;
+            }
+          }
+          if (idx >= 0) {
+            msgs[idx] = { role: 'assistant', content, ts: Date.now() };
+          } else if (!msgs.some(m => m.role === 'assistant' && m.content === content)) {
+            msgs.push({ role: 'assistant', content, ts: Date.now() });
+          } else {
+            return session;
+          }
+          changed = true;
+          return touchSession(session, { messages: msgs, agentRunId: rid });
+        });
+        if (!changed) return prev;
+        return normalizeChatState({ ...prev, sessions });
+      });
+
+      setAgentRunning(false);
+      setPendingApproval(null);
+      setPendingQuestion(null);
+    };
+
+    document.addEventListener('visibilitychange', checkOnVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', checkOnVisible);
+    };
+  // setter 引用稳定，rid 用 ref 读最新值
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentRunning]);
+
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
