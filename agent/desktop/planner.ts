@@ -15,6 +15,9 @@ export const DEFAULT_MODEL_TIMEOUT_MS = 10_000;
 const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000;
 const SINGLE_MODEL_RATE_LIMIT_RETRY = 2;
 const SINGLE_MODEL_RETRY_BASE_BACKOFF_MS = 5_000;
+// progressive 策略下,primary 模型多久还没返回就唤醒剩余模型加入 race
+// 选 4s 是因为快速模型一般 2~3s 出结果,留 1s 缓冲避免过早 fan-out 浪费 token
+const PROGRESSIVE_RACE_UP_MS = 4_000;
 
 function isRateLimitError(err: any) {
   const status = err?.status || err?.statusCode || err?.error?.status || err?.error?.statusCode;
@@ -329,6 +332,86 @@ export function createDesktopPlanner({
       );
 
       return aggregated;
+    }
+
+    if (strategy === 'progressive') {
+      // 先单跑 primary（activeModels[0]）；4s 内出结果直接独占,
+      // 超过阈值仍 thinking → 唤醒剩余模型加入 race；primary 提前 fail → 立即 fallback race
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const failures: string[] = [];
+        const timers: NodeJS.Timeout[] = [];
+        const raceAc = new AbortController();
+        const launchedSet = new Set<string>();
+
+        if (cancelSignal?.aborted) { reject(new Error('Agent 已取消')); return; }
+        const onCancel = () => {
+          if (settled) return;
+          settled = true;
+          timers.forEach(t => clearTimeout(t));
+          raceAc.abort();
+          reject(new Error('Agent 已取消'));
+        };
+        cancelSignal?.addEventListener('abort', onCancel);
+
+        const primary = activeModels[0];
+        const rest = activeModels.slice(1);
+
+        function launch(candidate: string) {
+          if (settled || launchedSet.has(candidate) || cancelSignal?.aborted) return;
+          launchedSet.add(candidate);
+          onEvent?.({ type: 'model_plan', stage: 'thinking', model: candidate, step });
+          planWithTimeout(candidate, planCtx, cancelSignal, raceAc.signal)
+            .then(result => {
+              if (settled) {
+                onEvent?.({ type: 'model_plan', stage: 'cancelled', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
+                return;
+              }
+              settled = true;
+              raceAc.abort();
+              timers.forEach(t => clearTimeout(t));
+              cancelSignal?.removeEventListener('abort', onCancel);
+              log.info(`[MultiModel] progressive 使用 ${candidate} 的结果`);
+              onEvent?.({ type: 'model_plan', stage: 'winner', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
+              resolve(result);
+            })
+            .catch((err: any) => {
+              if (settled) {
+                onEvent?.({ type: 'model_plan', stage: 'cancelled', model: candidate, step });
+                return;
+              }
+              if (err.message.includes('模型超时')) {
+                blacklistedModels.add(candidate);
+                log.warn(`[MultiModel] ${candidate} 超时，已加入黑名单`);
+              } else if (isRateLimitError(err)) {
+                markModelRateLimited(candidate, err, onEvent, step);
+              }
+              onEvent?.({ type: 'model_plan', stage: 'failed', model: candidate, step, error: err.message.slice(0, 120) });
+              failures.push(candidate);
+
+              // primary 提前失败 → 立即唤醒剩余模型 race
+              if (candidate === primary && rest.length > 0) {
+                for (const m of rest) launch(m);
+                return;
+              }
+
+              if (!settled && launchedSet.size === activeModels.length && failures.length === activeModels.length) {
+                cancelSignal?.removeEventListener('abort', onCancel);
+                reject(new Error(`所有模型均失败: ${failures.join(', ')}`));
+              }
+            });
+        }
+
+        launch(primary);
+
+        if (rest.length > 0) {
+          timers.push(setTimeout(() => {
+            if (settled) return;
+            log.info(`[MultiModel] progressive primary=${primary} 超过 ${PROGRESSIVE_RACE_UP_MS}ms 未返回，唤醒 ${rest.join(',')}`);
+            for (const m of rest) launch(m);
+          }, PROGRESSIVE_RACE_UP_MS));
+        }
+      });
     }
 
     return new Promise((resolve, reject) => {

@@ -96,7 +96,7 @@ export function createDesktopAgentRunner({
     task,
     model,
     models: agentModels,
-    strategy = 'race',
+    strategy = 'progressive',
     systemPrompt = null,
     headless = defaultHeadless,
     onEvent,
@@ -161,7 +161,8 @@ export function createDesktopAgentRunner({
       shouldObserve: (lastAction) => {
         if (!lastAction) return false;
         const tool = lastAction.tool || '';
-        return tool !== 'fs' && tool !== 'terminal' && tool !== 'ide' && tool !== 'chrome';
+        // chrome 是浏览器类工具，状态变化必须观察；fs/terminal/ide 多为本地无副作用操作可跳过
+        return tool !== 'fs' && tool !== 'terminal' && tool !== 'ide';
       },
       execute: async (state, action, context) => routeAction(state, action, context),
       cleanup: async state => {

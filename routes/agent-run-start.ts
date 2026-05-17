@@ -48,10 +48,12 @@ export function createAgentRunStartRouter({
     const normalizedTask = task.trim();
     const agentHeadless = typeof headless === 'boolean' ? headless : process.env.AGENT_HEADLESS === 'true';
     const startedAt = Date.now();
+    // fromCheckpoint 回滚时复用原 runId，保持 trace 连续性
+    const existingRunId = fromCheckpoint?.runId;
     const runRecord = agentRunStore.createRun({
       model,
       task: normalizedTask,
-    }, startedAt);
+    }, startedAt, existingRunId);
     const runId = runRecord.runId;
     let finalAnswer: string | null = null;
     let agentError: any = null;

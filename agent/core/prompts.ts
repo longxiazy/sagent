@@ -1,6 +1,33 @@
 import { buildIdePromptLines, isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
 import { buildChromePromptLines, isChromeMcpEnabled } from '../tools/chrome/mcp-client.ts';
 
+// 提取最近 N 步 browser/chrome 工具访问过的 URL，提示模型避免原地踏步。
+// trace 中曾出现同一 URL 被模型连续访问 3 次的情况，仅靠 history 推理不足以让模型察觉。
+function buildRecentUrlsHint(history: any[], lookback = 5): string | null {
+  if (!Array.isArray(history) || history.length === 0) return null;
+  const recent = history.slice(-lookback);
+  const counts = new Map<string, number>();
+  const order: string[] = [];
+  for (const entry of recent) {
+    const action = entry?.action || {};
+    const tool = action.tool || '';
+    if (tool !== 'browser' && tool !== 'chrome') continue;
+    let url: string | undefined;
+    if (typeof action.url === 'string') url = action.url;
+    else if (action.arguments && typeof action.arguments.url === 'string') url = action.arguments.url;
+    if (!url) continue;
+    if (!counts.has(url)) order.push(url);
+    counts.set(url, (counts.get(url) || 0) + 1);
+  }
+  if (order.length === 0) return null;
+  const lines = order.map(url => {
+    const n = counts.get(url) || 1;
+    const flag = n >= 2 ? '【已访问 ' + n + ' 次，避免重复】' : '';
+    return `- ${url} ${flag}`.trim();
+  });
+  return `最近访问过的 URL（避免重复访问相同页面，除非有明确新目的）：\n${lines.join('\n')}`;
+}
+
 export function buildDesktopAgentSystemPrompt(systemPrompt: string | null) {
   const ideLines = buildIdePromptLines();
   const chromeLines = buildChromePromptLines();
@@ -45,9 +72,10 @@ export function buildClaudeTaskMessages({
       messages.push({ role: msg.role, content: msg.content });
     }
   }
+  const recentUrlsHint = buildRecentUrlsHint(history);
   messages.push({
     role: 'user',
-    content: JSON.stringify({ task, step, history, observation }),
+    content: JSON.stringify({ task, step, history, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}) }),
   });
   return messages;
 }
@@ -76,6 +104,8 @@ export function buildNvidiaTaskMessages({
         .map(message => `${message.role === 'user' ? '用户' : '助手'}: ${message.content}`)
         .join('\n')
     : '';
+
+  const recentUrlsHint = buildRecentUrlsHint(history);
 
   return [
     {
@@ -144,7 +174,7 @@ export function buildNvidiaTaskMessages({
     },
     {
       role: 'user',
-      content: JSON.stringify({ task, step, history, observation }),
+      content: JSON.stringify({ task, step, history, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}) }),
     },
   ];
 }

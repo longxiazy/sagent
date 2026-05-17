@@ -39,6 +39,12 @@ import { assessResultQuality } from "./result-quality.ts";
 const MAX_HISTORY_STEPS = Number(process.env.AGENT_MAX_HISTORY_STEPS || 20);
 const MAX_RESULT_CHARS = Number(process.env.AGENT_MAX_RESULT_CHARS || 5000);
 
+function actionTargetUrl(action) {
+  if (typeof action?.url === 'string' && action.url) return action.url;
+  if (typeof action?.arguments?.url === 'string' && action.arguments.url) return action.arguments.url;
+  return null;
+}
+
 function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
   // Progressive truncation: recent steps keep more context, old steps get shorter results
   const truncateEntry = (h, remaining) => {
@@ -124,10 +130,13 @@ export async function runAgentRuntime({
           for (const h of snapshot.history) {
             history.push({ ...h });
           }
+          // 从快照步骤继续（而非 targetStep - 1），避免跳步
+          step = snapshot.step;
         } else {
           history.length = 0;
+          // 无快照时从 targetStep - 1 开始（用户想回滚到 step N，从 N-1 后继续）
+          step = targetStep - 1;
         }
-        step = targetStep - 1;
         runRecord.pendingRollback = null;
         runRecord.rolledBack = true;
 
@@ -142,7 +151,8 @@ export async function runAgentRuntime({
       // ---- 观察 ----
       const lastAction =
         history.length > 0 ? history[history.length - 1].action : null;
-      const skipObservation = shouldObserve
+      // 第一步 lastAction 为 null 时永远不跳过，避免初始观察缺失
+      const skipObservation = shouldObserve && lastAction
         ? !shouldObserve(lastAction)
         : false;
       const observation = skipObservation
@@ -191,12 +201,13 @@ export async function runAgentRuntime({
 
       if (authorization?.status === "rejected") {
         const result = authorization.message || "操作未获批准";
+        const url = actionTargetUrl(decision.action) || observation?.url;
         history.push({
           step,
           rationale: decision.rationale,
           action: decision.action,
           result,
-          url: observation?.url,
+          url,
           title: observation?.title,
         });
 
@@ -242,7 +253,7 @@ export async function runAgentRuntime({
         rationale: decision.rationale,
         action: decision.action,
         result,
-        url: observation?.url,
+        url: actionTargetUrl(decision.action) || observation?.url,
         title: observation?.title,
       });
 
@@ -290,10 +301,28 @@ export async function runAgentRuntime({
       finalAnswer = "已达到最大执行步数，任务未完全完成。";
     }
 
+    const quality = assessResultQuality({ task, steps: history, answer: finalAnswer });
+
+    // 降级时在 answer 前置警告条，避免用户把不完整结果误认为正常完成
+    let answer = finalAnswer;
+    if (quality.degraded) {
+      const parts: string[] = [];
+      if (Array.isArray(quality.failure_steps) && quality.failure_steps.length > 0) {
+        parts.push(`${quality.failure_steps.length} 步执行失败（步骤 ${quality.failure_steps.join(', ')}）`);
+      }
+      if (quality.unverified) {
+        parts.push('未获得权威/官方信息来源');
+      }
+      if (parts.length > 0) {
+        const warning = `> ⚠️ ${parts.join('；')}，返回结果可能不完整或存在偏差，请谨慎参考。\n\n`;
+        answer = warning + answer;
+      }
+    }
+
     return {
-      answer: finalAnswer,
+      answer,
       steps: history,
-      quality: assessResultQuality({ task, steps: history, answer: finalAnswer }),
+      quality,
     };
   } finally {
     await cleanup?.(state);

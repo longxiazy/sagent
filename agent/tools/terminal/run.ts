@@ -48,7 +48,12 @@ async function runShellCommand(command, { cwd, timeoutMs }) {
       }
       settled = true;
       child.kill('SIGTERM');
-      reject(new Error(`命令执行超时 (${timeoutMs} ms)`));
+      // 后台进程（& 结尾）或长驻服务永远不会退出，给模型可操作建议
+      const isBackgroundCmd = /&\s*$/.test(command) || /\bserver\b|\bdaemon\b|\bserve\b/i.test(command);
+      const hint = isBackgroundCmd
+        ? '。该命令为后台/长驻进程，不会自行退出。建议使用 notify_user 告知用户手动执行，或改用不需要服务器的方案。'
+        : '';
+      reject(new Error(`命令执行超时 (${timeoutMs} ms)${hint}`));
     }, timeoutMs);
 
     child.stdout.on('data', chunk => {

@@ -54,8 +54,17 @@ function getAppleScriptKeyCode(key) {
 
 async function executeWithShell(action, context) {
   if (action.type === 'open_app') {
-    await execFileText('open', ['-a', action.app]);
-    return `已打开应用 ${action.app}`;
+    try {
+      await execFileText('open', ['-a', action.app]);
+      return `已打开应用 ${action.app}`;
+    } catch (err) {
+      const msg = err?.message || String(err);
+      // error -54 = 沙箱限制；error -10810 = 应用无法启动
+      if (/error -54|sandbox|permission denied|operation not permitted/i.test(msg)) {
+        return `无法打开 ${action.app}（沙箱环境限制）。建议使用 notify_user 告知用户手动打开，或使用 terminal run_confirmed 执行 open 命令。`;
+      }
+      return `打开 ${action.app} 失败: ${msg.slice(0, 150)}。建议使用 notify_user 告知用户手动操作。`;
+    }
   }
 
   if (action.type === 'activate_app') {

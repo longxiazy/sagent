@@ -25,11 +25,18 @@ const execFileAsync = promisify(execFile);
 
 const MAX_CONTENT_LENGTH = 24000;
 const BROWSER_TIMEOUT_MS = 15000;
+const BROWSER_TIMEOUT_RETRY_MS = 25000;
+const BROWSER_RETRY_BACKOFF_MS = 800;
 const CURL_TIMEOUT_MS = 10000;
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36';
 
 function extractMainContent(text) {
   return text.replace(/\s+/g, ' ').trim();
+}
+
+function isTimeoutError(err) {
+  const msg = (err?.message || String(err || '')).toLowerCase();
+  return /超时|timeout|timed out|etimedout/.test(msg);
 }
 
 function createTimeout(ms, message) {
@@ -69,9 +76,25 @@ async function withFetchView(session, fn) {
 async function fetchWithBrowser(session, action) {
   const url = action.url;
   const timeout = action.timeoutMs || BROWSER_TIMEOUT_MS;
+  const retryTimeout = action.timeoutMs ? Math.round(action.timeoutMs * 1.5) : BROWSER_TIMEOUT_RETRY_MS;
 
   return withFetchView(session, async view => {
-    await withTimeout(safeNavigate(view, url), timeout, `WebView 访问超时: ${url}`);
+    // 浏览器冷启动期偶发超时，给一次重试机会
+    try {
+      await withTimeout(safeNavigate(view, url), timeout, `WebView 访问超时: ${url}`);
+    } catch (err) {
+      if (!isTimeoutError(err)) throw err;
+      log.info(`[Fetch] WebView 首次超时,${BROWSER_RETRY_BACKOFF_MS}ms 后重试 ${url}`);
+      await new Promise(resolve => setTimeout(resolve, BROWSER_RETRY_BACKOFF_MS));
+      try {
+        await withTimeout(safeNavigate(view, url), retryTimeout, `WebView 访问超时: ${url}`);
+      } catch (err2) {
+        if (isTimeoutError(err2)) {
+          throw new Error(`${err2.message} (已自动重试 1 次)`);
+        }
+        throw err2;
+      }
+    }
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     if (action.extractLinks) {
