@@ -255,7 +255,12 @@ function looksLikeSubstantiveAnswer(text) {
 
 function tryTextFinish(_message, content) {
   const trimmed = content.trim();
-  const isLikelyBrokenJson = trimmed.startsWith('{') && /"(rationale|action|tool|type)"/.test(trimmed);
+  // 兼容 ```json ... ``` 围栏包装的坏 JSON：剥围栏后再做 broken-JSON 检测，
+  // 避免把"格式坏掉的下一步 action JSON"误判为完整回答（trace run_mp9adxiu 案例）。
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/i);
+  const inner = (fenced?.[1] ?? trimmed).trim();
+  const isLikelyBrokenJson = inner.startsWith('{')
+    && /"(rationale|action|tool|type)"\s*:/.test(inner);
   if (isLikelyBrokenJson) return null;
   if (trimmed.length >= 80 && looksLikeSubstantiveAnswer(trimmed)) {
     return { rationale: '模型直接输出了完整回答', action: { type: 'finish', answer: trimmed } };
