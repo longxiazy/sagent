@@ -14,7 +14,6 @@ export function useAgentRun() {
   const [rollbackLoading, setRollbackLoading] = useState(false);
   const [agentMobileTab, setAgentMobileTab] = useState('agent');
   const [pendingQuestion, setPendingQuestion] = useState(null);
-  const [questionSubmitting, setQuestionSubmitting] = useState(false);
   const [agentStartedAt, setAgentStartedAt] = useState(null);
 
   const agentRunIdRef = useRef(null);
@@ -52,8 +51,6 @@ export function useAgentRun() {
     setAgentMobileTab,
     pendingQuestion,
     setPendingQuestion,
-    questionSubmitting,
-    setQuestionSubmitting,
     agentStartedAt,
     setAgentStartedAt,
     agentRunIdRef,

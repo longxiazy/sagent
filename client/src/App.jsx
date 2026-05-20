@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Menu, Trash2, Square, Brain, ChevronDown, ChevronUp,
-  Send, RotateCcw,
-} from 'lucide-react';
 import './App.css';
-import { fetchAgentTrace, submitAgentQuestion } from './api/streams.js';
+import { fetchAgentTrace } from './api/streams.js';
 import { ensureServiceWorker, notificationPermission, notificationsSupported, requestNotificationPermission } from './notifications.js';
 import { AgentPane } from './components/AgentPane.jsx';
 import { ChatPane } from './components/ChatPane.jsx';
@@ -18,6 +14,13 @@ import { ApprovalDialog } from './components/dialogs/ApprovalDialog.jsx';
 import { QuestionDialog } from './components/dialogs/QuestionDialog.jsx';
 import { SessionList } from './components/session/SessionList.jsx';
 import { AgentPanel } from './components/agent/AgentPanel.jsx';
+import { ModelSelector } from './components/ModelSelector.jsx';
+import { ModeSwitch } from './components/ModeSwitch.jsx';
+import { SendButton } from './components/SendButton.jsx';
+import { MemoryToggle } from './components/MemoryToggle.jsx';
+import { NotificationBanner } from './components/NotificationBanner.jsx';
+import { AppHeader } from './components/AppHeader.jsx';
+import { HeroScreen } from './components/HeroScreen.jsx';
 import { useAgentRun } from './hooks/useAgentRun.js';
 import { createSession, getSessionTitle, normalizeChatState, touchSession, useChatSessions } from './hooks/useChatSessions.js';
 import { booleanStorage, jsonStorage, usePersistentState } from './hooks/usePersistentState.js';
@@ -27,6 +30,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.js';
 import { useSessionHandlers } from './hooks/useSessionHandlers.js';
 import { useChatTransport } from './hooks/useChatTransport.js';
 import { useAgentTransport } from './hooks/useAgentTransport.js';
+import { useQuestionSubmit } from './hooks/useQuestionSubmit.js';
 import { DEFAULT_MODELS, SUGGESTIONS } from './data/suggestions.js';
 import {
   PHONE_BREAKPOINT,
@@ -83,8 +87,6 @@ export default function App() {
     setAgentMobileTab,
     pendingQuestion,
     setPendingQuestion,
-    questionSubmitting,
-    setQuestionSubmitting,
     agentStartedAt,
     setAgentStartedAt,
     agentRunIdRef,
@@ -568,113 +570,48 @@ export default function App() {
     return shuffled(pool).slice(0, count);
   }, [mode, activeSession.id, suggestionSeed]);
 
-  const modeSwitch = !sessionStarted && (
-    <div className="mode-switch" aria-label="模式切换">
-      <button className={`mode-btn ${mode === 'chat' ? 'active' : ''}`} onClick={() => setMode('chat')} disabled={sessionLocked}>
-        对话
-      </button>
-      <button className={`mode-btn ${mode === 'agent' ? 'active' : ''}`} onClick={() => setMode('agent')} disabled={sessionLocked}>
-        Agent
-      </button>
-    </div>
+  // 工具栏控件实例化一次，在 hero 和 layout header 中复用——
+  // 行为/状态完全一致，没必要在两处分别构造。
+  const modeSwitch = (
+    <ModeSwitch mode={mode} setMode={setMode} sessionLocked={sessionLocked} sessionStarted={sessionStarted} />
   );
-
-  const toggleAgentModel = id => {
-    setSelectedAgentModels(prev => {
-      const next = prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id];
-      return next;
-    });
-  };
-
-  const moveAgentModel = (id, dir) => {
-    setSelectedAgentModels(prev => {
-      const idx = prev.indexOf(id);
-      if (idx < 0) return prev;
-      const next = [...prev];
-      const swap = idx + dir;
-      if (swap < 0 || swap >= next.length) return prev;
-      [next[idx], next[swap]] = [next[swap], next[idx]];
-      return next;
-    });
-  };
-
-  const modelSelect = !sessionStarted
-    ? mode === 'agent' ? (
-      <div className="model-tags-wrap">
-        <div className="model-tags">
-          {availableModels.map(item => {
-            const isSelected = selectedAgentModels.includes(item.id);
-            const orderIdx = selectedAgentModels.indexOf(item.id);
-            return (
-              <span key={item.id} className={`model-tag-wrapper ${isSelected ? 'selected' : ''}`}>
-                <button
-                  className={`model-tag ${isSelected ? 'selected' : ''}`}
-                  onClick={() => toggleAgentModel(item.id)}
-                  disabled={sessionLocked}
-                  title={isSelected ? '取消选择' : '选择并发执行'}
-                >
-                  {item.label}
-                </button>
-                {isSelected && selectedAgentModels.length > 1 && (
-                  <span className="model-tag-order">
-                    <button className="order-arrow" onClick={() => moveAgentModel(item.id, -1)} disabled={orderIdx <= 0 || sessionLocked} title="提高优先级"><ChevronUp size={10} /></button>
-                    <span className="order-number">{orderIdx + 1}</span>
-                    <button className="order-arrow" onClick={() => moveAgentModel(item.id, 1)} disabled={orderIdx >= selectedAgentModels.length - 1 || sessionLocked} title="降低优先级"><ChevronDown size={10} /></button>
-                  </span>
-                )}
-              </span>
-            );
-          })}
-        </div>
-        {selectedAgentModels.length > 1 && (
-          <div className="strategy-toggle">
-            <button
-              className={`strategy-btn ${agentStrategy === 'race' ? 'active' : ''}`}
-              onClick={() => setAgentStrategy('race')}
-              disabled={sessionLocked}
-              title="按优先级分批启动，先到先得"
-            >竞速</button>
-            <button
-              className={`strategy-btn ${agentStrategy === 'vote' ? 'active' : ''}`}
-              onClick={() => setAgentStrategy('vote')}
-              disabled={sessionLocked}
-              title="等待所有模型完成，投票选最优"
-            >汇总</button>
-          </div>
-        )}
-      </div>
-    ) : (
-      <select className="model-select" value={chatModel} onChange={e => setChatModel(e.target.value)} title="切换模型">
-        {availableModels.map(item => (
-          <option key={item.id} value={item.id}>{item.label}</option>
-        ))}
-      </select>
-    )
-    : null;
-
-  const sendButton = streaming ? (
-    <button className="send-btn stop" onClick={stopGeneration}><Square size={12} /> 停止</button>
-  ) : agentRunning ? (
-    <button className="send-btn stop" onClick={stopAgent} disabled={agentStopping}>
-      <Square size={12} /> {agentStopping ? '正在停止…' : pendingApproval ? '停止并拒绝' : '停止'}
-    </button>
-  ) : (
-    <button className="send-btn idle" onClick={handleSubmit} disabled={!input.trim()}>
-      <Send size={14} /> 发送
-    </button>
+  const modelSelect = (
+    <ModelSelector
+      sessionStarted={sessionStarted}
+      mode={mode}
+      availableModels={availableModels}
+      chatModel={chatModel}
+      setChatModel={setChatModel}
+      selectedAgentModels={selectedAgentModels}
+      setSelectedAgentModels={setSelectedAgentModels}
+      agentStrategy={agentStrategy}
+      setAgentStrategy={setAgentStrategy}
+      sessionLocked={sessionLocked}
+    />
   );
-
-  const memoryToggle = mode === 'agent' && !sessionStarted && (
-    <button
-      className={`toolbar-chip ${agentMemory ? 'active' : ''}`}
-      onClick={() => setAgentMemory(v => !v)}
-      title={agentMemory ? '使用历史记忆辅助任务' : '不使用记忆'}
-    >
-      <Brain size={12} /> {agentMemory ? '记忆开' : '记忆关'}
-    </button>
+  const sendButton = (
+    <SendButton
+      streaming={streaming}
+      agentRunning={agentRunning}
+      agentStopping={agentStopping}
+      pendingApproval={pendingApproval}
+      inputValue={input}
+      onSend={handleSubmit}
+      onStopGeneration={stopGeneration}
+      onStopAgent={stopAgent}
+    />
+  );
+  const memoryToggle = (
+    <MemoryToggle mode={mode} sessionStarted={sessionStarted} agentMemory={agentMemory} setAgentMemory={setAgentMemory} />
   );
 
   const showHero = messages.length === 0 && !agentRunning;
+
+  const { submitting: questionSubmitting, handleSubmit: handleQuestionSubmit, handleSkip: handleQuestionSkip } = useQuestionSubmit({
+    pendingQuestion,
+    setPendingQuestion,
+    questionRequestRef,
+  });
 
   return (
     <ErrorBoundary>
@@ -695,23 +632,11 @@ export default function App() {
 
       <div className="main-area">
       {agentRunning && notificationsSupported() && (notifyPerm === 'default' || notifyPerm === 'denied') && (
-        <div className="notify-banner">
-          {notifyPerm === 'default' ? (
-            <>
-              <span>桌面通知未开启，开启后 Agent 等待审批时会在桌面提醒你。</span>
-              <button className="notify-banner-btn" onClick={handleEnableNotifications}>开启桌面通知</button>
-            </>
-          ) : (
-            <span>
-              桌面通知被浏览器阻止了。打开
-              {' '}
-              <code>chrome://settings/content/siteDetails?site={window.location.origin}</code>
-              {' '}
-              把「通知」改为「允许」，然后刷新页面。
-            </span>
-          )}
-          <button className="notify-banner-close" onClick={() => setNotifyPerm('dismissed')} title="先不开">×</button>
-        </div>
+        <NotificationBanner
+          perm={notifyPerm}
+          onEnable={handleEnableNotifications}
+          onDismiss={() => setNotifyPerm('dismissed')}
+        />
       )}
       {showHero && (
         <button className="page-create-btn" onClick={handleCreateSession} disabled={sessionLocked} title="新建会话">
@@ -719,60 +644,20 @@ export default function App() {
         </button>
       )}
       {showHero ? (
-        <div className="hero-wrap">
-          <div className="hero">
-            <button className="session-toggle-btn hero-menu" onClick={() => setShowSessions(v => !v)} title="会话列表">
-              <Menu size={16} />
-            </button>
-
-            <div className="hero-brand">
-              <h1 className="hero-title">sagent</h1>
-              <p className="hero-subtitle">多模型 AI 聊天 + 桌面 Agent</p>
-            </div>
-
-            <div className="hero-input-card">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={mode === 'agent' ? '描述要让 Agent 完成的任务…' : '输入消息…'}
-                rows={2}
-                disabled={sessionLocked}
-              />
-              <div className="hero-toolbar">
-                {modeSwitch}
-                {modelSelect}
-                {memoryToggle}
-                {sendButton}
-              </div>
-            </div>
-
-            <div className="suggestions-head">
-              <span className="suggestions-label">{mode === 'agent' ? '试试这些任务' : '试试这些问题'}</span>
-              <button
-                className="suggestions-refresh"
-                onClick={() => setSuggestionSeed(v => v + 1)}
-                disabled={sessionLocked}
-                title="换一组"
-              >
-                <RotateCcw size={12} /> 换一组
-              </button>
-            </div>
-
-            <div className="suggestions">
-              {suggestions.map(s => (
-                <button key={s.title} className="suggestion-card"
-                  onClick={() => { setInput(s.text); textareaRef.current?.focus(); }}
-                  onDoubleClick={() => { setInput(s.text); setTimeout(() => handleSubmit(), 0); }}
-                >
-                  <span className="suggestion-title">{s.title}</span>
-                  <span className="suggestion-text">{s.text}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+        <HeroScreen
+          mode={mode}
+          input={input}
+          setInput={setInput}
+          onKeyDown={handleKeyDown}
+          textareaRef={textareaRef}
+          sessionLocked={sessionLocked}
+          toolbarSlots={{ modeSwitch, modelSelect, memoryToggle, sendButton }}
+          suggestions={suggestions}
+          onShuffle={() => setSuggestionSeed(v => v + 1)}
+          onPickSuggestion={text => { setInput(text); textareaRef.current?.focus(); }}
+          onSubmitSuggestion={text => { setInput(text); setTimeout(() => handleSubmit(), 0); }}
+          onToggleSessions={() => setShowSessions(v => !v)}
+        />
       ) : (
         <div className="layout">
           {reconnectedRun && agentRunning && (
@@ -780,25 +665,19 @@ export default function App() {
               检测到运行中的 Agent 任务，已自动连接。可点击"停止"取消。
             </div>
           )}
-          <div className="header">
-            <div className="header-left">
-              <button className="session-toggle-btn" onClick={() => setShowSessions(v => !v)} title="会话列表">
-                <Menu size={16} />
-              </button>
-              <button className="header-new-session-btn" onClick={handleCreateSession} disabled={sessionLocked} title="新建会话">
-                + 新建
-              </button>
-              <span className="header-session-title">{getSessionTitle(messages)}</span>
-            </div>
-            <div className="header-right">
-              {modeSwitch}
-              {modelSelect}
-              {sessionStarted && mode !== 'agent' && (
-                <span className="header-model-label">{selectedChatModelLabel}</span>
-              )}
-              <button className="header-icon-btn" onClick={() => setShowReset(true)} title="清空" disabled={messages.length === 0 || sessionLocked}><Trash2 size={14} /></button>
-            </div>
-          </div>
+          <AppHeader
+            sessionTitle={getSessionTitle(messages)}
+            sessionLocked={sessionLocked}
+            messagesLength={messages.length}
+            sessionStarted={sessionStarted}
+            mode={mode}
+            selectedChatModelLabel={selectedChatModelLabel}
+            modeSwitch={modeSwitch}
+            modelSelect={modelSelect}
+            onToggleSessions={() => setShowSessions(v => !v)}
+            onCreateSession={handleCreateSession}
+            onReset={() => setShowReset(true)}
+          />
 
           <div className={`layout-body ${mode === 'agent' ? 'agent-layout' : 'chat-layout'}`}>
           {mode === 'agent' && (
@@ -869,27 +748,8 @@ export default function App() {
       <QuestionDialog
         question={pendingQuestion}
         submitting={questionSubmitting}
-        onSubmit={async (response) => {
-          if (!pendingQuestion) return;
-          setQuestionSubmitting(true);
-          try {
-            await submitAgentQuestion({
-              runId: pendingQuestion.runId,
-              approvalId: pendingQuestion.approvalId,
-              response,
-            });
-            setPendingQuestion(null);
-            questionRequestRef.current?.resolve?.(response);
-          } catch (err) {
-            console.error('Question submit failed:', err);
-          } finally {
-            setQuestionSubmitting(false);
-          }
-        }}
-        onSkip={() => {
-          setPendingQuestion(null);
-          questionRequestRef.current?.resolve?.('');
-        }}
+        onSubmit={handleQuestionSubmit}
+        onSkip={handleQuestionSkip}
       />
 
       {showReset && <ResetDialog onConfirm={handleReset} onCancel={() => setShowReset(false)} />}
