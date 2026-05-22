@@ -31,7 +31,8 @@ import { useSessionHandlers } from './hooks/useSessionHandlers.js';
 import { useChatTransport } from './hooks/useChatTransport.js';
 import { useAgentTransport } from './hooks/useAgentTransport.js';
 import { useQuestionSubmit } from './hooks/useQuestionSubmit.js';
-import { DEFAULT_MODELS, SUGGESTIONS } from './data/suggestions.js';
+import { DEFAULT_MODELS, EMPTY_SUGGESTIONS } from './data/suggestions.js';
+import { fetchSuggestions, recordSuggestionUse } from './api/suggestions.js';
 import {
   PHONE_BREAKPOINT,
   TABLET_BREAKPOINT,
@@ -61,6 +62,10 @@ export default function App() {
   const [input, setInput] = useState('');
   const [mode, setMode] = usePersistentState('nvidia_chat_last_mode', 'chat');
   const [suggestionSeed, setSuggestionSeed] = useState(0);
+  const [suggestionData, setSuggestionData] = useState(EMPTY_SUGGESTIONS);
+  const [activeCategoryId, setActiveCategoryId] = useState(null);
+  // 卡片点击时把标题暂存,handleSubmit 时上报给后端;手动输入则降级到 text 前 12 字
+  const pendingTitleRef = useRef(null);
   const {
     streaming,
     setStreaming,
@@ -457,6 +462,19 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, activeSession.id, agentTrace]);
 
+  // 建议数据从后端拉取;suggestionSeed 触发(刷新按钮 / 提交后)也会重新拉,让"最近使用"即时反映
+  useEffect(() => {
+    let cancelled = false;
+    fetchSuggestions()
+      .then(data => {
+        if (cancelled) return;
+        setSuggestionData(data);
+        setActiveCategoryId(prev => prev ?? data.agent?.[0]?.id ?? null);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [suggestionSeed]);
+
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) {
@@ -543,6 +561,16 @@ export default function App() {
       return;
     }
 
+    // 把这次发送累计到后端使用记录,只对 agent 模式做(chat 模式建议少,不需要)
+    if (mode === 'agent') {
+      const title = pendingTitleRef.current
+        || (text.length > 12 ? text.slice(0, 12) + '…' : text);
+      pendingTitleRef.current = null;
+      recordSuggestionUse({ title, text });
+      // 下次返回 hero 时能看到新的"最近使用"
+      setSuggestionSeed(v => v + 1);
+    }
+
     // 同一输入框根据 mode 分流到两套完全不同的执行链路。
     if (mode === 'agent') {
       await sendAgentTask(text);
@@ -562,13 +590,19 @@ export default function App() {
 
   const sessionStarted = messages.length > 0;
 
+  const agentCategories = suggestionData.agent;
+
   const suggestions = useMemo(() => {
     void activeSession.id;
     void suggestionSeed;
-    const pool = SUGGESTIONS[mode];
-    const count = mode === 'agent' ? 8 : 4;
-    return shuffled(pool).slice(0, count);
-  }, [mode, activeSession.id, suggestionSeed]);
+    if (mode === 'agent') {
+      const cat = agentCategories.find(c => c.id === activeCategoryId) ?? agentCategories[0];
+      const pool = cat?.items ?? [];
+      return shuffled(pool).slice(0, Math.min(8, pool.length));
+    }
+    const pool = suggestionData.chat;
+    return shuffled(pool).slice(0, Math.min(4, pool.length));
+  }, [mode, activeSession.id, suggestionSeed, activeCategoryId, agentCategories, suggestionData.chat]);
 
   // 工具栏控件实例化一次，在 hero 和 layout header 中复用——
   // 行为/状态完全一致，没必要在两处分别构造。
@@ -653,9 +687,20 @@ export default function App() {
           sessionLocked={sessionLocked}
           toolbarSlots={{ modeSwitch, modelSelect, memoryToggle, sendButton }}
           suggestions={suggestions}
+          categories={mode === 'agent' ? agentCategories : null}
+          activeCategoryId={activeCategoryId}
+          onSelectCategory={setActiveCategoryId}
           onShuffle={() => setSuggestionSeed(v => v + 1)}
-          onPickSuggestion={text => { setInput(text); textareaRef.current?.focus(); }}
-          onSubmitSuggestion={text => { setInput(text); setTimeout(() => handleSubmit(), 0); }}
+          onPickSuggestion={(text, title) => {
+            pendingTitleRef.current = title ?? null;
+            setInput(text);
+            textareaRef.current?.focus();
+          }}
+          onSubmitSuggestion={(text, title) => {
+            pendingTitleRef.current = title ?? null;
+            setInput(text);
+            setTimeout(() => handleSubmit(), 0);
+          }}
           onToggleSessions={() => setShowSessions(v => !v)}
         />
       ) : (
