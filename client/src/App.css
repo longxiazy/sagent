@@ -260,6 +260,43 @@ textarea {
   cursor: not-allowed;
 }
 
+.suggestions-tabs {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.suggestions-tab {
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  color: var(--c-text-secondary);
+  border-radius: var(--r-pill);
+  padding: 5px 12px;
+  font-size: var(--f-xs);
+  cursor: pointer;
+  transition: all var(--ease);
+}
+
+.suggestions-tab:hover:not(:disabled):not(.active) {
+  color: var(--c-primary);
+  border-color: var(--c-primary-light);
+  background: rgba(83, 74, 183, 0.05);
+}
+
+.suggestions-tab.active {
+  color: var(--c-primary);
+  border-color: var(--c-primary);
+  background: var(--c-primary-bg);
+  font-weight: 600;
+}
+
+.suggestions-tab:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .suggestions {
   width: 100%;
   display: grid;

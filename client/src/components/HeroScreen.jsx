@@ -13,6 +13,9 @@ export function HeroScreen({
   sessionLocked,
   toolbarSlots,
   suggestions,
+  categories,
+  activeCategoryId,
+  onSelectCategory,
   onShuffle,
   onPickSuggestion,
   onSubmitSuggestion,
@@ -52,6 +55,9 @@ export function HeroScreen({
         <SuggestionsList
           mode={mode}
           suggestions={suggestions}
+          categories={categories}
+          activeCategoryId={activeCategoryId}
+          onSelectCategory={onSelectCategory}
           sessionLocked={sessionLocked}
           onShuffle={onShuffle}
           onPick={onPickSuggestion}

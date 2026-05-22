@@ -61,6 +61,7 @@ export default function App() {
   const [input, setInput] = useState('');
   const [mode, setMode] = usePersistentState('nvidia_chat_last_mode', 'chat');
   const [suggestionSeed, setSuggestionSeed] = useState(0);
+  const [activeCategoryId, setActiveCategoryId] = useState(() => SUGGESTIONS.agent[0]?.id ?? null);
   const {
     streaming,
     setStreaming,
@@ -562,13 +563,19 @@ export default function App() {
 
   const sessionStarted = messages.length > 0;
 
+  const agentCategories = SUGGESTIONS.agent;
+
   const suggestions = useMemo(() => {
     void activeSession.id;
     void suggestionSeed;
-    const pool = SUGGESTIONS[mode];
-    const count = mode === 'agent' ? 8 : 4;
-    return shuffled(pool).slice(0, count);
-  }, [mode, activeSession.id, suggestionSeed]);
+    if (mode === 'agent') {
+      const cat = agentCategories.find(c => c.id === activeCategoryId) ?? agentCategories[0];
+      const pool = cat?.items ?? [];
+      return shuffled(pool).slice(0, Math.min(8, pool.length));
+    }
+    const pool = SUGGESTIONS.chat;
+    return shuffled(pool).slice(0, 4);
+  }, [mode, activeSession.id, suggestionSeed, activeCategoryId, agentCategories]);
 
   // 工具栏控件实例化一次，在 hero 和 layout header 中复用——
   // 行为/状态完全一致，没必要在两处分别构造。
@@ -653,6 +660,9 @@ export default function App() {
           sessionLocked={sessionLocked}
           toolbarSlots={{ modeSwitch, modelSelect, memoryToggle, sendButton }}
           suggestions={suggestions}
+          categories={mode === 'agent' ? agentCategories : null}
+          activeCategoryId={activeCategoryId}
+          onSelectCategory={setActiveCategoryId}
           onShuffle={() => setSuggestionSeed(v => v + 1)}
           onPickSuggestion={text => { setInput(text); textareaRef.current?.focus(); }}
           onSubmitSuggestion={text => { setInput(text); setTimeout(() => handleSubmit(), 0); }}
