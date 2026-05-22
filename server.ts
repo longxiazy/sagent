@@ -42,6 +42,8 @@ import { loadChromeMcpConfig } from './agent/tools/chrome/mcp-client.ts';
 import { createChatRouter } from './routes/chat.ts';
 import { createAgentRouter } from './routes/agent.ts';
 import { createCompletionsRouter } from './routes/completions.ts';
+import { createSuggestionsRouter } from './routes/suggestions.ts';
+import { createSuggestionStore } from './helpers/suggestion-store.ts';
 import { listCheckpoints, clearCheckpoints, removeCheckpoint } from './agent/core/checkpoint.ts';
 import { loadMemory, saveMemory } from './agent/core/memory.ts';
 import { createBaseEventSender, loadMemoryForPrompt, cleanupAgentRun } from './helpers/run-agent.ts';
@@ -87,6 +89,7 @@ app.use('/screenshots', express.static(SCREENSHOT_DIR));
 app.use(createChatRouter({ openai_client, anthropic_client, modelConfig }));
 app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, domainRules: runDesktopAgent.domainRules, modelConfig, openai_client, anthropic_client }));
 app.use(createCompletionsRouter({ openai_client, anthropic_client, modelConfig }));
+app.use(createSuggestionsRouter({ store: createSuggestionStore(path.join(__dirname, 'data')) }));
 
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';

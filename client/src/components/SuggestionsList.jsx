@@ -48,8 +48,8 @@ export function SuggestionsList({
           <button
             key={s.title}
             className="suggestion-card"
-            onClick={() => onPick(s.text)}
-            onDoubleClick={() => onSubmit(s.text)}
+            onClick={() => onPick(s.text, s.title)}
+            onDoubleClick={() => onSubmit(s.text, s.title)}
           >
             <span className="suggestion-title">{s.title}</span>
             <span className="suggestion-text">{s.text}</span>
