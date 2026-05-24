@@ -108,8 +108,19 @@ describe('Chrome MCP policy classification', () => {
     }
   });
 
-  it('treats mutating Chrome tools as confirm', () => {
-    for (const toolName of ['click', 'fill', 'navigate_page', 'evaluate_script', 'press_key']) {
+  it('treats browser-only interactions (open/click/type/scroll) as safe', () => {
+    for (const toolName of ['click', 'fill', 'navigate_page', 'press_key', 'new_page', 'type_text']) {
+      const result = classifyAgentAction({
+        tool: 'chrome',
+        type: 'chrome_call_tool',
+        toolName,
+      });
+      expect(result.level).toBe('safe');
+    }
+  });
+
+  it('keeps high-risk Chrome tools (arbitrary JS, file upload) as confirm', () => {
+    for (const toolName of ['evaluate_script', 'upload_file']) {
       const result = classifyAgentAction({
         tool: 'chrome',
         type: 'chrome_call_tool',

@@ -48,6 +48,7 @@ const CONFIRM_IDE_TOOLS = new Set([
 ]);
 
 const SAFE_CHROME_TOOLS = new Set([
+  // 只读：快照、截图、网络/console 查询、性能采集
   'take_snapshot',
   'take_screenshot',
   'list_pages',
@@ -61,6 +62,22 @@ const SAFE_CHROME_TOOLS = new Set([
   'performance_stop_trace',
   'performance_analyze_insight',
   'take_memory_snapshot',
+  // 浏览器内交互：打开页面、点击、输入、滚动等没有持久副作用的操作；
+  // 不放任意 JS 执行 (evaluate_script) 或文件上传 (upload_file)，这些保留审批。
+  'navigate_page',
+  'new_page',
+  'close_page',
+  'select_page',
+  'click',
+  'hover',
+  'drag',
+  'fill',
+  'fill_form',
+  'type_text',
+  'press_key',
+  'handle_dialog',
+  'resize_page',
+  'emulate',
 ]);
 
 export function classifyAgentAction(action) {

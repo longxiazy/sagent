@@ -96,7 +96,7 @@ export async function executeAgentRun({
     });
 
     finalAnswer = agentResult.answer;
-    const { completedStepCount, observedStepCount, modelsUsed } = session.getTrackingState();
+    const { completedStepCount, observedStepCount, modelsUsed, modelUsage } = session.getTrackingState();
     session.sendEvent({
       type: 'done',
       runId,
@@ -107,6 +107,7 @@ export async function executeAgentRun({
         elapsed_ms: Date.now() - runRecord.startedAt,
         step_count: Math.max(completedStepCount, observedStepCount),
         models_used: [...modelsUsed],
+        model_usage: modelUsage,
         status: agentResult.quality?.status || 'done',
         quality: agentResult.quality,
       },

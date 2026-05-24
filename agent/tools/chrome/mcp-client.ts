@@ -1,5 +1,3 @@
-import { spawn, execSync } from 'node:child_process';
-import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { log } from '../../../helpers/logger.ts';
@@ -9,86 +7,40 @@ const DEFAULT_SSE_HOST = '127.0.0.1';
 const DEFAULT_SSE_PORT = 3099;
 const DEFAULT_SSE_PATH = '/sse';
 const SSE_ENDPOINT_WAIT_MS = 250;
-const DEFAULT_STDIO_COMMAND = 'npx';
-const DEFAULT_STDIO_ARGS = ['-y', 'chrome-devtools-mcp@latest'];
-const CLIENT_INFO = { name: 'sagent', version: '1.0.0' };
-const IS_WINDOWS = process.platform === 'win32';
 
-function killOrphanChrome() {
-  // chrome-devtools-mcp 会使用固定 profile；重启 transport 前先清理它遗留的 Chrome。
-  const profileDir = path.join(os.homedir(), '.cache', 'chrome-devtools-mcp', 'chrome-profile');
-  if (!fs.existsSync(profileDir)) return;
+// tools/call 默认 15s 对 navigate_page 等浏览器操作太短；不同工具用不同上限。
+const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+const LONG_TOOL_CALL_TIMEOUT_MS = Number(process.env.CHROME_MCP_TOOL_TIMEOUT_MS) || 60000;
+const SLOW_TOOLS = new Set([
+  'navigate_page',
+  'new_page',
+  'wait_for',
+  'performance_start_trace',
+  'performance_stop_trace',
+  'lighthouse_audit',
+  'take_memory_snapshot',
+]);
 
-  if (IS_WINDOWS) {
-    spawn('pwsh', ['-NoProfile', '-Command',
-      `Get-Process chrome -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*chrome-profile*' } | Stop-Process -Force`],
-      { stdio: 'ignore' });
-    return;
+function timeoutForRequest(method: string, params: any): number {
+  if (method !== 'tools/call') return DEFAULT_REQUEST_TIMEOUT_MS;
+  const toolName = params?.name;
+  if (SLOW_TOOLS.has(toolName)) {
+    // wait_for 自带 timeout 参数；给客户端留 5s 余量，保证服务端先超时
+    const argTimeout = Number(params?.arguments?.timeout);
+    if (Number.isFinite(argTimeout) && argTimeout > 0) {
+      return Math.max(LONG_TOOL_CALL_TIMEOUT_MS, argTimeout + 5000);
+    }
+    return LONG_TOOL_CALL_TIMEOUT_MS;
   }
-
-  try {
-    const pids = execSync(
-      `pgrep -f 'Google Chrome.*chrome-profile' 2>/dev/null || true`,
-      { encoding: 'utf8' },
-    ).trim();
-    if (!pids) return;
-    spawn('bash', ['-c', `pkill -f 'Google Chrome.*chrome-profile' 2>/dev/null || true`], { stdio: 'ignore' });
-    log.info(`[Chrome MCP] 已清理孤儿 Chrome 进程 (PIDs: ${pids.replace(/\n/g, ',')})`);
-  } catch { /* ignore */ }
+  return DEFAULT_REQUEST_TIMEOUT_MS;
 }
+const CLIENT_INFO = { name: 'sagent', version: '1.0.0' };
 
 let sharedClientPromise = null;
 let sharedClientKey = '';
 
 function envFlag(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
-}
-
-function toAbsolutePath(rawPath, fallback = process.cwd()) {
-  if (typeof rawPath !== 'string' || !rawPath.trim()) {
-    return fallback;
-  }
-  return path.isAbsolute(rawPath) ? path.normalize(rawPath) : path.resolve(fallback, rawPath);
-}
-
-function resolveCommandOnWindows(command, args) {
-  // Windows 下 npm bin shim 可能无法直接作为 stdio MCP 进程稳定启动。
-  if (!IS_WINDOWS) {
-    return { command, args };
-  }
-  if (path.extname(command)) {
-    return { command, args };
-  }
-  const binDir = path.resolve('node_modules', '.bin');
-  const base = path.basename(command);
-  const cmdPath = path.join(binDir, base + '.cmd');
-  if (!fs.existsSync(cmdPath)) {
-    return { command, args };
-  }
-  const pkgJs = path.resolve('node_modules', base, 'build', 'src', 'bin', base + '.js');
-  if (fs.existsSync(pkgJs)) {
-    return { command: 'node', args: [pkgJs, ...args] };
-  }
-  return { command, args };
-}
-
-function parseArgs(value) {
-  // CHROME_MCP_ARGS 支持 JSON 数组；解析失败时兼容简单空格分隔写法。
-  if (Array.isArray(value)) {
-    return value.map(item => String(item));
-  }
-  if (typeof value !== 'string' || !value.trim()) {
-    return [...DEFAULT_STDIO_ARGS];
-  }
-  try {
-    const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) {
-      return parsed.map(item => String(item));
-    }
-  } catch {
-    // ignore JSON parse failure and fall back to whitespace split
-  }
-  return value.trim().split(/\s+/).filter(Boolean);
 }
 
 function truncateText(text, max = 200) {
@@ -188,15 +140,12 @@ function extractSchema(tool) {
 function clientKey(config) {
   return JSON.stringify({
     enabled: config.enabled,
-    transport: config.transport,
+    transport: 'sse',
     url: config.url,
     host: config.host,
     port: config.port,
     ssePath: config.ssePath,
     messagesUrl: config.messagesUrl,
-    command: config.command,
-    args: config.args,
-    cwd: config.cwd,
   });
 }
 
@@ -208,64 +157,79 @@ export function isChromeMcpEnabled(env = process.env) {
   return Boolean(
     env.CHROME_MCP_TRANSPORT ||
     env.CHROME_MCP_URL ||
-    env.CHROME_MCP_COMMAND ||
     env.CHROME_MCP_HOST ||
     env.CHROME_MCP_PORT
   );
+}
+
+const CHROME_TOOLS_CACHE_FILE = path.join(process.cwd(), 'data', 'chrome-mcp-tools.json');
+
+function readChromeToolsCacheFromDisk(): any[] | null {
+  try {
+    if (!fs.existsSync(CHROME_TOOLS_CACHE_FILE)) return null;
+    const raw = fs.readFileSync(CHROME_TOOLS_CACHE_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    return Array.isArray(data?.tools) ? data.tools : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeChromeToolsCacheToDisk(tools: any[]) {
+  try {
+    fs.mkdirSync(path.dirname(CHROME_TOOLS_CACHE_FILE), { recursive: true });
+    fs.writeFileSync(
+      CHROME_TOOLS_CACHE_FILE,
+      JSON.stringify({ updatedAt: new Date().toISOString(), tools }, null, 2),
+      'utf8',
+    );
+  } catch (err: any) {
+    log.info(`[Chrome MCP] 保存工具缓存失败: ${err?.message || err}`);
+  }
 }
 
 export function buildChromePromptLines(env = process.env) {
   if (!isChromeMcpEnabled(env)) {
     return [];
   }
-  return [
-    '当 Chrome DevTools MCP 已启用时，可先使用 chrome_list_tools 查看 Chrome DevTools 暴露的 MCP 工具，再用 chrome_call_tool 调用具体工具。',
-    'chrome_call_tool 的 toolName 必须来自 chrome_list_tools 返回结果，arguments 传对应参数对象。',
+  const lines = [
+    '当 Chrome DevTools MCP 已启用时，使用 chrome_call_tool 调用具体工具；toolName 取自下方工具列表，arguments 传对应参数对象。',
     'Chrome DevTools 工具可用于浏览器页面操作、截图、网络请求检查、性能分析等。',
+    '只有当怀疑工具列表已变更（例如调用报"未找到 Chrome 工具"）时，才需要 chrome_list_tools 主动刷新；正常情况下直接使用 chrome_call_tool。',
+    'uid 形如 "3_12"，下划线前的数字是 snapshotId。每次 take_snapshot（或带 includeSnapshot 的操作）后 snapshotId 都会变，旧 uid 立即失效——禁止跨 snapshot 复用 uid，使用前请取最新 snapshot。',
+    'take_snapshot / take_screenshot 只对"当前已选中的页面"生效，需先用 navigate_page(url=...) 打开目标页面；navigate_page 成功后已自动附带页面快照，无需再单独 take_snapshot。',
   ];
+  const cachedTools = readChromeToolsCacheFromDisk();
+  if (cachedTools && cachedTools.length) {
+    const items = cachedTools.map(tool => {
+      const summary = summarizeChromeTool(tool);
+      const args = summary.fields ? ` (${summary.fields})` : '';
+      return `- ${summary.name}${args}`;
+    });
+    lines.push(`已缓存的 Chrome MCP 工具（共 ${cachedTools.length}）：\n${items.join('\n')}`);
+  }
+  return lines;
 }
 
 export function loadChromeMcpConfig(env = process.env) {
-  // 默认使用 SSE；设置 CHROME_MCP_TRANSPORT=stdio 时改走本地子进程。
-  const transport = String(env.CHROME_MCP_TRANSPORT || '').trim().toLowerCase() === 'stdio' ? 'stdio' : 'sse';
   const host = String(env.CHROME_MCP_HOST || DEFAULT_SSE_HOST).trim() || DEFAULT_SSE_HOST;
   const port = Number(env.CHROME_MCP_PORT || DEFAULT_SSE_PORT) || DEFAULT_SSE_PORT;
   const ssePath = String(env.CHROME_MCP_SSE_PATH || DEFAULT_SSE_PATH).trim() || DEFAULT_SSE_PATH;
-  const cwd = toAbsolutePath(env.CHROME_MCP_CWD, process.cwd());
   const url = String(env.CHROME_MCP_URL || '').trim() || null;
   const messagesUrl = String(env.CHROME_MCP_MESSAGES_URL || '').trim() || null;
-  const command = String(env.CHROME_MCP_COMMAND || DEFAULT_STDIO_COMMAND).trim() || DEFAULT_STDIO_COMMAND;
-  const args = parseArgs(env.CHROME_MCP_ARGS);
 
   return {
     enabled: isChromeMcpEnabled(env),
-    transport,
+    transport: 'sse',
     host,
     port,
     ssePath,
     url,
     messagesUrl,
-    command,
-    args,
-    cwd,
-  };
-}
-
-function createJsonRpcError(message, code = -32000, data = null) {
-  return {
-    jsonrpc: '2.0',
-    error: {
-      code,
-      message,
-      ...(data ? { data } : {}),
-    },
   };
 }
 
 class ChromeMcpClient {
-  // macOS quarantine 等启动错误通常不会自愈；缓存后避免每步反复拉起 Chrome。
-  static _fatalChromeError: string | null = null;
-
   config: any;
   transport: any;
   toolsCache: any[] | null;
@@ -276,19 +240,16 @@ class ChromeMcpClient {
     this.toolsCache = null;
   }
 
-  _isFatalLaunchError(err: any): boolean {
-    const msg = err?.message || '';
-    return msg.includes('error -54')
-      || msg.includes('LSOpenURLsWithCompletionHandler')
-      || msg.includes('is damaged')
-      || msg.includes('cannot be opened')
-      || msg.includes('is corrupted');
-  }
-
   async listTools({ refresh = false } = {}) {
-    // tools/list 可能分页；缓存结果给 getTool 和后续 chrome_list_tools 复用。
     if (!refresh && this.toolsCache) {
       return this.toolsCache;
+    }
+    if (!refresh && !this.toolsCache) {
+      const persisted = readChromeToolsCacheFromDisk();
+      if (persisted && persisted.length) {
+        this.toolsCache = persisted;
+        return persisted;
+      }
     }
 
     const tools = [];
@@ -311,521 +272,58 @@ class ChromeMcpClient {
     }
 
     this.toolsCache = tools;
+    if (tools.length) {
+      writeChromeToolsCacheToDisk(tools);
+    }
     return tools;
   }
 
   async getTool(toolName, { refresh = false } = {}) {
     const tools = await this.listTools({ refresh });
-    return tools.find(tool => tool?.name === toolName) || null;
+    const found = tools.find(tool => tool?.name === toolName) || null;
+    if (found || refresh) {
+      return found;
+    }
+    const refreshed = await this.listTools({ refresh: true });
+    return refreshed.find(tool => tool?.name === toolName) || null;
   }
 
   async callTool(toolName, toolArgs) {
-    // callTool 是上层唯一入口，集中处理 MCP 工具错误和 Chrome 启动恢复。
-    if (ChromeMcpClient._fatalChromeError) {
-      throw new Error(ChromeMcpClient._fatalChromeError);
-    }
-
-    const doCall = async () => this.transport.request('tools/call', {
-      name: toolName,
-      arguments: toolArgs || {},
-    });
-
     try {
-      const result = await doCall();
-      // MCP returns tool errors as { isError: true } in a successful JSON-RPC response,
-      // not as a JSON-RPC error — so we must check result.isError explicitly.
-      if (result?.isError && this._isChromeConnectionResult(result)) {
-        if (this._isFatalLaunchResult(result)) {
-          throw new Error(this._setFatalError(result));
-        }
-        if (this._isAlreadyRunningResult(result)) {
-          return await this._recoverFromAlreadyRunning(toolName, toolArgs);
-        }
-        return await this._retryWithoutAutoConnect(toolName, toolArgs);
-      }
-      return result;
+      return await this.transport.request('tools/call', {
+        name: toolName,
+        arguments: toolArgs || {},
+      });
     } catch (err) {
-      if (this._isFatalLaunchError(err)) {
-        throw new Error(this._setFatalError(err));
-      }
-      if (this._isChromeConnectionError(err)) {
-        if (this._isAlreadyRunningErrorMsg(err)) {
-          return await this._recoverFromAlreadyRunning(toolName, toolArgs);
-        }
-        return await this._retryWithoutAutoConnect(toolName, toolArgs);
+      if (this._isClientTimeoutError(err)) {
+        return await this._retryAfterClientTimeout(toolName, toolArgs, err);
       }
       throw err;
     }
   }
 
-  async _recoverFromAlreadyRunning(toolName, toolArgs) {
-    // 默认 profile 被用户自己的 Chrome 占用时，killOrphanChrome 会误杀用户进程；
-    // 改为加 --isolated 启动独立 profile，重启 MCP client 后重试
-    if (!this._addIsolatedFlag()) {
-      log.info(`[Chrome MCP] 已是 --isolated 模式但仍冲突，工具调用 ${toolName} 失败`);
-      throw new Error('Chrome MCP browser profile 冲突，且 --isolated 模式仍无法启动');
-    }
-    log.info(`[Chrome MCP] 检测到 Chrome already running 冲突，自动加 --isolated 重启 MCP client 后重试 ${toolName}`);
-    const client = await getSharedChromeMcpClient(this.config);
-    const result = await client.transport.request('tools/call', {
-      name: toolName,
-      arguments: toolArgs || {},
-    });
-    if (result?.isError) {
-      log.info(`[Chrome MCP] --isolated 模式下工具调用 ${toolName} 仍失败`);
-    }
-    return result;
+  _isClientTimeoutError(err) {
+    return (err?.message || '').startsWith('Chrome MCP 请求超时');
   }
 
-  _addIsolatedFlag() {
-    // --isolated 让 chrome-devtools-mcp 使用独立 profile，避免占用用户日常 Chrome。
-    const config = this.transport?.config;
-    if (!config || !Array.isArray(config.args)) {
-      return false;
-    }
-    if (config.args.includes('--isolated')) {
-      return false;
-    }
-    config.args = [...config.args, '--isolated'];
-    this.transport.close?.().catch(() => {});
-    this.toolsCache = null;
-    sharedClientPromise = null;
-    sharedClientKey = '';
-    return true;
-  }
-
-  async _retryWithoutAutoConnect(toolName, toolArgs) {
-    // --autoConnect 连接现有 Chrome 失败时，退回让 MCP 自己启动浏览器。
-    if (!this._stripAutoConnect()) {
-      throw new Error('Chrome MCP 连接失败且无法回退');
-    }
-    log.info(`[Chrome MCP] 工具调用 ${toolName} 连接失败，移除 --autoConnect 重试（将自动启动浏览器）`);
-    const client = await getSharedChromeMcpClient(this.config);
-
-    // Without --autoConnect, the MCP server launches Chrome in the background.
-    // Chrome needs time to start, so retry the tool call on error.
-    const MAX_RETRIES = 3;
-    const RETRY_DELAY_MS = 3000;
-
-    for (let attempt = 0; ; attempt++) {
-      const result = await client.transport.request('tools/call', {
+  async _retryAfterClientTimeout(toolName, toolArgs, originalError) {
+    log.info(`[Chrome MCP] 工具调用 ${toolName} 客户端超时，原地重试一次`);
+    await new Promise(r => setTimeout(r, 1500));
+    try {
+      return await this.transport.request('tools/call', {
         name: toolName,
         arguments: toolArgs || {},
       });
-
-      if (!result?.isError) {
-        return result;
+    } catch (retryErr: any) {
+      if (this._isClientTimeoutError(retryErr)) {
+        throw originalError;
       }
-
-      // 检测 macOS 致命错误（如 error -54），直接失败不重试
-      if (this._isFatalLaunchResult(result)) {
-        throw new Error(this._setFatalError(result));
-      }
-
-      if (attempt >= MAX_RETRIES - 1) {
-        log.info(`[Chrome MCP] 工具调用 ${toolName} 浏览器启动后仍失败（已重试 ${MAX_RETRIES} 次）`);
-        return result;
-      }
-
-      log.info(`[Chrome MCP] 等待浏览器启动，${RETRY_DELAY_MS}ms 后重试 ${toolName}（第 ${attempt + 1}/${MAX_RETRIES} 次）`);
-      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+      throw retryErr;
     }
-  }
-
-  _isFatalLaunchResult(result) {
-    const text = Array.isArray(result?.content)
-      ? result.content.map(c => c?.text || '').join(' ')
-      : '';
-    return text.includes('error -54')
-      || text.includes('LSOpenURLsWithCompletionHandler')
-      || text.includes('is damaged')
-      || text.includes('is corrupted');
-  }
-
-  _setFatalError(err: any): string {
-    const msg = err?.message || String(err);
-    ChromeMcpClient._fatalChromeError =
-      'Chrome 因 macOS 权限问题无法启动，请运行以下命令修复:\n'
-      + '  xattr -cr /Applications/Google\\ Chrome.app\n'
-      + `错误详情: ${msg}`;
-    log.error(`[Chrome MCP] ${ChromeMcpClient._fatalChromeError}`);
-    return ChromeMcpClient._fatalChromeError;
-  }
-
-  _isChromeConnectionResult(result) {
-    const text = Array.isArray(result?.content)
-      ? result.content.map(c => c?.text || '').join(' ')
-      : '';
-    return text.includes('Could not connect to Chrome')
-      || text.includes('DevToolsActivePort')
-      || text.includes('Could not find')
-      || text.includes('already running');
-  }
-
-  _isChromeConnectionError(err) {
-    const msg = err?.message || '';
-    return msg.includes('Could not connect to Chrome')
-      || msg.includes('DevToolsActivePort')
-      || msg.includes('Could not find')
-      || msg.includes('already running');
-  }
-
-  _isAlreadyRunningResult(result) {
-    const text = Array.isArray(result?.content)
-      ? result.content.map(c => c?.text || '').join(' ')
-      : '';
-    return text.includes('already running');
-  }
-
-  _isAlreadyRunningErrorMsg(err) {
-    return (err?.message || '').includes('already running');
-  }
-
-  _stripAutoConnect() {
-    // 修改运行时 config 后重置共享 client，下一次请求会用新参数重建 transport。
-    const config = this.transport?.config;
-    if (!config || !Array.isArray(config.args) || !config.args.includes('--autoConnect')) {
-      return false;
-    }
-    config.args = config.args.filter(a => a !== '--autoConnect');
-    // Close and reset so the next request spawns a fresh MCP process without --autoConnect
-    killOrphanChrome();
-    this.transport.close?.().catch(() => {});
-    this.toolsCache = null;
-    sharedClientPromise = null;
-    sharedClientKey = '';
-    return true;
   }
 
   async close() {
-    killOrphanChrome();
     await this.transport.close?.();
-  }
-}
-
-// 通过本地子进程与 chrome-devtools-mcp 通信，适合由本应用直接管理 MCP 生命周期。
-class StdioTransport {
-  config: any;
-  child: any;
-  buffer: Buffer;
-  pending: Map<any, any>;
-  nextId: number;
-  initialized: boolean;
-  connectPromise: Promise<void> | null;
-  initializePromise: Promise<void> | null;
-
-  constructor(config) {
-    this.config = config;
-    this.child = null;
-    this.buffer = Buffer.alloc(0);
-    this.pending = new Map();
-    this.nextId = 1;
-    this.initialized = false;
-    this.connectPromise = null;
-    this.initializePromise = null;
-  }
-
-  async ensureConnected() {
-    // 建立进程只负责启动 stdio 通道；MCP initialize 在 ensureInitialized 中完成。
-    if (this.child && !this.child.stdin?.destroyed) {
-      return;
-    }
-    if (this.child?.stdin?.destroyed) {
-      this.child = null;
-      this.initialized = false;
-      this.initializePromise = null;
-      this.connectPromise = null;
-    }
-    if (this.connectPromise) {
-      return this.connectPromise;
-    }
-
-    this.connectPromise = new Promise<void>((resolve, reject) => {
-      log.info(`[Chrome MCP][stdio] spawn command=${this.config.command} args=${safeJson(this.config.args)} cwd=${this.config.cwd}`);
-      const resolved = resolveCommandOnWindows(this.config.command, this.config.args);
-      const child = spawn(resolved.command, resolved.args, {
-        cwd: this.config.cwd,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: process.env,
-      });
-
-      let settled = false;
-      const onError = err => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        reject(new Error(`启动 Chrome MCP stdio 进程失败: ${err.message}`));
-      };
-
-      child.once('error', onError);
-      child.stdout.on('data', chunk => this.handleStdout(chunk));
-      child.stderr.on('data', chunk => {
-        log.warn(`[Chrome MCP][stderr] ${truncateText(chunk.toString().trim(), 400)}`);
-      });
-      child.on('exit', (code, signal) => {
-        const error = new Error(`Chrome MCP stdio 进程已退出 (code=${code ?? 'null'}, signal=${signal ?? 'null'})`);
-        this.rejectAllPending(error);
-        this.child = null;
-        this.initialized = false;
-        this.initializePromise = null;
-        this.connectPromise = null;
-      });
-
-      this.child = child;
-      settled = true;
-      resolve();
-    }).finally(() => {
-      this.connectPromise = null;
-    });
-
-    return this.connectPromise;
-  }
-
-  handleStdout(chunk) {
-    // 兼容两种常见 MCP stdio framing：Content-Length 和 NDJSON。
-    this.buffer = Buffer.concat([this.buffer, Buffer.from(chunk)]);
-
-    while (this.buffer.length > 0) {
-      const text = this.buffer.toString('utf8');
-
-      // Try Content-Length framing first
-      if (text.startsWith('Content-Length:') || text.startsWith('content-length:')) {
-        const headerEnd = this.findHeaderEnd(this.buffer);
-        if (headerEnd < 0) return;
-
-        const separatorLength = this.buffer[headerEnd] === 13 ? 4 : 2;
-        const headerText = this.buffer.slice(0, headerEnd).toString('utf8');
-        const contentLength = this.getContentLength(headerText);
-        if (!Number.isFinite(contentLength) || contentLength < 0) {
-          log.warn(`[Chrome MCP][stdio] 无效 Content-Length header: ${truncateText(headerText, 200)}`);
-          this.buffer = Buffer.alloc(0);
-          return;
-        }
-
-        const bodyStart = headerEnd + separatorLength;
-        const bodyEnd = bodyStart + contentLength;
-        if (this.buffer.length < bodyEnd) return;
-
-        const body = this.buffer.slice(bodyStart, bodyEnd).toString('utf8');
-        this.buffer = this.buffer.slice(bodyEnd);
-
-        try {
-          const message = JSON.parse(body);
-          this.handleIncomingMessage(message);
-        } catch (err) {
-          log.warn(`[Chrome MCP][stdio] JSON 解析失败: ${err.message}`);
-        }
-        continue;
-      }
-
-      // Fallback: newline-delimited JSON (NDJSON)
-      const newlineIdx = text.indexOf('\n');
-      if (newlineIdx < 0) return;
-
-      const line = text.slice(0, newlineIdx).trim();
-      this.buffer = Buffer.from(text.slice(newlineIdx + 1), 'utf8');
-
-      if (!line) continue;
-
-      try {
-        const message = JSON.parse(line);
-        this.handleIncomingMessage(message);
-      } catch (err) {
-        log.warn(`[Chrome MCP][stdio] NDJSON 解析失败: ${truncateText(line, 200)}`);
-      }
-    }
-  }
-
-  findHeaderEnd(buffer) {
-    const crlf = buffer.indexOf('\r\n\r\n');
-    if (crlf >= 0) {
-      return crlf;
-    }
-    return buffer.indexOf('\n\n');
-  }
-
-  getContentLength(headerText) {
-    const line = headerText
-      .split(/\r?\n/)
-      .find(item => item.toLowerCase().startsWith('content-length:'));
-    if (!line) {
-      return NaN;
-    }
-    return Number(line.split(':')[1]?.trim());
-  }
-
-  handleIncomingMessage(message) {
-    // 当前客户端只主动发请求；服务端反向请求统一返回 method not found。
-    if (message?.method && message?.id !== undefined) {
-      this.sendRaw({
-        jsonrpc: '2.0',
-        id: message.id,
-        error: { code: -32601, message: 'sagent does not handle server-initiated MCP requests' },
-      }).catch(() => {});
-      return;
-    }
-
-    if (message?.id !== undefined) {
-      const pending = this.pending.get(message.id);
-      if (!pending) {
-        return;
-      }
-      this.pending.delete(message.id);
-      clearTimeout(pending.timer);
-      if (message.error) {
-        pending.reject(new Error(`Chrome MCP 请求失败: ${message.error.message || safeJson(message.error)}`));
-        return;
-      }
-      pending.resolve(message.result);
-    }
-  }
-
-  rejectAllPending(error) {
-    for (const [id, pending] of this.pending.entries()) {
-      clearTimeout(pending.timer);
-      pending.reject(error);
-      this.pending.delete(id);
-    }
-  }
-
-  async sendRaw(message) {
-    // stdio transport 只负责 JSON-RPC 序列化和写入，不触发 initialize。
-    await this.ensureConnected();
-    if (!this.child || this.child.stdin?.destroyed) {
-      throw new Error('Chrome MCP stdio 连接已断开，请重试');
-    }
-    const payload = Buffer.from(JSON.stringify(message) + '\n', 'utf8');
-    return new Promise<void>((resolve, reject) => {
-      this.child.stdin.write(payload, err => {
-        if (err) {
-          if (err.code === 'ERR_STREAM_DESTROYED') {
-            this.child = null;
-            this.initialized = false;
-            this.initializePromise = null;
-          }
-          reject(err);
-          return;
-        }
-        resolve();
-      });
-    });
-  }
-
-  async ensureInitialized() {
-    // 依次尝试新旧 MCP protocolVersion，兼容不同版本的 chrome-devtools-mcp。
-    if (this.initialized) {
-      return;
-    }
-    if (this.initializePromise) {
-      return this.initializePromise;
-    }
-
-    this.initializePromise = (async () => {
-      await this.ensureConnected();
-
-      let lastError = null;
-      for (const version of DEFAULT_PROTOCOL_VERSIONS) {
-        try {
-          await this.sendRequest('initialize', {
-            protocolVersion: version,
-            capabilities: {},
-            clientInfo: CLIENT_INFO,
-          }, { skipInit: true });
-          await this.sendNotification('notifications/initialized', {});
-          this.initialized = true;
-          return;
-        } catch (err) {
-          lastError = err;
-        }
-      }
-
-      // If --autoConnect was used and failed, retry without it so the MCP server
-      // launches its own Chrome instance in the background
-      if (this.config.args?.includes('--autoConnect')) {
-        log.info('[Chrome MCP][stdio] --autoConnect 连接失败，移除该参数重试（将自动启动浏览器）');
-        await this.close();
-        this.config = { ...this.config, args: this.config.args.filter(a => a !== '--autoConnect') };
-        await this.ensureConnected();
-
-        for (const version of DEFAULT_PROTOCOL_VERSIONS) {
-          try {
-            await this.sendRequest('initialize', {
-              protocolVersion: version,
-              capabilities: {},
-              clientInfo: CLIENT_INFO,
-            }, { skipInit: true });
-            await this.sendNotification('notifications/initialized', {});
-            this.initialized = true;
-            return;
-          } catch (err) {
-            lastError = err;
-          }
-        }
-      }
-
-      throw lastError || new Error('Chrome MCP initialize 失败');
-    })().finally(() => {
-      this.initializePromise = null;
-    });
-
-    return this.initializePromise;
-  }
-
-  async sendNotification(method, params) {
-    await this.sendRaw({
-      jsonrpc: '2.0',
-      method,
-      params: params || {},
-    });
-  }
-
-  async sendRequest(method, params, { skipInit = false } = {}) {
-    // pending map 将 JSON-RPC response id 映射回调用方 Promise。
-    if (!skipInit) {
-      await this.ensureInitialized();
-    }
-
-    const id = this.nextId++;
-    logChromeRequest('stdio', 'stdio', method, params, `id=${id}`);
-    return new Promise(async (resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Chrome MCP 请求超时: ${method}`));
-      }, 15000);
-
-      this.pending.set(id, { resolve, reject, timer });
-
-      try {
-        await this.sendRaw({
-          jsonrpc: '2.0',
-          id,
-          method,
-          params: params || {},
-        });
-      } catch (err) {
-        clearTimeout(timer);
-        this.pending.delete(id);
-        reject(err);
-      }
-    });
-  }
-
-  async request(method, params) {
-    return this.sendRequest(method, params);
-  }
-
-  async close() {
-    this.rejectAllPending(new Error('Chrome MCP 客户端已关闭'));
-    try {
-      this.child?.kill('SIGTERM');
-    } catch {
-      // noop
-    }
-    this.child = null;
-    this.buffer = Buffer.alloc(0);
-    this.initialized = false;
-    this.initializePromise = null;
   }
 }
 
@@ -1071,7 +569,7 @@ class SseTransport {
   }
 
   async ensureInitialized() {
-    // 与 stdio 一样，SSE transport 初始化后才允许发送普通 MCP 请求。
+    // SSE transport 初始化后才允许发送普通 MCP 请求。
     if (this.initialized) {
       return;
     }
@@ -1120,11 +618,17 @@ class SseTransport {
     }
 
     const id = this.nextId++;
+    const timeoutMs = timeoutForRequest(method, params);
     return new Promise(async (resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`Chrome MCP 请求超时: ${method}`));
-      }, 15000);
+        // MCP 规范：超时时主动通知服务端取消 in-flight 请求，避免悬挂的 CDP 操作继续动 Chrome。
+        this.sendNotification('notifications/cancelled', {
+          requestId: id,
+          reason: `client timeout after ${timeoutMs}ms`,
+        }).catch(() => { /* SSE 通道可能已断；通知失败不影响主流程 */ });
+        reject(new Error(`Chrome MCP 请求超时: ${method} (${timeoutMs}ms)`));
+      }, timeoutMs);
 
       this.pending.set(id, { resolve, reject, timer });
 
@@ -1161,31 +665,22 @@ class SseTransport {
   }
 }
 
-export function resetFatalChromeError() {
-  ChromeMcpClient._fatalChromeError = null;
-}
-
 export function createChromeMcpClient(config = loadChromeMcpConfig()) {
   if (!config.enabled) {
     throw new Error('Chrome MCP 未启用，请在 .env 中设置 CHROME_MCP_ENABLED=true');
   }
 
-  const transport = config.transport === 'stdio'
-    ? new StdioTransport(config)
-    : new SseTransport(config);
-
-  return new ChromeMcpClient(config, transport);
+  return new ChromeMcpClient(config, new SseTransport(config));
 }
 
 export async function getSharedChromeMcpClient(config = loadChromeMcpConfig()) {
-  // Reuse existing client even if config key differs (e.g. _stripAutoConnect removed
-  // --autoConnect at runtime but loadChromeMcpConfig() re-reads it from .env).
-  if (sharedClientPromise) {
-    return sharedClientPromise;
-  }
   const key = clientKey(config);
 
-  if (sharedClientPromise && sharedClientKey !== key) {
+  if (sharedClientPromise && sharedClientKey === key) {
+    return sharedClientPromise;
+  }
+
+  if (sharedClientPromise) {
     try {
       const existing = await sharedClientPromise;
       await existing.close();
@@ -1212,6 +707,21 @@ export async function resetChromeMcpClientForTests() {
   } finally {
     sharedClientPromise = null;
     sharedClientKey = '';
+  }
+}
+
+export async function shutdownChromeMcp(): Promise<void> {
+  // run 结束时只关闭本进程里的 SSE client；外部 chrome:mcp bridge 自己管理 Chrome 生命周期。
+  if (sharedClientPromise) {
+    try {
+      const client = await sharedClientPromise;
+      await client.close();
+    } catch {
+      // noop
+    } finally {
+      sharedClientPromise = null;
+      sharedClientKey = '';
+    }
   }
 }
 

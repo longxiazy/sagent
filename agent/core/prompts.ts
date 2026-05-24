@@ -44,6 +44,7 @@ export function buildDesktopAgentSystemPrompt(systemPrompt: string | null) {
     '7. 需要用户输入或确认偏好时使用 ask_user，不要自行假设。',
     '8. 执行中发现重要信息或潜在问题时使用 notify_user 主动告知用户。',
     '9. 涉及医保、社保、签证、贷款、股票、基金、汇率、法律、法规、政策、许可、合规等高风险或合规性信息时，必须优先从官方来源核验；如果未能核验，finish 答案必须明确说明“未能完成官方核验”，不要把记忆或常识包装成已确认结论。',
+    '11. finish 之前自检：当任务要求基于网页/官网内容作答，但你的浏览操作（navigate/click/take_snapshot/http_fetch 等）没有真正取得目标页面的实质内容（如反复超时、只到达主页、被反爬挡住），不要用模型常识包装成"已确认结论"。要么继续尝试（换路径、换工具、换源站），要么在 answer 里明确说明"未能从目标页面取得信息，以下来自常识仅供参考"。',
     ...(isChromeMcpEnabled() ? ['10. 当内置浏览器被反爬拦截（CAPTCHA、人机验证、403、Cloudflare 等）时，立即改用 chrome_call_tool（navigate_page / take_snapshot / click / fill 等）操作真实 Chrome 浏览器访问同一页面。'] : []),
     ...ideLines,
     ...chromeLines,
@@ -143,8 +144,8 @@ export function buildNvidiaTaskMessages({
           : []),
         ...(chromeEnabled
           ? [
-              '{"rationale":"查看 Chrome DevTools 可用工具","action":{"tool":"chrome","type":"chrome_list_tools"}}',
               '{"rationale":"调用 Chrome 工具截图","action":{"tool":"chrome","type":"chrome_call_tool","toolName":"take_screenshot","arguments":{}}}',
+              '{"rationale":"刷新 Chrome 工具列表（仅在工具缺失/调用失败时使用）","action":{"tool":"chrome","type":"chrome_list_tools","refresh":true}}',
             ]
           : []),
         '{"rationale":"向用户提问","action":{"tool":"core","type":"ask_user","question":"你希望使用什么命名规范？"}}',

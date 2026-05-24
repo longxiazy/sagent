@@ -27,6 +27,7 @@ export function createAgentRunSession({
   let completedStepCount = 0;
   let observedStepCount = 0;
   const modelsUsed = new Set();
+  const modelUsageCounts = new Map<string, number>();
   const stepModels: Record<number, string> = {};
   let sseClosed = false;
 
@@ -64,6 +65,9 @@ export function createAgentRunSession({
     }
     if (payload.type === 'model_plan' && payload.stage === 'winner' && payload.step) {
       stepModels[payload.step] = payload.model;
+      if (payload.model) {
+        modelUsageCounts.set(payload.model, (modelUsageCounts.get(payload.model) || 0) + 1);
+      }
     }
     if (payload.type === 'model_plan' && payload.model && ['winner', 'success', 'thinking'].includes(payload.stage)) {
       modelsUsed.add(payload.model);
@@ -88,6 +92,7 @@ export function createAgentRunSession({
       completedStepCount,
       observedStepCount,
       modelsUsed: [...modelsUsed],
+      modelUsage: Object.fromEntries(modelUsageCounts),
       stepModels,
     };
   }
@@ -103,7 +108,19 @@ export function createAgentRunSession({
       status,
     });
 
-    const usedModels = [...modelsUsed].map((selectedModel: any) => (selectedModel as string).split('/').pop()).join(',');
+    const modelSummaryEntries = [...modelUsageCounts.entries()];
+    for (const m of modelsUsed) {
+      if (!modelUsageCounts.has(m as string)) {
+        modelSummaryEntries.push([m as string, 0]);
+      }
+    }
+    const usedModels = modelSummaryEntries
+      .sort((a, b) => b[1] - a[1])
+      .map(([fullName, count]) => {
+        const shortName = fullName.split('/').pop();
+        return count > 0 ? `${shortName}×${count}` : `${shortName}`;
+      })
+      .join(', ');
     const statusIcon = status === 'done' ? '✅' : status === 'cancelled' ? '⛔' : '❌';
     const elapsedSec = (metrics.elapsed_ms / 1000).toFixed(1);
     const statusLine = `  ${statusIcon} Agent ${status.toUpperCase()}  ${elapsedSec}s  ${metrics.step_count} steps  ${usedModels}`;
