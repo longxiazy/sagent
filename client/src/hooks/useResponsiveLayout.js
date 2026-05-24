@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export function useResponsiveLayout({ dockedBreakpoint, tabletBreakpoint, panelSizeKey }) {
+export function useResponsiveLayout({ dockedBreakpoint, panelSizeKey }) {
   const [showSessions, setShowSessions] = useState(() => window.innerWidth >= dockedBreakpoint);
 
   useEffect(() => {
@@ -21,7 +21,7 @@ export function useResponsiveLayout({ dockedBreakpoint, tabletBreakpoint, panelS
 
     const syncResponsiveState = () => {
       restorePanelWidth();
-      if (window.innerWidth < tabletBreakpoint) {
+      if (window.innerWidth < dockedBreakpoint) {
         setShowSessions(false);
       }
     };
@@ -29,7 +29,7 @@ export function useResponsiveLayout({ dockedBreakpoint, tabletBreakpoint, panelS
     restorePanelWidth();
     window.addEventListener('resize', syncResponsiveState);
     return () => window.removeEventListener('resize', syncResponsiveState);
-  }, [dockedBreakpoint, panelSizeKey, tabletBreakpoint]);
+  }, [dockedBreakpoint, panelSizeKey]);
 
   return { showSessions, setShowSessions };
 }
