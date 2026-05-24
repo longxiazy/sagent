@@ -34,7 +34,6 @@ import { useQuestionSubmit } from './hooks/useQuestionSubmit.js';
 import { DEFAULT_MODELS, EMPTY_SUGGESTIONS } from './data/suggestions.js';
 import { fetchSuggestions, recordSuggestionUse } from './api/suggestions.js';
 import {
-  PHONE_BREAKPOINT,
   TABLET_BREAKPOINT,
   DOCKED_LAYOUT_BREAKPOINT,
   APP_BG_COLOR,
@@ -106,7 +105,6 @@ export default function App() {
   const [showReset, setShowReset] = useState(false);
   const { showSessions, setShowSessions } = useResponsiveLayout({
     dockedBreakpoint: DOCKED_LAYOUT_BREAKPOINT,
-    tabletBreakpoint: TABLET_BREAKPOINT,
     panelSizeKey: PANEL_SIZE_KEY,
   });
   // Agent 的模型集合、策略、headless、memory 目前是“应用级偏好”，
@@ -657,7 +655,7 @@ export default function App() {
           modelList={availableModels}
           onDelete={handleDeleteSession}
           onClearAll={handleClearAllSessions}
-          onSelect={(id) => { handleSelectSession(id); if (window.innerWidth < 768) setShowSessions(false); }}
+          onSelect={(id) => { handleSelectSession(id); if (window.innerWidth < DOCKED_LAYOUT_BREAKPOINT) setShowSessions(false); }}
           locked={sessionLocked}
           showMemoryPanel={showMemoryPanel}
           onToggleMemory={() => setShowMemoryPanel(v => !v)}

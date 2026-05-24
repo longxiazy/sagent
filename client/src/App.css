@@ -97,23 +97,41 @@
 
 html {
   height: 100%;
+  min-height: 100%;
 }
 
 body {
   height: 100%;
+  min-height: 100%;
   background: var(--c-bg);
-  overflow: auto;
+  overflow: hidden;
 }
 
 #root {
   height: 100%;
+  min-height: 0;
   background: var(--c-bg);
+}
+
+@supports (height: 100dvh) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
 }
 
 button,
 select,
 textarea {
   font: inherit;
+}
+
+button,
+select,
+[role='button'] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* ── Hero (empty state) ── */
@@ -347,6 +365,7 @@ textarea {
 .app-shell {
   display: flex;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
   background: var(--c-bg);
 }
@@ -693,13 +712,13 @@ textarea {
   background: #fff;
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 900px) {
   .layout-body {
     flex-direction: row;
   }
 
   .layout-body.agent-layout > .agent-panel-wrap {
-    flex: 0 0 420px;
+    flex: 0 0 clamp(340px, 38vw, 420px);
     min-width: 0;
     min-height: 0;
     max-height: none;
@@ -724,11 +743,17 @@ textarea {
   }
 }
 
-@media (min-width: 640px) and (max-width: 1099px) {
+@media (min-width: 900px) and (max-width: 1099px) {
+  .resize-divider {
+    display: none;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 899px) {
   .layout-body.agent-layout > .agent-panel-wrap {
-    flex: 0 0 clamp(240px, 34vh, 380px);
+    flex: 0 0 clamp(220px, 32svh, 340px);
     min-height: 220px;
-    max-height: 42%;
+    max-height: 40%;
     border-bottom: 1px solid var(--c-border);
   }
 
@@ -1002,7 +1027,7 @@ textarea {
   position: relative;
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 900px) {
   .messages {
     max-width: none;
     padding: 20px 32px;
@@ -1064,7 +1089,7 @@ textarea {
   line-height: 1.6;
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 900px) {
   .bubble {
     max-width: min(85%, 900px);
   }
@@ -1248,7 +1273,7 @@ textarea {
 .md-body strong { font-weight: 600; }
 .md-body blockquote { border-left: 3px solid #ccc; margin: 8px 0; padding: 4px 12px; color: #666; }
 .md-body a { color: var(--c-primary); text-decoration: underline; }
-.md-body table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: var(--f-sm); }
+.md-body table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: var(--f-sm); display: block; overflow-x: auto; }
 .md-body th, .md-body td { border: 1px solid var(--c-border); padding: 6px 10px; text-align: left; }
 .md-body th { background: #f0f0f0; font-weight: 500; }
 
@@ -1266,6 +1291,8 @@ textarea {
   font-size: var(--f-sm);
   margin: 8px 0;
   padding: 12px 14px;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .cursor {
@@ -1314,7 +1341,7 @@ textarea {
   flex: 1;
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 900px) {
   .agent-panel {
     max-width: none;
     margin: 0;
@@ -1465,7 +1492,7 @@ textarea {
 .agent-memory-btn:hover { background: var(--c-badge-plan-bg); color: var(--c-badge-plan); border-color: var(--c-primary-light); }
 
 .agent-collapse-btn.agent-tablet-only { display: none; }
-@media (min-width: 640px) and (max-width: 1099px) {
+@media (min-width: 640px) and (max-width: 899px) {
   .agent-collapse-btn.agent-tablet-only { display: inline-flex; }
 }
 
@@ -1601,7 +1628,7 @@ textarea {
   min-height: 0;
 }
 
-@media (min-width: 640px) and (max-width: 1099px) {
+@media (min-width: 640px) and (max-width: 899px) {
   .agent-trace {
     max-height: none;
     overflow-y: visible;
@@ -1916,7 +1943,7 @@ textarea {
 }
 
 /* Desktop docked layout: compact stacked cards with expand/collapse */
-@media (min-width: 1100px) {
+@media (min-width: 900px) {
   .model-plan-cards {
     flex-direction: column;
     gap: 4px;
@@ -2428,6 +2455,48 @@ textarea:disabled {
 
   .agent-panel-note {
     max-width: 72ch;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1099px) {
+  .header {
+    flex-wrap: nowrap;
+  }
+
+  .header-left {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .header-right {
+    flex: 0 1 auto;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+
+  .mode-btn {
+    padding: 0 10px;
+  }
+
+  .layout-body.agent-layout > .agent-panel-wrap {
+    flex-basis: clamp(320px, 36vw, 390px);
+  }
+
+  .layout-body.agent-layout > .chat-panel-wrap {
+    min-width: 0;
+  }
+
+  .agent-panel {
+    padding: 10px 12px;
+    border-bottom: none;
+    border-right: 1px solid var(--c-border);
+  }
+}
+
+@media (min-width: 640px) and (max-width: 899px) {
+  .layout-body.agent-layout > .agent-panel-wrap {
+    flex-basis: clamp(220px, 32svh, 340px);
   }
 }
 
@@ -3135,4 +3204,70 @@ textarea:focus-visible,
 .agent-trace-item:focus-visible {
   outline: 2px solid var(--c-primary);
   outline-offset: -2px;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .suggestion-card:hover,
+  .copy-btn:hover,
+  .header-icon-btn:hover:not(:disabled),
+  .session-toggle-btn:hover,
+  .page-create-btn:hover:not(:disabled),
+  .header-new-session-btn:hover:not(:disabled),
+  .model-tag:hover,
+  .toolbar-chip:hover,
+  .agent-collapse-btn:hover,
+  .agent-stop-btn:hover:not(:disabled),
+  .send-btn:hover:not(:disabled),
+  .session-card:hover,
+  .session-delete-btn:hover:not(:disabled),
+  .session-clear-all-btn:hover:not(:disabled) {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .copy-btn,
+  .session-delete-btn,
+  .model-card-head .copy-btn {
+    opacity: 1;
+  }
+
+  .suggestion-card:active,
+  .header-icon-btn:active,
+  .session-toggle-btn:active,
+  .page-create-btn:active:not(:disabled),
+  .header-new-session-btn:active:not(:disabled),
+  .model-tag:active:not(:disabled),
+  .toolbar-chip:active,
+  .agent-mobile-tab:active,
+  .agent-collapse-btn:active,
+  .agent-stop-btn:active:not(:disabled),
+  .send-btn:active:not(:disabled),
+  .session-main:active:not(:disabled),
+  .session-delete-btn:active:not(:disabled),
+  .session-clear-all-btn:active:not(:disabled) {
+    filter: brightness(0.96);
+  }
+
+  .session-main,
+  .suggestion-card,
+  .agent-mobile-tab,
+  .model-tag,
+  .toolbar-chip,
+  .send-btn,
+  .header-icon-btn,
+  .session-toggle-btn,
+  .page-create-btn,
+  .header-new-session-btn,
+  .session-delete-btn,
+  .agent-collapse-btn,
+  .agent-stop-btn {
+    min-height: 36px;
+  }
+
+  .copy-btn,
+  .session-delete-btn,
+  .header-icon-btn,
+  .session-toggle-btn {
+    min-width: 36px;
+  }
 }
