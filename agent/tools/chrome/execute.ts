@@ -104,9 +104,18 @@ function isTrivialSnapshotContent(content: string): boolean {
 }
 
 function extractSnapshotIdFromText(text: string): string | null {
-  // snapshot 输出形如 "uid=2_0 RootWebArea ..."；取第一个 uid 的下划线前缀就是 snapshotId。
-  const m = /\buid=(\d+)_\d+/.exec(text || '');
-  return m ? m[1] : null;
+  // chrome-devtools-mcp 的 click/fill 等动作响应里会同时引用"旧 uid"（被作用的元素）
+  // 和"新 snapshot 的 uid"，例如：
+  //   clicked uid=3_5 successfully
+  //   # Snapshot
+  //   uid=4_0 RootWebArea ...
+  // 取第一个 uid 会拿到旧的 3；snapshot id 单调递增，取所有 uid 里最大的 sid 才是最新 snapshot。
+  let maxId = -1;
+  for (const m of (text || '').matchAll(/\buid=(\d+)_\d+/g)) {
+    const id = Number(m[1]);
+    if (Number.isFinite(id) && id > maxId) maxId = id;
+  }
+  return maxId >= 0 ? String(maxId) : null;
 }
 
 function snapshotIdOfUid(uid: unknown): string | null {
@@ -127,6 +136,7 @@ function isNavigationTimeoutResult(result: any): boolean {
 function validateUidsAgainstSnapshot(toolName: string, args: Record<string, any>): string | null {
   const fields = UID_TOOL_FIELDS[toolName];
   if (!fields || !currentSnapshotId) return null;
+  const currentNum = Number(currentSnapshotId);
   for (const field of fields) {
     const value = args?.[field];
     if (value == null || value === '') continue;
@@ -134,9 +144,15 @@ function validateUidsAgainstSnapshot(toolName: string, args: Record<string, any>
     if (!sid) {
       return `参数 ${field}="${value}" 不是合法的 uid（应为形如 "3_12" 的字符串）。请先 take_snapshot 获取最新 uid。`;
     }
-    if (sid !== currentSnapshotId) {
-      return `参数 ${field}="${value}" 属于旧 snapshot (id=${sid})，当前 snapshot id=${currentSnapshotId}；snapshot 重建后旧 uid 已失效，请先 take_snapshot 取最新 uid 再调用。`;
+    if (sid === currentSnapshotId) continue;
+    // 容错：snapshot id 单调递增。如果传入 uid 的 sid 比 currentSnapshotId 更新（>=），
+    // 说明 client 端 extract 没跟上 chrome 真实的新 snapshot——把 uid 当成权威，自动升级。
+    const sidNum = Number(sid);
+    if (Number.isFinite(sidNum) && Number.isFinite(currentNum) && sidNum >= currentNum) {
+      currentSnapshotId = sid;
+      continue;
     }
+    return `参数 ${field}="${value}" 属于旧 snapshot (id=${sid})，当前 snapshot id=${currentSnapshotId}；snapshot 重建后旧 uid 已失效，请先 take_snapshot 取最新 uid 再调用。`;
   }
   return null;
 }
