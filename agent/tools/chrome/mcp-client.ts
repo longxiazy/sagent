@@ -36,6 +36,21 @@ function timeoutForRequest(method: string, params: any): number {
 }
 const CLIENT_INFO = { name: 'sagent', version: '1.0.0' };
 
+// 幂等工具白名单：客户端超时时可以原地重试。其余工具（click/fill/navigate_page/
+// press_key 等）哪怕看起来 timeout，底层 CDP 操作很可能已经发到 Chrome，重试
+// 会让浏览器收到两份相同动作；bridge 当前也未把 notifications/cancelled 透传给
+// chrome-devtools-mcp，第一次 timeout 后服务端动作不会被真正取消。
+const IDEMPOTENT_RETRY_TOOLS = new Set([
+  'take_snapshot',
+  'take_screenshot',
+  'list_pages',
+  'list_console_messages',
+  'list_network_requests',
+  'get_network_request',
+  'performance_analyze_insight',
+  'wait_for',
+]);
+
 let sharedClientPromise = null;
 let sharedClientKey = '';
 
@@ -295,7 +310,7 @@ class ChromeMcpClient {
         arguments: toolArgs || {},
       });
     } catch (err) {
-      if (this._isClientTimeoutError(err)) {
+      if (this._isClientTimeoutError(err) && IDEMPOTENT_RETRY_TOOLS.has(toolName)) {
         return await this._retryAfterClientTimeout(toolName, toolArgs, err);
       }
       throw err;
