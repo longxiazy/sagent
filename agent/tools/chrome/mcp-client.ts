@@ -725,6 +725,45 @@ export async function resetChromeMcpClientForTests() {
   }
 }
 
+export async function closeAllChromePagesQuiet(): Promise<void> {
+  // run 结束/异常时尽力关闭本次 run 期间打开的 Chrome tab；任何步骤失败都吞错，
+  // 不阻断 shutdownChromeMcp 等后续 cleanup。sharedClientPromise 为空说明本进程
+  // 从未连过 bridge，没什么要关的。chrome-devtools-mcp 不允许关最后一个 page，
+  // 那次 close_page 调用会被它内部吞掉，正好留一个空白 tab 兜底。
+  if (!sharedClientPromise) return;
+  let client: any;
+  try {
+    client = await sharedClientPromise;
+  } catch {
+    return;
+  }
+  let listResult: any;
+  try {
+    listResult = await client.callTool('list_pages', {});
+  } catch {
+    return;
+  }
+  if (!listResult || listResult.isError) return;
+  const text = Array.isArray(listResult.content)
+    ? listResult.content.map((c: any) => (c?.type === 'text' && c.text) ? c.text : '').join('\n')
+    : '';
+  const pageIds: number[] = [];
+  for (const m of text.matchAll(/^\s*(\d+):\s*\S+/gm)) {
+    const id = Number(m[1]);
+    if (Number.isFinite(id) && !pageIds.includes(id)) pageIds.push(id);
+  }
+  // 倒序关：让"最后那个保留 tab"是 id 最小的（通常是首个 about:blank/启动页），
+  // chrome-devtools-mcp 拒掉最后一个 close 也不影响其余 tab 的清理。
+  pageIds.sort((a, b) => b - a);
+  for (const pageId of pageIds) {
+    try {
+      await client.callTool('close_page', { pageId });
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export async function shutdownChromeMcp(): Promise<void> {
   // run 结束时只关闭本进程里的 SSE client；外部 chrome:mcp bridge 自己管理 Chrome 生命周期。
   if (sharedClientPromise) {
