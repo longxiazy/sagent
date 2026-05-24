@@ -174,6 +174,11 @@ export function useAgentTransport({
           }
 
           if (event.type === 'done') {
+            showAgentNotification({
+              runId: event.runId,
+              message: event.answer || 'Agent 已完成任务',
+              kind: 'success',
+            });
             setAgentTrace(prev => {
               updateSession(sessionId, session => {
                 const nextMessages = [...session.messages];
@@ -195,6 +200,11 @@ export function useAgentTransport({
           }
 
           if (event.type === 'error') {
+            showAgentNotification({
+              runId: event.runId,
+              message: event.error || 'Agent 执行失败',
+              kind: 'failure',
+            });
             setAgentTrace(prev => {
               updateSession(sessionId, session => {
                 const nextMessages = [...session.messages];
