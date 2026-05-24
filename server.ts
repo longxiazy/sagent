@@ -176,7 +176,7 @@ app.listen(Number(PORT), HOST, async () => {
   ${row('CHROME_PATH', process.env.AGENT_BROWSER_PATH || 'auto')}
   ${ideConfig.enabled ? row('IDE_MCP', `${ideConfig.transport} @ ${ideConfig.transport === 'stdio' ? ideConfig.command : (ideConfig.url || `${ideConfig.host}:${ideConfig.port}${ideConfig.ssePath}`)}`) : row('IDE_MCP', 'disabled')}
   ${ideConfig.enabled ? row('IDE_PROJECT_PATH', ideConfig.projectPath) : ''}
-  ${chromeConfig.enabled ? row('CHROME_MCP', `${chromeConfig.transport} @ ${chromeConfig.transport === 'stdio' ? chromeConfig.command : (chromeConfig.url || `${chromeConfig.host}:${chromeConfig.port}`)}`) : row('CHROME_MCP', 'disabled')}
+  ${chromeConfig.enabled ? row('CHROME_MCP', `${chromeConfig.transport} @ ${chromeConfig.url || `${chromeConfig.host}:${chromeConfig.port}${chromeConfig.ssePath}`}`) : row('CHROME_MCP', 'disabled')}
   ${hLine}
   ${row('NVIDIA_API_KEY', process.env.NVIDIA_API_KEY ? '✓ configured' : '✗ not set')}
   ${row('ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY ? '✓ configured' : '✗ not set')}

@@ -51,8 +51,9 @@ function truncate(text, max = 160) {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
-// 弹一条通知。kind: 'approval' | 'question'。审批带「允许/拒绝」按钮，
-// 问答仅作提醒（需要文本输入，通知里没法填）。
+// 弹一条通知。kind: 'approval' | 'question' | 'success' | 'failure'。
+// approval 带「允许/拒绝」按钮；question 只提醒（输入框在通知里没法填）；
+// success/failure 是任务结束摘要，不需要交互。
 export async function showAgentNotification({ runId, approvalId, message, kind = 'approval' }) {
   if (!notificationsSupported()) {
     console.warn('[Notifications] showAgentNotification 跳过：浏览器不支持');
@@ -62,8 +63,14 @@ export async function showAgentNotification({ runId, approvalId, message, kind =
     console.warn(`[Notifications] showAgentNotification 跳过：权限是 ${Notification.permission}（需要先点页面上的"开启桌面通知"）`);
     return false;
   }
-  if (!runId || !approvalId) {
-    console.warn('[Notifications] showAgentNotification 跳过：缺 runId/approvalId', { runId, approvalId });
+  // approval/question 需要用户决策，必须带 approvalId；success/failure 只需要 runId。
+  if (kind === 'approval' || kind === 'question') {
+    if (!runId || !approvalId) {
+      console.warn('[Notifications] showAgentNotification 跳过：缺 runId/approvalId', { runId, approvalId });
+      return false;
+    }
+  } else if (!runId) {
+    console.warn('[Notifications] showAgentNotification 跳过：缺 runId', { runId });
     return false;
   }
 
@@ -73,25 +80,45 @@ export async function showAgentNotification({ runId, approvalId, message, kind =
     return false;
   }
 
-  const isQuestion = kind === 'question';
-  const title = isQuestion ? 'Desktop Agent 提问' : 'Desktop Agent 需要审批';
-  const actions = isQuestion
-    ? []
-    : [
+  let title;
+  let actions = [];
+  let requireInteraction = false;
+  switch (kind) {
+    case 'question':
+      title = 'Desktop Agent 提问';
+      requireInteraction = true;
+      break;
+    case 'success':
+      title = 'Desktop Agent 已完成';
+      break;
+    case 'failure':
+      title = 'Desktop Agent 失败';
+      break;
+    case 'approval':
+    default:
+      title = 'Desktop Agent 需要审批';
+      actions = [
         { action: 'approve', title: '允许' },
         { action: 'reject', title: '拒绝' },
       ];
+      requireInteraction = true;
+      break;
+  }
+
+  const tag = approvalId
+    ? `agent-${kind}-${approvalId}`
+    : `agent-${kind}-${runId}`;
 
   try {
     await reg.showNotification(title, {
-      body: truncate(message, 160),
-      tag: `agent-${kind}-${approvalId}`,
+      body: truncate(message, 200),
+      tag,
       renotify: true,
-      requireInteraction: true,
+      requireInteraction,
       actions,
       data: { runId, approvalId, kind },
     });
-    console.info('[Notifications] 已弹出通知', { kind, approvalId });
+    console.info('[Notifications] 已弹出通知', { kind, approvalId: approvalId || null, runId });
     return true;
   } catch (err) {
     console.warn('[Notifications] showNotification 失败', err);

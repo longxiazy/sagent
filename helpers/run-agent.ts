@@ -9,6 +9,8 @@
 
 import { loadMemory, buildMemoryPrompt } from '../agent/core/memory.ts';
 import { removeCheckpoint, removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
+import { shutdownChromeMcp, closeAllChromePagesQuiet } from '../agent/tools/chrome/mcp-client.ts';
+import { resetChromeSnapshotState } from '../agent/tools/chrome/execute.ts';
 import { appendTraceEvent } from './trace-store.ts';
 import { log } from './logger.ts';
 
@@ -52,4 +54,21 @@ export async function cleanupAgentRun(checkpointDir: string | undefined, runId: 
     }
   }
   agentRunStore.closeRun(runId);
+  resetChromeSnapshotState();
+  // run 结束（或异常）默认关闭本次 run 期间打开的 Chrome tab，避免长期跑下来 tab 堆积；
+  // 设 CHROME_MCP_KEEP_TABS=true 跳过（适合调试或想保留页面看结果的场景）。
+  // chrome-devtools-mcp 不允许关最后一个 page，会自动留一个 tab 兜底。
+  // 必须在 shutdownChromeMcp 之前调用，否则 SSE client 已断就无法 close_page。
+  if (process.env.CHROME_MCP_KEEP_TABS !== 'true') {
+    await closeAllChromePagesQuiet().catch(err => {
+      log.warn(`[cleanupAgentRun] closeAllChromePages 失败 runId=${runId} ${err?.message || err}`);
+    });
+  }
+  // 只关闭本进程里的 Chrome MCP SSE client；外部 chrome:mcp bridge 和 Chrome 继续由独立进程管理。
+  // 如果更看重复用连接，可在 .env 设 CHROME_MCP_KEEP_OPEN=true 跳过。
+  if (process.env.CHROME_MCP_KEEP_OPEN !== 'true') {
+    await shutdownChromeMcp().catch(err => {
+      log.warn(`[cleanupAgentRun] shutdownChromeMcp 失败 runId=${runId} ${err?.message || err}`);
+    });
+  }
 }

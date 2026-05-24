@@ -313,6 +313,9 @@ export async function runAgentRuntime({
       if (quality.unverified) {
         parts.push('未获得权威/官方信息来源');
       }
+      if ((quality as any).browse_intent_without_observation) {
+        parts.push('任务要求基于网页内容但未取得任何有效页面观测，回答可能来自模型常识而非实地浏览');
+      }
       if (parts.length > 0) {
         const warning = `> ⚠️ ${parts.join('；')}，返回结果可能不完整或存在偏差，请谨慎参考。\n\n`;
         answer = warning + answer;

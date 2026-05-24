@@ -123,16 +123,59 @@ export function getSessionTitle(messages) {
   return text.length > 20 ? `${text.slice(0, 20)}…` : text;
 }
 
+function isQuotaError(err) {
+  // 浏览器之间 name/code 不一致，这里多覆盖几种。
+  if (!err) return false;
+  return err.name === 'QuotaExceededError'
+    || err.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+    || err.code === 22
+    || err.code === 1014;
+}
+
+function stripAgentTrace(sessions) {
+  // agentTrace 是 SSE 事件流的客户端镜像，单个 run 可达几 MB。
+  // 服务端已经在 data/traces/<runId>.jsonl 全量落盘，并通过 /api/agent/traces/:runId 提供按需拉取，
+  // localStorage 只需要保存 agentRunId，刷新后由 App.jsx 的 useEffect 触发拉取重建。
+  return sessions.map(session => (
+    session.agentTrace && session.agentTrace.length
+      ? { ...session, agentTrace: [] }
+      : session
+  ));
+}
+
+function persistSessions(sessions) {
+  try {
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(stripAgentTrace(sessions)));
+  } catch (err) {
+    if (!isQuotaError(err)) throw err;
+    // 已经只存元数据还撞配额，说明会话条数太多；保留最近 20 条试一次再吞错。
+    try {
+      const trimmed = stripAgentTrace(sessions)
+        .slice()
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+        .slice(0, 20);
+      localStorage.setItem(SESSIONS_KEY, JSON.stringify(trimmed));
+    } catch (err2) {
+      if (!isQuotaError(err2)) throw err2;
+      console.warn('[useChatSessions] localStorage quota exceeded, sessions not persisted', err2);
+    }
+  }
+}
+
 export function useChatSessions() {
   const [chatState, setChatState] = useState(loadChatState);
   const { sessions, activeSessionId } = chatState;
   const activeSession = sessions.find(session => session.id === activeSessionId) || sessions[0];
 
   useEffect(() => {
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
-    localStorage.setItem(ACTIVE_SESSION_KEY, activeSession.id);
-    localStorage.removeItem(LEGACY_MESSAGES_KEY);
-    localStorage.removeItem(LEGACY_MODEL_KEY);
+    persistSessions(sessions);
+    try {
+      localStorage.setItem(ACTIVE_SESSION_KEY, activeSession.id);
+      localStorage.removeItem(LEGACY_MESSAGES_KEY);
+      localStorage.removeItem(LEGACY_MODEL_KEY);
+    } catch (err) {
+      if (!isQuotaError(err)) throw err;
+    }
   }, [activeSession.id, sessions]);
 
   const updateSession = useCallback((sessionId, updater) => {
