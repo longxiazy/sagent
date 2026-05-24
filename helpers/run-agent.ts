@@ -10,6 +10,7 @@
 import { loadMemory, buildMemoryPrompt } from '../agent/core/memory.ts';
 import { removeCheckpoint, removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
 import { shutdownChromeMcp } from '../agent/tools/chrome/mcp-client.ts';
+import { resetChromeSnapshotState } from '../agent/tools/chrome/execute.ts';
 import { appendTraceEvent } from './trace-store.ts';
 import { log } from './logger.ts';
 
@@ -53,6 +54,7 @@ export async function cleanupAgentRun(checkpointDir: string | undefined, runId: 
     }
   }
   agentRunStore.closeRun(runId);
+  resetChromeSnapshotState();
   // 只关闭本进程里的 Chrome MCP SSE client；外部 chrome:mcp bridge 和 Chrome 继续由独立进程管理。
   // 如果更看重复用连接，可在 .env 设 CHROME_MCP_KEEP_OPEN=true 跳过。
   if (process.env.CHROME_MCP_KEEP_OPEN !== 'true') {

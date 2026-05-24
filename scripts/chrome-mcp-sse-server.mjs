@@ -48,6 +48,12 @@ class StdioMcpBridge {
     this.pending = new Map();
   }
 
+  failChild(error) {
+    for (const pending of this.pending.values()) pending.reject(error);
+    this.pending.clear();
+    this.child = null;
+  }
+
   start() {
     if (this.child && !this.child.killed) return;
     console.log(`[chrome-mcp-sse] spawn ${this.command} ${this.args.join(' ')}`);
@@ -61,11 +67,11 @@ class StdioMcpBridge {
       const text = chunk.toString().trim();
       if (text) console.error(`[chrome-mcp] ${text}`);
     });
+    this.child.on('error', err => {
+      this.failChild(new Error(`启动 chrome-devtools-mcp 失败: ${err.message}`));
+    });
     this.child.on('exit', (code, signal) => {
-      const err = new Error(`chrome-devtools-mcp exited code=${code ?? 'null'} signal=${signal ?? 'null'}`);
-      for (const pending of this.pending.values()) pending.reject(err);
-      this.pending.clear();
-      this.child = null;
+      this.failChild(new Error(`chrome-devtools-mcp exited code=${code ?? 'null'} signal=${signal ?? 'null'}`));
     });
   }
 

@@ -49,6 +49,10 @@ function blockedSearchEngineResult(url) {
 // 旧 uid 在新 snapshot 下指向不存在的节点——继续 click 会"成功"但点到错的元素。
 let currentSnapshotId: string | null = null;
 
+export function resetChromeSnapshotState() {
+  currentSnapshotId = null;
+}
+
 const UID_TOOL_FIELDS: Record<string, string[]> = {
   click: ['uid'],
   fill: ['uid'],
