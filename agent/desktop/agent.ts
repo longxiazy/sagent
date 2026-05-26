@@ -32,6 +32,7 @@ import { runAgentRuntime } from '../core/runtime.ts';
 import { createAgentAuthorizer } from '../policy/approvals.ts';
 import { executeBrowserAction } from '../tools/browser/execute.ts';
 import { executeFsAction } from '../tools/fs/execute.ts';
+import { executeSearchAction } from '../tools/search/execute.ts';
 import { createDomainRules } from '../tools/fetch/domain-rules.ts';
 import { executeIdeAction } from '../tools/ide/execute.ts';
 import { executeChromeAction } from '../tools/chrome/execute.ts';
@@ -81,6 +82,7 @@ export function createDesktopAgentRunner({
         return executeBrowserAction(session.view, action);
       },
       fs: async (_state, action) => executeFsAction(action),
+      search: async (_state, action) => executeSearchAction(action),
       ide: async (_state, action) => executeIdeAction(action),
       chrome: async (_state, action) => executeChromeAction(action),
       terminal: async (_state, action) => executeTerminalAction(action),

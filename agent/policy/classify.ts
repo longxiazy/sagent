@@ -112,6 +112,13 @@ export function classifyAgentAction(action) {
     };
   }
 
+  if (tool === 'search' && type === 'web_search') {
+    return {
+      level: 'safe',
+      reason: '只读网络搜索（DuckDuckGo）',
+    };
+  }
+
   if (tool === 'fs' && ['list_dir', 'read_file', 'search_files'].includes(type)) {
     return {
       level: 'safe',

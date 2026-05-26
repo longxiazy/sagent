@@ -13,6 +13,7 @@
  */
 
 import { executeFsAction } from '../tools/fs/execute.ts';
+import { executeSearchAction } from '../tools/search/execute.ts';
 import { executeTerminalAction } from '../tools/terminal/run.ts';
 
 export async function executeChatTool(name, input) {
@@ -29,6 +30,9 @@ export async function executeChatTool(name, input) {
   }
   if (name === 'run_safe') {
     return truncate(await executeTerminalAction({ tool: 'terminal', type: 'run_safe', ...input }), MAX_RESULT);
+  }
+  if (name === 'web_search') {
+    return truncate(await executeSearchAction({ tool: 'search', type: 'web_search', ...input }), MAX_RESULT);
   }
   throw new Error(`Chat 模式不支持工具: ${name}`);
 }

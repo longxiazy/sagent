@@ -19,6 +19,8 @@ export const ACTION_TYPE_TO_TOOL = {
   get_page_content: 'browser',
   http_fetch: 'browser',
   parallel_fetch: 'browser',
+  // search
+  web_search: 'search',
   // fs
   list_dir: 'fs',
   read_file: 'fs',
