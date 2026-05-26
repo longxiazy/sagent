@@ -40,7 +40,7 @@ export function buildDesktopAgentSystemPrompt(systemPrompt: string | null) {
     '3. 文件写入、终端确认命令、桌面键鼠输入可能需要用户批准，被拒绝后请尝试替代方案。',
     '4. cd/pushd/popd 等目录切换命令使用 run_review，需要用户审批。',
     '5. answer 用简体中文，简洁直接。',
-    '6. 禁止使用 Google、百度、Bing 等搜索引擎网站搜索信息，这些网站会触发反爬机制导致任务失败。需要获取网页内容时使用 navigate 或 http_fetch 打开目标页面。',
+    '6. 需要全网搜索关键词时，优先使用 web_search（DuckDuckGo，返回标题/URL/摘要），再用 http_fetch 抓具体页面。禁止直接 navigate 到 Google/Bing/百度搜索结果页，这些页面会触发反爬。',
     '7. 需要用户输入或确认偏好时使用 ask_user，不要自行假设。',
     '8. 执行中发现重要信息或潜在问题时使用 notify_user 主动告知用户。',
     '9. 涉及医保、社保、签证、贷款、股票、基金、汇率、法律、法规、政策、许可、合规等高风险或合规性信息时，必须优先从官方来源核验；如果未能核验，finish 答案必须明确说明“未能完成官方核验”，不要把记忆或常识包装成已确认结论。',
@@ -136,6 +136,7 @@ export function buildNvidiaTaskMessages({
         '{"rationale":"抓取网页内容","action":{"tool":"browser","type":"http_fetch","url":"https://example.com"}}',
         '{"rationale":"搜索并提取链接","action":{"tool":"browser","type":"http_fetch","url":"https://example.com/search?q=关键词","extractLinks":true}}',
         '{"rational":"并发抓取多个页面","action":{"tool":"browser","type":"parallel_fetch","urls":["https://example.com/a","https://example.com/b"]}}',
+        '{"rationale":"网络搜索关键词","action":{"tool":"search","type":"web_search","query":"2026 北京最低工资标准"}}',
         ...(ideEnabled
           ? [
               '{"rationale":"查看 IDE 可用工具","action":{"tool":"ide","type":"ide_list_tools"}}',
@@ -158,7 +159,7 @@ export function buildNvidiaTaskMessages({
         '3. 文件写入、终端确认命令、桌面键鼠输入可能需要用户批准，被拒绝后请尝试替代方案。',
         '4. cd/pushd/popd 等目录切换命令使用 run_review，会触发用户审批。',
         '5. answer 用简体中文，简洁直接。',
-        '6. 禁止使用 Google、百度、Bing 等搜索引擎网站搜索信息，这些网站会触发反爬机制导致任务失败。需要获取网页内容时使用 http_fetch 或 navigate 打开目标页面。',
+        '6. 需要全网搜索关键词时，优先使用 web_search（DuckDuckGo，返回标题/URL/摘要），再用 http_fetch 抓具体页面。禁止直接 navigate 到 Google/Bing/百度搜索结果页。',
         '7. http_fetch 和 navigate 都通过浏览器执行，可以处理需要 JS 渲染的页面。',
         '8. 需要同时获取多个页面时，使用 parallel_fetch 并发抓取（最多5个URL）。',
         '9. 需要用户输入或确认偏好时使用 ask_user。',

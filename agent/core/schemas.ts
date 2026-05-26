@@ -124,6 +124,22 @@ function normalizeBrowserAction(type, action) {
   throw new Error(`不支持的浏览器动作: ${type}`);
 }
 
+function normalizeSearchAction(type, action) {
+  if (type === 'web_search') {
+    const query = typeof action.query === 'string' ? action.query.trim() : '';
+    if (!query) throw new Error('web_search 缺少 query');
+    return {
+      tool: 'search',
+      type,
+      query,
+      maxResults: Number.isFinite(Number(action.maxResults))
+        ? Math.min(Math.max(Number(action.maxResults), 1), 10)
+        : 5,
+    };
+  }
+  throw new Error(`不支持的搜索动作: ${type}`);
+}
+
 function normalizeFsAction(type, action) {
   if (type === 'list_dir') {
     return {
@@ -333,6 +349,8 @@ export function normalizeDesktopAgentDecision(payload) {
     normalizedAction = normalizeBrowserAction(type, action);
   } else if (tool === 'fs') {
     normalizedAction = normalizeFsAction(type, action);
+  } else if (tool === 'search') {
+    normalizedAction = normalizeSearchAction(type, action);
   } else if (tool === 'terminal') {
     normalizedAction = normalizeTerminalAction(type, action);
   } else if (tool === 'macos') {

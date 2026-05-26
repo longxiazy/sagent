@@ -136,6 +136,18 @@ export function createModelTools() {
       },
     },
     {
+      name: 'web_search',
+      description: '用 DuckDuckGo 搜索网络（无需 API key），返回标题/URL/摘要列表。优先用它定位资料，再用 http_fetch 抓取具体页面。比直接打开 Google/Bing 更稳，不会触发反爬。',
+      input_schema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '搜索关键词（自然语言）' },
+          maxResults: { type: 'number', description: '返回结果数（1-10，默认 5）' },
+        },
+        required: ['query'],
+      },
+    },
+    {
       name: 'search_files',
       description: '在文件中搜索文本内容（类似 grep），支持 glob 过滤',
       input_schema: {
