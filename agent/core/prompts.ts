@@ -43,6 +43,7 @@ export function buildDesktopAgentSystemPrompt(systemPrompt: string | null) {
     '6. 需要全网搜索关键词时，优先使用 web_search（DuckDuckGo，返回标题/URL/摘要），再用 http_fetch 抓具体页面。禁止直接 navigate 到 Google/Bing/百度搜索结果页，这些页面会触发反爬。',
     '7. 需要用户输入或确认偏好时使用 ask_user，不要自行假设。',
     '8. 执行中发现重要信息或潜在问题时使用 notify_user 主动告知用户。',
+    '8.1 任务或附件中出现图片（本地路径或 http(s) URL，常见于任务文本中的“[附件]”块或截图）时，必须用 image_analyze 工具把图片交给多模态模型分析，不要凭文件名猜测内容。',
     '9. 涉及医保、社保、签证、贷款、股票、基金、汇率、法律、法规、政策、许可、合规等高风险或合规性信息时，必须优先从官方来源核验；如果未能核验，finish 答案必须明确说明“未能完成官方核验”，不要把记忆或常识包装成已确认结论。',
     '10. finish 之前自检：当任务要求基于网页/官网内容作答，但你的浏览操作（navigate/click/take_snapshot/http_fetch 等）没有真正取得目标页面的实质内容（如反复超时、只到达主页、被反爬挡住），不要用模型常识包装成"已确认结论"。要么继续尝试（换路径、换工具、换源站），要么在 answer 里明确说明"未能从目标页面取得信息，以下来自常识仅供参考"。',
     ...(isChromeMcpEnabled() ? ['11. 当内置浏览器被反爬拦截（CAPTCHA、人机验证、403、Cloudflare 等）时，立即改用 chrome_call_tool（navigate_page / take_snapshot / click / fill 等）操作真实 Chrome 浏览器访问同一页面。'] : []),
@@ -137,6 +138,7 @@ export function buildNvidiaTaskMessages({
         '{"rationale":"搜索并提取链接","action":{"tool":"browser","type":"http_fetch","url":"https://example.com/search?q=关键词","extractLinks":true}}',
         '{"rational":"并发抓取多个页面","action":{"tool":"browser","type":"parallel_fetch","urls":["https://example.com/a","https://example.com/b"]}}',
         '{"rationale":"网络搜索关键词","action":{"tool":"search","type":"web_search","query":"2026 北京最低工资标准"}}',
+        '{"rationale":"分析图片内容","action":{"tool":"vision","type":"image_analyze","image":"/abs/path/to/image.png","question":"图片里有什么内容？请详细描述。"}}',
         ...(ideEnabled
           ? [
               '{"rationale":"查看 IDE 可用工具","action":{"tool":"ide","type":"ide_list_tools"}}',
@@ -164,6 +166,7 @@ export function buildNvidiaTaskMessages({
         '8. 需要同时获取多个页面时，使用 parallel_fetch 并发抓取（最多5个URL）。',
         '9. 需要用户输入或确认偏好时使用 ask_user。',
         '10. 发现重要信息或问题时使用 notify_user 主动告知用户。',
+        '10.1 任务或附件中出现图片（本地路径或 http(s) URL，常见于任务文本中的“[附件]”块或截图）时，必须用 image_analyze（tool=vision）把图片交给多模态模型分析，不要凭文件名猜测内容。image 传图片路径/URL，question 用简体中文写清要从图里得到什么。',
         '11. 涉及医保、社保、签证、贷款、股票、基金、汇率、法律、法规、政策、许可、合规等高风险或合规性信息时，必须优先从官方来源核验；如果未能核验，finish 答案必须明确说明“未能完成官方核验”，不要把记忆或常识包装成已确认结论。',
         ...(chromeEnabled ? ['12. 当内置浏览器被反爬拦截（CAPTCHA、人机验证、403、Cloudflare 等）时，立即改用 chrome_call_tool（navigate_page / take_snapshot / click / fill 等）操作真实 Chrome 浏览器。'] : []),
         ...ideLines,

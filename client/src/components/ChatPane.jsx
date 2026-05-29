@@ -11,6 +11,8 @@ export function ChatPane({
   disabled,
   memoryToggle,
   sendButton,
+  attachButton,
+  attachmentBar,
   touchStartRef,
   agentMobileTab,
   setAgentMobileTab,
@@ -56,6 +58,7 @@ export function ChatPane({
         <div ref={bottomRef} />
         <div className="input-area">
           <div className="input-card">
+            {attachmentBar}
             <textarea
               ref={textareaRef}
               value={inputValue}
@@ -67,6 +70,7 @@ export function ChatPane({
             />
             <div className="input-toolbar">
               {memoryToggle}
+              {attachButton}
               {sendButton}
             </div>
           </div>

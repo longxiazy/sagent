@@ -1,0 +1,77 @@
+{
+  "$schema": "smoke-queries-v1",
+  "description": "Sagent 冒烟测试问题集 — 每次开发完功能后跑 `npm run smoke` 验证主流程",
+  "fields": {
+    "id": "标识,不可重复",
+    "category": "quality-classification | typical-search | tool-coverage",
+    "task": "实际发给 /api/agent 的任务文本",
+    "expectStatus": "quality.status 期望值,数组,命中其一即通过",
+    "expectTools": "可选,steps 里至少出现一次的工具名,数组",
+    "expectAnyReason": "可选,quality.reasons 至少包含其中一个子串",
+    "note": "用例意图说明,不参与断言",
+    "timeoutMs": "可选,单条覆盖默认超时"
+  },
+  "queries": [
+    {
+      "id": "typical-weather",
+      "category": "typical-search",
+      "task": "杭州今天天气怎么样?",
+      "expectStatus": ["done", "done_degraded"],
+      "note": "最常见的实时信息查询,应能跑通"
+    },
+    {
+      "id": "typical-news",
+      "category": "typical-search",
+      "task": "用一两句话告诉我今天最热门的一条 AI 相关新闻",
+      "expectStatus": ["done", "done_degraded"],
+      "note": "热点新闻查询,搜索 + 摘要"
+    },
+    {
+      "id": "typical-stock",
+      "category": "typical-search",
+      "task": "苹果公司(AAPL)最近一个交易日的收盘价大概是多少?",
+      "expectStatus": ["done", "done_degraded", "done_unverified"],
+      "note": "结构化金融信息查询"
+    },
+    {
+      "id": "quality-high-stakes-policy",
+      "category": "quality-classification",
+      "task": "请查询杭州市最新的医保门诊报销比例政策,要求基于官方来源回答",
+      "expectStatus": ["done", "done_unverified", "done_degraded"],
+      "expectAnyReason": ["高风险或时效性任务", "未获得可用官方来源", "未明确标记未核验风险"],
+      "note": "高风险任务,assessResultQuality 会要求官方源;命中任何一条核验 reason 即可"
+    },
+    {
+      "id": "quality-degraded-known-block",
+      "category": "quality-classification",
+      "task": "打开 https://www.baidu.com/s?wd=测试反爬 并把搜索结果首条标题告诉我",
+      "expectStatus": ["done_degraded", "done", "done_unverified"],
+      "expectAnyReason": ["失败或异常步骤", "未取得任何有效页面观测", "反爬", "验证码", "安全验证"],
+      "note": "已知会触发反爬/WAF 的站点,验证降级标记生效"
+    },
+    {
+      "id": "tool-http-fetch",
+      "category": "tool-coverage",
+      "task": "使用 http_fetch 从 https://hn.algolia.com/api/v1/search?query=AI&tags=story&hitsPerPage=3 获取 JSON,并告诉我第一条 hit 的 title 字段",
+      "expectStatus": ["done", "done_degraded"],
+      "expectTools": ["browser"],
+      "note": "覆盖 browser/http_fetch 工具链路"
+    },
+    {
+      "id": "tool-chrome-mcp",
+      "category": "tool-coverage",
+      "task": "请用 chrome 工具打开 https://example.com,把页面 h1 文本告诉我",
+      "expectStatus": ["done", "done_degraded"],
+      "expectTools": ["chrome"],
+      "note": "覆盖 chrome MCP 工具链路;若环境未启用 chrome MCP,本条可在 queries.local.json 里注释掉"
+    },
+    {
+      "id": "tool-ide-mcp",
+      "category": "tool-coverage",
+      "task": "用 ide 工具读取本项目 package.json,告诉我 name 字段的值",
+      "expectStatus": ["done", "done_degraded"],
+      "expectTools": ["ide"],
+      "note": "覆盖 IDE MCP 工具链路;若未启用 ide MCP,本条可在 queries.local.json 里注释掉"
+    }
+  ]
+}

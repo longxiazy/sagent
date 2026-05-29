@@ -148,6 +148,18 @@ export function createModelTools() {
       },
     },
     {
+      name: 'image_analyze',
+      description: '让多模态模型分析一张图片并回答问题。用于解读浏览器/桌面截图、查看报错图、识别图表或界面布局。image 可以是本地文件路径或 http(s) URL，question 用简体中文描述需要从图里得到的信息。',
+      input_schema: {
+        type: 'object',
+        properties: {
+          image: { type: 'string', description: '图片来源：本地文件绝对路径（如 /tmp/xxx.png）或 http(s) URL' },
+          question: { type: 'string', description: '希望模型回答的问题（简体中文，越具体越好）' },
+        },
+        required: ['image', 'question'],
+      },
+    },
+    {
       name: 'search_files',
       description: '在文件中搜索文本内容（类似 grep），支持 glob 过滤',
       input_schema: {
