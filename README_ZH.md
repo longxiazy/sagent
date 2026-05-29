@@ -97,7 +97,17 @@ npm run build        # 后端类型检查 + 构建前端
 npm run sandbox      # 沙盒模式启动（推荐）
 npm run dev          # 无沙盒启动
 npm run stop         # 停止前后端
+npm run smoke        # 冒烟测试：跑一组预设问题验证 /api/agent 主流程
 ```
+
+### 冒烟测试 (`npm run smoke`)
+
+每次功能开发完，先 `npm run dev` 起服务，然后另开终端 `npm run smoke`，会顺序跑 `scripts/smoke-queries.json` 里的预设问题，用 `quality.status` / `quality.reasons` / 工具使用情况做断言，输出控制台表格并把详情写到 `data/smoke-reports/smoke-<时间戳>.json`。
+
+- 退出码：`0` 全过 / `1` 有降级警告 / `2` 有失败，便于接 CI
+- 失败时打印对应 `data/traces/<runId>.jsonl` 路径，方便复盘
+- 常用选项：`--only <id1,id2>`、`--category <typical-search|quality-classification|tool-coverage>`、`--model <id>`、`--timeout <ms>`
+
 
 ## 多模型 Agent
 

@@ -140,6 +140,22 @@ function normalizeSearchAction(type, action) {
   throw new Error(`不支持的搜索动作: ${type}`);
 }
 
+function normalizeVisionAction(type, action) {
+  if (type === 'image_analyze') {
+    const image = typeof action.image === 'string' ? action.image.trim() : '';
+    const question = typeof action.question === 'string' ? action.question.trim() : '';
+    if (!image) throw new Error('image_analyze 缺少 image');
+    if (!question) throw new Error('image_analyze 缺少 question');
+    return {
+      tool: 'vision',
+      type,
+      image,
+      question,
+    };
+  }
+  throw new Error(`不支持的视觉动作: ${type}`);
+}
+
 function normalizeFsAction(type, action) {
   if (type === 'list_dir') {
     return {
@@ -351,6 +367,8 @@ export function normalizeDesktopAgentDecision(payload) {
     normalizedAction = normalizeFsAction(type, action);
   } else if (tool === 'search') {
     normalizedAction = normalizeSearchAction(type, action);
+  } else if (tool === 'vision') {
+    normalizedAction = normalizeVisionAction(type, action);
   } else if (tool === 'terminal') {
     normalizedAction = normalizeTerminalAction(type, action);
   } else if (tool === 'macos') {

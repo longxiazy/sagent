@@ -21,6 +21,8 @@ export const ACTION_TYPE_TO_TOOL = {
   parallel_fetch: 'browser',
   // search
   web_search: 'search',
+  // vision
+  image_analyze: 'vision',
   // fs
   list_dir: 'fs',
   read_file: 'fs',

@@ -119,6 +119,13 @@ export function classifyAgentAction(action) {
     };
   }
 
+  if (tool === 'vision' && type === 'image_analyze') {
+    return {
+      level: 'safe',
+      reason: '只读多模态图片分析',
+    };
+  }
+
   if (tool === 'fs' && ['list_dir', 'read_file', 'search_files'].includes(type)) {
     return {
       level: 'safe',

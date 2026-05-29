@@ -18,6 +18,8 @@ import { ModelSelector } from './components/ModelSelector.jsx';
 import { ModeSwitch } from './components/ModeSwitch.jsx';
 import { SendButton } from './components/SendButton.jsx';
 import { MemoryToggle } from './components/MemoryToggle.jsx';
+import { AttachButton } from './components/AttachButton.jsx';
+import { AttachmentBar } from './components/AttachmentBar.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
 import { AppHeader } from './components/AppHeader.jsx';
 import { HeroScreen } from './components/HeroScreen.jsx';
@@ -31,6 +33,7 @@ import { useSessionHandlers } from './hooks/useSessionHandlers.js';
 import { useChatTransport } from './hooks/useChatTransport.js';
 import { useAgentTransport } from './hooks/useAgentTransport.js';
 import { useQuestionSubmit } from './hooks/useQuestionSubmit.js';
+import { useAttachments } from './hooks/useAttachments.js';
 import { DEFAULT_MODELS, EMPTY_SUGGESTIONS } from './data/suggestions.js';
 import { fetchSuggestions, recordSuggestionUse } from './api/suggestions.js';
 import {
@@ -43,6 +46,25 @@ import {
 import { formatMsgTime } from './utils/format.js';
 import { shuffled } from './utils/random.js';
 import { hasThinkContent } from './utils/markdown.js';
+
+// 把已上传的附件拼到任务文本中。
+// 单独成段 [附件] 块,让 LLM 容易识别;对图片显式提示 image_analyze 工具,
+// 其它类型留作扩展(例如以后加 PDF 时,这里就给"请用 read_file 阅读"之类的提示)。
+function buildTaskWithAttachments(userText, attachments) {
+  if (!attachments || attachments.length === 0) {
+    return userText;
+  }
+  const lines = ['[附件]'];
+  for (const att of attachments) {
+    if (att.kind === 'image') {
+      lines.push(`- 图片: ${att.path}(请用 image_analyze 工具分析)`);
+    } else {
+      lines.push(`- 文件: ${att.path}(${att.mime || '未知类型'})`);
+    }
+  }
+  const block = lines.join('\n');
+  return userText ? `${userText}\n\n${block}` : block;
+}
 
 export default function App() {
   const {
@@ -553,16 +575,44 @@ export default function App() {
     updateSession,
   });
 
+  const {
+    attachments,
+    addFiles: addAttachmentFiles,
+    removeAttachment,
+    clearAttachments,
+    consumeReady: consumeReadyAttachments,
+    uploading: attachmentsUploading,
+    hasReady: hasReadyAttachments,
+  } = useAttachments();
+
   const handleSubmit = async () => {
-    const text = input.trim();
-    if (!text || sessionLocked) {
+    const userText = input.trim();
+    if (!userText && !hasReadyAttachments) {
+      return;
+    }
+    if (sessionLocked) {
+      return;
+    }
+    if (attachmentsUploading) {
+      // 还在上传:不提前发送,UI 上发送按钮已经禁用了,这里再兜一层。
+      return;
+    }
+
+    // 拼出最终任务文本:正文 + (可选)附件说明。
+    // 设计上独立成一段 [附件] 块,LLM 容易识别;
+    // image 给出 image_analyze 提示,其它类型只描述路径,以后扩展由这里集中加规则。
+    const readyAttachments = consumeReadyAttachments();
+    const text = buildTaskWithAttachments(userText, readyAttachments);
+    if (!text) {
       return;
     }
 
     // 把这次发送累计到后端使用记录,只对 agent 模式做(chat 模式建议少,不需要)
+    // 标题用原始用户输入(userText),避免被附件提示污染。
     if (mode === 'agent') {
+      const titleSource = userText || readyAttachments[0]?.name || '附件任务';
       const title = pendingTitleRef.current
-        || (text.length > 12 ? text.slice(0, 12) + '…' : text);
+        || (titleSource.length > 12 ? titleSource.slice(0, 12) + '…' : titleSource);
       pendingTitleRef.current = null;
       recordSuggestionUse({ title, text });
       // 下次返回 hero 时能看到新的"最近使用"
@@ -572,10 +622,12 @@ export default function App() {
     // 同一输入框根据 mode 分流到两套完全不同的执行链路。
     if (mode === 'agent') {
       await sendAgentTask(text);
+      clearAttachments();
       return;
     }
 
     await sendChatMessage(text);
+    clearAttachments();
   };
 
   const handleKeyDown = e => {
@@ -627,7 +679,8 @@ export default function App() {
       agentRunning={agentRunning}
       agentStopping={agentStopping}
       pendingApproval={pendingApproval}
-      inputValue={input}
+      // 输入栏要有正文 *或* 已就绪附件才能发送;上传中按钮也置灰。
+      inputValue={attachmentsUploading ? '' : (input || (hasReadyAttachments ? ' ' : ''))}
       onSend={handleSubmit}
       onStopGeneration={stopGeneration}
       onStopAgent={stopAgent}
@@ -635,6 +688,19 @@ export default function App() {
   );
   const memoryToggle = (
     <MemoryToggle mode={mode} sessionStarted={sessionStarted} agentMemory={agentMemory} setAgentMemory={setAgentMemory} />
+  );
+  const attachButton = (
+    <AttachButton
+      onPickFiles={addAttachmentFiles}
+      uploading={attachmentsUploading}
+      disabled={sessionLocked}
+      // 目前限定图片;以后开放其它类型时把 accept 改宽,后端会按 mime 推 kind。
+      accept="image/*"
+      multiple
+    />
+  );
+  const attachmentBar = (
+    <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
   );
 
   const showHero = messages.length === 0 && !agentRunning;
@@ -683,7 +749,8 @@ export default function App() {
           onKeyDown={handleKeyDown}
           textareaRef={textareaRef}
           sessionLocked={sessionLocked}
-          toolbarSlots={{ modeSwitch, modelSelect, memoryToggle, sendButton }}
+          toolbarSlots={{ modeSwitch, modelSelect, memoryToggle, sendButton, attachButton }}
+          attachmentBar={attachmentBar}
           suggestions={suggestions}
           categories={mode === 'agent' ? agentCategories : null}
           activeCategoryId={activeCategoryId}
@@ -764,6 +831,8 @@ export default function App() {
               disabled={sessionLocked}
               memoryToggle={memoryToggle}
               sendButton={sendButton}
+              attachButton={attachButton}
+              attachmentBar={attachmentBar}
               touchStartRef={touchStartRef}
               agentMobileTab={agentMobileTab}
               setAgentMobileTab={setAgentMobileTab}

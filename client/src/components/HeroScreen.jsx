@@ -2,7 +2,7 @@ import { Menu } from 'lucide-react';
 import { SuggestionsList } from './SuggestionsList.jsx';
 
 // 首屏：brand + 输入卡 + 推荐列表。
-// 工具栏控件（ModeSwitch / ModelSelector / MemoryToggle / SendButton）
+// 工具栏控件（ModeSwitch / ModelSelector / MemoryToggle / SendButton / AttachButton）
 // 由父组件传 slot 进来——它们在 hero 和 layout header 两处会复用同一个实例。
 export function HeroScreen({
   mode,
@@ -12,6 +12,7 @@ export function HeroScreen({
   textareaRef,
   sessionLocked,
   toolbarSlots,
+  attachmentBar,
   suggestions,
   categories,
   activeCategoryId,
@@ -21,7 +22,7 @@ export function HeroScreen({
   onSubmitSuggestion,
   onToggleSessions,
 }) {
-  const { modeSwitch, modelSelect, memoryToggle, sendButton } = toolbarSlots;
+  const { modeSwitch, modelSelect, memoryToggle, sendButton, attachButton } = toolbarSlots;
   return (
     <div className="hero-wrap">
       <div className="hero">
@@ -35,6 +36,7 @@ export function HeroScreen({
         </div>
 
         <div className="hero-input-card">
+          {attachmentBar}
           <textarea
             ref={textareaRef}
             value={input}
@@ -48,6 +50,7 @@ export function HeroScreen({
             {modeSwitch}
             {modelSelect}
             {memoryToggle}
+            {attachButton}
             {sendButton}
           </div>
         </div>
