@@ -23,6 +23,7 @@
  *   AGENT_OBSERVE_DESKTOP           — 是否观测 macOS 桌面
  *   AGENT_RESUME                    — 是否自动恢复断点
  *   MEMORY_DIR                      — 记忆和截图存储目录
+ *   VISION_MODEL                    — image_analyze 工具使用的多模态视觉模型
  *   NVIDIA_API_KEY / ANTHROPIC_API_KEY — LLM API 密钥
  */
 
@@ -35,6 +36,7 @@ import { createAgentRunStore } from './helpers/run-store.ts';
 import { createApprovalStore } from './agent/core/approval-store.ts';
 import { initLlmLogger } from './agent/core/llm-logger.ts';
 import { createDesktopAgentRunner } from './agent/desktop/agent.ts';
+import { DEFAULT_VISION_MODEL } from './agent/tools/vision/execute.ts';
 import { createClients, loadModelConfig, loadAgentMultiModels, isClaudeModel } from './agent/core/ai-client.ts';
 import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
 import { loadIdeMcpConfig } from './agent/tools/ide/mcp-client.ts';
@@ -66,6 +68,7 @@ initLlmLogger(MEMORY_DIR);
 initWebViewDataStore(MEMORY_DIR);
 
 const AGENT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS || 8);
+const VISION_MODEL = (process.env.VISION_MODEL || DEFAULT_VISION_MODEL).trim();
 const agentRunStore = createAgentRunStore();
 const approvalStore = createApprovalStore();
 const runDesktopAgent = createDesktopAgentRunner({
@@ -81,6 +84,7 @@ const runDesktopAgent = createDesktopAgentRunner({
   runStore: agentRunStore,
   approvalStore,
   checkpointDir: CHECKPOINT_DIR,
+  visionModel: VISION_MODEL,
 });
 
 const SCREENSHOT_DIR = path.join(MEMORY_DIR, 'screenshots');
@@ -163,6 +167,7 @@ app.listen(Number(PORT), HOST, async () => {
   ╠${dLine.slice(2)}╣
   ${row('Models', modelConfig.map(m => m.id).join(', '))}
   ${multiModels.length > 0 ? row('MultiModel', multiModels.join(', ')) : ''}
+  ${row('VISION_MODEL', VISION_MODEL)}
   ${hLine}
   ${row('AGENT_MAX_STEPS', AGENT_MAX_STEPS)}
   ${row('AGENT_MODEL_TIMEOUT', `${process.env.AGENT_MODEL_TIMEOUT || 90}s`)}

@@ -19,7 +19,7 @@ import path from 'node:path';
 
 const REQUEST_TIMEOUT_MS = 60000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
-const DEFAULT_VISION_MODEL = 'meta/llama-3.2-90b-vision-instruct';
+export const DEFAULT_VISION_MODEL = 'meta/llama-3.2-90b-vision-instruct';
 
 function mimeFromExt(target: string): string {
   const cleaned = String(target).toLowerCase().split('?')[0].split('#')[0];
