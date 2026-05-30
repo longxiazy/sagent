@@ -50,6 +50,8 @@ export const ACTION_TYPE_TO_TOOL = {
   chrome_call_tool: 'chrome',
   chrome_list: 'chrome',
   chrome_call: 'chrome',
+  // spawn
+  spawn: 'spawn',
   // core
   finish: 'core',
   ask_user: 'core',

@@ -316,6 +316,26 @@ function normalizeChromeAction(type, action) {
   throw new Error(`不支持的 Chrome 动作: ${type}`);
 }
 
+function normalizeSpawnAction(type, action) {
+  if (type === 'spawn') {
+    const tasks = Array.isArray(action.tasks)
+      ? action.tasks
+          .map(t => (typeof t === 'string' ? t.trim() : ''))
+          .filter(Boolean)
+          .slice(0, 5)
+      : [];
+    if (tasks.length === 0) {
+      throw new Error('spawn 缺少有效的 tasks 数组');
+    }
+    return {
+      tool: 'spawn',
+      type,
+      tasks,
+    };
+  }
+  throw new Error(`不支持的 spawn 动作: ${type}`);
+}
+
 function normalizeCoreAction(type, action) {
   if (type === 'finish') {
     return {
@@ -377,6 +397,8 @@ export function normalizeDesktopAgentDecision(payload) {
     normalizedAction = normalizeIdeAction(type, action);
   } else if (tool === 'chrome') {
     normalizedAction = normalizeChromeAction(type, action);
+  } else if (tool === 'spawn') {
+    normalizedAction = normalizeSpawnAction(type, action);
   } else if (tool === 'core') {
     normalizedAction = normalizeCoreAction(type, action);
   } else {
