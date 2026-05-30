@@ -319,9 +319,20 @@ export function createModelResponseParser(model) {
   const extractReasoning = config.extractReasoning || false;
 
   return function parseResponse(response) {
-    const message = response.choices[0]?.message;
+    // 个别 OpenAI 兼容供应商的部分模型返回的响应体
+    // Content-Type 不是 application/json，SDK 未能解析成对象，整个 body 原样作为字符串返回。
+    // 这里兜底把字符串还原成对象，避免 response.choices 读到 undefined 而崩溃。
+    if (typeof response === 'string') {
+      try {
+        response = JSON.parse(response);
+      } catch {
+        return { parseFailed: true, rawContent: response, usage: null, reasoning: null };
+      }
+    }
+
+    const message = response?.choices?.[0]?.message;
     const content = getMessageText(message?.content);
-    const usage = response.usage || null;
+    const usage = response?.usage || null;
     const reasoning = extractReasoning
       ? (message?.reasoning || message?.reasoning_content || null)
       : null;

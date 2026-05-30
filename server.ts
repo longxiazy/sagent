@@ -57,7 +57,7 @@ app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 
 const { openai_client, anthropic_client } = createClients();
-const modelConfig = loadModelConfig();
+const modelConfig = await loadModelConfig({ openai_client, anthropic_client });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MEMORY_DIR = path.resolve(__dirname, process.env.MEMORY_DIR || 'data');

@@ -46,7 +46,7 @@ ${text}`;
         temperature: 0.1,
         max_tokens: 800,
       }));
-      result = resp.choices[0]?.message?.content || text.slice(0, 300);
+      result = resp?.choices?.[0]?.message?.content || text.slice(0, 300);
     } else {
       result = text.slice(0, 300);
     }
