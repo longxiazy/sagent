@@ -191,23 +191,29 @@ app.listen(Number(PORT), HOST, async () => {
   if (AGENT_RESUME) {
     const checkpoints = await listCheckpoints(CHECKPOINT_DIR);
     if (checkpoints.length > 0) {
-      const cp = checkpoints[checkpoints.length - 1];
-      const needsNvidia = !isClaudeModel(cp.model, modelConfig);
-      if (needsNvidia && !openai_client) {
-        console.log(`[Resume] 跳过: ${cp.runId} 需要 NVIDIA_API_KEY 但未配置，清理 checkpoint`);
-        await clearCheckpoints(CHECKPOINT_DIR);
-      } else if (cp.history?.some(h => h.action?.type === 'finish')) {
-        console.log(`[Resume] ${cp.runId} 已完成（含 finish 动作），跳过恢复，清理 checkpoint`);
-        await clearCheckpoints(CHECKPOINT_DIR);
-      } else {
-        console.log(`[Resume] 发现 ${checkpoints.length} 个未完成任务，恢复最后一个: ${cp.runId}`);
+      // 并发模式：checkpoint 已按 runId 隔离，逐个评估并恢复所有未完成任务，
+      // 而非只恢复最后一个。各自 fire-and-forget。
+      let resumedCount = 0;
+      for (const cp of checkpoints) {
+        const needsNvidia = !isClaudeModel(cp.model, modelConfig);
+        if (needsNvidia && !openai_client) {
+          console.log(`[Resume] 跳过: ${cp.runId} 需要 NVIDIA_API_KEY 但未配置，清理 checkpoint`);
+          await removeCheckpoint(CHECKPOINT_DIR, cp.runId).catch(() => {});
+          continue;
+        }
+        if (cp.history?.some(h => h.action?.type === 'finish')) {
+          console.log(`[Resume] ${cp.runId} 已完成（含 finish 动作），跳过恢复，清理 checkpoint`);
+          await removeCheckpoint(CHECKPOINT_DIR, cp.runId).catch(() => {});
+          continue;
+        }
         agentRunStore.createRun({ model: cp.model, task: cp.task }, cp.startedAt, cp.runId);
         resumeFromCheckpoint(cp).catch(err => {
           log.error(`[Resume] 恢复失败 run_id=${cp.runId}:`, err.message);
         });
-        for (const other of checkpoints.slice(0, -1)) {
-          removeCheckpoint(CHECKPOINT_DIR, other.runId).catch(() => {});
-        }
+        resumedCount++;
+      }
+      if (resumedCount > 0) {
+        console.log(`[Resume] 恢复 ${resumedCount} 个未完成任务`);
       }
     }
   } else {

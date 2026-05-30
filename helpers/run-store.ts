@@ -67,6 +67,36 @@ export function createAgentRunStore() {
     },
 
     /**
+     * 列出所有正在运行的 Agent（并发模式下可能多个）
+     * 调用时机：GET /api/agent/runs 前端重连时逐个恢复
+     */
+    listActiveRuns() {
+      const active = [];
+      for (const run of runs.values()) {
+        if (run.status === 'running' && !run.cancelAc.signal.aborted) {
+          active.push(run);
+        }
+      }
+      return active;
+    },
+
+    /**
+     * 统计正在运行的 Agent 数量
+     * 调用时机：
+     *   - POST /api/agent 并发上限判断（AGENT_MAX_CONCURRENT）
+     *   - cleanupAgentRun 决定是否关闭共享浏览器（仅当归零时才关）
+     */
+    countActiveRuns() {
+      let count = 0;
+      for (const run of runs.values()) {
+        if (run.status === 'running' && !run.cancelAc.signal.aborted) {
+          count++;
+        }
+      }
+      return count;
+    },
+
+    /**
      * 追加 SSE 事件到运行记录
      * 调用时机：每次 sendEvent 都会同时 addEvent，用于 SSE 重连时回放
      */

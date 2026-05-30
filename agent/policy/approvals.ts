@@ -48,7 +48,7 @@ export function createAgentAuthorizer({
     const { approvalId, promise } = approvalStore.request({
       step: context.step,
       action,
-    });
+    }, runId);
 
     const isQuestion = action.type === 'ask_user';
     const eventType = isQuestion ? 'question_required' : 'approval_required';

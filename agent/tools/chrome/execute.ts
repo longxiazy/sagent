@@ -6,6 +6,7 @@ import {
   serializeChromePayload,
   summarizeChromeTool,
 } from './mcp-client.ts';
+import { withBrowserLock } from './browser-lock.ts';
 
 const MAX_TEXT = 48000;
 const SEARCH_ENGINE_HOSTS = [
@@ -199,6 +200,19 @@ function extractToolContent(result) {
 }
 
 export async function executeChromeAction(action) {
+  // 浏览器是进程单例（共享 MCP 连接 + 模块级 currentSnapshotId），多 run 并发会互踩。
+  // 串行化：同一时刻只有一个 run 操作浏览器，其余排队。释放锁时重置 snapshot 状态，
+  // 避免上一个 run 的 snapshotId 泄漏给下一个 run。
+  return withBrowserLock(
+    () => executeChromeActionLocked(action),
+    {
+      signal: action?.cancelSignal,
+      onRelease: resetChromeSnapshotState,
+    },
+  );
+}
+
+async function executeChromeActionLocked(action) {
   if (!isChromeMcpEnabled()) {
     throw new Error('Chrome MCP 未启用，请在 .env 中设置 CHROME_MCP_ENABLED=true 并配置连接参数');
   }

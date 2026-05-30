@@ -53,7 +53,19 @@ export async function cleanupAgentRun(checkpointDir: string | undefined, runId: 
       await removeSessionCheckpoints(checkpointDir, runId).catch(() => {});
     }
   }
+  // 先把本 run 标记为结束（从 active 计数里移除），再判断是否还有其它 run 在跑。
+  // 顺序很关键：若先 count 再 closeRun，本 run 自己仍算 active，浏览器永不释放。
   agentRunStore.closeRun(runId);
+
+  // 浏览器是进程级共享资源（单例 MCP + 模块级 snapshot）。并发模式下，
+  // 只有当没有任何其它 run 还在跑时，才真正关闭浏览器 / 重置 snapshot / 断 MCP——
+  // 否则会清掉别的 run 正在使用的浏览器状态。
+  const otherRunsActive = agentRunStore.countActiveRuns() > 0;
+  if (otherRunsActive) {
+    log.debug(`[cleanupAgentRun] 仍有 ${agentRunStore.countActiveRuns()} 个 run 在跑，跳过浏览器清理 runId=${runId}`);
+    return;
+  }
+
   resetChromeSnapshotState();
   // run 结束（或异常）默认关闭本次 run 期间打开的 Chrome tab，避免长期跑下来 tab 堆积；
   // 设 CHROME_MCP_KEEP_TABS=true 跳过（适合调试或想保留页面看结果的场景）。

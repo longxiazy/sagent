@@ -130,3 +130,168 @@ describe('GET /api/agent/traces/:runId', () => {
     expect(traceRes.body.events.some((event: any) => event.type === 'done')).toBe(true);
   });
 });
+
+describe('POST /api/agent { background: true }', () => {
+  it('returns runId immediately as JSON (not SSE)', async () => {
+    const res = await request(app)
+      .post('/api/agent')
+      .send({ task: 'bg test', model: 'test-model', memory: false, background: true });
+
+    expect(res.status).toBe(202);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+    expect(res.body.runId).toMatch(/^run_/);
+    expect(res.body.status).toBe('running');
+    expect(typeof res.body.startedAt).toBe('number');
+  });
+});
+
+describe('GET /api/agent/:runId/status', () => {
+  it('reports done status and final answer after a background run completes', async () => {
+    const startRes = await request(app)
+      .post('/api/agent')
+      .send({ task: 'status test', model: 'test-model', memory: false, background: true });
+    const runId = startRes.body.runId;
+
+    // 默认 mock agent 立即 resolve；轮询直到 done 落盘
+    let statusRes;
+    for (let i = 0; i < 20; i++) {
+      statusRes = await request(app).get(`/api/agent/${runId}/status`);
+      if (statusRes.body.done) break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    expect(statusRes!.status).toBe(200);
+    expect(statusRes!.body.runId).toBe(runId);
+    expect(statusRes!.body.status).toBe('done');
+    expect(statusRes!.body.done).toBe(true);
+    expect(statusRes!.body.answer).toBe('done');
+  });
+
+  it('returns 404 for an unknown runId', async () => {
+    const res = await request(app).get('/api/agent/run_unknown_abc123/status');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 for a malformed runId', async () => {
+    const res = await request(app).get('/api/agent/not-a-valid-id/status');
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/agent/:runId/cancel', () => {
+  it('cancels a run and returns ok', async () => {
+    const startRes = await request(app)
+      .post('/api/agent')
+      .send({ task: 'cancel test', model: 'test-model', memory: false, background: true });
+    const runId = startRes.body.runId;
+
+    const cancelRes = await request(app).post(`/api/agent/${runId}/cancel`);
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.ok).toBe(true);
+  });
+
+  it('returns 400 for a malformed runId', async () => {
+    const res = await request(app).post('/api/agent/not-a-valid-id/cancel');
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('concurrent runs', () => {
+  // 构造一个 runner 可被外部控制完成时机的 app,让多个 background 任务同时处于 running 状态
+  async function buildConcurrentApp(maxConcurrent?: number) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sagent-concurrent-'));
+    const { createAgentRouter } = await import('../routes/agent.js');
+    const { createAgentRunStore } = await import('../helpers/run-store.js');
+    const { createApprovalStore } = await import('../agent/core/approval-store.js');
+
+    const agentRunStore = createAgentRunStore();
+    const approvalStore = createApprovalStore();
+    const gates: Array<() => void> = [];
+
+    // 每次调用挂起,直到 release() 被触发,模拟"任务在跑"
+    const runDesktopAgent = () =>
+      new Promise(resolve => {
+        gates.push(() => resolve({ answer: 'done', steps: [] }));
+      });
+
+    if (maxConcurrent != null) process.env.AGENT_MAX_CONCURRENT = String(maxConcurrent);
+    else delete process.env.AGENT_MAX_CONCURRENT;
+
+    const router = createAgentRouter({
+      runDesktopAgent,
+      agentRunStore,
+      approvalStore,
+      memoryDir: dir,
+      checkpointDir: dir,
+      domainRules: null,
+      modelConfig: [{ id: 'test-model', provider: 'test' }],
+      openai_client: null,
+      anthropic_client: null,
+    });
+    const localApp = express();
+    localApp.use(express.json());
+    localApp.use(router);
+
+    const releaseAll = () => { gates.forEach(g => g()); gates.length = 0; };
+    const cleanup = async () => {
+      releaseAll();
+      delete process.env.AGENT_MAX_CONCURRENT;
+      await fs.rm(dir, { recursive: true, force: true });
+    };
+    return { app: localApp, releaseAll, cleanup };
+  }
+
+  it('GET /api/agent/runs lists multiple active runs', async () => {
+    const { app: localApp, cleanup } = await buildConcurrentApp(3);
+    try {
+      const r1 = await request(localApp).post('/api/agent').send({ task: 't1', model: 'test-model', memory: false, background: true });
+      const r2 = await request(localApp).post('/api/agent').send({ task: 't2', model: 'test-model', memory: false, background: true });
+      expect(r1.status).toBe(202);
+      expect(r2.status).toBe(202);
+
+      const runsRes = await request(localApp).get('/api/agent/runs');
+      expect(runsRes.status).toBe(200);
+      expect(runsRes.body.runs).toHaveLength(2);
+      const ids = runsRes.body.runs.map((r: any) => r.runId);
+      expect(ids).toContain(r1.body.runId);
+      expect(ids).toContain(r2.body.runId);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('returns 429 when concurrency limit is reached', async () => {
+    const { app: localApp, cleanup } = await buildConcurrentApp(2);
+    try {
+      const r1 = await request(localApp).post('/api/agent').send({ task: 't1', model: 'test-model', memory: false, background: true });
+      const r2 = await request(localApp).post('/api/agent').send({ task: 't2', model: 'test-model', memory: false, background: true });
+      expect(r1.status).toBe(202);
+      expect(r2.status).toBe(202);
+
+      // 第三个超过上限 2
+      const r3 = await request(localApp).post('/api/agent').send({ task: 't3', model: 'test-model', memory: false, background: true });
+      expect(r3.status).toBe(429);
+      expect(r3.body.activeRuns).toBe(2);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('cancelling one run does not affect another', async () => {
+    const { app: localApp, cleanup } = await buildConcurrentApp(3);
+    try {
+      const r1 = await request(localApp).post('/api/agent').send({ task: 't1', model: 'test-model', memory: false, background: true });
+      const r2 = await request(localApp).post('/api/agent').send({ task: 't2', model: 'test-model', memory: false, background: true });
+
+      const cancelRes = await request(localApp).post(`/api/agent/${r1.body.runId}/cancel`);
+      expect(cancelRes.status).toBe(200);
+
+      // run B 仍在 active 列表里
+      const runsRes = await request(localApp).get('/api/agent/runs');
+      const ids = runsRes.body.runs.map((r: any) => r.runId);
+      expect(ids).toContain(r2.body.runId);
+      expect(ids).not.toContain(r1.body.runId);
+    } finally {
+      await cleanup();
+    }
+  });
+});

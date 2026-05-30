@@ -1,7 +1,8 @@
-import { safeJson, cleanText, displayWidth, padEndW } from '../agent/core/utils.ts';
-import { formatLogTime, buildAgentMetrics, buildSseWriter, logAgentEvent } from '../helpers/agent-logging.ts';
+import { safeJson } from '../agent/core/utils.ts';
+import { formatLogTime, buildSseWriter, logAgentEvent } from '../helpers/agent-logging.ts';
 import { createBaseEventSender } from '../helpers/run-agent.ts';
 import { log } from '../helpers/logger.ts';
+import { createRunTracker, logRunSummaryBox } from './agent-run-tracking.ts';
 
 export function createAgentRunSession({
   req,
@@ -24,11 +25,7 @@ export function createAgentRunSession({
   agentRunStore: any;
   memoryDir?: string;
 }) {
-  let completedStepCount = 0;
-  let observedStepCount = 0;
-  const modelsUsed = new Set();
-  const modelUsageCounts = new Map<string, number>();
-  const stepModels: Record<number, string> = {};
+  const tracker = createRunTracker();
   let sseClosed = false;
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -57,21 +54,7 @@ export function createAgentRunSession({
   const rawSendEvent = buildSseWriter(res);
   const baseSendEvent = createBaseEventSender(runId, agentRunStore, memoryDir);
   const sendEvent = (payload: any) => {
-    if (payload.type === 'step') {
-      observedStepCount = Math.max(observedStepCount, payload.step || 0);
-      if (payload.stage === 'result') {
-        completedStepCount = Math.max(completedStepCount, payload.step || 0);
-      }
-    }
-    if (payload.type === 'model_plan' && payload.stage === 'winner' && payload.step) {
-      stepModels[payload.step] = payload.model;
-      if (payload.model) {
-        modelUsageCounts.set(payload.model, (modelUsageCounts.get(payload.model) || 0) + 1);
-      }
-    }
-    if (payload.type === 'model_plan' && payload.model && ['winner', 'success', 'thinking'].includes(payload.stage)) {
-      modelsUsed.add(payload.model);
-    }
+    tracker.track(payload);
     logAgentEvent(payload);
     baseSendEvent(payload);
     if (!sseClosed && !res.writableEnded) {
@@ -87,57 +70,12 @@ export function createAgentRunSession({
   });
   log.debug(`[SSE] stream started, writableEnded=${res.writableEnded} writableFinished=${res.writableFinished}`);
 
-  function getTrackingState() {
-    return {
-      completedStepCount,
-      observedStepCount,
-      modelsUsed: [...modelsUsed],
-      modelUsage: Object.fromEntries(modelUsageCounts),
-      stepModels,
-    };
-  }
+  const getTrackingState = tracker.getTrackingState;
 
   function close({ finalAnswer, agentError, approvalStore }: { finalAnswer: string | null; agentError: any; approvalStore: any }) {
-    const status = agentError
-      ? agentError.message === 'Agent 已取消'
-        ? 'cancelled'
-        : 'error'
-      : 'done';
-    const metrics = buildAgentMetrics(startedAt, {
-      stepCount: Math.max(completedStepCount, observedStepCount),
-      status,
-    });
-
-    const modelSummaryEntries = [...modelUsageCounts.entries()];
-    for (const m of modelsUsed) {
-      if (!modelUsageCounts.has(m as string)) {
-        modelSummaryEntries.push([m as string, 0]);
-      }
-    }
-    const usedModels = modelSummaryEntries
-      .sort((a, b) => b[1] - a[1])
-      .map(([fullName, count]) => {
-        const shortName = fullName.split('/').pop();
-        return count > 0 ? `${shortName}×${count}` : `${shortName}`;
-      })
-      .join(', ');
-    const statusIcon = status === 'done' ? '✅' : status === 'cancelled' ? '⛔' : '❌';
-    const elapsedSec = (metrics.elapsed_ms / 1000).toFixed(1);
-    const statusLine = `  ${statusIcon} Agent ${status.toUpperCase()}  ${elapsedSec}s  ${metrics.step_count} steps  ${usedModels}`;
-    const runLine = `  run: ${runId}`;
-    const answerLine = finalAnswer ? `  answer: ${safeJson(cleanText(finalAnswer, 80))}` : '';
-    const errorLine = agentError ? `  error: ${safeJson(agentError.message)}` : '';
-    const innerLines = [statusLine, runLine, answerLine, errorLine].filter(Boolean);
-    const W = Math.max(...innerLines.map(displayWidth)) + 4;
-    const bRow = `  ${'═'.repeat(W)}`;
-    const box = [
-      `  ╔${bRow.slice(2)}╗`,
-      ...innerLines.map(line => `  ║${padEndW(line, W)}║`),
-      `  ╚${bRow.slice(2)}╝`,
-    ].join('\n');
-    log.info(`\n${box}`);
+    logRunSummaryBox({ startedAt, runId, finalAnswer, agentError, trackingState: tracker.getTrackingState() });
     clearInterval(heartbeat);
-    approvalStore.rejectAll();
+    approvalStore.rejectAll(runId);
     if (!sseClosed && !res.writableEnded) {
       try { res.end(); } catch {}
     }

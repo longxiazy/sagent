@@ -10,6 +10,7 @@ export function parseAgentRunRequest(reqBody: any, defaultModel: string) {
     memory: useMemory = true,
     messages: conversationHistory,
     fromCheckpoint,
+    background = false,
   } = reqBody ?? {};
 
   if (typeof task !== 'string' || !task.trim()) {
@@ -25,6 +26,7 @@ export function parseAgentRunRequest(reqBody: any, defaultModel: string) {
     useMemory,
     conversationHistory,
     fromCheckpoint,
+    background: background === true,
   };
 }
 
