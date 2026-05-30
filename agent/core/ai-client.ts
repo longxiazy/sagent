@@ -30,6 +30,15 @@ import { createModelTools, toolToClaudeTool } from './tool-definitions.ts';
 
 export { createModelTools } from './tool-definitions.ts';
 
+// 过滤掉不适合做 agent 决策的模型：向量/重排、视觉/OCR、纯代码补全、内容安全护栏等。
+// 这类模型在供应商接口里和对话模型混在一起，全塞进前端下拉会很难选。
+const NON_CHAT_MODEL_RE =
+  /embed|rerank|retriever|bge-|arctic-embed|nvclip|fuyu|deplot|vila|neva|kosmos|ocr|paddle|-vision|vision-|-vl-|codegemma|starcoder|codellama|-coder|coder-|guard|safety|topic-control/i;
+
+function isChatCapableModel(id: string) {
+  return !NON_CHAT_MODEL_RE.test(id);
+}
+
 export async function loadModelConfig({ openai_client, anthropic_client }: any = {}) {
   const models = [];
 
@@ -38,7 +47,9 @@ export async function loadModelConfig({ openai_client, anthropic_client }: any =
     try {
       const list = await openai_client.models.list();
       for (const m of list.data || []) {
-        if (m?.id) models.push({ id: m.id, label: m.id, provider: 'nvidia' });
+        if (m?.id && isChatCapableModel(m.id)) {
+          models.push({ id: m.id, label: m.id, provider: 'nvidia' });
+        }
       }
     } catch (err) {
       log.warn(`[Models] 拉取 OpenAI 兼容模型列表失败: ${err?.message || err}`);

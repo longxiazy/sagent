@@ -910,11 +910,137 @@ select,
   cursor: not-allowed;
 }
 
+/* ── chat 模式：可搜索下拉 ── */
+.model-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.model-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 8px;
+  max-width: 170px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  font-size: var(--f-sm);
+  color: var(--c-text);
+  cursor: pointer;
+  outline: none;
+}
+
+.model-dropdown-trigger:hover:not(:disabled) {
+  border-color: var(--c-primary);
+}
+
+.model-dropdown-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.model-dropdown-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-dropdown-panel {
+  position: absolute;
+  z-index: 50;
+  bottom: calc(100% + 4px);
+  left: 0;
+  width: 260px;
+  max-width: 80vw;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.model-dropdown-search,
+.model-tags-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--c-border);
+  color: var(--c-text-muted);
+}
+
+.model-tags-search {
+  border: 1px solid var(--c-border-input);
+  border-radius: var(--r-sm);
+  margin-bottom: 8px;
+  background: var(--c-surface);
+}
+
+.model-dropdown-search input,
+.model-tags-search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: var(--f-sm);
+  color: var(--c-text);
+  min-width: 0;
+}
+
+.model-dropdown-list {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.model-dropdown-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-size: var(--f-sm);
+  color: var(--c-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.model-dropdown-option:hover {
+  background: var(--c-surface-dim);
+}
+
+.model-dropdown-option.selected {
+  color: var(--c-primary);
+  font-weight: 600;
+}
+
+.model-dropdown-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-dropdown-empty,
+.model-tags-empty {
+  padding: 12px;
+  font-size: var(--f-sm);
+  color: var(--c-text-muted);
+  text-align: center;
+}
+
 .model-tags {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
+  max-height: 160px;
+  overflow-y: auto;
 }
 
 .model-tag-wrapper {
