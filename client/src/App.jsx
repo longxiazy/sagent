@@ -648,6 +648,10 @@ export default function App() {
     if (mode === 'agent') {
       const cat = agentCategories.find(c => c.id === activeCategoryId) ?? agentCategories[0];
       const pool = cat?.items ?? [];
+      // "最近使用"已按最近请求时间倒序,保持顺序;其它分类随机抽样
+      if (cat?.id === 'recent') {
+        return pool.slice(0, Math.min(8, pool.length));
+      }
       return shuffled(pool).slice(0, Math.min(8, pool.length));
     }
     const pool = suggestionData.chat;
