@@ -20,7 +20,6 @@ export function useAgentTransport({
   textareaRef,
   // 多 run 运行时
   dispatch,
-  runsRef,
   getRun,
   abortControllersRef,
   // 全局 UI setters
