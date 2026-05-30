@@ -126,6 +126,13 @@ export function classifyAgentAction(action) {
     };
   }
 
+  if (tool === 'spawn' && type === 'spawn') {
+    return {
+      level: 'safe',
+      reason: '并行子任务分发（子 Agent 受独立策略约束）',
+    };
+  }
+
   if (tool === 'fs' && ['list_dir', 'read_file', 'search_files'].includes(type)) {
     return {
       level: 'safe',

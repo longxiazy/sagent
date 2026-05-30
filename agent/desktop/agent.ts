@@ -29,11 +29,12 @@
 
 import { createActionRouter } from '../core/router.ts';
 import { runAgentRuntime } from '../core/runtime.ts';
-import { createAgentAuthorizer } from '../policy/approvals.ts';
+import { createAgentAuthorizer, createReadOnlyAuthorizer } from '../policy/approvals.ts';
 import { executeBrowserAction } from '../tools/browser/execute.ts';
 import { executeFsAction } from '../tools/fs/execute.ts';
 import { executeSearchAction } from '../tools/search/execute.ts';
 import { executeVisionAction } from '../tools/vision/execute.ts';
+import { executeSpawnAction } from '../tools/spawn/execute.ts';
 import { createDomainRules } from '../tools/fetch/domain-rules.ts';
 import { executeIdeAction } from '../tools/ide/execute.ts';
 import { executeChromeAction } from '../tools/chrome/execute.ts';
@@ -43,6 +44,7 @@ import { createSharedBrowserSessionManager } from './browser-session-manager.ts'
 import { observeDesktopAgent } from './observer.ts';
 import { createDesktopPlanner, DEFAULT_MODEL_TIMEOUT_MS } from './planner.ts';
 import { saveCheckpoint } from '../core/checkpoint.ts';
+import { log } from '../../helpers/logger.ts';
 
 export function createDesktopAgentRunner({
   openai_client,
@@ -61,6 +63,115 @@ export function createDesktopAgentRunner({
 }) {
   const domainRules = createDomainRules(checkpointDir);
   const { ensureBrowserSession } = createSharedBrowserSessionManager();
+
+  // Sub-agent runner factory: creates isolated runners for parallel execution
+  function createSubAgentRunner(parentRunId: string, parentModel: string, parentAgentModels: string[], parentStrategy: string, parentSystemPrompt: string | null, parentCancelSignal: AbortSignal) {
+    const subBrowserManager = createSharedBrowserSessionManager();
+
+    return async (task: string, subIndex: number) => {
+      const subRunId = `${parentRunId}::sub${subIndex}`;
+      log.info(`[SubAgent] 启动子任务 ${subIndex}: ${task.slice(0, 60)}...`);
+
+      const subBlacklistedModels = new Set();
+      const subPlan = createDesktopPlanner({
+        openai_client,
+        anthropic_client,
+        modelConfig,
+        blacklistedModels: subBlacklistedModels,
+        modelTimeoutMs,
+        staggerDelayMs,
+        batchSize,
+      });
+
+      const subAuthorize = createReadOnlyAuthorizer();
+
+      // Sub-agent action router without spawn support
+      const subRouteAction = createActionRouter(
+        {
+          core: async (state, action, context) => {
+            if (action.type === 'notify_user') {
+              return `已发送通知`;
+            }
+            if (action.type === 'ask_user') {
+              return '子 Agent 不支持交互式提问';
+            }
+            return action.answer || '任务已完成';
+          },
+          browser: async (state, action) => {
+            const session = await subBrowserManager.ensureBrowserSession(state, undefined);
+            return executeBrowserAction(session.view, action);
+          },
+          fs: async (_state, action) => executeFsAction(action),
+          search: async (_state, action) => executeSearchAction(action),
+          vision: async (_state, action) => executeVisionAction(action, { openai_client, visionModel }),
+          ide: async (_state, action) => executeIdeAction(action),
+          chrome: async (_state, action) => executeChromeAction(action),
+          terminal: async (_state, action) => executeTerminalAction(action),
+          macos: async (state, action) => executeMacOSAction(action, { runId: state.runId }),
+          spawn: async () => {
+            throw new Error('子 Agent 不支持嵌套 spawn 调用');
+          },
+        },
+        { defaultTool: 'core' }
+      );
+
+      const subSystemPrompt = [
+        '你是一个子 Agent，负责完成主 Agent 分配的独立子任务。',
+        '你只能使用只读工具（浏览器、搜索、文件读取等），不能执行需要用户确认的操作。',
+        '完成任务后必须通过 finish 动作返回结果。',
+        parentSystemPrompt ? `主 Agent 的约束: ${parentSystemPrompt}` : '',
+      ].filter(Boolean).join('\n');
+
+      const result = await runAgentRuntime({
+        task,
+        maxSteps: Math.min(6, maxSteps),
+        onEvent: undefined, // Sub-agents don't emit events to parent stream
+        cancelSignal: parentCancelSignal,
+        initialStep: 1,
+        initialHistory: [],
+        sessionCheckpointDir: null, // No checkpoints for sub-agents
+        runRecord: null,
+        onCheckpoint: null,
+        initialize: async () => ({
+          runId: subRunId,
+          onEvent: undefined,
+          headless: true,
+          browserSession: null,
+          observeDesktop: false,
+        }),
+        observe: observeDesktopAgent,
+        decide: async ({ task: currentTask, step, history, observation }) =>
+          subPlan({
+            model: parentModel,
+            agentModels: parentAgentModels,
+            strategy: parentStrategy,
+            onEvent: undefined,
+            cancelSignal: parentCancelSignal,
+            task: currentTask,
+            systemPrompt: subSystemPrompt,
+            step,
+            history,
+            observation,
+            conversationHistory: [],
+          }),
+        authorize: subAuthorize,
+        shouldObserve: (lastAction) => {
+          if (!lastAction) return false;
+          const tool = lastAction.tool || '';
+          return tool !== 'fs' && tool !== 'terminal' && tool !== 'ide';
+        },
+        execute: async (state, action, context) => subRouteAction(state, action, context),
+        cleanup: async (state) => {
+          if (state.browserSession?.view) {
+            await state.browserSession.view.navigate('about:blank').catch(() => {});
+          }
+        },
+      });
+
+      log.info(`[SubAgent] 完成子任务 ${subIndex}: ${result.steps.length} 步`);
+      return result;
+    };
+  }
 
   const routeAction = createActionRouter(
     {
@@ -93,6 +204,18 @@ export function createDesktopAgentRunner({
         executeMacOSAction(action, {
           runId: state.runId,
         }),
+      spawn: async (state, action) => {
+        // Inject runSubAgent for the spawn handler
+        const runSubAgent = createSubAgentRunner(
+          state.runId,
+          state.model,
+          state.agentModels,
+          state.strategy,
+          state.systemPrompt,
+          state.cancelSignal
+        );
+        return executeSpawnAction(action, { runSubAgent });
+      },
     },
     { defaultTool: 'core' }
   );
@@ -146,6 +269,11 @@ export function createDesktopAgentRunner({
         headless,
         browserSession: null,
         observeDesktop,
+        model,
+        agentModels,
+        strategy,
+        systemPrompt,
+        cancelSignal,
       }),
       observe: observeDesktopAgent,
       decide: async ({ task: currentTask, step, history, observation }) =>
