@@ -15,9 +15,10 @@
  * 历史截断 / Progressive history truncation：
  *   compressHistory() 发给 LLM 前截断历史，防止上下文超限：
  *   - 保留最近 AGENT_MAX_HISTORY_STEPS（默认 20）步
- *   - 渐进截断 result：最近 3 步保留最多 1000 字符，4-10 步 500 字符，11+ 步 200 字符
+ *   - 渐进截断 result：最近 3 步保留最多 MAX_RESULT_CHARS 字符，4-10 步 2500 字符，11+ 步 1000 字符
+ *   - parallel_fetch 把 N 个页面拼成单步 result，按 URL 数放大该步预算（封顶 MAX_PARALLEL_RESULT_CHARS），避免多页结果被截到只剩第一页
  *   - 超出步数压缩为一行摘要
- *   - 可通过 .env 的 AGENT_MAX_HISTORY_STEPS / AGENT_MAX_RESULT_CHARS 配置
+ *   - 可通过 .env 的 AGENT_MAX_HISTORY_STEPS / AGENT_MAX_RESULT_CHARS / AGENT_MAX_PARALLEL_RESULT_CHARS 配置
  *
  * 调用场景：
  *   - agent/desktop/agent.js 的 runDesktopAgent() 是唯一的调用方，
@@ -37,7 +38,9 @@ import {
 import { assessResultQuality } from "./result-quality.ts";
 
 const MAX_HISTORY_STEPS = Number(process.env.AGENT_MAX_HISTORY_STEPS || 20);
-const MAX_RESULT_CHARS = Number(process.env.AGENT_MAX_RESULT_CHARS || 5000);
+const MAX_RESULT_CHARS = Number(process.env.AGENT_MAX_RESULT_CHARS || 8000);
+// parallel_fetch 把多个页面拼成单步 result，按 URL 数放大该步预算，封顶此值，避免被截到只剩第一页
+const MAX_PARALLEL_RESULT_CHARS = Number(process.env.AGENT_MAX_PARALLEL_RESULT_CHARS || 32000);
 
 function actionTargetUrl(action) {
   if (typeof action?.url === 'string' && action.url) return action.url;
@@ -49,9 +52,15 @@ function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
   // Progressive truncation: recent steps keep more context, old steps get shorter results
   const truncateEntry = (h, remaining) => {
     // Last 3 steps: full (up to MAX_RESULT_CHARS)
-    // Steps 4-10: 500 chars
-    // Steps 11+: 200 chars
-    const limit = remaining <= 3 ? MAX_RESULT_CHARS : remaining <= 10 ? 2500 : 1000;
+    // Steps 4-10: 2500 chars
+    // Steps 11+: 1000 chars
+    let limit = remaining <= 3 ? MAX_RESULT_CHARS : remaining <= 10 ? 2500 : 1000;
+    // parallel_fetch 把 N 个页面拼成单步 result，按 URL 数放大该步预算（封顶），
+    // 否则多页抓取会被截到只剩第一页
+    const urlCount = Array.isArray(h.action?.urls) ? h.action.urls.length : 0;
+    if (h.action?.type === 'parallel_fetch' && urlCount > 1) {
+      limit = Math.min(limit * urlCount, MAX_PARALLEL_RESULT_CHARS);
+    }
     const str = h.result == null ? '' : String(h.result);
     if (str.length <= limit) return h;
     return { ...h, result: str.slice(0, limit) + '…[truncated]' };
