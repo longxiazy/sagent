@@ -296,6 +296,23 @@ export function createModelTools() {
       },
     },
     {
+      name: 'spawn',
+      description: '并行分发多个独立子任务给子 Agent 执行。适合同时分析多个文件、爬取多个页面、批量处理等独立任务。最多支持 5 个并行子任务，每个子任务返回独立结果后聚合。',
+      input_schema: {
+        type: 'object',
+        properties: {
+          tasks: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '子任务列表，每个元素是一个独立的任务描述（简体中文）',
+            minItems: 1,
+            maxItems: 5,
+          },
+        },
+        required: ['tasks'],
+      },
+    },
+    {
       name: 'finish',
       description: '完成任务并返回最终结果',
       input_schema: {
