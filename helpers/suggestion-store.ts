@@ -94,10 +94,8 @@ export function createSuggestionStore(dir: string) {
   function buildRecent(history: HistoryEntry[]): SuggestionCategory | null {
     const recent = history
       .filter(e => e.uses > 0)
-      .sort((a, b) => {
-        if (b.uses !== a.uses) return b.uses - a.uses;
-        return (b.lastUsedAt || '').localeCompare(a.lastUsedAt || '');
-      })
+      // "最近使用"按最近请求时间倒序;lastUsedAt 为 ISO 串可直接字典序比较
+      .sort((a, b) => (b.lastUsedAt || '').localeCompare(a.lastUsedAt || ''))
       .slice(0, RECENT_LIMIT)
       .map(e => ({ title: e.title || e.text.slice(0, 12), text: e.text }));
     if (recent.length === 0) return null;
