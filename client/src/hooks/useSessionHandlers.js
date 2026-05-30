@@ -1,11 +1,15 @@
 import { createSession, normalizeChatState, touchSession } from './useChatSessions.js';
 
 // 会话生命周期相关的 handler 集合：新建/切换/删除/清空/重置/换模型。
-// 这些 handler 各自独立、但都依赖同一组 props 上下文，所以打包成一个 hook 提供。
+// 多 run 语义:
+//   - 切换/新建会话不受 agent 运行影响(核心诉求:agent 跑着时能切走、能在新会话发任务);
+//     但普通聊天流式(chatStreaming)中切换会打断流,仍禁止。
+//   - 删除/清空对"正在跑 agent"的会话做保护,避免误删运行中的任务。
 export function useSessionHandlers({
   sessions,
   activeSession,
-  sessionLocked,
+  chatStreaming,
+  runningSessionIds,
   setChatState,
   setInput,
   setShowReset,
@@ -13,8 +17,10 @@ export function useSessionHandlers({
   updateSession,
   textareaRef,
 }) {
+  const running = runningSessionIds || new Set();
+
   const handleSelectSession = sessionId => {
-    if (sessionLocked || sessionId === activeSession.id) {
+    if (chatStreaming || sessionId === activeSession.id) {
       return;
     }
 
@@ -30,7 +36,7 @@ export function useSessionHandlers({
   };
 
   const handleCreateSession = () => {
-    if (sessionLocked) {
+    if (chatStreaming) {
       return;
     }
 
@@ -55,7 +61,11 @@ export function useSessionHandlers({
   };
 
   const handleDeleteSession = sessionId => {
-    if (sessionLocked || !window.confirm('删除这个会话？此操作不可撤销。')) {
+    if (running.has(sessionId)) {
+      window.alert('该会话有 Agent 任务正在运行,请先停止或等待完成。');
+      return;
+    }
+    if (!window.confirm('删除这个会话？此操作不可撤销。')) {
       return;
     }
 
@@ -75,7 +85,11 @@ export function useSessionHandlers({
   };
 
   const handleClearAllSessions = () => {
-    if (sessionLocked || !window.confirm('清空所有会话？此操作不可撤销。')) {
+    if (running.size > 0) {
+      window.alert('有 Agent 任务正在运行,无法清空全部会话。');
+      return;
+    }
+    if (!window.confirm('清空所有会话？此操作不可撤销。')) {
       return;
     }
     setChatState(normalizeChatState({ sessions: [], activeSessionId: null }));

@@ -90,17 +90,6 @@ export default function App() {
   const {
     streaming,
     setStreaming,
-    agentRunning,
-    setAgentRunning,
-    agentStopping,
-    setAgentStopping,
-    setAgentRunId,
-    reconnectedRun,
-    setReconnectedRun,
-    agentTrace,
-    setAgentTrace,
-    pendingApproval,
-    setPendingApproval,
     approvalSubmitting,
     setApprovalSubmitting,
     agentCollapsed,
@@ -111,18 +100,38 @@ export default function App() {
     setRollbackLoading,
     agentMobileTab,
     setAgentMobileTab,
-    pendingQuestion,
-    setPendingQuestion,
-    agentStartedAt,
-    setAgentStartedAt,
-    agentRunIdRef,
-    agentAbortRef,
-    approvalRequestRef,
-    questionRequestRef,
+    runsState,
+    dispatch,
+    runsRef,
+    getRun,
+    abortControllersRef,
     touchStartRef,
-    reconnectTaskRef,
-    lastAgentTaskRef,
   } = useAgentRun();
+  // 当前 active session 对应的 run(多 run 并发时,UI 只展示当前 session 的 run)。
+  const activeRunId = activeSession.agentRunId || null;
+  const activeRun = activeRunId ? runsState.byId.get(activeRunId) || null : null;
+  const agentRunning = !!activeRun?.running;
+  const agentStopping = !!activeRun?.stopping;
+  const agentTrace = activeRun?.trace ?? activeSession.agentTrace ?? [];
+  const agentStartedAt = activeRun?.startedAt ?? null;
+  const pendingApproval = activeRun?.pendingApproval ?? null;
+  const pendingQuestion = activeRun?.pendingQuestion ?? null;
+  const reconnectedRun = !!activeRun?.reconnected;
+  // 侧栏多 run 标记:正在跑的 session、有待审批/提问的 session
+  const runningSessionIds = useMemo(() => {
+    const ids = new Set();
+    for (const run of runsState.byId.values()) {
+      if (run.running && run.sessionId) ids.add(run.sessionId);
+    }
+    return ids;
+  }, [runsState]);
+  const attentionSessionIds = useMemo(() => {
+    const ids = new Set();
+    for (const run of runsState.byId.values()) {
+      if ((run.pendingApproval || run.pendingQuestion) && run.sessionId) ids.add(run.sessionId);
+    }
+    return ids;
+  }, [runsState]);
   const [agentMemory, setAgentMemory] = usePersistentState('agent_memory', true, booleanStorage);
   const [showReset, setShowReset] = useState(false);
   const { showSessions, setShowSessions } = useResponsiveLayout({
@@ -199,178 +208,146 @@ export default function App() {
   // 同步 <meta name="theme-color"> 是为了让浏览器地址栏颜色也跟着切换。
   useThemeColorSync({ mode, agentMobileTab, showSessions });
 
-  // 页面刷新后，如果后端还有运行中的 agent，这里会尝试“接回去”：
-  // 1. 先查 /api/agent/active
-  // 2. 再订阅 /api/agent/stream/:runId
-  // 3. 同时把 UI 切回 Agent 模式，并用占位消息保住聊天视图连续性
+  // 页面刷新后,把后端所有正在运行的 agent 任务"接回来"(多 run):
+  // 1. GET /api/agent/runs 拿到所有活跃 run
+  // 2. 逐个按 agentRunId 匹配到对应 session(匹配不到才建占位 session)
+  // 3. 各起独立 SSE 订阅,事件写回各自的 session,不强制切换 active session
   useEffect(() => {
-    const controller = new AbortController();
+    const controllers = [];
     let aborted = false;
 
-    // 订阅回调可能在很久之后才触发，不能依赖闭包里的 activeSession。
-    // 每次都从最新 chatState 里拿 activeSessionId，避免事件写错会话。
-    const updateActiveSession = updater => {
-      setChatState(prev => {
-        const sid = prev.activeSessionId;
-        const sessions = prev.sessions.map(session => {
-          if (session.id === sid) return updater(session);
-          return session;
-        });
-        return normalizeChatState({ ...prev, sessions });
-      });
-    };
+    // 单个 run 的 SSE 读循环:事件 dispatch 到对应 runId 分片 + 落回 session。
+    const subscribeRun = async (runId, sessionId, startedAt) => {
+      const controller = new AbortController();
+      controllers.push(controller);
+      abortControllersRef.current.set(runId, controller);
+      dispatch({ type: 'start', runId, sessionId, startedAt: startedAt || Date.now(), reconnected: true });
 
-    (async () => {
+      let response;
       try {
-        const res = await fetch('/api/agent/active', { signal: controller.signal });
-        if (aborted) return;
-        const data = await res.json();
-        if (!data.active || aborted) return;
-
-        setAgentRunning(true);
-        setAgentTrace([]);
-        setReconnectedRun(true);
-        setAgentStartedAt(data.startedAt || null);
-        setAgentRunId(data.runId);
-        agentRunIdRef.current = data.runId;
-        setMode('agent');
-        agentAbortRef.current = controller;
-
-        // 刷新重连时，如果当前会话看起来不是这次 Agent 任务对应的会话，
-        // 就临时创建一个“占位会话”承接运行态，避免把其他历史会话的消息替换掉。
-        const task = data.task || 'Agent 任务';
-        setChatState(prev => {
-          const cur = prev.sessions.find(s => s.id === prev.activeSessionId);
-          const firstUser = cur?.messages?.find(m => m.role === 'user');
-          if (firstUser && firstUser.content === task) return prev;
-          const cleanSession = createSession({
-            messages: [
-              { role: 'user', content: task, ts: data.startedAt || Date.now() },
-              { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() },
-            ],
-            agentRunId: data.runId,
-          });
-          return normalizeChatState({
-            sessions: [cleanSession, ...prev.sessions],
-            activeSessionId: cleanSession.id,
-          });
-        });
-
-        const response = await fetch(`/api/agent/stream/${data.runId}`, { signal: controller.signal });
-        if (!response.ok || aborted) {
-          setAgentRunning(false);
-          return;
-        }
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
+        response = await fetch(`/api/agent/stream/${runId}`, { signal: controller.signal });
+      } catch {
+        dispatch({ type: 'finish', runId });
+        return;
+      }
+      if (!response.ok || aborted) {
+        dispatch({ type: 'finish', runId });
+        return;
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      try {
         while (!aborted) {
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n\n');
           buffer = lines.pop() || '';
-
           for (const line of lines) {
             const dataLine = line.replace(/^data:\s*/, '');
             if (!dataLine || dataLine === '[DONE]') continue;
-            try {
-              const event = JSON.parse(dataLine);
+            let event;
+            try { event = JSON.parse(dataLine); } catch { continue; }
 
-              if (event.type === 'run_meta') {
-                setAgentStartedAt(event.startedAt || null);
-                if (event.task) reconnectTaskRef.current = event.task;
-                continue;
+            if (event.type === 'run_meta') {
+              if (event.startedAt) dispatch({ type: 'setStartedAt', runId, startedAt: event.startedAt });
+              continue;
+            }
+            dispatch({ type: 'appendTrace', runId, event });
+
+            if (event.type === 'approval_required') {
+              dispatch({ type: 'setApproval', runId, approval: { ...event, resolve: () => {} } });
+            } else if (event.type === 'question_required') {
+              dispatch({ type: 'setQuestion', runId, question: { ...event, resolve: () => {} } });
+            } else if (event.type === 'approval_result') {
+              dispatch({ type: 'setApproval', runId, approval: null });
+            } else if (event.type === 'user_response') {
+              dispatch({ type: 'setApproval', runId, approval: null });
+              dispatch({ type: 'setQuestion', runId, question: null });
+            } else if (event.type === 'rollback') {
+              const run = getRun(runId);
+              if (run) {
+                const target = event.targetStep;
+                dispatch({ type: 'setTrace', runId, trace: run.trace.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step <= target) });
               }
-
-              // SSE 重连时同一批事件可能会回放两次；这里按关键字段去重，
-              // 否则 trace 面板会出现重复步骤。
-              setAgentTrace(prev => {
-                if (prev.some(e => e.type === event.type && e.step === event.step && e.stage === event.stage && e.model === event.model)) {
-                  return prev;
+            } else if (event.type === 'done' || event.type === 'error') {
+              const content = event.type === 'done'
+                ? (event.answer || 'Agent 已完成任务。')
+                : `⚠️ Desktop Agent 失败:${event.error || '未知错误'}`;
+              updateSession(sessionId, session => {
+                const msgs = [...session.messages];
+                let idx = -1;
+                for (let i = msgs.length - 1; i >= 0; i -= 1) {
+                  if (msgs[i].role === 'assistant' && msgs[i].content?.includes('正在执行任务')) { idx = i; break; }
                 }
-                return [...prev, event];
+                if (idx >= 0) msgs[idx] = { role: 'assistant', content, ts: Date.now() };
+                else if (!msgs.some(m => m.role === 'assistant' && m.content === content)) msgs.push({ role: 'assistant', content, ts: Date.now() });
+                const run = getRun(runId);
+                return touchSession(session, { messages: msgs, agentTrace: run?.trace || [], agentRunId: runId });
               });
-
-              if (event.type === 'approval_required') {
-                approvalRequestRef.current = { ...event, resolve: () => {} };
-                setPendingApproval(event);
-              }
-
-              if (event.type === 'question_required') {
-                questionRequestRef.current = { ...event, resolve: () => {} };
-                setPendingQuestion(event);
-              }
-
-              if (event.type === 'user_response') {
-                setPendingApproval(null);
-                setPendingQuestion(null);
-                approvalRequestRef.current = null;
-                questionRequestRef.current = null;
-              }
-
-              if (event.type === 'approval_result') {
-                setPendingApproval(null);
-                approvalRequestRef.current = null;
-              }
-
-              if (event.type === 'rollback') {
-                setAgentTrace(prev => {
-                  const target = event.targetStep;
-                  return prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step < target);
-                });
-              }
-
-              if (event.type === 'done') {
-                setAgentRunning(false);
-                updateActiveSession(session => {
-                  const msgs = [...session.messages];
-                  const idx = (() => { for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'assistant' && msgs[i].content.includes('正在执行任务')) return i; } return -1; })();
-                  if (idx >= 0) {
-                    msgs[idx] = { role: 'assistant', content: event.answer || 'Agent 已完成任务。' };
-                  } else if (!msgs.some(m => m.role === 'assistant' && m.content === (event.answer || ''))) {
-                    msgs.push({ role: 'user', content: reconnectTaskRef.current || data.task || 'Agent 任务', ts: data.startedAt || Date.now() });
-                    msgs.push({ role: 'assistant', content: event.answer || 'Agent 已完成任务。', ts: Date.now() });
-                  }
-                  return touchSession(session, { messages: msgs, agentRunId: data.runId });
-                });
-              }
-
-              if (event.type === 'error') {
-                setAgentRunning(false);
-              }
-            } catch { /* skip malformed SSE lines */ }
+            }
           }
         }
-        setAgentRunning(false);
-      } catch (err) {
-        if (err.name === 'AbortError') {
-          setAgentRunning(false);
-        }
+      } catch {
+        // AbortError / 网络中断:落终态
+      } finally {
+        abortControllersRef.current.delete(runId);
+        dispatch({ type: 'finish', runId });
+      }
+    };
+
+    (async () => {
+      let runs = [];
+      try {
+        const res = await fetch('/api/agent/runs');
+        if (aborted) return;
+        const data = await res.json();
+        runs = Array.isArray(data.runs) ? data.runs : [];
+      } catch {
+        return;
+      }
+      if (aborted || runs.length === 0) return;
+
+      for (const run of runs) {
+        // 先在现有 sessions 里按 agentRunId 找归属;找不到才建占位 session(匹配先于创建,避免重复)
+        let targetSessionId = null;
+        setChatState(prev => {
+          const existing = prev.sessions.find(s => s.agentRunId === run.runId);
+          if (existing) { targetSessionId = existing.id; return prev; }
+          const task = run.task || 'Agent 任务';
+          const cleanSession = createSession({
+            messages: [
+              { role: 'user', content: task, ts: run.startedAt || Date.now() },
+              { role: 'assistant', content: 'Desktop Agent 正在执行任务,请稍候…', ts: Date.now() },
+            ],
+            agentRunId: run.runId,
+          });
+          targetSessionId = cleanSession.id;
+          return normalizeChatState({ sessions: [cleanSession, ...prev.sessions], activeSessionId: prev.activeSessionId });
+        });
+        if (targetSessionId) subscribeRun(run.runId, targetSessionId, run.startedAt);
       }
     })();
 
     return () => {
       aborted = true;
-      controller.abort();
+      controllers.forEach(c => c.abort());
     };
-  // 这段只负责页面首次加载后的运行态接回；依赖更新不应该重新订阅同一个 run。
+  // 只在首次加载接回运行态,依赖更新不应重新订阅。
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 手机后台/切 tab 时浏览器会冻结 JS、节流网络，SSE reader 可能在后台错过
-  // done/error 事件；切回前台时如果前端还以为任务在跑，就调一次持久化的 trace
-  // 接口兜底：trace 里如果已经包含 done/error，把 answer 灌回对应 session 并
-  // 把 running 状态收掉，避免出现"任务已结束但 UI 一直转圈"。
+  // 手机后台/切 tab 时浏览器会冻结 JS、节流网络,SSE reader 可能在后台错过
+  // done/error 事件;切回前台时如果当前 run 还以为在跑,调持久化 trace 接口兜底:
+  // trace 里若已含 done/error,把 answer 灌回对应 session 并收掉 running 状态。
   useEffect(() => {
-    if (!agentRunning) return;
+    if (!agentRunning || !activeRunId) return;
     let cancelled = false;
+    const rid = activeRunId;
 
     const checkOnVisible = async () => {
       if (document.visibilityState !== 'visible') return;
-      const rid = agentRunIdRef.current;
-      if (!rid) return;
       let events;
       try {
         events = await fetchAgentTrace(rid);
@@ -382,14 +359,11 @@ export default function App() {
       const terminal = events.find(e => e.type === 'done' || e.type === 'error');
       if (!terminal) return;
 
-      setAgentTrace(prev => {
-        if (prev.some(e => e.type === terminal.type)) return prev;
-        return [...prev, terminal];
-      });
+      dispatch({ type: 'appendTrace', runId: rid, event: terminal });
 
       const content = terminal.type === 'done'
         ? (terminal.answer || 'Agent 已完成任务。')
-        : `⚠️ Desktop Agent 失败：${terminal.error || '未知错误'}`;
+        : `⚠️ Desktop Agent 失败:${terminal.error || '未知错误'}`;
 
       setChatState(prev => {
         let changed = false;
@@ -417,9 +391,7 @@ export default function App() {
         return normalizeChatState({ ...prev, sessions });
       });
 
-      setAgentRunning(false);
-      setPendingApproval(null);
-      setPendingQuestion(null);
+      dispatch({ type: 'finish', runId: rid });
     };
 
     document.addEventListener('visibilitychange', checkOnVisible);
@@ -427,51 +399,31 @@ export default function App() {
       cancelled = true;
       document.removeEventListener('visibilitychange', checkOnVisible);
     };
-  // setter 引用稳定，rid 用 ref 读最新值
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentRunning]);
+  }, [agentRunning, activeRunId]);
 
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
 
   useEffect(() => {
-    // 普通切换会话时，Agent trace 跟着 active session 走；
-    // 但如果当前正处在“刷新后重连中的运行态”，不要被旧 session 覆盖掉。
-    if (agentRunning) return;
+    // 切换会话时:若该 session 的 run 已不在运行时 Map 里(历史已结束的 run),
+    // 从磁盘 trace 重建并落回 session.agentTrace,供 activeRun 兜底派生。
+    // 若 run 仍在 Map 里(在跑/刚结束),trace 由 activeRun 直接派生,无需重建。
+    const savedRunId = activeSession.agentRunId || (activeSession.agentTrace || []).find(e => e.runId)?.runId || null;
+    if (!savedRunId || getRun(savedRunId)) return;
     const controller = new AbortController();
-    const savedTrace = activeSession.agentTrace || [];
-    const savedRunId = activeSession.agentRunId || savedTrace.find(e => e.runId)?.runId || null;
-    setAgentTrace(savedTrace);
-    if (savedRunId) {
-      agentRunIdRef.current = savedRunId;
-      setAgentRunId(savedRunId);
-      fetchAgentTrace(savedRunId, { signal: controller.signal })
-        .then(events => {
-          if (events.length === 0 || controller.signal.aborted) return;
-          const deduped = events.filter((e, i) => {
-            const key = `${e.type}:${e.step ?? ''}:${e.stage ?? ''}:${e.model ?? ''}`;
-            return !events.slice(0, i).some(p => `${p.type}:${p.step ?? ''}:${p.stage ?? ''}:${p.model ?? ''}` === key);
-          });
-          setAgentTrace(deduped);
-          updateSession(activeSession.id, session => touchSession(session, {
-            agentRunId: savedRunId,
-            agentTrace: deduped,
-          }));
-        })
-        .catch(() => {});
-    } else {
-      agentRunIdRef.current = null;
-      setAgentRunId(null);
-    }
-    // Recover last agent task text from session messages for rollback retry
-    const lastUserMsg = [...(activeSession.messages || [])].reverse().find(m => m.role === 'user');
-    lastAgentTaskRef.current = lastUserMsg?.content || null;
-    setAgentStartedAt(null);
-    setPendingApproval(null);
-    approvalRequestRef.current = null;
+    fetchAgentTrace(savedRunId, { signal: controller.signal })
+      .then(events => {
+        if (events.length === 0 || controller.signal.aborted) return;
+        const deduped = events.filter((e, i) => {
+          const key = `${e.type}:${e.step ?? ''}:${e.stage ?? ''}:${e.model ?? ''}`;
+          return !events.slice(0, i).some(p => `${p.type}:${p.step ?? ''}:${p.stage ?? ''}:${p.model ?? ''}` === key);
+        });
+        updateSession(activeSession.id, session => touchSession(session, { agentRunId: savedRunId, agentTrace: deduped }));
+      })
+      .catch(() => {});
     return () => controller.abort();
-  // 这里按会话切换同步 trace，不能跟随消息增量每次重置运行态。
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession.id]);
 
@@ -505,14 +457,13 @@ export default function App() {
   }, [input]);
 
   useEffect(() => {
+    const controllers = abortControllersRef.current;
     return () => {
-      // 页面卸载时同时中止 chat / agent 的网络流，
-      // 也顺手拒绝掉所有等待中的审批 Promise，避免悬挂。
+      // 页面卸载时中止 chat 流 + 所有 agent run 的网络流。
       abortRef.current?.abort();
-      agentAbortRef.current?.abort();
-      approvalRequestRef.current?.resolve?.('reject');
+      for (const ac of controllers.values()) ac?.abort();
     };
-  }, [agentAbortRef, approvalRequestRef]);
+  }, [abortControllersRef]);
 
   const { sendChatMessage, stopGeneration } = useChatTransport({
     activeSession,
@@ -535,7 +486,8 @@ export default function App() {
   } = useSessionHandlers({
     sessions,
     activeSession,
-    sessionLocked,
+    chatStreaming: streaming,
+    runningSessionIds,
     setChatState,
     setInput,
     setShowReset,
@@ -545,35 +497,26 @@ export default function App() {
   });
 
   const { sendAgentTask, stopAgent, handleRollback, handleApprovalDecision } = useAgentTransport({
-    activeSession,
-    messages,
-    agentTrace,
-    agentRunning,
     selectedAgentModels,
     chatModel,
     agentStrategy,
     agentMemory,
     availableModels,
-    agentRunIdRef,
-    agentAbortRef,
-    approvalRequestRef,
-    questionRequestRef,
-    lastAgentTaskRef,
     textareaRef,
+    dispatch,
+    runsRef,
+    getRun,
+    abortControllersRef,
     setInput,
-    setAgentTrace,
-    setAgentRunning,
-    setAgentStopping,
-    setAgentStartedAt,
-    setPendingApproval,
-    setPendingQuestion,
-    setReconnectedRun,
     setRollbackLoading,
     setAgentMobileTab,
-    setAgentRunId,
     setApprovalSubmitting,
     updateSession,
   });
+  // UI 上的停止/回滚/审批都针对"当前查看的 run"(activeRunId),包装一层绑定 runId。
+  const stopActiveAgent = () => activeRunId && stopAgent(activeRunId);
+  const rollbackActiveAgent = targetStep => activeRunId && handleRollback(activeRunId, targetStep);
+  const approveActive = decision => activeRunId && handleApprovalDecision(activeRunId, decision);
 
   const {
     attachments,
@@ -621,7 +564,7 @@ export default function App() {
 
     // 同一输入框根据 mode 分流到两套完全不同的执行链路。
     if (mode === 'agent') {
-      await sendAgentTask(text);
+      await sendAgentTask(text, activeSession.id);
       clearAttachments();
       return;
     }
@@ -687,7 +630,7 @@ export default function App() {
       inputValue={attachmentsUploading ? '' : (input || (hasReadyAttachments ? ' ' : ''))}
       onSend={handleSubmit}
       onStopGeneration={stopGeneration}
-      onStopAgent={stopAgent}
+      onStopAgent={stopActiveAgent}
     />
   );
   const memoryToggle = (
@@ -711,8 +654,11 @@ export default function App() {
 
   const { submitting: questionSubmitting, handleSubmit: handleQuestionSubmit, handleSkip: handleQuestionSkip } = useQuestionSubmit({
     pendingQuestion,
-    setPendingQuestion,
-    questionRequestRef,
+    clearQuestion: response => {
+      if (!activeRunId) return;
+      pendingQuestion?.resolve?.(response);
+      dispatch({ type: 'setQuestion', runId: activeRunId, question: null });
+    },
   });
 
   return (
@@ -726,7 +672,8 @@ export default function App() {
           onDelete={handleDeleteSession}
           onClearAll={handleClearAllSessions}
           onSelect={(id) => { handleSelectSession(id); if (window.innerWidth < DOCKED_LAYOUT_BREAKPOINT) setShowSessions(false); }}
-          locked={sessionLocked}
+          runningSessionIds={runningSessionIds}
+          attentionSessionIds={attentionSessionIds}
           showMemoryPanel={showMemoryPanel}
           onToggleMemory={() => setShowMemoryPanel(v => !v)}
         />
@@ -810,10 +757,10 @@ export default function App() {
                   modelList={availableModels}
                   collapsed={agentCollapsed}
                   onToggleCollapse={() => setAgentCollapsed(c => !c)}
-                  onStop={stopAgent}
+                  onStop={stopActiveAgent}
                   agentStopping={agentStopping}
                   pendingApproval={pendingApproval}
-                  onRollback={handleRollback}
+                  onRollback={rollbackActiveAgent}
                   rollbackLoading={rollbackLoading}
                 />
               )}
@@ -857,8 +804,8 @@ export default function App() {
       <ApprovalDialog
         approval={pendingApproval}
         submitting={approvalSubmitting}
-        onApprove={() => handleApprovalDecision('approve')}
-        onReject={() => handleApprovalDecision('reject')}
+        onApprove={() => approveActive('approve')}
+        onReject={() => approveActive('reject')}
       />
 
       <QuestionDialog

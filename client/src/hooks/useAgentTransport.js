@@ -3,104 +3,104 @@ import { showAgentNotification } from '../notifications.js';
 import { touchSession } from './useChatSessions.js';
 import { PHONE_BREAKPOINT } from '../utils/constants.js';
 
-// Agent 流程的执行链路：
-// - sendAgentTask: 发起一次 Agent 任务（含 retry from checkpoint）
-// - stopAgent: 取消运行中的 Agent
-// - handleRollback: 回滚到某一步（正在跑时调用 /api/agent/rollback，已结束时重启）
-// - handleApprovalDecision: 提交审批结果
+// Agent 多 run 执行链路。
+// - sendAgentTask: 发起一次 Agent 任务(可与其它任务并发)
+// - stopAgent(runId): 取消指定 run
+// - handleRollback(runId, targetStep): 回滚指定 run
+// - handleApprovalDecision(runId, decision): 提交指定 run 的审批
+//
+// 关键约束:每个并发任务的事件写回必须绑定它**自己的** sessionId / runId,
+// 绝不读全局 ref,否则多 run 并发会串台(写错 session / 取消错 run)。
 export function useAgentTransport({
-  activeSession,
-  messages,
-  agentTrace,
-  agentRunning,
   selectedAgentModels,
   chatModel,
   agentStrategy,
   agentMemory,
   availableModels,
-  // refs
-  agentRunIdRef,
-  agentAbortRef,
-  approvalRequestRef,
-  questionRequestRef,
-  lastAgentTaskRef,
   textareaRef,
-  // setters
+  // 多 run 运行时
+  dispatch,
+  runsRef,
+  getRun,
+  abortControllersRef,
+  // 全局 UI setters
   setInput,
-  setAgentTrace,
-  setAgentRunning,
-  setAgentStopping,
-  setAgentStartedAt,
-  setPendingApproval,
-  setPendingQuestion,
-  setReconnectedRun,
   setRollbackLoading,
   setAgentMobileTab,
-  setAgentRunId,
   setApprovalSubmitting,
   // helpers
   updateSession,
 }) {
-  const stopAgent = () => {
-    // 停止 Agent 既要通知后端取消 run，也要尽快把前端 SSE 断掉。
-    // 这里给一个很短的缓冲时间，让最后一两个 in-flight 事件有机会落到 UI。
-    setAgentStopping(true);
-    approvalRequestRef.current?.resolve?.('reject');
-    setPendingApproval(null);
-    const rid = agentRunIdRef.current;
-    if (rid) {
-      fetch('/api/agent/cancel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ runId: rid }),
-      }).catch(() => {});
-    }
-    // Abort SSE after a short grace period for in-flight results
-    setTimeout(() => agentAbortRef.current?.abort(), 1500);
+  const stopAgent = runId => {
+    if (!runId) return;
+    dispatch({ type: 'setStopping', runId, stopping: true });
+    const run = getRun(runId);
+    run?.pendingApproval?.resolve?.('reject');
+    dispatch({ type: 'setApproval', runId, approval: null });
+    fetch(`/api/agent/${runId}/cancel`, { method: 'POST' }).catch(() => {});
+    // 给最后一两个 in-flight 事件一点缓冲再断 SSE
+    setTimeout(() => abortControllersRef.current.get(runId)?.abort(), 1500);
   };
 
-  // Agent 流程和普通对话不一样：聊天区只保留"任务 + 最终回答"，
-  // 详细的中间步骤全部写进 agentTrace，再由 AgentPanel 单独展示。
-  const sendAgentTask = async (text, extraBody) => {
-    const sessionId = activeSession.id;
+  // Agent 流程:聊天区只保留"任务 + 最终回答",中间步骤进 run.trace,由 AgentPanel 展示。
+  const sendAgentTask = async (text, sessionId, extraBody) => {
     const isRetry = !!extraBody?.fromCheckpoint;
-    lastAgentTaskRef.current = text;
-    const history = isRetry ? messages : [...messages, { role: 'user', content: text, ts: Date.now() }];
+    const tempKey = `pending_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    let localRunId = isRetry ? (extraBody?.fromCheckpoint?.runId || null) : null;
+    const controller = new AbortController();
+
+    // 取当前 session 的消息快照(用于 history 与占位消息更新)
+    let sessionMessages = [];
+    updateSession(sessionId, s => { sessionMessages = s.messages || []; return s; });
+    const history = isRetry
+      ? sessionMessages
+      : [...sessionMessages, { role: 'user', content: text, ts: Date.now() }];
+
+    // 注册 run 运行时状态 + abortController
+    dispatch({
+      type: 'start',
+      tempKey,
+      runId: localRunId,
+      sessionId,
+      startedAt: Date.now(),
+      lastTask: text,
+    });
+    abortControllersRef.current.set(localRunId || tempKey, controller);
 
     if (!isRetry) {
-      updateSession(sessionId, session =>
-        touchSession(session, {
-          messages: [...history, { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() }],
+      updateSession(sessionId, s =>
+        touchSession(s, {
+          messages: [...history, { role: 'assistant', content: 'Desktop Agent 正在执行任务,请稍候…', ts: Date.now() }],
           agentTrace: [],
           agentRunId: null,
         })
       );
       setInput('');
-      setAgentTrace([]);
-      agentRunIdRef.current = null;
-      setAgentRunId(null);
     } else {
-      // Retry from checkpoint — keep filtered trace (handleRollback already removed steps > target)
       const cpStep = extraBody?.fromCheckpoint?.step;
-      updateSession(sessionId, session => {
-        const msgs = [...session.messages];
+      updateSession(sessionId, s => {
+        const msgs = [...s.messages];
         const stepInfo = cpStep ? `从第 ${cpStep} 步` : '';
-        msgs.push({ role: 'assistant', content: `Desktop Agent 正在${stepInfo}重新执行任务：${text}`, ts: Date.now() });
-        return touchSession(session, { messages: msgs });
+        msgs.push({ role: 'assistant', content: `Desktop Agent 正在${stepInfo}重新执行任务:${text}`, ts: Date.now() });
+        return touchSession(s, { messages: msgs });
       });
     }
-    setAgentStartedAt(Date.now());
-    setAgentRunning(true);
-    setPendingApproval(null);
 
-    const controller = new AbortController();
-    agentAbortRef.current = controller;
+    // 把 abortController 的 key 从 tempKey 迁移到真实 runId
+    const rebindController = runId => {
+      if (localRunId === runId) return;
+      const prevKey = localRunId || tempKey;
+      const ac = abortControllersRef.current.get(prevKey);
+      abortControllersRef.current.delete(prevKey);
+      if (ac) abortControllersRef.current.set(runId, ac);
+      localRunId = runId;
+    };
+
+    const traceRunId = () => localRunId || tempKey;
 
     try {
       await streamAgentRun({
         task: text,
-        // Agent 至少要有一个主模型。多模型时第一个模型作为主请求参数，
-        // 完整模型集合再通过 models 传给后端做并发规划。
         model: selectedAgentModels.length > 0 ? selectedAgentModels[0] : chatModel,
         models: selectedAgentModels.length > 0
           ? selectedAgentModels.filter(m => availableModels.some(available => available.id === m))
@@ -108,119 +108,70 @@ export function useAgentTransport({
         strategy: selectedAgentModels.length > 1 ? agentStrategy : 'race',
         memory: agentMemory,
         signal: controller.signal,
-        messages: isRetry ? [] : messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+        messages: isRetry ? [] : sessionMessages.slice(-10).map(m => ({ role: m.role, content: m.content })),
         ...extraBody,
         async onEvent(event) {
-          console.log(`[AgentUI] event type=${event.type} step=${event.step ?? '-'} stage=${event.stage ?? '-'} model=${event.model || '-'}`);
-          setAgentTrace(prev => {
-            // Deduplicate: same type+step+stage+model already exists
-            const key = `${event.type}:${event.step ?? ''}:${event.stage ?? ''}:${event.model ?? ''}`;
-            if (prev.some(e => `${e.type}:${e.step ?? ''}:${e.stage ?? ''}:${e.model ?? ''}` === key)) {
-              console.log(`[AgentUI] DEDUP skipped: ${key}`);
-              return prev;
-            }
-            return [...prev, event];
-          });
-
-          if (event.runId && event.runId !== agentRunIdRef.current) {
-            agentRunIdRef.current = event.runId;
-            setAgentRunId(event.runId);
-            updateSession(sessionId, session => touchSession(session, { agentRunId: event.runId }));
+          // 首个带 runId 的事件:绑定真实 runId,迁移 reducer 分片和 controller
+          if (event.runId && event.runId !== localRunId) {
+            dispatch({ type: 'bindRunId', tempKey: traceRunId(), runId: event.runId, sessionId });
+            rebindController(event.runId);
+            updateSession(sessionId, s => touchSession(s, { agentRunId: event.runId }));
           }
+          const rid = localRunId || event.runId || tempKey;
+
+          dispatch({ type: 'appendTrace', runId: rid, event });
 
           if (event.type === 'approval_required') {
-            showAgentNotification({
-              runId: event.runId,
-              approvalId: event.approvalId,
-              message: event.message || '需要审批',
-              kind: 'approval',
-            });
-            // 不要 await：决策完成统一靠后端发的 approval_result event 清理 state，
-            // 否则 SSE 处理会卡在 await 上、把 approval_result 事件也一起阻塞掉。
-            approvalRequestRef.current = { ...event, resolve: () => {} };
-            setPendingApproval(event);
+            showAgentNotification({ runId: event.runId, approvalId: event.approvalId, message: event.message || '需要审批', kind: 'approval' });
+            dispatch({ type: 'setApproval', runId: rid, approval: { ...event, resolve: () => {} } });
             return;
           }
-
           if (event.type === 'question_required') {
-            showAgentNotification({
-              runId: event.runId,
-              approvalId: event.approvalId,
-              message: event.action?.question || event.message || 'Agent 有问题需要你回答',
-              kind: 'question',
-            });
-            // 同上：交给 user_response event 兜底清理
-            questionRequestRef.current = { ...event, resolve: () => {} };
-            setPendingQuestion(event);
+            showAgentNotification({ runId: event.runId, approvalId: event.approvalId, message: event.action?.question || event.message || 'Agent 有问题需要你回答', kind: 'question' });
+            dispatch({ type: 'setQuestion', runId: rid, question: { ...event, resolve: () => {} } });
             return;
           }
-
           if (event.type === 'approval_result') {
-            approvalRequestRef.current = null;
-            setPendingApproval(null);
+            dispatch({ type: 'setApproval', runId: rid, approval: null });
           }
-
           if (event.type === 'user_response') {
-            questionRequestRef.current = null;
-            setPendingQuestion(null);
+            dispatch({ type: 'setQuestion', runId: rid, question: null });
           }
-
           if (event.type === 'rollback') {
-            setAgentTrace(prev => {
+            const run = getRun(rid);
+            if (run) {
               const target = event.targetStep;
-              return prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step <= target);
-            });
+              const filtered = run.trace.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step <= target);
+              dispatch({ type: 'setTrace', runId: rid, trace: filtered });
+            }
             return;
           }
-
           if (event.type === 'done') {
-            showAgentNotification({
-              runId: event.runId,
-              message: event.answer || 'Agent 已完成任务',
-              kind: 'success',
-            });
-            setAgentTrace(prev => {
-              updateSession(sessionId, session => {
-                const nextMessages = [...session.messages];
-                const lastMsg = nextMessages[nextMessages.length - 1];
-                // Keep retry placeholder, append result as new message
-                if (lastMsg?.content?.includes('从检查点')) {
-                  nextMessages.push({ role: 'assistant', content: event.answer || 'Agent 已完成任务。', ts: Date.now() });
-                } else {
-                  nextMessages[nextMessages.length - 1] = {
-                    role: 'assistant',
-                    content: event.answer || 'Agent 已完成任务。',
-                    ts: Date.now(),
-                  };
-                }
-                return touchSession(session, { messages: nextMessages, agentTrace: prev, agentRunId: agentRunIdRef.current });
-              });
-              return prev;
+            showAgentNotification({ runId: event.runId, message: event.answer || 'Agent 已完成任务', kind: 'success' });
+            const run = getRun(rid);
+            updateSession(sessionId, s => {
+              const nextMessages = [...s.messages];
+              const lastMsg = nextMessages[nextMessages.length - 1];
+              if (lastMsg?.content?.includes('从检查点')) {
+                nextMessages.push({ role: 'assistant', content: event.answer || 'Agent 已完成任务。', ts: Date.now() });
+              } else {
+                nextMessages[nextMessages.length - 1] = { role: 'assistant', content: event.answer || 'Agent 已完成任务。', ts: Date.now() };
+              }
+              return touchSession(s, { messages: nextMessages, agentTrace: run?.trace || [], agentRunId: rid });
             });
           }
-
           if (event.type === 'error') {
-            showAgentNotification({
-              runId: event.runId,
-              message: event.error || 'Agent 执行失败',
-              kind: 'failure',
-            });
-            setAgentTrace(prev => {
-              updateSession(sessionId, session => {
-                const nextMessages = [...session.messages];
-                const lastMsg = nextMessages[nextMessages.length - 1];
-                if (lastMsg?.content?.includes('从检查点')) {
-                  nextMessages.push({ role: 'assistant', content: `⚠️ Desktop Agent 失败：${event.error}`, ts: Date.now() });
-                } else {
-                  nextMessages[nextMessages.length - 1] = {
-                    role: 'assistant',
-                    content: `⚠️ Desktop Agent 失败：${event.error}`,
-                    ts: Date.now(),
-                  };
-                }
-                return touchSession(session, { messages: nextMessages, agentTrace: prev, agentRunId: agentRunIdRef.current });
-              });
-              return prev;
+            showAgentNotification({ runId: event.runId, message: event.error || 'Agent 执行失败', kind: 'failure' });
+            const run = getRun(rid);
+            updateSession(sessionId, s => {
+              const nextMessages = [...s.messages];
+              const lastMsg = nextMessages[nextMessages.length - 1];
+              if (lastMsg?.content?.includes('从检查点')) {
+                nextMessages.push({ role: 'assistant', content: `⚠️ Desktop Agent 失败:${event.error}`, ts: Date.now() });
+              } else {
+                nextMessages[nextMessages.length - 1] = { role: 'assistant', content: `⚠️ Desktop Agent 失败:${event.error}`, ts: Date.now() };
+              }
+              return touchSession(s, { messages: nextMessages, agentTrace: run?.trace || [], agentRunId: rid });
             });
           }
         },
@@ -229,100 +180,69 @@ export function useAgentTransport({
       const isPageUnload = err.name === 'AbortError'
         || controller.signal.aborted
         || (err.name === 'TypeError' && /load failed|network|fetch/i.test(err.message));
-      if (isPageUnload) {
-        // Page navigation cancelled the request — don't show error
-      } else {
+      if (!isPageUnload) {
         const detail = err.stack ? `\n\`\`\`\n${err.stack.split('\n').slice(0, 3).join('\n')}\n\`\`\`` : '';
-        updateSession(sessionId, session => {
-          const nextMessages = [...session.messages];
-          nextMessages[nextMessages.length - 1] = {
-            role: 'assistant',
-            content: `⚠️ Desktop Agent 请求失败：${err.message}${detail}`,
-          };
-
-          return touchSession(session, { messages: nextMessages });
+        updateSession(sessionId, s => {
+          const nextMessages = [...s.messages];
+          nextMessages[nextMessages.length - 1] = { role: 'assistant', content: `⚠️ Desktop Agent 请求失败:${err.message}${detail}` };
+          return touchSession(s, { messages: nextMessages });
         });
       }
     } finally {
-      // SSE 可能断连导致 done/error 事件丢失，检查占位消息是否未被替换
-      setAgentTrace(prev => {
-        const doneEvent = prev.find(e => e.type === 'done');
-        const errorEvent = prev.find(e => e.type === 'error');
+      const rid = localRunId || tempKey;
+      const run = getRun(rid);
+      // SSE 可能断连导致 done/error 丢失,检查占位消息是否未被替换
+      const doneEvent = run?.trace.find(e => e.type === 'done');
+      const errorEvent = run?.trace.find(e => e.type === 'error');
+      updateSession(sessionId, s => {
+        const msgs = s.messages;
+        const lastIdx = msgs.length - 1;
+        const isPlaceholder = lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].content.includes('正在执行任务');
         if (doneEvent || errorEvent) {
-          updateSession(sessionId, session => {
-            const msgs = session.messages;
-            const lastIdx = msgs.length - 1;
-            if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].content.includes('正在执行任务')) {
-              const next = [...msgs];
-              if (doneEvent) {
-                next[lastIdx] = { role: 'assistant', content: doneEvent.answer || 'Agent 已完成任务。', ts: Date.now() };
-              } else {
-                next[lastIdx] = { role: 'assistant', content: `⚠️ Desktop Agent 失败：${errorEvent.error || '连接中断'}`, ts: Date.now() };
-              }
-              return touchSession(session, { messages: next, agentTrace: prev, agentRunId: agentRunIdRef.current });
-            }
-            return touchSession(session, { agentTrace: prev, agentRunId: agentRunIdRef.current });
-          });
-        } else if (prev.length === 0 || !prev.some(e => e.type === 'done' || e.type === 'error')) {
-          // No events received at all or SSE disconnected without done/error
-          updateSession(sessionId, session => {
-            const msgs = session.messages;
-            const lastIdx = msgs.length - 1;
-            if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].content.includes('正在执行任务')) {
-              const next = [...msgs];
-              next[lastIdx] = { role: 'assistant', content: '⚠️ Desktop Agent 连接中断，未收到执行结果。', ts: Date.now() };
-              return touchSession(session, { messages: next, agentTrace: prev, agentRunId: agentRunIdRef.current });
-            }
-            return touchSession(session, { agentTrace: prev, agentRunId: agentRunIdRef.current });
-          });
+          if (isPlaceholder) {
+            const next = [...msgs];
+            next[lastIdx] = doneEvent
+              ? { role: 'assistant', content: doneEvent.answer || 'Agent 已完成任务。', ts: Date.now() }
+              : { role: 'assistant', content: `⚠️ Desktop Agent 失败:${errorEvent.error || '连接中断'}`, ts: Date.now() };
+            return touchSession(s, { messages: next, agentTrace: run?.trace || [], agentRunId: rid });
+          }
+          return touchSession(s, { agentTrace: run?.trace || [], agentRunId: rid });
         }
-        return prev;
+        if (isPlaceholder) {
+          const next = [...msgs];
+          next[lastIdx] = { role: 'assistant', content: '⚠️ Desktop Agent 连接中断,未收到执行结果。', ts: Date.now() };
+          return touchSession(s, { messages: next, agentTrace: run?.trace || [], agentRunId: rid });
+        }
+        return touchSession(s, { agentTrace: run?.trace || [], agentRunId: rid });
       });
 
-      agentAbortRef.current = null;
-      // Keep agentRunIdRef for post-task checkpoint queries
-      setAgentRunning(false);
-      setAgentStopping(false);
-      setReconnectedRun(false);
-      setPendingApproval(null);
-      approvalRequestRef.current = null;
+      abortControllersRef.current.delete(rid);
+      dispatch({ type: 'finish', runId: rid });
       if (window.innerWidth < PHONE_BREAKPOINT) setAgentMobileTab('chat');
       setTimeout(() => textareaRef.current?.focus(), 0);
     }
   };
 
-  const handleRollback = async targetStep => {
-    const rid = agentRunIdRef.current;
-    console.log('[Rollback] targetStep:', targetStep, 'runId:', rid, 'running:', agentRunning, 'traceLen:', agentTrace.length);
-    if (!rid) {
-      console.warn('[Rollback] no runId, cannot rollback');
-      return;
-    }
+  const handleRollback = async (runId, targetStep) => {
+    if (!runId) return;
+    const run = getRun(runId);
     setRollbackLoading(true);
     try {
-      if (agentRunning) {
-        // Running task — use pendingRollback for in-place rollback
-        console.log('[Rollback] calling POST /api/agent/rollback');
+      if (run?.running) {
         const res = await fetch('/api/agent/rollback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ targetStep }),
         });
         const data = await res.json();
-        if (!res.ok) {
-          alert(data.error || '回滚失败');
-        }
+        if (!res.ok) alert(data.error || '回滚失败');
       } else {
-        // Finished task — restart from checkpoint
-        console.log('[Rollback] finished task, filtering trace and restarting from checkpoint');
-        setAgentTrace(prev => {
-          const filtered = prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step < targetStep);
-          console.log('[Rollback] trace filtered:', prev.length, '->', filtered.length);
-          return filtered;
-        });
-        await sendAgentTask(lastAgentTaskRef.current || '继续任务', {
-          fromCheckpoint: { runId: rid, step: targetStep },
-        });
+        // 已结束的任务:过滤 trace 后从 checkpoint 重启
+        if (run) {
+          const filtered = run.trace.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step < targetStep);
+          dispatch({ type: 'setTrace', runId, trace: filtered });
+        }
+        await sendAgentTask(run?.lastTask || '继续任务', run?.sessionId, { fromCheckpoint: { runId, step: targetStep } });
       }
     } catch {
       alert('回滚请求失败');
@@ -331,24 +251,17 @@ export function useAgentTransport({
     }
   };
 
-  const handleApprovalDecision = async decision => {
-    const request = approvalRequestRef.current;
-    if (!request) {
-      return;
-    }
-
+  const handleApprovalDecision = async (runId, decision) => {
+    const run = getRun(runId);
+    const request = run?.pendingApproval;
+    if (!request) return;
     setApprovalSubmitting(true);
     try {
-      await submitAgentApproval({
-        runId: request.runId,
-        approvalId: request.approvalId,
-        decision,
-      });
-      request.resolve(decision);
-      approvalRequestRef.current = null;
-      setPendingApproval(null);
+      await submitAgentApproval({ runId: request.runId, approvalId: request.approvalId, decision });
+      request.resolve?.(decision);
+      dispatch({ type: 'setApproval', runId, approval: null });
     } catch (err) {
-      window.alert(`提交审批失败：${err.message}`);
+      window.alert(`提交审批失败:${err.message}`);
     } finally {
       setApprovalSubmitting(false);
     }

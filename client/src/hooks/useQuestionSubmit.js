@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { submitAgentQuestion } from '../api/streams.js';
 
 // QuestionDialog 的 submit / skip 回调封装：
-// - submit：调后端记录回答，关闭弹窗，resolve 挂起的 Promise
+// - submit：调后端记录回答，关闭弹窗,resolve 挂起的 Promise
 // - skip：直接关闭弹窗 + resolve('')，不调后端
-// 拆出来纯粹是因为内联在 props 里太长，影响 App.jsx 可读性。
-export function useQuestionSubmit({ pendingQuestion, setPendingQuestion, questionRequestRef }) {
+// clearQuestion(response) 由调用方提供:dispatch 清掉对应 run 的 pendingQuestion 并 resolve。
+export function useQuestionSubmit({ pendingQuestion, clearQuestion }) {
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async response => {
@@ -17,8 +17,7 @@ export function useQuestionSubmit({ pendingQuestion, setPendingQuestion, questio
         approvalId: pendingQuestion.approvalId,
         response,
       });
-      setPendingQuestion(null);
-      questionRequestRef.current?.resolve?.(response);
+      clearQuestion(response);
     } catch (err) {
       console.error('Question submit failed:', err);
     } finally {
@@ -27,8 +26,7 @@ export function useQuestionSubmit({ pendingQuestion, setPendingQuestion, questio
   };
 
   const handleSkip = () => {
-    setPendingQuestion(null);
-    questionRequestRef.current?.resolve?.('');
+    clearQuestion('');
   };
 
   return { submitting, handleSubmit, handleSkip };
