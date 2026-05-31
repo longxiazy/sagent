@@ -910,6 +910,28 @@ select,
   cursor: not-allowed;
 }
 
+/* ── 只读供应商标签 ── */
+.model-select-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.provider-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--c-primary-bg);
+  color: var(--c-primary);
+  border: 1px solid var(--c-primary-light);
+  font-size: var(--f-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* ── chat 模式：可搜索下拉 ── */
 .model-dropdown {
   position: relative;

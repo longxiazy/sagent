@@ -37,7 +37,7 @@ import { createApprovalStore } from './agent/core/approval-store.ts';
 import { initLlmLogger } from './agent/core/llm-logger.ts';
 import { createDesktopAgentRunner } from './agent/desktop/agent.ts';
 import { DEFAULT_VISION_MODEL } from './agent/tools/vision/execute.ts';
-import { createClients, loadModelConfig, loadAgentMultiModels, isClaudeModel } from './agent/core/ai-client.ts';
+import { createClients, loadModelConfig, loadAgentMultiModels, isClaudeModel, deriveProviderName } from './agent/core/ai-client.ts';
 import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
 import { loadIdeMcpConfig } from './agent/tools/ide/mcp-client.ts';
 import { loadChromeMcpConfig } from './agent/tools/chrome/mcp-client.ts';
@@ -183,6 +183,7 @@ app.listen(Number(PORT), HOST, async () => {
   ${ideConfig.enabled ? row('IDE_PROJECT_PATH', ideConfig.projectPath) : ''}
   ${chromeConfig.enabled ? row('CHROME_MCP', `${chromeConfig.transport} @ ${chromeConfig.url || `${chromeConfig.host}:${chromeConfig.port}${chromeConfig.ssePath}`}`) : row('CHROME_MCP', 'disabled')}
   ${hLine}
+  ${openai_client ? row('Provider', `${deriveProviderName(process.env.NVIDIA_BASE_URL)} @ ${process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1'}`) : ''}
   ${row('NVIDIA_API_KEY', process.env.NVIDIA_API_KEY ? '✓ configured' : '✗ not set')}
   ${row('ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY ? '✓ configured' : '✗ not set')}
   ╚${dLine.slice(2)}╝

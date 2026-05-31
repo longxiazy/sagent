@@ -102,19 +102,27 @@ export function ModelSelector({
   agentStrategy,
   setAgentStrategy,
   sessionLocked,
+  currentProvider,
 }) {
   const [query, setQuery] = useState('');
 
   if (sessionStarted) return null;
 
+  const providerBadge = currentProvider
+    ? <span className="provider-badge" title={`当前供应商：${currentProvider}`}>{currentProvider}</span>
+    : null;
+
   if (mode !== 'agent') {
     return (
-      <ChatModelDropdown
-        availableModels={availableModels}
-        chatModel={chatModel}
-        setChatModel={setChatModel}
-        sessionLocked={sessionLocked}
-      />
+      <div className="model-select-row">
+        {providerBadge}
+        <ChatModelDropdown
+          availableModels={availableModels}
+          chatModel={chatModel}
+          setChatModel={setChatModel}
+          sessionLocked={sessionLocked}
+        />
+      </div>
     );
   }
 
@@ -173,6 +181,7 @@ export function ModelSelector({
   return (
     <div className="model-tags-wrap">
       <div className="model-tags-search">
+        {providerBadge}
         <Search size={13} />
         <input
           type="text"
