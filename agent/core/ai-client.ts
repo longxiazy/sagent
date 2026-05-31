@@ -39,16 +39,32 @@ function isChatCapableModel(id: string) {
   return !NON_CHAT_MODEL_RE.test(id);
 }
 
+// 从 baseURL 域名推断供应商展示名，用于前端/日志展示当前连的是哪家。
+// 例：api.freemodel.dev → freemodel，integrate.api.nvidia.com → nvidia，留空 → nvidia。
+export function deriveProviderName(baseURL?: string) {
+  if (!baseURL) return 'nvidia';
+  try {
+    const host = new URL(baseURL).hostname;
+    const parts = host.split('.').filter(p => p && p !== 'api' && p !== 'www');
+    // 去掉末尾 TLD（com/dev/cn 等），取剩下的最后一段作为主体名
+    if (parts.length >= 2) parts.pop();
+    return parts[parts.length - 1] || host;
+  } catch {
+    return 'nvidia';
+  }
+}
+
 export async function loadModelConfig({ openai_client, anthropic_client }: any = {}) {
   const models = [];
 
   // OpenAI 兼容供应商：从 /v1/models 拉取
   if (openai_client) {
+    const providerName = deriveProviderName(process.env.NVIDIA_BASE_URL);
     try {
       const list = await openai_client.models.list();
       for (const m of list.data || []) {
         if (m?.id && isChatCapableModel(m.id)) {
-          models.push({ id: m.id, label: m.id, provider: 'nvidia' });
+          models.push({ id: m.id, label: m.id, provider: providerName });
         }
       }
     } catch (err) {
@@ -75,7 +91,7 @@ export async function loadModelConfig({ openai_client, anthropic_client }: any =
   if (anthropic_client && !openai_client) {
     return [{ id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', provider: 'anthropic' }];
   }
-  return [{ id: 'minimaxai/minimax-m2.7', label: 'MiniMax M2.7', provider: 'nvidia' }];
+  return [{ id: 'minimaxai/minimax-m2.7', label: 'MiniMax M2.7', provider: deriveProviderName(process.env.NVIDIA_BASE_URL) }];
 }
 
 export function loadAgentMultiModels() {

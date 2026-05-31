@@ -195,6 +195,11 @@ export default function App() {
   const selectedChatModelLabel = availableModels.find(item => item.id === chatModel)?.label || chatModel;
   const sessionLocked = streaming || agentRunning;
 
+  // 当前供应商：取当前选中模型的 provider 字段（agent 模式看首个选中模型，否则看 chatModel）。
+  // provider 来自后端 /api/models，已反映真实 baseURL 推断出的供应商名。
+  const activeModelId = mode === 'agent' && selectedAgentModels.length > 0 ? selectedAgentModels[0] : chatModel;
+  const currentProvider = availableModels.find(item => item.id === activeModelId)?.provider || null;
+
   // 在移动端/窄屏时，会话侧栏和 Agent 面板会改变页面主色块区域。
   // 同步 <meta name="theme-color"> 是为了让浏览器地址栏颜色也跟着切换。
   useThemeColorSync({ mode, agentMobileTab, showSessions });
@@ -675,6 +680,7 @@ export default function App() {
       agentStrategy={agentStrategy}
       setAgentStrategy={setAgentStrategy}
       sessionLocked={sessionLocked}
+      currentProvider={currentProvider}
     />
   );
   const sendButton = (
