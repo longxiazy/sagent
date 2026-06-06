@@ -84,6 +84,35 @@ export function buildClaudeTaskMessages({
   return messages;
 }
 
+// Gemini 决策消息：复用 Claude 那套「把 task/step/history/observation 这坨 JSON 塞进一个
+// user part」的思路，但产出 Gemini 的 contents 格式（assistant→model）。system 由 provider 单独传。
+export function buildGeminiTaskMessages({
+  task,
+  step,
+  history,
+  observation,
+  conversationHistory,
+}: {
+  task: string;
+  step: number;
+  history: any[];
+  observation: any;
+  conversationHistory?: Array<{ role: string; content: string }>;
+}) {
+  const contents: any[] = [];
+  if (conversationHistory?.length) {
+    for (const msg of conversationHistory) {
+      contents.push({ role: msg.role === 'assistant' ? 'model' : 'user', parts: [{ text: msg.content }] });
+    }
+  }
+  const recentUrlsHint = buildRecentUrlsHint(history);
+  contents.push({
+    role: 'user',
+    parts: [{ text: JSON.stringify({ task, step, history, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}) }) }],
+  });
+  return { contents };
+}
+
 export function buildNvidiaTaskMessages({
   task,
   systemPrompt,

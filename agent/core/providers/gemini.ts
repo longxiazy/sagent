@@ -1,0 +1,256 @@
+/**
+ * GeminiProvider — Google Gemini（@google/genai 原生 SDK）
+ *
+ * 封装 Gemini 的 API 差异：
+ *   - contents/parts 格式（assistant→model 角色映射）
+ *   - 原生 function calling（functionDeclarations + toolConfig mode=ANY → functionCalls）
+ *   - 流式 generateContentStream（chunk.text / chunk.functionCalls）
+ *   - usageMetadata → 归一 usage
+ */
+
+import { GoogleGenAI } from '@google/genai';
+import {
+  buildDesktopAgentSystemPrompt,
+  buildGeminiTaskMessages,
+} from '../prompts.ts';
+import { createModelTools, toolToGeminiTool } from '../tool-definitions.ts';
+import { normalizeDesktopAgentDecision } from '../schemas.ts';
+import { isChatCapableModel } from '../ai-client.ts';
+import { createChatTools } from '../../chat/chat-tools.ts';
+import { executeChatTool } from '../../chat/chat-tool-executor.ts';
+import { logLlmRequest, logLlmResponse } from '../llm-logger.ts';
+import { buildMetrics, initSse, writeSse, writeSseDone } from '../../../helpers/streaming.ts';
+import { retryAsync } from '../../../helpers/retry.ts';
+import { log } from '../../../helpers/logger.ts';
+import { buildSummaryPrompt } from './anthropic.ts';
+import type {
+  LLMProvider,
+  ModelInfo,
+  AgentPlanOpts,
+  AgentPlanResult,
+  ChatStreamOpts,
+  CompletionOpts,
+  CompletionStreamOpts,
+  SummarizeOpts,
+} from './types.ts';
+
+const MAX_TOOL_ROUNDS = 5;
+
+// Gemini usageMetadata → 内部归一 usage。
+function buildGeminiUsage(meta: any) {
+  if (!meta) return null;
+  return {
+    prompt_tokens: meta.promptTokenCount || 0,
+    completion_tokens: meta.candidatesTokenCount || 0,
+  };
+}
+
+// 把 OpenAI 风格 chat messages（system/user/assistant）转成 Gemini contents + systemInstruction。
+// 返回 { systemInstruction, contents }。assistant → model；system 抽出来单独传。
+function toGeminiContents(messages: any[]) {
+  let systemInstruction: string | undefined;
+  const contents: any[] = [];
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      systemInstruction = systemInstruction ? `${systemInstruction}\n${msg.content}` : msg.content;
+      continue;
+    }
+    const role = msg.role === 'assistant' ? 'model' : 'user';
+    const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+    contents.push({ role, parts: [{ text }] });
+  }
+  return { systemInstruction, contents };
+}
+
+export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
+  return {
+    name: 'gemini',
+    client,
+
+    ownsModel(model: string, modelConfig?: ModelInfo[] | null) {
+      if (modelConfig) {
+        return modelConfig.some(m => m.id === model && m.provider === 'gemini');
+      }
+      return typeof model === 'string' && model.startsWith('gemini');
+    },
+
+    async listModels() {
+      const models: ModelInfo[] = [];
+      try {
+        const pager = await client.models.list();
+        for await (const m of pager) {
+          // m.name 形如 'models/gemini-2.5-flash'；剥离前缀作为 id。
+          const rawName: string = (m as any).name || '';
+          const id = rawName.replace(/^models\//, '');
+          if (!id) continue;
+          // 仅保留能做对话决策的模型。注意 tts / image 类模型也声明了 generateContent，
+          // 无法靠 supportedActions 区分，必须按 id 过滤。
+          const actions: string[] = (m as any).supportedActions || (m as any).supportedGenerationMethods || [];
+          const supportsGenerate = !actions.length || actions.includes('generateContent');
+          if (!supportsGenerate) continue;
+          if (!isChatCapableModel(id)) continue;
+          if (/imagen|veo|embedding|aqa|tts|-image|image-|gemma-(?:2|3n)/i.test(id)) continue;
+          models.push({ id, label: (m as any).displayName || id, provider: 'gemini' });
+        }
+      } catch (err: any) {
+        log.warn(`[Models] 拉取 Gemini 模型列表失败: ${err?.message || err}`);
+      }
+      return models;
+    },
+
+    async agentPlan(opts: AgentPlanOpts): Promise<AgentPlanResult> {
+      const { model, signal, systemPrompt } = opts;
+      const system = buildDesktopAgentSystemPrompt(systemPrompt);
+      const { contents } = buildGeminiTaskMessages(opts as any);
+      const tools = [{ functionDeclarations: createModelTools().map(toolToGeminiTool) }];
+
+      const config: Record<string, any> = {
+        systemInstruction: system,
+        maxOutputTokens: 16000,
+        temperature: 0.1,
+        tools,
+        toolConfig: { functionCallingConfig: { mode: 'ANY' } },
+      };
+      if (signal) config.abortSignal = signal;
+
+      logLlmRequest(model, contents);
+      const response = await retryAsync(() => client.models.generateContent({ model, contents, config } as any));
+      const usage = buildGeminiUsage((response as any).usageMetadata);
+      logLlmResponse(model, { usage: { input_tokens: usage?.prompt_tokens, output_tokens: usage?.completion_tokens }, choices: [{ message: response }] });
+
+      const calls = (response as any).functionCalls;
+      if (Array.isArray(calls) && calls.length > 0) {
+        const call = calls[0];
+        const action = { type: call.name, ...(call.args || {}) };
+        const decision = normalizeDesktopAgentDecision({ action });
+        return { ...decision, usage, reasoning: null };
+      }
+
+      // fallback：把纯文本当作 JSON finish 动作尝试解析
+      const text = (response as any).text;
+      if (typeof text === 'string' && text.trim()) {
+        try {
+          const decision = normalizeDesktopAgentDecision(JSON.parse(text));
+          return { ...decision, usage, reasoning: null };
+        } catch {
+          // not JSON
+        }
+      }
+      throw new Error('Gemini 未返回有效的 functionCall');
+    },
+
+    async chatStream(opts: ChatStreamOpts) {
+      const { model, messages, temperature, max_tokens, res, startedAt } = opts;
+      const geminiTools = [{ functionDeclarations: createChatTools().map(toolToGeminiTool) }];
+      const { systemInstruction, contents } = toGeminiContents(messages);
+      let usage = null;
+
+      for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        const config: Record<string, any> = {
+          maxOutputTokens: max_tokens,
+          temperature,
+          tools: geminiTools,
+        };
+        if (systemInstruction) config.systemInstruction = systemInstruction;
+
+        const stream = await client.models.generateContentStream({ model, contents, config } as any);
+        let modelParts: any[] = [];
+        const functionCalls: any[] = [];
+
+        for await (const chunk of stream) {
+          const text = (chunk as any).text;
+          if (text) {
+            writeSse(res, { content: text });
+            modelParts.push({ text });
+          }
+          const calls = (chunk as any).functionCalls;
+          if (Array.isArray(calls)) functionCalls.push(...calls);
+          const meta = (chunk as any).usageMetadata;
+          if (meta) usage = buildGeminiUsage(meta);
+        }
+
+        if (functionCalls.length === 0) break;
+
+        // 把模型这一轮的输出（文本 + functionCall parts）记入 contents
+        for (const call of functionCalls) modelParts.push({ functionCall: { name: call.name, args: call.args } });
+        contents.push({ role: 'model', parts: modelParts });
+
+        const responseParts = [];
+        for (const call of functionCalls) {
+          try {
+            const result = await executeChatTool(call.name, call.args || {});
+            responseParts.push({ functionResponse: { name: call.name, response: { result } } });
+            log.debug(`[Chat Tool] ${call.name} → ${String(result).slice(0, 100)}`);
+          } catch (err: any) {
+            responseParts.push({ functionResponse: { name: call.name, response: { error: `工具执行失败: ${err.message}` } } });
+          }
+        }
+        contents.push({ role: 'user', parts: responseParts });
+      }
+
+      writeSse(res, {
+        done: true,
+        finish_reason: 'stop',
+        meta: buildMetrics(startedAt, usage),
+      });
+    },
+
+    async completionJson(opts: CompletionOpts) {
+      const { model, messages, temperature, max_tokens } = opts;
+      const { systemInstruction, contents } = toGeminiContents(messages);
+      const config: Record<string, any> = { maxOutputTokens: max_tokens, temperature };
+      if (systemInstruction) config.systemInstruction = systemInstruction;
+
+      const response = await client.models.generateContent({ model, contents, config } as any);
+      const text = (response as any).text || '';
+      const u = buildGeminiUsage((response as any).usageMetadata);
+      const usage = u
+        ? { prompt_tokens: u.prompt_tokens, completion_tokens: u.completion_tokens, total_tokens: u.prompt_tokens + u.completion_tokens }
+        : { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+
+      return {
+        id: `chatcmpl-${Date.now()}`,
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model,
+        choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+        usage,
+      };
+    },
+
+    async completionStream(opts: CompletionStreamOpts) {
+      const { model, messages, temperature, max_tokens, res } = opts;
+      const { systemInstruction, contents } = toGeminiContents(messages);
+      const config: Record<string, any> = { maxOutputTokens: max_tokens, temperature };
+      if (systemInstruction) config.systemInstruction = systemInstruction;
+
+      initSse(res);
+      const stream = await client.models.generateContentStream({ model, contents, config } as any);
+      for await (const chunk of stream) {
+        const text = (chunk as any).text;
+        if (text) {
+          writeSse(res, {
+            id: `chatcmpl-${Date.now()}`,
+            object: 'chat.chunk',
+            created: Math.floor(Date.now() / 1000),
+            model,
+            choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
+          });
+        }
+      }
+      writeSseDone(res);
+      res.end();
+    },
+
+    async summarize(opts: SummarizeOpts) {
+      const { text, model } = opts;
+      const prompt = buildSummaryPrompt(text);
+      const response = await retryAsync(() => client.models.generateContent({
+        model,
+        contents: prompt,
+        config: { maxOutputTokens: 800, temperature: 0.1 },
+      } as any));
+      return (response as any).text || text.slice(0, 300);
+    },
+  };
+}

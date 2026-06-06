@@ -399,3 +399,13 @@ export function toolToClaudeTool(tool) {
     input_schema: tool.input_schema,
   };
 }
+
+// Gemini FunctionDeclaration：name/description + parametersJsonSchema（标准 JSON Schema，
+// 与内部 input_schema 同构，直接复用）。
+export function toolToGeminiTool(tool) {
+  return {
+    name: tool.name,
+    description: tool.description,
+    parametersJsonSchema: tool.input_schema,
+  };
+}
