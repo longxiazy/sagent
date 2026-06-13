@@ -15,8 +15,7 @@ export function createAgentRunStartRouter({
   memoryDir,
   checkpointDir,
   modelConfig,
-  openai_client,
-  anthropic_client,
+  registry,
 }: AgentRouterContext) {
   const router = Router();
   const defaultModel = modelConfig?.[0]?.id || 'minimaxai/minimax-m2.7';
@@ -115,8 +114,7 @@ export function createAgentRunStartRouter({
             model,
             stepModels,
             modelConfig,
-            openai_client,
-            anthropic_client,
+            registry,
           });
         } catch (err: any) {
           log.error('Memory save failed:', err.message);

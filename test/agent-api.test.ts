@@ -7,15 +7,26 @@ import os from 'node:os';
 
 // We test the agent router in isolation by mocking the heavy deps
 vi.mock('../agent/core/ai-client.js', () => ({
-  createClients: () => ({ openai_client: null, anthropic_client: null }),
-  loadModelConfig: () => [{ id: 'test-model', provider: 'test' }],
+  createClients: () => ({ openai_client: null, anthropic_client: null, gemini_client: null }),
   loadAgentMultiModels: () => [],
-  isClaudeModel: () => false,
+  deriveProviderName: () => 'test',
+  isChatCapableModel: () => true,
 }));
 
 vi.mock('../agent/desktop/agent.js', () => ({
   createDesktopAgentRunner: () => (() => Promise.resolve({ answer: 'test', steps: [] })),
 }));
+
+// 最小可用的 provider registry：resolve 返回一个能 summarize 的假 provider。
+const mockRegistry: any = {
+  providers: [],
+  resolve: () => ({
+    name: 'test',
+    client: {},
+    summarize: async ({ text }) => text.slice(0, 50),
+  }),
+  loadModelConfig: async () => [{ id: 'test-model', provider: 'test' }],
+};
 
 let tmpDir;
 let app;
@@ -37,8 +48,7 @@ beforeEach(async () => {
     checkpointDir: tmpDir,
     domainRules: null,
     modelConfig: [{ id: 'test-model', provider: 'test' }],
-    openai_client: null,
-    anthropic_client: null,
+    registry: mockRegistry,
   });
 
   app = express();

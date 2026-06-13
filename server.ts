@@ -37,7 +37,8 @@ import { createApprovalStore } from './agent/core/approval-store.ts';
 import { initLlmLogger } from './agent/core/llm-logger.ts';
 import { createDesktopAgentRunner } from './agent/desktop/agent.ts';
 import { DEFAULT_VISION_MODEL } from './agent/tools/vision/execute.ts';
-import { createClients, loadModelConfig, loadAgentMultiModels, isClaudeModel, deriveProviderName } from './agent/core/ai-client.ts';
+import { createClients, loadAgentMultiModels, deriveProviderName } from './agent/core/ai-client.ts';
+import { createProviderRegistry } from './agent/core/providers/registry.ts';
 import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
 import { loadIdeMcpConfig } from './agent/tools/ide/mcp-client.ts';
 import { loadChromeMcpConfig } from './agent/tools/chrome/mcp-client.ts';
@@ -56,8 +57,9 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 
-const { openai_client, anthropic_client } = createClients();
-const modelConfig = await loadModelConfig({ openai_client, anthropic_client });
+const { openai_client, anthropic_client, gemini_client } = createClients();
+const registry = createProviderRegistry({ openai_client, anthropic_client, gemini_client });
+const modelConfig = await registry.loadModelConfig();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MEMORY_DIR = path.resolve(__dirname, process.env.MEMORY_DIR || 'data');
@@ -72,8 +74,8 @@ const VISION_MODEL = (process.env.VISION_MODEL || DEFAULT_VISION_MODEL).trim();
 const agentRunStore = createAgentRunStore();
 const approvalStore = createApprovalStore();
 const runDesktopAgent = createDesktopAgentRunner({
+  registry,
   openai_client,
-  anthropic_client,
   modelConfig,
   maxSteps: AGENT_MAX_STEPS,
   defaultHeadless: process.env.AGENT_HEADLESS === 'true',
@@ -90,9 +92,9 @@ const runDesktopAgent = createDesktopAgentRunner({
 const SCREENSHOT_DIR = path.join(MEMORY_DIR, 'screenshots');
 app.use('/screenshots', express.static(SCREENSHOT_DIR));
 
-app.use(createChatRouter({ openai_client, anthropic_client, modelConfig }));
-app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, domainRules: runDesktopAgent.domainRules, modelConfig, openai_client, anthropic_client }));
-app.use(createCompletionsRouter({ openai_client, anthropic_client, modelConfig }));
+app.use(createChatRouter({ registry, modelConfig }));
+app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, domainRules: runDesktopAgent.domainRules, modelConfig, registry }));
+app.use(createCompletionsRouter({ registry, modelConfig }));
 app.use(createSuggestionsRouter({ store: createSuggestionStore(path.join(__dirname, 'data')) }));
 
 const PORT = process.env.PORT || 3001;
@@ -184,8 +186,10 @@ app.listen(Number(PORT), HOST, async () => {
   ${chromeConfig.enabled ? row('CHROME_MCP', `${chromeConfig.transport} @ ${chromeConfig.url || `${chromeConfig.host}:${chromeConfig.port}${chromeConfig.ssePath}`}`) : row('CHROME_MCP', 'disabled')}
   ${hLine}
   ${openai_client ? row('Provider', `${deriveProviderName(process.env.NVIDIA_BASE_URL)} @ ${process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1'}`) : ''}
+  ${gemini_client ? row('Provider', 'gemini @ generativelanguage.googleapis.com') : ''}
   ${row('NVIDIA_API_KEY', process.env.NVIDIA_API_KEY ? '✓ configured' : '✗ not set')}
   ${row('ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY ? '✓ configured' : '✗ not set')}
+  ${row('GEMINI_API_KEY', process.env.GEMINI_API_KEY ? '✓ configured' : '✗ not set')}
   ╚${dLine.slice(2)}╝
   `);
 
@@ -193,9 +197,15 @@ app.listen(Number(PORT), HOST, async () => {
     const checkpoints = await listCheckpoints(CHECKPOINT_DIR);
     if (checkpoints.length > 0) {
       const cp = checkpoints[checkpoints.length - 1];
-      const needsNvidia = !isClaudeModel(cp.model, modelConfig);
-      if (needsNvidia && !openai_client) {
-        console.log(`[Resume] 跳过: ${cp.runId} 需要 NVIDIA_API_KEY 但未配置，清理 checkpoint`);
+      // 模型所属 provider 未配置（缺对应 API key）时跳过恢复
+      let providerAvailable = true;
+      try {
+        providerAvailable = Boolean(registry.resolve(cp.model, modelConfig)?.client);
+      } catch {
+        providerAvailable = false;
+      }
+      if (!providerAvailable) {
+        console.log(`[Resume] 跳过: ${cp.runId} 所需供应商未配置 API key，清理 checkpoint`);
         await clearCheckpoints(CHECKPOINT_DIR);
       } else if (cp.history?.some(h => h.action?.type === 'finish')) {
         console.log(`[Resume] ${cp.runId} 已完成（含 finish 动作），跳过恢复，清理 checkpoint`);

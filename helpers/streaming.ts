@@ -1,5 +1,21 @@
 import { log } from './logger.ts';
 
+// SSE 写入工具：provider 实现层与 routes 层共用，放在 helpers 避免 agent/core → routes 的反向依赖。
+export function initSse(res: any) {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+}
+
+export function writeSse(res: any, payload: any) {
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+export function writeSseDone(res: any) {
+  res.write('data: [DONE]\n\n');
+}
+
 export function buildMetrics(startedAt, usage) {
   const elapsedMs = Date.now() - startedAt;
   const elapsedSeconds = elapsedMs > 0 ? elapsedMs / 1000 : 0;

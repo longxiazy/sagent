@@ -1,13 +1,5 @@
-import { createJsonPlanner } from '../core/planner.ts';
-import { normalizeDesktopAgentDecision } from '../core/schemas.ts';
-import { displayWidth, padEndW } from '../core/utils.ts';
 import { aggregateModelResults } from '../core/multi-model.ts';
-import {
-  buildClaudeTaskMessages,
-  buildDesktopAgentSystemPrompt,
-  buildNvidiaTaskMessages,
-} from '../core/prompts.ts';
-import { isClaudeModel, claudeAgentPlan } from '../core/ai-client.ts';
+import { displayWidth, padEndW } from '../core/utils.ts';
 import { log } from '../../helpers/logger.ts';
 import { extractErrorDiagnostics } from '../../helpers/retry.ts';
 
@@ -43,16 +35,7 @@ function sleepWithCancel(ms: number, cancelSignal?: AbortSignal): Promise<void> 
   });
 }
 
-function toolUseToNormalizedDecision(toolUse: any) {
-  const { name, input } = toolUse;
-  if (!name || !input) {
-    throw new Error(`无效的工具调用: ${JSON.stringify(toolUse)}`);
-  }
-  const action = { type: name, ...input };
-  return normalizeDesktopAgentDecision({ action });
-}
-
-async function singleModelPlan({ model, openai_client, anthropic_client, modelConfig, cancelSignal, raceSignal, ...context }: any) {
+async function singleModelPlan({ model, registry, modelConfig, cancelSignal, raceSignal, ...context }: any) {
   if (cancelSignal?.aborted) throw new Error('Agent 已取消');
 
   const ac = new AbortController();
@@ -66,36 +49,8 @@ async function singleModelPlan({ model, openai_client, anthropic_client, modelCo
   }
 
   try {
-    if (isClaudeModel(model, modelConfig)) {
-      const system = buildDesktopAgentSystemPrompt(context.systemPrompt);
-      const messages = buildClaudeTaskMessages(context);
-      const result = await claudeAgentPlan({
-        client: anthropic_client,
-        model,
-        maxTokens: 16000,
-        temperature: 0.1,
-        system,
-        messages,
-        signal: ac.signal,
-      });
-      const decision = toolUseToNormalizedDecision(result.content);
-      const usage = result.usage
-        ? { prompt_tokens: result.usage.input_tokens || 0, completion_tokens: result.usage.output_tokens || 0 }
-        : null;
-      return { ...decision, usage, model };
-    }
-
-    if (!openai_client) throw new Error(`模型 ${model} 需要 NVIDIA_API_KEY`);
-    const planner = createJsonPlanner({
-      client: openai_client,
-      buildMessages: (ctx: any) =>
-        buildNvidiaTaskMessages({ ...ctx, conversationHistory: context.conversationHistory }),
-      normalizeDecision: normalizeDesktopAgentDecision,
-      buildParserError(err: Error) {
-        return `模型动作解析失败: ${err.message}`;
-      },
-    });
-    const result = await planner({ model, signal: ac.signal, ...context });
+    const provider = registry.resolve(model, modelConfig);
+    const result = await provider.agentPlan({ model, signal: ac.signal, ...context });
     return { ...result, model };
   } finally {
     if (cancelSignal) cancelSignal.removeEventListener('abort', onUserCancel);
@@ -136,8 +91,7 @@ function logModelFailure(model: string, elapsedMs: number, err: any) {
 }
 
 export function createDesktopPlanner({
-  openai_client,
-  anthropic_client,
+  registry,
   modelConfig,
   blacklistedModels,
   modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS,
@@ -182,7 +136,7 @@ export function createDesktopPlanner({
     });
 
     return Promise.race([
-      singleModelPlan({ model, openai_client, anthropic_client, modelConfig, cancelSignal, raceSignal, ...context }),
+      singleModelPlan({ model, registry, modelConfig, cancelSignal, raceSignal, ...context }),
       timeout,
     ])
       .then(result => {

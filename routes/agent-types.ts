@@ -1,3 +1,5 @@
+import type { ProviderRegistry } from '../agent/core/providers/registry.ts';
+
 export interface AgentRouterContext {
   runDesktopAgent: any;
   agentRunStore: any;
@@ -6,6 +8,5 @@ export interface AgentRouterContext {
   checkpointDir: string;
   domainRules: any;
   modelConfig: any[];
-  openai_client: any;
-  anthropic_client: any;
+  registry: ProviderRegistry;
 }

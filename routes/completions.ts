@@ -1,20 +1,11 @@
 import { Router } from 'express';
 import { safeJson } from '../agent/core/utils.ts';
-import { buildOpenAiError, createStreamingCompletionFactory } from '../helpers/streaming.ts';
+import { buildOpenAiError } from '../helpers/streaming.ts';
 import { log } from '../helpers/logger.ts';
-import {
-  handleClaudeCompletionJson,
-  handleClaudeCompletionStream,
-  handleOpenAiCompletionJson,
-  handleOpenAiCompletionStream,
-  writeCompletionStreamError,
-} from './completions-handlers.ts';
-import { requireLlmClient } from './llm-route-utils.ts';
+import type { ProviderRegistry } from '../agent/core/providers/registry.ts';
 
-export function createCompletionsRouter({ openai_client, anthropic_client, modelConfig }) {
+export function createCompletionsRouter({ registry, modelConfig }: { registry: ProviderRegistry; modelConfig: any[] }) {
   const router = Router();
-  const createStreamingCompletion = createStreamingCompletionFactory(openai_client);
-
   const defaultModel = modelConfig[0]?.id || 'minimaxai/minimax-m2.7';
 
   router.get('/api/models', (_req, res) => {
@@ -28,7 +19,7 @@ export function createCompletionsRouter({ openai_client, anthropic_client, model
         id: m.id,
         object: 'model',
         created: 0,
-        owned_by: m.provider === 'anthropic' ? 'anthropic' : 'nvidia-proxy',
+        owned_by: m.provider || 'unknown',
       })),
     });
   });
@@ -52,61 +43,20 @@ export function createCompletionsRouter({ openai_client, anthropic_client, model
     log.info(`[${time}] POST /v1/chat/completions model=${model} stream=${Boolean(stream)} messages=${safeJson(messages)}`);
 
     try {
-      const { useClaude, client } = requireLlmClient({
-        model,
-        modelConfig,
-        openai_client,
-        anthropic_client,
-      });
+      const provider = registry.resolve(model, modelConfig);
 
       if (!stream) {
-        if (useClaude) {
-          return res.json(await handleClaudeCompletionJson({
-            client,
-            model,
-            messages,
-            max_tokens,
-            temperature,
-          }));
-        }
-        return res.json(await handleOpenAiCompletionJson({
-          client,
-          model,
-          messages,
-          temperature,
-          top_p,
-          max_tokens,
-        }));
+        return res.json(await provider.completionJson({ model, messages, temperature, top_p, max_tokens }));
       }
-
-      if (useClaude) {
-        return handleClaudeCompletionStream({
-          client,
-          model,
-          messages,
-          max_tokens,
-          temperature,
-          res,
-        });
-      }
-
-      return handleOpenAiCompletionStream({
-        createStreamingCompletion,
-        model,
-        messages,
-        temperature,
-        top_p,
-        max_tokens,
-        res,
-      });
+      return await provider.completionStream({ model, messages, temperature, top_p, max_tokens, res });
     } catch (err: any) {
       log.error('API error:', err);
 
       const error = buildOpenAiError(err.message);
       if (stream && res.headersSent) {
-        return writeCompletionStreamError(res, err);
+        writeCompletionStreamError(res, err);
+        return;
       }
-
       return res.status(error.status).json(error.body);
     }
   });
@@ -119,4 +69,11 @@ export function createCompletionsRouter({ openai_client, anthropic_client, model
   );
 
   return router;
+}
+
+function writeCompletionStreamError(res: any, err: any) {
+  const error = buildOpenAiError(err.message);
+  res.write(`data: ${JSON.stringify(error.body)}\n\n`);
+  res.write('data: [DONE]\n\n');
+  res.end();
 }

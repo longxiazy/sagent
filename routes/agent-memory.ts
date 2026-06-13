@@ -13,8 +13,7 @@ import type { AgentRouterContext } from './agent-types.ts';
 export function createAgentMemoryRouter({
   memoryDir,
   modelConfig,
-  openai_client,
-  anthropic_client,
+  registry,
 }: AgentRouterContext) {
   const router = Router();
 
@@ -43,7 +42,7 @@ export function createAgentMemoryRouter({
         const memStart = Date.now();
         await compactConversationMemory(memory, {
           summarizeFn: summaryModel
-            ? (text: string) => summarizeText({ text, openai_client, anthropic_client, model: summaryModel })
+            ? (text: string) => summarizeText({ text, registry, model: summaryModel })
             : undefined,
         });
         await saveMemory(memoryDir, memory);

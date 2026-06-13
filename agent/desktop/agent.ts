@@ -47,8 +47,8 @@ import { saveCheckpoint } from '../core/checkpoint.ts';
 import { log } from '../../helpers/logger.ts';
 
 export function createDesktopAgentRunner({
+  registry,
   openai_client,
-  anthropic_client,
   modelConfig,
   maxSteps = 8,
   defaultHeadless = false,
@@ -74,8 +74,7 @@ export function createDesktopAgentRunner({
 
       const subBlacklistedModels = new Set();
       const subPlan = createDesktopPlanner({
-        openai_client,
-        anthropic_client,
+        registry,
         modelConfig,
         blacklistedModels: subBlacklistedModels,
         modelTimeoutMs,
@@ -238,7 +237,7 @@ export function createDesktopAgentRunner({
     memory = true,
   }) {
     const blacklistedModels = new Set();
-    const plan = createDesktopPlanner({ openai_client, anthropic_client, modelConfig, blacklistedModels, modelTimeoutMs, staggerDelayMs, batchSize });
+    const plan = createDesktopPlanner({ registry, modelConfig, blacklistedModels, modelTimeoutMs, staggerDelayMs, batchSize });
 
     const authorize = createAgentAuthorizer({
       runId,
