@@ -66,6 +66,32 @@ function buildTaskWithAttachments(userText, attachments) {
   return userText ? `${userText}\n\n${block}` : block;
 }
 
+function uniqueModelIds(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(value.filter(item => typeof item === 'string' && item.trim()))];
+}
+
+function getTraceModels(trace) {
+  if (!Array.isArray(trace)) {
+    return [];
+  }
+
+  for (let i = trace.length - 1; i >= 0; i -= 1) {
+    const models = uniqueModelIds(trace[i]?.meta?.models_used);
+    if (models.length > 0) {
+      return models;
+    }
+  }
+
+  return uniqueModelIds(trace.flatMap(event => {
+    if (event?.type !== 'model_plan') return [];
+    return event.model ? [event.model] : event.models;
+  }));
+}
+
 export default function App() {
   const {
     setChatState,
@@ -244,15 +270,29 @@ export default function App() {
         // 刷新重连时，如果当前会话看起来不是这次 Agent 任务对应的会话，
         // 就临时创建一个“占位会话”承接运行态，避免把其他历史会话的消息替换掉。
         const task = data.task || 'Agent 任务';
+        const activeRunModels = uniqueModelIds(data.meta?.agentModels);
+        const activeRunPrimaryModel = activeRunModels[0] || data.model || undefined;
         setChatState(prev => {
           const cur = prev.sessions.find(s => s.id === prev.activeSessionId);
           const firstUser = cur?.messages?.find(m => m.role === 'user');
-          if (firstUser && firstUser.content === task) return prev;
+          if (firstUser && firstUser.content === task) {
+            const sessions = prev.sessions.map(session => {
+              if (session.id !== prev.activeSessionId) return session;
+              return touchSession(session, {
+                ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}),
+                ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}),
+                agentRunId: data.runId,
+              });
+            });
+            return normalizeChatState({ ...prev, sessions });
+          }
           const cleanSession = createSession({
             messages: [
               { role: 'user', content: task, ts: data.startedAt || Date.now() },
               { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() },
             ],
+            model: activeRunPrimaryModel,
+            modelsUsed: activeRunModels,
             agentRunId: data.runId,
           });
           return normalizeChatState({
@@ -286,6 +326,14 @@ export default function App() {
               if (event.type === 'run_meta') {
                 setAgentStartedAt(event.startedAt || null);
                 if (event.task) reconnectTaskRef.current = event.task;
+                const metaModels = uniqueModelIds(event.agentModels);
+                if (metaModels.length > 0) {
+                  updateActiveSession(session => touchSession(session, {
+                    model: metaModels[0],
+                    modelsUsed: metaModels,
+                    agentRunId: event.runId || data.runId,
+                  }));
+                }
                 continue;
               }
 
@@ -329,6 +377,7 @@ export default function App() {
 
               if (event.type === 'done') {
                 setAgentRunning(false);
+                const modelsUsed = uniqueModelIds(event.meta?.models_used);
                 updateActiveSession(session => {
                   const msgs = [...session.messages];
                   const idx = (() => { for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'assistant' && msgs[i].content.includes('正在执行任务')) return i; } return -1; })();
@@ -338,7 +387,11 @@ export default function App() {
                     msgs.push({ role: 'user', content: reconnectTaskRef.current || data.task || 'Agent 任务', ts: data.startedAt || Date.now() });
                     msgs.push({ role: 'assistant', content: event.answer || 'Agent 已完成任务。', ts: Date.now() });
                   }
-                  return touchSession(session, { messages: msgs, agentRunId: data.runId });
+                  return touchSession(session, {
+                    messages: msgs,
+                    ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
+                    agentRunId: data.runId,
+                  });
                 });
               }
 
@@ -395,6 +448,7 @@ export default function App() {
       const content = terminal.type === 'done'
         ? (terminal.answer || 'Agent 已完成任务。')
         : `⚠️ Desktop Agent 失败：${terminal.error || '未知错误'}`;
+      const modelsUsed = getTraceModels(events);
 
       setChatState(prev => {
         let changed = false;
@@ -416,7 +470,11 @@ export default function App() {
             return session;
           }
           changed = true;
-          return touchSession(session, { messages: msgs, agentRunId: rid });
+          return touchSession(session, {
+            messages: msgs,
+            ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
+            agentRunId: rid,
+          });
         });
         if (!changed) return prev;
         return normalizeChatState({ ...prev, sessions });
@@ -459,9 +517,11 @@ export default function App() {
             return !events.slice(0, i).some(p => `${p.type}:${p.step ?? ''}:${p.stage ?? ''}:${p.model ?? ''}` === key);
           });
           setAgentTrace(deduped);
+          const modelsUsed = getTraceModels(deduped);
           updateSession(activeSession.id, session => touchSession(session, {
             agentRunId: savedRunId,
             agentTrace: deduped,
+            ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
           }));
         })
         .catch(() => {});

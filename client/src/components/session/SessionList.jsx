@@ -2,6 +2,50 @@ import { Brain, Trash2 } from 'lucide-react';
 import { getSessionTitle } from '../../hooks/useChatSessions.js';
 import { MemoryPanel } from './MemoryPanel.jsx';
 
+function uniqueModelIds(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(value.filter(item => typeof item === 'string' && item.trim()))];
+}
+
+function getTraceModels(trace) {
+  if (!Array.isArray(trace)) {
+    return [];
+  }
+
+  for (let i = trace.length - 1; i >= 0; i -= 1) {
+    const event = trace[i];
+    const models = uniqueModelIds(event?.meta?.models_used);
+    if (models.length > 0) {
+      return models;
+    }
+  }
+
+  const planned = trace.flatMap(event => {
+    if (event?.type !== 'model_plan') return [];
+    return event.model ? [event.model] : event.models;
+  });
+  return uniqueModelIds(planned);
+}
+
+function formatSessionModels(session, modelList) {
+  const models = uniqueModelIds(session.modelsUsed);
+  const traceModels = models.length > 0 ? models : getTraceModels(session.agentTrace);
+  const displayModels = traceModels.length > 0
+    ? traceModels
+    : uniqueModelIds(session.model ? [session.model] : []);
+
+  if (displayModels.length === 0) {
+    return '未知模型';
+  }
+
+  const labels = displayModels.map(model => modelList.find(item => item.id === model)?.label || model);
+  const visible = labels.slice(0, 2).join(' + ');
+  return labels.length > 2 ? `${visible} +${labels.length - 2}` : visible;
+}
+
 export function SessionList({ sessions, activeSessionId, modelList, onDelete, onClearAll, onSelect, locked, showMemoryPanel, onToggleMemory }) {
   return (
     <aside className="session-panel">
@@ -18,7 +62,7 @@ export function SessionList({ sessions, activeSessionId, modelList, onDelete, on
         <div className="session-list">
           {sessions.map(session => {
             const active = session.id === activeSessionId;
-            const modelLabel = modelList.find(item => item.id === session.model)?.label || session.model;
+            const modelLabel = formatSessionModels(session, modelList);
 
             return (
               <div key={session.id} className={`session-card ${active ? 'active' : ''}`}>

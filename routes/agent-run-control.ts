@@ -79,6 +79,7 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
       runId: run.runId,
       startedAt: run.startedAt,
       model: run.meta?.model,
+      agentModels: run.meta?.agentModels,
       task: run.meta?.task,
     })}\n\n`);
 

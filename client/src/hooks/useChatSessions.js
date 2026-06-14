@@ -25,10 +25,19 @@ function normalizeMessages(value) {
     }));
 }
 
+function normalizeModelIds(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(value.filter(item => typeof item === 'string' && item.trim()))];
+}
+
 export function createSession({
   id = generateSessionId(),
   messages = [],
   model,
+  modelsUsed = [],
   agentTrace = [],
   agentRunId = null,
   createdAt = Date.now(),
@@ -38,6 +47,7 @@ export function createSession({
     id,
     messages: normalizeMessages(messages),
     model: model || DEFAULT_MODEL_ID,
+    modelsUsed: normalizeModelIds(modelsUsed),
     agentTrace: Array.isArray(agentTrace) ? agentTrace : [],
     agentRunId: typeof agentRunId === 'string' ? agentRunId : null,
     createdAt,
@@ -57,6 +67,7 @@ export function normalizeChatState(rawState) {
             id: typeof session.id === 'string' && session.id ? session.id : undefined,
             messages: session.messages,
             model: session.model,
+            modelsUsed: session.modelsUsed,
             agentTrace: session.agentTrace,
             agentRunId: session.agentRunId,
             createdAt: Number.isFinite(session.createdAt) ? session.createdAt : Date.now(),

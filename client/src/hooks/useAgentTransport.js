@@ -3,6 +3,19 @@ import { showAgentNotification } from '../notifications.js';
 import { touchSession } from './useChatSessions.js';
 import { PHONE_BREAKPOINT } from '../utils/constants.js';
 
+function uniqueModelIds(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(value.filter(item => typeof item === 'string' && item.trim()))];
+}
+
+function getEventModels(event, fallbackModels) {
+  const modelsUsed = uniqueModelIds(event?.meta?.models_used);
+  return modelsUsed.length > 0 ? modelsUsed : fallbackModels;
+}
+
 // Agent 流程的执行链路：
 // - sendAgentTask: 发起一次 Agent 任务（含 retry from checkpoint）
 // - stopAgent: 取消运行中的 Agent
@@ -64,6 +77,13 @@ export function useAgentTransport({
   const sendAgentTask = async (text, extraBody) => {
     const sessionId = activeSession.id;
     const isRetry = !!extraBody?.fromCheckpoint;
+    const availableModelIds = new Set(availableModels.map(model => model.id));
+    const selectedModelCandidates = uniqueModelIds(selectedAgentModels);
+    const selectedModels = availableModels.length > 0
+      ? selectedModelCandidates.filter(model => availableModelIds.has(model))
+      : selectedModelCandidates;
+    const runModels = selectedModels.length > 0 ? selectedModels : [chatModel];
+    const primaryModel = runModels[0] || chatModel;
     lastAgentTaskRef.current = text;
     const history = isRetry ? messages : [...messages, { role: 'user', content: text, ts: Date.now() }];
 
@@ -71,6 +91,8 @@ export function useAgentTransport({
       updateSession(sessionId, session =>
         touchSession(session, {
           messages: [...history, { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() }],
+          model: primaryModel,
+          modelsUsed: runModels,
           agentTrace: [],
           agentRunId: null,
         })
@@ -86,7 +108,7 @@ export function useAgentTransport({
         const msgs = [...session.messages];
         const stepInfo = cpStep ? `从第 ${cpStep} 步` : '';
         msgs.push({ role: 'assistant', content: `Desktop Agent 正在${stepInfo}重新执行任务：${text}`, ts: Date.now() });
-        return touchSession(session, { messages: msgs });
+        return touchSession(session, { messages: msgs, model: primaryModel, modelsUsed: runModels });
       });
     }
     setAgentStartedAt(Date.now());
@@ -101,11 +123,9 @@ export function useAgentTransport({
         task: text,
         // Agent 至少要有一个主模型。多模型时第一个模型作为主请求参数，
         // 完整模型集合再通过 models 传给后端做并发规划。
-        model: selectedAgentModels.length > 0 ? selectedAgentModels[0] : chatModel,
-        models: selectedAgentModels.length > 0
-          ? selectedAgentModels.filter(m => availableModels.some(available => available.id === m))
-          : [chatModel],
-        strategy: selectedAgentModels.length > 1 ? agentStrategy : 'race',
+        model: primaryModel,
+        models: runModels,
+        strategy: runModels.length > 1 ? agentStrategy : 'race',
         memory: agentMemory,
         signal: controller.signal,
         messages: isRetry ? [] : messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
@@ -193,7 +213,14 @@ export function useAgentTransport({
                     ts: Date.now(),
                   };
                 }
-                return touchSession(session, { messages: nextMessages, agentTrace: prev, agentRunId: agentRunIdRef.current });
+                const modelsUsed = getEventModels(event, runModels);
+                return touchSession(session, {
+                  messages: nextMessages,
+                  model: modelsUsed[0] || primaryModel,
+                  modelsUsed,
+                  agentTrace: prev,
+                  agentRunId: agentRunIdRef.current,
+                });
               });
               return prev;
             });
@@ -218,7 +245,14 @@ export function useAgentTransport({
                     ts: Date.now(),
                   };
                 }
-                return touchSession(session, { messages: nextMessages, agentTrace: prev, agentRunId: agentRunIdRef.current });
+                const modelsUsed = getEventModels(event, runModels);
+                return touchSession(session, {
+                  messages: nextMessages,
+                  model: modelsUsed[0] || primaryModel,
+                  modelsUsed,
+                  agentTrace: prev,
+                  agentRunId: agentRunIdRef.current,
+                });
               });
               return prev;
             });
@@ -259,9 +293,24 @@ export function useAgentTransport({
               } else {
                 next[lastIdx] = { role: 'assistant', content: `⚠️ Desktop Agent 失败：${errorEvent.error || '连接中断'}`, ts: Date.now() };
               }
-              return touchSession(session, { messages: next, agentTrace: prev, agentRunId: agentRunIdRef.current });
+              const terminalEvent = doneEvent || errorEvent;
+              const modelsUsed = getEventModels(terminalEvent, runModels);
+              return touchSession(session, {
+                messages: next,
+                model: modelsUsed[0] || primaryModel,
+                modelsUsed,
+                agentTrace: prev,
+                agentRunId: agentRunIdRef.current,
+              });
             }
-            return touchSession(session, { agentTrace: prev, agentRunId: agentRunIdRef.current });
+            const terminalEvent = doneEvent || errorEvent;
+            const modelsUsed = getEventModels(terminalEvent, runModels);
+            return touchSession(session, {
+              model: modelsUsed[0] || primaryModel,
+              modelsUsed,
+              agentTrace: prev,
+              agentRunId: agentRunIdRef.current,
+            });
           });
         } else if (prev.length === 0 || !prev.some(e => e.type === 'done' || e.type === 'error')) {
           // No events received at all or SSE disconnected without done/error
@@ -271,9 +320,20 @@ export function useAgentTransport({
             if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].content.includes('正在执行任务')) {
               const next = [...msgs];
               next[lastIdx] = { role: 'assistant', content: '⚠️ Desktop Agent 连接中断，未收到执行结果。', ts: Date.now() };
-              return touchSession(session, { messages: next, agentTrace: prev, agentRunId: agentRunIdRef.current });
+              return touchSession(session, {
+                messages: next,
+                model: primaryModel,
+                modelsUsed: runModels,
+                agentTrace: prev,
+                agentRunId: agentRunIdRef.current,
+              });
             }
-            return touchSession(session, { agentTrace: prev, agentRunId: agentRunIdRef.current });
+            return touchSession(session, {
+              model: primaryModel,
+              modelsUsed: runModels,
+              agentTrace: prev,
+              agentRunId: agentRunIdRef.current,
+            });
           });
         }
         return prev;
