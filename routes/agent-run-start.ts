@@ -51,6 +51,7 @@ export function createAgentRunStartRouter({
     const existingRunId = fromCheckpoint?.runId;
     const runRecord = agentRunStore.createRun({
       model,
+      agentModels,
       task: normalizedTask,
     }, startedAt, existingRunId);
     const runId = runRecord.runId;
