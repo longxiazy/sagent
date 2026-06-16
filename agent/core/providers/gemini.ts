@@ -154,25 +154,30 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
         if (systemInstruction) config.systemInstruction = systemInstruction;
 
         const stream = await client.models.generateContentStream({ model, contents, config } as any);
-        let modelParts: any[] = [];
+        // 直接累积模型这一轮输出的原始 parts。part 级别的 thoughtSignature 必须原样回写，
+        // 否则下一轮带 functionCall 历史的请求会被 Gemini 拒绝（400 missing thought_signature）。
+        // 注意：chunk.text / chunk.functionCalls 这两个便捷访问器会丢掉 thoughtSignature，
+        // 不能用它们重建 parts。
+        const modelParts: any[] = [];
         const functionCalls: any[] = [];
 
         for await (const chunk of stream) {
-          const text = (chunk as any).text;
-          if (text) {
-            writeSse(res, { content: text });
-            modelParts.push({ text });
+          const parts = (chunk as any).candidates?.[0]?.content?.parts;
+          if (Array.isArray(parts)) {
+            for (const part of parts) {
+              // 思维摘要（thought=true）不作为可见正文流式输出，但仍需原样保留以携带签名。
+              if (typeof part.text === 'string' && !part.thought) writeSse(res, { content: part.text });
+              if (part.functionCall) functionCalls.push(part.functionCall);
+              modelParts.push(part);
+            }
           }
-          const calls = (chunk as any).functionCalls;
-          if (Array.isArray(calls)) functionCalls.push(...calls);
           const meta = (chunk as any).usageMetadata;
           if (meta) usage = buildGeminiUsage(meta);
         }
 
         if (functionCalls.length === 0) break;
 
-        // 把模型这一轮的输出（文本 + functionCall parts）记入 contents
-        for (const call of functionCalls) modelParts.push({ functionCall: { name: call.name, args: call.args } });
+        // 模型这一轮的输出原样记入 contents（含 thoughtSignature），供下一轮请求校验。
         contents.push({ role: 'model', parts: modelParts });
 
         const responseParts = [];
