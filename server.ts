@@ -59,7 +59,11 @@ app.use(express.json({ limit: '25mb' }));
 
 const { openai_client, anthropic_client, gemini_client } = createClients();
 const registry = createProviderRegistry({ openai_client, anthropic_client, gemini_client });
-const modelConfig = await registry.loadModelConfig();
+// 启动时同步拉取模型列表；全部供应商失败则中止启动并打印原因，不再兜底默认模型。
+const modelConfig = await registry.loadModelConfig().catch((err: any) => {
+  log.error(`[启动失败] ${err.message}`);
+  process.exit(1);
+});
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MEMORY_DIR = path.resolve(__dirname, process.env.MEMORY_DIR || 'data');

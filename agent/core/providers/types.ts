@@ -79,7 +79,8 @@ export interface LLMProvider {
   // 是否「认领」某模型。registry 先用它精确匹配，匹配不到再兜底到 openai-compat。
   ownsModel(model: string, modelConfig?: ModelInfo[] | null): boolean;
 
-  // 从供应商 /v1/models 拉取并归一成 ModelInfo[]；失败应自行兜底（抛错由 registry 吞掉）。
+  // 从供应商 /v1/models 拉取并归一成 ModelInfo[]；失败直接抛错，由 registry 聚合各家原因，
+  // 全部失败时中止启动（不再兜底默认模型）。
   listModels(): Promise<ModelInfo[]>;
 
   // agent 决策：调用 LLM → 解析 → 归一成 { rationale, action, usage, reasoning }。

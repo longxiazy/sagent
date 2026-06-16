@@ -76,24 +76,21 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
 
     async listModels() {
       const models: ModelInfo[] = [];
-      try {
-        const pager = await client.models.list();
-        for await (const m of pager) {
-          // m.name 形如 'models/gemini-2.5-flash'；剥离前缀作为 id。
-          const rawName: string = (m as any).name || '';
-          const id = rawName.replace(/^models\//, '');
-          if (!id) continue;
-          // 仅保留能做对话决策的模型。注意 tts / image 类模型也声明了 generateContent，
-          // 无法靠 supportedActions 区分，必须按 id 过滤。
-          const actions: string[] = (m as any).supportedActions || (m as any).supportedGenerationMethods || [];
-          const supportsGenerate = !actions.length || actions.includes('generateContent');
-          if (!supportsGenerate) continue;
-          if (!isChatCapableModel(id)) continue;
-          if (/imagen|veo|embedding|aqa|tts|-image|image-|gemma-(?:2|3n)/i.test(id)) continue;
-          models.push({ id, label: (m as any).displayName || id, provider: 'gemini' });
-        }
-      } catch (err: any) {
-        log.warn(`[Models] 拉取 Gemini 模型列表失败: ${err?.message || err}`);
+      // 失败直接抛错，由 registry 聚合原因；全部供应商失败时中止启动。
+      const pager = await client.models.list();
+      for await (const m of pager) {
+        // m.name 形如 'models/gemini-2.5-flash'；剥离前缀作为 id。
+        const rawName: string = (m as any).name || '';
+        const id = rawName.replace(/^models\//, '');
+        if (!id) continue;
+        // 仅保留能做对话决策的模型。注意 tts / image 类模型也声明了 generateContent，
+        // 无法靠 supportedActions 区分，必须按 id 过滤。
+        const actions: string[] = (m as any).supportedActions || (m as any).supportedGenerationMethods || [];
+        const supportsGenerate = !actions.length || actions.includes('generateContent');
+        if (!supportsGenerate) continue;
+        if (!isChatCapableModel(id)) continue;
+        if (/imagen|veo|embedding|aqa|tts|-image|image-|gemma-(?:2|3n)/i.test(id)) continue;
+        models.push({ id, label: (m as any).displayName || id, provider: 'gemini' });
       }
       return models;
     },

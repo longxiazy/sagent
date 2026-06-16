@@ -84,13 +84,10 @@ export function createAnthropicProvider(client: any): LLMProvider {
 
     async listModels() {
       const models: ModelInfo[] = [];
-      try {
-        const list = await client.models.list();
-        for (const m of list.data || []) {
-          if (m?.id) models.push({ id: m.id, label: m.display_name || m.id, provider: 'anthropic' });
-        }
-      } catch (err: any) {
-        log.warn(`[Models] 拉取 Anthropic 模型列表失败: ${err?.message || err}`);
+      // 失败直接抛错，由 registry 聚合原因；全部供应商失败时中止启动。
+      const list = await client.models.list();
+      for (const m of list.data || []) {
+        if (m?.id) models.push({ id: m.id, label: m.display_name || m.id, provider: 'anthropic' });
       }
       return models;
     },
