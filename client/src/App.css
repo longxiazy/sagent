@@ -972,7 +972,7 @@ select,
 .model-dropdown-panel {
   position: absolute;
   z-index: 50;
-  bottom: calc(100% + 4px);
+  top: calc(100% + 4px);
   left: 0;
   width: 260px;
   max-width: 80vw;
