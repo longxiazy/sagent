@@ -36,6 +36,7 @@ beforeEach(async () => {
   const { createAgentRouter } = await import('../routes/agent.js');
   const { createAgentRunStore } = await import('../helpers/run-store.js');
   const { createApprovalStore } = await import('../agent/core/approval-store.js');
+  const { runtimeConfig } = await import('../agent/core/runtime-config.js');
 
   const agentRunStore = createAgentRunStore();
   const approvalStore = createApprovalStore();
@@ -49,6 +50,7 @@ beforeEach(async () => {
     domainRules: null,
     modelConfig: [{ id: 'test-model', provider: 'test' }],
     registry: mockRegistry,
+    runtimeConfig,
   });
 
   app = express();

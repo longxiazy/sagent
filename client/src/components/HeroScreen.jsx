@@ -1,4 +1,4 @@
-import { Menu } from 'lucide-react';
+import { Menu, Settings } from 'lucide-react';
 import { SuggestionsList } from './SuggestionsList.jsx';
 
 // 首屏：brand + 输入卡 + 推荐列表。
@@ -21,6 +21,7 @@ export function HeroScreen({
   onPickSuggestion,
   onSubmitSuggestion,
   onToggleSessions,
+  onOpenSettings,
 }) {
   const { modeSwitch, modelSelect, memoryToggle, sendButton, attachButton } = toolbarSlots;
   return (
@@ -28,6 +29,9 @@ export function HeroScreen({
       <div className="hero">
         <button className="session-toggle-btn hero-menu" onClick={onToggleSessions} title="会话列表">
           <Menu size={16} />
+        </button>
+        <button className="session-toggle-btn hero-settings" onClick={onOpenSettings} title="设置">
+          <Settings size={16} />
         </button>
 
         <div className="hero-brand">

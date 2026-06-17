@@ -12,6 +12,7 @@ import { CopyButton } from './components/CopyButton.jsx';
 import { ResetDialog } from './components/dialogs/ResetDialog.jsx';
 import { ApprovalDialog } from './components/dialogs/ApprovalDialog.jsx';
 import { QuestionDialog } from './components/dialogs/QuestionDialog.jsx';
+import { SettingsDialog } from './components/dialogs/SettingsDialog.jsx';
 import { SessionList } from './components/session/SessionList.jsx';
 import { AgentPanel } from './components/agent/AgentPanel.jsx';
 import { ModelSelector } from './components/ModelSelector.jsx';
@@ -151,6 +152,7 @@ export default function App() {
   } = useAgentRun();
   const [agentMemory, setAgentMemory] = usePersistentState('agent_memory', true, booleanStorage);
   const [showReset, setShowReset] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const { showSessions, setShowSessions } = useResponsiveLayout({
     dockedBreakpoint: DOCKED_LAYOUT_BREAKPOINT,
     panelSizeKey: PANEL_SIZE_KEY,
@@ -837,6 +839,7 @@ export default function App() {
             setTimeout(() => handleSubmit(), 0);
           }}
           onToggleSessions={() => setShowSessions(v => !v)}
+          onOpenSettings={() => setShowSettings(true)}
         />
       ) : (
         <div className="layout">
@@ -857,6 +860,7 @@ export default function App() {
             onToggleSessions={() => setShowSessions(v => !v)}
             onCreateSession={handleCreateSession}
             onReset={() => setShowReset(true)}
+            onOpenSettings={() => setShowSettings(true)}
           />
 
           <div className={`layout-body ${mode === 'agent' ? 'agent-layout' : 'chat-layout'}`}>
@@ -935,6 +939,7 @@ export default function App() {
       />
 
       {showReset && <ResetDialog onConfirm={handleReset} onCancel={() => setShowReset(false)} />}
+      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
     </div>
     </ErrorBoundary>
   );

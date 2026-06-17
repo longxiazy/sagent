@@ -36,11 +36,7 @@ import {
   HEALTH_CHECKPOINT_INTERVAL,
 } from "./checkpoint.js";
 import { assessResultQuality } from "./result-quality.ts";
-
-const MAX_HISTORY_STEPS = Number(process.env.AGENT_MAX_HISTORY_STEPS || 20);
-const MAX_RESULT_CHARS = Number(process.env.AGENT_MAX_RESULT_CHARS || 8000);
-// parallel_fetch 把多个页面拼成单步 result，按 URL 数放大该步预算，封顶此值，避免被截到只剩第一页
-const MAX_PARALLEL_RESULT_CHARS = Number(process.env.AGENT_MAX_PARALLEL_RESULT_CHARS || 32000);
+import { runtimeConfig } from "./runtime-config.ts";
 
 function actionTargetUrl(action) {
   if (typeof action?.url === 'string' && action.url) return action.url;
@@ -48,7 +44,10 @@ function actionTargetUrl(action) {
   return null;
 }
 
-function compressHistory(history, maxSteps = MAX_HISTORY_STEPS) {
+function compressHistory(history, maxSteps?) {
+  // 历史截断预算每次从运行时配置读取，前台改完无需重启即生效
+  const { maxHistorySteps, maxResultChars: MAX_RESULT_CHARS, maxParallelResultChars: MAX_PARALLEL_RESULT_CHARS } = runtimeConfig.get();
+  if (maxSteps == null) maxSteps = maxHistorySteps;
   // Progressive truncation: recent steps keep more context, old steps get shorter results
   const truncateEntry = (h, remaining) => {
     // Last 3 steps: full (up to MAX_RESULT_CHARS)
@@ -179,7 +178,7 @@ export async function runAgentRuntime({
         observation,
       });
 
-      const compactHistory = compressHistory(history, MAX_HISTORY_STEPS);
+      const compactHistory = compressHistory(history);
 
       // ---- 决策前再次检查取消 ----
       if (cancelled()) {

@@ -45,6 +45,7 @@ import { observeDesktopAgent } from './observer.ts';
 import { createDesktopPlanner, DEFAULT_MODEL_TIMEOUT_MS } from './planner.ts';
 import { saveCheckpoint } from '../core/checkpoint.ts';
 import { log } from '../../helpers/logger.ts';
+import { runtimeConfig } from '../core/runtime-config.ts';
 
 export function createDesktopAgentRunner({
   registry,
@@ -64,12 +65,26 @@ export function createDesktopAgentRunner({
   const domainRules = createDomainRules(checkpointDir);
   const { ensureBrowserSession } = createSharedBrowserSessionManager();
 
+  // Agent 行为参数每次 run 实时读取（前台改完无需重启即生效）；
+  // 构造参数（maxSteps 等）保留为兜底，运行时优先用 runtimeConfig。
+  function liveConfig() {
+    const c = runtimeConfig.get();
+    return {
+      maxSteps: c.maxSteps,
+      modelTimeoutMs: c.modelTimeoutSec * 1000,
+      staggerDelayMs: c.staggerDelaySec * 1000,
+      batchSize: c.batchSize,
+      observeDesktop: c.observeDesktop,
+    };
+  }
+
   // Sub-agent runner factory: creates isolated runners for parallel execution
   function createSubAgentRunner(parentRunId: string, parentModel: string, parentAgentModels: string[], parentStrategy: string, parentSystemPrompt: string | null, parentCancelSignal: AbortSignal) {
     const subBrowserManager = createSharedBrowserSessionManager();
 
     return async (task: string, subIndex: number) => {
       const subRunId = `${parentRunId}::sub${subIndex}`;
+      const { maxSteps, modelTimeoutMs, staggerDelayMs, batchSize } = liveConfig();
       log.info(`[SubAgent] 启动子任务 ${subIndex}: ${task.slice(0, 60)}...`);
 
       const subBlacklistedModels = new Set();
@@ -236,6 +251,7 @@ export function createDesktopAgentRunner({
     conversationHistory = [],
     memory = true,
   }) {
+    const { maxSteps, modelTimeoutMs, staggerDelayMs, batchSize, observeDesktop } = liveConfig();
     const blacklistedModels = new Set();
     const plan = createDesktopPlanner({ registry, modelConfig, blacklistedModels, modelTimeoutMs, staggerDelayMs, batchSize });
 
