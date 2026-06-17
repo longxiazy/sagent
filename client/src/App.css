@@ -536,6 +536,118 @@ select,
   gap: 4px;
 }
 
+.session-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.session-search-icon {
+  position: absolute;
+  left: 9px;
+  color: var(--c-text-hint);
+  pointer-events: none;
+}
+
+.session-search-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 28px;
+  border: 1px solid var(--c-border-input);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: var(--f-sm);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.session-search-input::placeholder {
+  color: var(--c-text-hint);
+}
+
+.session-search-input:focus {
+  border-color: var(--c-primary-light);
+}
+
+.session-search-clear {
+  position: absolute;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--c-text-hint);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.session-search-clear:hover {
+  background: var(--c-surface-dim);
+  color: var(--c-text-secondary);
+}
+
+.session-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.session-group + .session-group {
+  margin-top: 6px;
+}
+
+.session-group-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 4px 6px;
+  border: none;
+  background: transparent;
+  color: var(--c-text-muted);
+  font-size: var(--f-xs);
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: background 0.15s;
+}
+
+.session-group-header:hover {
+  background: var(--c-surface-dim);
+}
+
+.session-group-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.session-group-header.collapsed .session-group-chevron {
+  transform: rotate(-90deg);
+}
+
+.session-group-label {
+  flex: 1;
+  text-align: left;
+}
+
+.session-group-count {
+  flex-shrink: 0;
+  color: var(--c-text-hint);
+  font-weight: 500;
+}
+
+.session-empty {
+  padding: 24px 8px;
+  text-align: center;
+  color: var(--c-text-hint);
+  font-size: var(--f-sm);
+}
+
 .session-memory-btn {
   height: 30px;
   padding: 0 8px;
@@ -603,6 +715,14 @@ select,
 .session-card-meta {
   font-size: var(--f-xs);
   color: var(--c-text-hint);
+}
+
+.session-card-time {
+  font-size: var(--f-xs);
+  color: var(--c-text-hint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-delete-btn {
@@ -3588,11 +3708,13 @@ textarea:focus-visible,
   .send-btn:active:not(:disabled),
   .session-main:active:not(:disabled),
   .session-delete-btn:active:not(:disabled),
-  .session-clear-all-btn:active:not(:disabled) {
+  .session-clear-all-btn:active:not(:disabled),
+  .session-group-header:active {
     filter: brightness(0.96);
   }
 
   .session-main,
+  .session-group-header,
   .suggestion-card,
   .agent-mobile-tab,
   .model-tag,
