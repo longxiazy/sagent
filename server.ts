@@ -52,6 +52,7 @@ import { loadMemory, saveMemory } from './agent/core/memory.ts';
 import { createBaseEventSender, loadMemoryForPrompt, cleanupAgentRun } from './helpers/run-agent.ts';
 import { padEndW, truncateW } from './agent/core/utils.ts';
 import { log } from './helpers/logger.ts';
+import { runtimeConfig } from './agent/core/runtime-config.ts';
 
 const app = express();
 app.use(cors());
@@ -72,6 +73,9 @@ const AGENT_RESUME = process.env.AGENT_RESUME !== 'false';
 
 initLlmLogger(MEMORY_DIR);
 initWebViewDataStore(MEMORY_DIR);
+// 运行时配置层：以 .env 为默认值底，叠加 data/runtime-config.json 的前台覆盖。
+// 必须在 createDesktopAgentRunner 之前 init，且供 runtime.ts/memory.ts 热读取。
+await runtimeConfig.init(MEMORY_DIR);
 
 const AGENT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS || 8);
 const VISION_MODEL = (process.env.VISION_MODEL || DEFAULT_VISION_MODEL).trim();
@@ -97,7 +101,7 @@ const SCREENSHOT_DIR = path.join(MEMORY_DIR, 'screenshots');
 app.use('/screenshots', express.static(SCREENSHOT_DIR));
 
 app.use(createChatRouter({ registry, modelConfig }));
-app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, domainRules: runDesktopAgent.domainRules, modelConfig, registry }));
+app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, domainRules: runDesktopAgent.domainRules, modelConfig, registry, runtimeConfig }));
 app.use(createCompletionsRouter({ registry, modelConfig }));
 app.use(createSuggestionsRouter({ store: createSuggestionStore(path.join(__dirname, 'data')) }));
 
@@ -158,6 +162,7 @@ async function resumeFromCheckpoint(cp) {
 }
 
 app.listen(Number(PORT), HOST, async () => {
+  const cfg = runtimeConfig.get();
   const multiModels = loadAgentMultiModels();
   const ideConfig = loadIdeMcpConfig();
   const chromeConfig = loadChromeMcpConfig();
@@ -175,14 +180,14 @@ app.listen(Number(PORT), HOST, async () => {
   ${multiModels.length > 0 ? row('MultiModel', multiModels.join(', ')) : ''}
   ${row('VISION_MODEL', VISION_MODEL)}
   ${hLine}
-  ${row('AGENT_MAX_STEPS', AGENT_MAX_STEPS)}
-  ${row('AGENT_MODEL_TIMEOUT', `${process.env.AGENT_MODEL_TIMEOUT || 90}s`)}
-  ${row('AGENT_STAGGER_DELAY', `${process.env.AGENT_STAGGER_DELAY || 5}s`)}
-  ${row('AGENT_BATCH_SIZE', process.env.AGENT_BATCH_SIZE || 1)}
-  ${row('AGENT_MEMORY_MAX_ENTRIES', process.env.AGENT_MEMORY_MAX_ENTRIES || 20)}
+  ${row('AGENT_MAX_STEPS', cfg.maxSteps)}
+  ${row('AGENT_MODEL_TIMEOUT', `${cfg.modelTimeoutSec}s`)}
+  ${row('AGENT_STAGGER_DELAY', `${cfg.staggerDelaySec}s`)}
+  ${row('AGENT_BATCH_SIZE', cfg.batchSize)}
+  ${row('AGENT_MEMORY_MAX_ENTRIES', cfg.memoryMaxEntries)}
   ${hLine}
   ${row('AGENT_HEADLESS', process.env.AGENT_HEADLESS || false)}
-  ${row('AGENT_OBSERVE_DESKTOP', process.env.AGENT_OBSERVE_DESKTOP || false)}
+  ${row('AGENT_OBSERVE_DESKTOP', cfg.observeDesktop)}
   ${row('AGENT_RESUME', AGENT_RESUME)}
   ${row('CHROME_PATH', process.env.AGENT_BROWSER_PATH || 'auto')}
   ${ideConfig.enabled ? row('IDE_MCP', `${ideConfig.transport} @ ${ideConfig.transport === 'stdio' ? ideConfig.command : (ideConfig.url || `${ideConfig.host}:${ideConfig.port}${ideConfig.ssePath}`)}`) : row('IDE_MCP', 'disabled')}

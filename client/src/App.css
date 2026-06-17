@@ -2649,6 +2649,37 @@ textarea:disabled {
 .dialog-btn.cancel:hover { background: #eee; }
 .dialog-btn.confirm { background: var(--c-danger); color: var(--c-surface); border-color: var(--c-danger); }
 .dialog-btn.confirm:hover { background: var(--c-danger-hover); }
+.dialog-btn.primary { background: var(--c-primary); color: var(--c-surface); border-color: var(--c-primary); }
+.dialog-btn.primary:hover { filter: brightness(0.95); }
+.dialog-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Settings dialog ── */
+.hero-settings { position: absolute; top: 0; right: 40px; }
+
+.settings-dialog { width: min(560px, 94vw); max-height: 86vh; overflow-y: auto; }
+.settings-section { margin-bottom: 20px; }
+.settings-section-title { font-size: var(--f-sm); font-weight: 600; margin-bottom: 4px; }
+
+.settings-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 16px; }
+.settings-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--f-sm); color: var(--c-text-secondary); }
+.settings-field input[type="number"] {
+  height: 34px; padding: 0 10px; border: 1px solid var(--c-border);
+  border-radius: var(--r-sm); background: var(--c-surface); font-size: 14px; color: var(--c-text);
+}
+.settings-field-switch { flex-direction: row; align-items: center; justify-content: space-between; grid-column: 1 / -1; }
+.settings-field-switch input { width: 18px; height: 18px; }
+
+.settings-keys { display: flex; flex-direction: column; gap: 8px; }
+.settings-key-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border: 1px solid var(--c-border); border-radius: var(--r-sm); font-size: var(--f-sm);
+}
+.settings-key-provider { font-weight: 600; text-transform: capitalize; }
+.settings-key-status.on { color: #2e7d32; font-family: monospace; }
+.settings-key-status.off { color: #9a9aa5; }
+
+.settings-error { color: var(--c-danger); font-size: var(--f-sm); margin-top: 8px; }
+.settings-ok { color: #2e7d32; font-size: var(--f-sm); margin-top: 8px; }
 
 
 /* ── Attachments ── */

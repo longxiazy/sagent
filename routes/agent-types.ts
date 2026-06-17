@@ -1,4 +1,5 @@
 import type { ProviderRegistry } from '../agent/core/providers/registry.ts';
+import type { RuntimeConfigStore } from '../agent/core/runtime-config.ts';
 
 export interface AgentRouterContext {
   runDesktopAgent: any;
@@ -9,4 +10,5 @@ export interface AgentRouterContext {
   domainRules: any;
   modelConfig: any[];
   registry: ProviderRegistry;
+  runtimeConfig: RuntimeConfigStore;
 }

@@ -13,6 +13,7 @@ import { Router } from 'express';
 import { createAgentRunRouter } from './agent-run.ts';
 import { createAgentApprovalRouter } from './agent-approval.ts';
 import { createAgentFetchRulesRouter } from './agent-fetch-rules.ts';
+import { createAgentConfigRouter } from './agent-config.ts';
 import { createAgentMemoryRouter } from './agent-memory.ts';
 import { createAgentCheckpointRouter } from './agent-checkpoints.ts';
 import { createAgentTraceRouter } from './agent-traces.ts';
@@ -25,6 +26,7 @@ export function createAgentRouter(context: AgentRouterContext) {
   router.use(createAgentRunRouter(context));
   router.use(createAgentApprovalRouter(context));
   router.use(createAgentFetchRulesRouter(context));
+  router.use(createAgentConfigRouter(context));
   router.use(createAgentMemoryRouter(context));
   router.use(createAgentCheckpointRouter(context));
   router.use(createAgentTraceRouter(context));
