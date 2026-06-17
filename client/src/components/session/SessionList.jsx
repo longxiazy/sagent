@@ -2,19 +2,11 @@ import { useMemo, useState } from 'react';
 import { Brain, ChevronDown, Search, Trash2, X } from 'lucide-react';
 import { getSessionTitle } from '../../hooks/useChatSessions.js';
 import { usePersistentState, jsonStorage } from '../../hooks/usePersistentState.js';
-import { calendarDaysAgo, formatRelativeTime, formatShortTime, formatFullTime } from '../../utils/format.js';
+import { formatRelativeTime, formatShortTime, formatFullTime } from '../../utils/format.js';
+import { buildGroups, lastActivityTs } from './session-grouping.js';
 import { MemoryPanel } from './MemoryPanel.jsx';
 
 const COLLAPSED_GROUPS_KEY = 'nvidia_chat_collapsed_groups';
-
-// 按“最近活动时间”落入的分组（从新到旧）；match 接收 calendarDaysAgo 的自然日差。
-const GROUP_DEFS = [
-  { key: 'today', label: '今天', match: d => d === 0 },
-  { key: 'yesterday', label: '昨天', match: d => d === 1 },
-  { key: 'week', label: '近 7 天', match: d => d >= 2 && d < 7 },
-  { key: 'month', label: '近 30 天', match: d => d >= 7 && d < 30 },
-  { key: 'earlier', label: '更早', match: d => d >= 30 },
-];
 
 function uniqueModelIds(value) {
   if (!Array.isArray(value)) {
@@ -58,41 +50,6 @@ function formatSessionModels(session, modelList) {
   const labels = displayModels.map(model => modelList.find(item => item.id === model)?.label || model);
   const visible = labels.slice(0, 2).join(' + ');
   return labels.length > 2 ? `${visible} +${labels.length - 2}` : visible;
-}
-
-// 会话的最近活动时间：优先取最后一条带时间戳的消息（用户消息均带 ts，
-// 不会被 App.jsx 的 trace 重建逻辑污染），回退到 updatedAt / createdAt。
-function lastActivityTs(session) {
-  const msgs = session.messages || [];
-  for (let i = msgs.length - 1; i >= 0; i -= 1) {
-    if (Number.isFinite(msgs[i].ts)) return msgs[i].ts;
-  }
-  return session.updatedAt || session.createdAt || null;
-}
-
-// 标题 + 全部消息内容做大小写不敏感匹配。
-function sessionMatchesQuery(session, query) {
-  if (getSessionTitle(session.messages).toLowerCase().includes(query)) {
-    return true;
-  }
-  return session.messages.some(
-    msg => typeof msg.content === 'string' && msg.content.toLowerCase().includes(query)
-  );
-}
-
-// 过滤 + 按最近活动时间分组，组内按 updatedAt 倒序，空组剔除。
-function buildGroups(sessions, query) {
-  const q = query.trim().toLowerCase();
-  const matched = q ? sessions.filter(session => sessionMatchesQuery(session, q)) : sessions;
-  const sorted = [...matched].sort((a, b) => (lastActivityTs(b) || 0) - (lastActivityTs(a) || 0));
-
-  return GROUP_DEFS
-    .map(def => ({
-      key: def.key,
-      label: def.label,
-      sessions: sorted.filter(session => def.match(calendarDaysAgo(lastActivityTs(session) || Date.now()))),
-    }))
-    .filter(group => group.sessions.length > 0);
 }
 
 function SessionCard({ session, active, modelLabel, locked, canDelete, onSelect, onDelete }) {
