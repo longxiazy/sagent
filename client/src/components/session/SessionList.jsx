@@ -60,6 +60,16 @@ function formatSessionModels(session, modelList) {
   return labels.length > 2 ? `${visible} +${labels.length - 2}` : visible;
 }
 
+// 会话的最近活动时间：优先取最后一条带时间戳的消息（用户消息均带 ts，
+// 不会被 App.jsx 的 trace 重建逻辑污染），回退到 updatedAt / createdAt。
+function lastActivityTs(session) {
+  const msgs = session.messages || [];
+  for (let i = msgs.length - 1; i >= 0; i -= 1) {
+    if (Number.isFinite(msgs[i].ts)) return msgs[i].ts;
+  }
+  return session.updatedAt || session.createdAt || null;
+}
+
 // 标题 + 全部消息内容做大小写不敏感匹配。
 function sessionMatchesQuery(session, query) {
   if (getSessionTitle(session.messages).toLowerCase().includes(query)) {
@@ -74,19 +84,19 @@ function sessionMatchesQuery(session, query) {
 function buildGroups(sessions, query) {
   const q = query.trim().toLowerCase();
   const matched = q ? sessions.filter(session => sessionMatchesQuery(session, q)) : sessions;
-  const sorted = [...matched].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const sorted = [...matched].sort((a, b) => (lastActivityTs(b) || 0) - (lastActivityTs(a) || 0));
 
   return GROUP_DEFS
     .map(def => ({
       key: def.key,
       label: def.label,
-      sessions: sorted.filter(session => def.match(calendarDaysAgo(session.updatedAt || session.createdAt || Date.now()))),
+      sessions: sorted.filter(session => def.match(calendarDaysAgo(lastActivityTs(session) || Date.now()))),
     }))
     .filter(group => group.sessions.length > 0);
 }
 
 function SessionCard({ session, active, modelLabel, locked, canDelete, onSelect, onDelete }) {
-  const ts = session.updatedAt || session.createdAt;
+  const ts = lastActivityTs(session);
 
   return (
     <div className={`session-card ${active ? 'active' : ''}`}>

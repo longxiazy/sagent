@@ -518,7 +518,10 @@ export default function App() {
           });
           setAgentTrace(deduped);
           const modelsUsed = getTraceModels(deduped);
-          updateSession(activeSession.id, session => touchSession(session, {
+          // 重建 trace 只是恢复客户端镜像，不算用户活动：保留原 updatedAt，
+          // 否则每次切到/刷新一个 agent 会话都会把它的最近活动时间刷成当前时间。
+          updateSession(activeSession.id, session => ({
+            ...session,
             agentRunId: savedRunId,
             agentTrace: deduped,
             ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
