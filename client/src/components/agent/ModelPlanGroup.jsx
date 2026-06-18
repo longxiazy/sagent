@@ -4,16 +4,16 @@ import { useT } from '../../i18n/I18nProvider.jsx';
 
 // 多模型一步会产生多条 model_plan 事件。这个组件负责把零散事件重新聚合成
 // 一个"按 step 分组"的展示块，让用户能看到同一步里不同模型如何竞争/投票。
-export function ModelPlanGroup({ trace, step, models, modelList, running, cardsExpanded, onManualToggle, onRollback, rollbackLoading }) {
+// events 是父组件预分组好的、仅属于本 step 的事件切片（避免每个 group 再各自
+// 遍历整条 trace —— 否则 S 步 × N 事件 = O(N²)）。agentFinished 由父组件统一判定。
+export function ModelPlanGroup({ events, step, models, modelList, agentFinished, cardsExpanded, onManualToggle, onRollback, rollbackLoading }) {
   const t = useT();
   let strategyMode = 'race';
   let consensusEvent = null;
   const modelEvents = {};
   let stepResult = null;
 
-  // Collect ALL model_plan events + step result for this step from the entire trace
-  for (const e of trace) {
-    if (e.step !== step) continue;
+  for (const e of events) {
     if (e.type === 'model_plan') {
       if (e.stage === 'start') {
         strategyMode = e.strategy || 'race';
@@ -28,9 +28,6 @@ export function ModelPlanGroup({ trace, step, models, modelList, running, cardsE
       stepResult = e.result;
     }
   }
-
-  // Agent is truly finished when trace has a terminal event (done/error) for this run
-  const agentFinished = !running && trace.some(e => e.type === 'done' || e.type === 'error');
 
   const winnerModel = consensusEvent?.model || Object.values(modelEvents).find(e => e.stage === 'winner')?.model;
 
