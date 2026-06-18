@@ -1,5 +1,6 @@
 import { Menu, Settings } from 'lucide-react';
 import { SuggestionsList } from './SuggestionsList.jsx';
+import { useT } from '../i18n/I18nProvider.jsx';
 
 // 首屏：brand + 输入卡 + 推荐列表。
 // 工具栏控件（ModeSwitch / ModelSelector / MemoryToggle / SendButton / AttachButton）
@@ -24,19 +25,20 @@ export function HeroScreen({
   onOpenSettings,
 }) {
   const { modeSwitch, modelSelect, memoryToggle, sendButton, attachButton } = toolbarSlots;
+  const t = useT();
   return (
     <div className="hero-wrap">
       <div className="hero">
-        <button className="session-toggle-btn hero-menu" onClick={onToggleSessions} title="会话列表">
+        <button className="session-toggle-btn hero-menu" onClick={onToggleSessions} title={t('header.sessionList')}>
           <Menu size={16} />
         </button>
-        <button className="session-toggle-btn hero-settings" onClick={onOpenSettings} title="设置">
+        <button className="session-toggle-btn hero-settings" onClick={onOpenSettings} title={t('header.settings')}>
           <Settings size={16} />
         </button>
 
         <div className="hero-brand">
           <h1 className="hero-title">sagent</h1>
-          <p className="hero-subtitle">多模型 AI 聊天 + 桌面 Agent</p>
+          <p className="hero-subtitle">{t('hero.subtitle')}</p>
         </div>
 
         <div className="hero-input-card">
@@ -46,7 +48,7 @@ export function HeroScreen({
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={mode === 'agent' ? '描述要让 Agent 完成的任务…' : '输入消息…'}
+            placeholder={mode === 'agent' ? t('input.agentPlaceholder') : t('input.chatPlaceholder')}
             rows={2}
             disabled={sessionLocked}
           />

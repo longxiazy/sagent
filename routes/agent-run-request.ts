@@ -13,7 +13,8 @@ export function parseAgentRunRequest(reqBody: any, defaultModel: string) {
   } = reqBody ?? {};
 
   if (typeof task !== 'string' || !task.trim()) {
-    return { error: 'task 不能为空' };
+    // 返回 i18n key，由调用方路由（有 req）翻译成对应语言。
+    return { error: 'run.taskEmpty' };
   }
 
   return {

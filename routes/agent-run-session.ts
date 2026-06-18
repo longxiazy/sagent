@@ -2,6 +2,7 @@ import { safeJson, cleanText, displayWidth, padEndW } from '../agent/core/utils.
 import { formatLogTime, buildAgentMetrics, buildSseWriter, logAgentEvent } from '../helpers/agent-logging.ts';
 import { createBaseEventSender } from '../helpers/run-agent.ts';
 import { log } from '../helpers/logger.ts';
+import { tReq } from '../helpers/i18n.ts';
 
 export function createAgentRunSession({
   req,
@@ -83,7 +84,7 @@ export function createAgentRunSession({
     type: 'status',
     status: 'starting',
     runId,
-    message: '准备启动桌面 Agent',
+    message: tReq(req, 'run.preparing'),
   });
   log.debug(`[SSE] stream started, writableEnded=${res.writableEnded} writableFinished=${res.writableFinished}`);
 

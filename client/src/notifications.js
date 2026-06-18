@@ -1,5 +1,6 @@
 // 浏览器审批通知工具：注册 ServiceWorker、请求权限、弹通知。
 // 决策按钮的点击 → SW 直接 POST /api/agent/approvals（见 public/sw.js）。
+import { tStatic } from './i18n/locale.js';
 
 let swRegistrationPromise = null;
 
@@ -85,21 +86,21 @@ export async function showAgentNotification({ runId, approvalId, message, kind =
   let requireInteraction = false;
   switch (kind) {
     case 'question':
-      title = 'Desktop Agent 提问';
+      title = tStatic('notify.titleQuestion');
       requireInteraction = true;
       break;
     case 'success':
-      title = 'Desktop Agent 已完成';
+      title = tStatic('notify.titleSuccess');
       break;
     case 'failure':
-      title = 'Desktop Agent 失败';
+      title = tStatic('notify.titleFailure');
       break;
     case 'approval':
     default:
-      title = 'Desktop Agent 需要审批';
+      title = tStatic('notify.titleApproval');
       actions = [
-        { action: 'approve', title: '允许' },
-        { action: 'reject', title: '拒绝' },
+        { action: 'approve', title: tStatic('notify.approve') },
+        { action: 'reject', title: tStatic('notify.reject') },
       ];
       requireInteraction = true;
       break;

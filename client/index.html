@@ -6,6 +6,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#f5f5fa" />
     <title>sagent</title>
+    <script>
+      // 防止暗色模式首屏闪烁：在 React 渲染前，根据持久化偏好/系统设置
+      // 预先把 data-theme 与地址栏 theme-color 设好。需与 ThemeProvider 的
+      // localStorage key('app_theme') 及 constants.js 的暗色常量保持一致。
+      (function () {
+        try {
+          var t = localStorage.getItem('app_theme') || 'system';
+          var dark = t === 'dark'
+            || (t !== 'light' && window.matchMedia
+              && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', dark ? '#14141b' : '#f5f5fa');
+        } catch (e) { /* localStorage 不可用时退回默认亮色 */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

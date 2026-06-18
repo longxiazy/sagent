@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { deriveProviderName } from '../agent/core/ai-client.ts';
+import { tReq } from '../helpers/i18n.ts';
 import type { AgentRouterContext } from './agent-types.ts';
 
 // 只读展示用：脱敏 API Key（仅保留后 4 位，绝不回传明文）。
@@ -56,7 +57,7 @@ export function createAgentConfigRouter({ runtimeConfig }: AgentRouterContext) {
       const agent = await runtimeConfig.update(req.body ?? {});
       res.json({ agent });
     } catch (err: any) {
-      res.status(400).json({ error: err?.message || '配置校验失败' });
+      res.status(400).json({ error: err?.message || tReq(req, 'config.validationFailed') });
     }
   });
 

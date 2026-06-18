@@ -1,4 +1,7 @@
+import { useT } from '../../i18n/I18nProvider.jsx';
+
 export function ApprovalDialog({ approval, submitting, onApprove, onReject }) {
+  const t = useT();
   if (!approval) {
     return null;
   }
@@ -6,16 +9,16 @@ export function ApprovalDialog({ approval, submitting, onApprove, onReject }) {
   return (
     <div className="dialog-mask">
       <div className="dialog approval-dialog">
-        <p className="approval-eyebrow">需要确认</p>
-        <p className="dialog-title">Step {approval.step} 请求执行敏感操作</p>
+        <p className="approval-eyebrow">{t('approval.eyebrow')}</p>
+        <p className="dialog-title">{t('approval.title', { step: approval.step })}</p>
         <p className="dialog-desc">{approval.message}</p>
         <pre className="agent-json approval-json">{JSON.stringify(approval.action, null, 2)}</pre>
         <div className="dialog-actions">
           <button className="dialog-btn cancel" onClick={onReject} disabled={submitting}>
-            拒绝
+            {t('approval.reject')}
           </button>
           <button className="dialog-btn confirm approval-confirm" onClick={onApprove} disabled={submitting}>
-            {submitting ? '提交中…' : '批准'}
+            {submitting ? t('common.submitting') : t('approval.approve')}
           </button>
         </div>
       </div>

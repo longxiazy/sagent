@@ -43,10 +43,20 @@ describe('calendarDaysAgo', () => {
 
 describe('formatRelativeTime', () => {
   beforeEach(() => {
+    // 相对时间文案已国际化（按 localStorage 里的语言取词）。
+    // node 测试环境无 localStorage，这里 stub 一个固定返回中文的实现使断言确定。
+    vi.stubGlobal('localStorage', {
+      getItem: key => (key === 'app_lang' ? 'zh' : null),
+      setItem: () => {},
+      removeItem: () => {},
+    });
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 5, 15, 12, 0, 0));
   });
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   it('一分钟内 → 刚刚', () => {
     expect(formatRelativeTime(Date.now() - 30 * 1000)).toBe('刚刚');

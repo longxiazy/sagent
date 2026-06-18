@@ -1,9 +1,12 @@
+import { tStatic } from '../i18n/locale.js';
+import { apiFetch } from './http.js';
+
 const API_URL = '/api/chat';
 const AGENT_API_URL = '/api/agent';
 const AGENT_APPROVAL_API_URL = '/api/agent/approvals';
 
 async function streamSseJson({ url, body, signal, onEvent }) {
-  const res = await fetch(url, {
+  const res = await apiFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -22,7 +25,7 @@ async function streamSseJson({ url, body, signal, onEvent }) {
   }
 
   if (!res.body) {
-    throw new Error('响应流不可用');
+    throw new Error(tStatic('api.streamUnavailable'));
   }
 
   const reader = res.body.getReader();
@@ -122,7 +125,7 @@ export async function streamAgentRun({ task, model, models, strategy, memory, si
 
   if (!gotDone && runId && !signal.aborted) {
     try {
-      const res = await fetch(`/api/agent/stream/${runId}`, { signal });
+      const res = await apiFetch(`/api/agent/stream/${runId}`, { signal });
       if (!res.ok) return;
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -149,7 +152,7 @@ export async function streamAgentRun({ task, model, models, strategy, memory, si
 }
 
 export async function submitAgentApproval({ runId, approvalId, decision }) {
-  const res = await fetch(AGENT_APPROVAL_API_URL, {
+  const res = await apiFetch(AGENT_APPROVAL_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ runId, approvalId, decision }),
@@ -164,7 +167,7 @@ export async function submitAgentApproval({ runId, approvalId, decision }) {
 }
 
 export async function submitAgentQuestion({ runId, approvalId, response }) {
-  const res = await fetch('/api/agent/question', {
+  const res = await apiFetch('/api/agent/question', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ runId, approvalId, response }),
@@ -181,7 +184,7 @@ export async function submitAgentQuestion({ runId, approvalId, response }) {
 export async function fetchAgentTrace(runId, { signal } = {}) {
   if (!runId) return [];
 
-  const res = await fetch(`/api/agent/traces/${encodeURIComponent(runId)}`, { signal });
+  const res = await apiFetch(`/api/agent/traces/${encodeURIComponent(runId)}`, { signal });
   if (res.status === 404) return [];
   if (!res.ok) {
     const errorText = await res.text();

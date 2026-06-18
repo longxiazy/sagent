@@ -29,6 +29,8 @@ import { createSession, getSessionTitle, normalizeChatState, touchSession, useCh
 import { booleanStorage, jsonStorage, usePersistentState } from './hooks/usePersistentState.js';
 import { useResponsiveLayout } from './hooks/useResponsiveLayout.js';
 import { useThemeColorSync } from './hooks/useThemeColorSync.js';
+import { useTheme } from './theme/ThemeProvider.jsx';
+import { useT } from './i18n/I18nProvider.jsx';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.js';
 import { useSessionHandlers } from './hooks/useSessionHandlers.js';
 import { useChatTransport } from './hooks/useChatTransport.js';
@@ -37,6 +39,7 @@ import { useQuestionSubmit } from './hooks/useQuestionSubmit.js';
 import { useAttachments } from './hooks/useAttachments.js';
 import { DEFAULT_MODELS, EMPTY_SUGGESTIONS } from './data/suggestions.js';
 import { fetchSuggestions, recordSuggestionUse } from './api/suggestions.js';
+import { apiFetch } from './api/http.js';
 import {
   TABLET_BREAKPOINT,
   DOCKED_LAYOUT_BREAKPOINT,
@@ -51,16 +54,16 @@ import { hasThinkContent } from './utils/markdown.js';
 // 把已上传的附件拼到任务文本中。
 // 单独成段 [附件] 块,让 LLM 容易识别;对图片显式提示 image_analyze 工具,
 // 其它类型留作扩展(例如以后加 PDF 时,这里就给"请用 read_file 阅读"之类的提示)。
-function buildTaskWithAttachments(userText, attachments) {
+function buildTaskWithAttachments(userText, attachments, t) {
   if (!attachments || attachments.length === 0) {
     return userText;
   }
-  const lines = ['[附件]'];
+  const lines = [t('attach.taskBlockHeader')];
   for (const att of attachments) {
     if (att.kind === 'image') {
-      lines.push(`- 图片: ${att.path}(请用 image_analyze 工具分析)`);
+      lines.push(t('attach.taskImageLine', { path: att.path }));
     } else {
-      lines.push(`- 文件: ${att.path}(${att.mime || '未知类型'})`);
+      lines.push(t('attach.taskFileLine', { path: att.path, mime: att.mime || t('attach.unknownType') }));
     }
   }
   const block = lines.join('\n');
@@ -195,7 +198,7 @@ export default function App() {
   // 拉取后端可用模型。这里除了更新下拉/模型标签，
   // 还要顺手修正那些引用了已下线模型的历史聊天会话。
   useEffect(() => {
-    fetch('/api/models')
+    apiFetch('/api/models')
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data.models) && data.models.length > 0) {
@@ -230,7 +233,9 @@ export default function App() {
 
   // 在移动端/窄屏时，会话侧栏和 Agent 面板会改变页面主色块区域。
   // 同步 <meta name="theme-color"> 是为了让浏览器地址栏颜色也跟着切换。
-  useThemeColorSync({ mode, agentMobileTab, showSessions });
+  const { resolvedTheme } = useTheme();
+  const t = useT();
+  useThemeColorSync({ mode, agentMobileTab, showSessions, resolvedTheme });
 
   // 页面刷新后，如果后端还有运行中的 agent，这里会尝试“接回去”：
   // 1. 先查 /api/agent/active
@@ -255,7 +260,7 @@ export default function App() {
 
     (async () => {
       try {
-        const res = await fetch('/api/agent/active', { signal: controller.signal });
+        const res = await apiFetch('/api/agent/active', { signal: controller.signal });
         if (aborted) return;
         const data = await res.json();
         if (!data.active || aborted) return;
@@ -271,7 +276,7 @@ export default function App() {
 
         // 刷新重连时，如果当前会话看起来不是这次 Agent 任务对应的会话，
         // 就临时创建一个“占位会话”承接运行态，避免把其他历史会话的消息替换掉。
-        const task = data.task || 'Agent 任务';
+        const task = data.task || t('agent.taskFallback');
         const activeRunModels = uniqueModelIds(data.meta?.agentModels);
         const activeRunPrimaryModel = activeRunModels[0] || data.model || undefined;
         setChatState(prev => {
@@ -291,7 +296,7 @@ export default function App() {
           const cleanSession = createSession({
             messages: [
               { role: 'user', content: task, ts: data.startedAt || Date.now() },
-              { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() },
+              { role: 'assistant', content: t('agent.running'), pending: 'run', ts: Date.now() },
             ],
             model: activeRunPrimaryModel,
             modelsUsed: activeRunModels,
@@ -303,7 +308,7 @@ export default function App() {
           });
         });
 
-        const response = await fetch(`/api/agent/stream/${data.runId}`, { signal: controller.signal });
+        const response = await apiFetch(`/api/agent/stream/${data.runId}`, { signal: controller.signal });
         if (!response.ok || aborted) {
           setAgentRunning(false);
           return;
@@ -382,12 +387,12 @@ export default function App() {
                 const modelsUsed = uniqueModelIds(event.meta?.models_used);
                 updateActiveSession(session => {
                   const msgs = [...session.messages];
-                  const idx = (() => { for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'assistant' && msgs[i].content.includes('正在执行任务')) return i; } return -1; })();
+                  const idx = (() => { for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'assistant' && msgs[i].pending === 'run') return i; } return -1; })();
                   if (idx >= 0) {
-                    msgs[idx] = { role: 'assistant', content: event.answer || 'Agent 已完成任务。' };
+                    msgs[idx] = { role: 'assistant', content: event.answer || t('agent.done') };
                   } else if (!msgs.some(m => m.role === 'assistant' && m.content === (event.answer || ''))) {
-                    msgs.push({ role: 'user', content: reconnectTaskRef.current || data.task || 'Agent 任务', ts: data.startedAt || Date.now() });
-                    msgs.push({ role: 'assistant', content: event.answer || 'Agent 已完成任务。', ts: Date.now() });
+                    msgs.push({ role: 'user', content: reconnectTaskRef.current || data.task || t('agent.taskFallback'), ts: data.startedAt || Date.now() });
+                    msgs.push({ role: 'assistant', content: event.answer || t('agent.done'), ts: Date.now() });
                   }
                   return touchSession(session, {
                     messages: msgs,
@@ -448,8 +453,8 @@ export default function App() {
       });
 
       const content = terminal.type === 'done'
-        ? (terminal.answer || 'Agent 已完成任务。')
-        : `⚠️ Desktop Agent 失败：${terminal.error || '未知错误'}`;
+        ? (terminal.answer || t('agent.done'))
+        : t('agent.failed', { error: terminal.error || t('common.unknownError') });
       const modelsUsed = getTraceModels(events);
 
       setChatState(prev => {
@@ -459,7 +464,7 @@ export default function App() {
           const msgs = [...session.messages];
           let idx = -1;
           for (let i = msgs.length - 1; i >= 0; i -= 1) {
-            if (msgs[i].role === 'assistant' && msgs[i].content?.includes('正在执行任务')) {
+            if (msgs[i].role === 'assistant' && msgs[i].pending === 'run') {
               idx = i;
               break;
             }
@@ -672,7 +677,7 @@ export default function App() {
     // 设计上独立成一段 [附件] 块,LLM 容易识别;
     // image 给出 image_analyze 提示,其它类型只描述路径,以后扩展由这里集中加规则。
     const readyAttachments = consumeReadyAttachments();
-    const text = buildTaskWithAttachments(userText, readyAttachments);
+    const text = buildTaskWithAttachments(userText, readyAttachments, t);
     if (!text) {
       return;
     }
@@ -680,7 +685,7 @@ export default function App() {
     // 把这次发送累计到后端使用记录,只对 agent 模式做(chat 模式建议少,不需要)
     // 标题用原始用户输入(userText),避免被附件提示污染。
     if (mode === 'agent') {
-      const titleSource = userText || readyAttachments[0]?.name || '附件任务';
+      const titleSource = userText || readyAttachments[0]?.name || t('attach.taskFallback');
       const title = pendingTitleRef.current
         || (titleSource.length > 12 ? titleSource.slice(0, 12) + '…' : titleSource);
       pendingTitleRef.current = null;
@@ -812,8 +817,8 @@ export default function App() {
         />
       )}
       {showHero && (
-        <button className="page-create-btn" onClick={handleCreateSession} disabled={sessionLocked} title="新建会话">
-          + 新建
+        <button className="page-create-btn" onClick={handleCreateSession} disabled={sessionLocked} title={t('header.newSessionTitle')}>
+          {t('header.newSession')}
         </button>
       )}
       {showHero ? (
@@ -848,7 +853,7 @@ export default function App() {
         <div className="layout">
           {reconnectedRun && agentRunning && (
             <div className="reconnect-banner">
-              检测到运行中的 Agent 任务，已自动连接。可点击"停止"取消。
+              {t('agent.reconnectBanner')}
             </div>
           )}
           <AppHeader
@@ -904,7 +909,7 @@ export default function App() {
               inputValue={input}
               setInput={setInput}
               handleKeyDown={handleKeyDown}
-              placeholder={mode === 'agent' ? '描述要让 Agent 完成的任务…' : '输入消息…'}
+              placeholder={mode === 'agent' ? t('input.agentPlaceholder') : t('input.chatPlaceholder')}
               disabled={sessionLocked}
               memoryToggle={memoryToggle}
               sendButton={sendButton}

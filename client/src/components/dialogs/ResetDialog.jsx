@@ -1,15 +1,18 @@
+import { useT } from '../../i18n/I18nProvider.jsx';
+
 export function ResetDialog({ onConfirm, onCancel }) {
+  const t = useT();
   return (
     <div className="dialog-mask">
       <div className="dialog">
-        <p className="dialog-title">清空当前会话内容？</p>
-        <p className="dialog-desc">当前会话会保留，但消息记录会被移除。</p>
+        <p className="dialog-title">{t('reset.title')}</p>
+        <p className="dialog-desc">{t('reset.desc')}</p>
         <div className="dialog-actions">
           <button className="dialog-btn cancel" onClick={onCancel}>
-            取消
+            {t('common.cancel')}
           </button>
           <button className="dialog-btn confirm" onClick={onConfirm}>
-            清空
+            {t('reset.confirm')}
           </button>
         </div>
       </div>

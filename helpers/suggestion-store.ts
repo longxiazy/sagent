@@ -14,10 +14,12 @@ import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { log } from './logger.ts';
 import {
-  SUGGESTION_DEFAULTS,
+  getSuggestionDefaults,
   type SuggestionItem,
   type SuggestionCategory,
+  type SuggestionLocale,
 } from './suggestion-defaults.ts';
+import { t } from './i18n.ts';
 
 const RECENT_LIMIT = 12;
 const SAVE_DEBOUNCE_MS = 2000;
@@ -91,7 +93,7 @@ export function createSuggestionStore(dir: string) {
     }, SAVE_DEBOUNCE_MS);
   }
 
-  function buildRecent(history: HistoryEntry[]): SuggestionCategory | null {
+  function buildRecent(history: HistoryEntry[], locale: SuggestionLocale): SuggestionCategory | null {
     const recent = history
       .filter(e => e.uses > 0)
       // "最近使用"按最近请求时间倒序;lastUsedAt 为 ISO 串可直接字典序比较
@@ -99,16 +101,17 @@ export function createSuggestionStore(dir: string) {
       .slice(0, RECENT_LIMIT)
       .map(e => ({ title: e.title || e.text.slice(0, 12), text: e.text }));
     if (recent.length === 0) return null;
-    return { id: 'recent', label: '最近使用', items: recent };
+    return { id: 'recent', label: t(locale, 'suggestions.recent'), items: recent };
   }
 
   return {
-    async getMerged(): Promise<MergedSuggestions> {
+    async getMerged(locale: SuggestionLocale = 'zh'): Promise<MergedSuggestions> {
       const data = await load();
-      const recent = buildRecent(data.history);
-      const agent = recent ? [recent, ...SUGGESTION_DEFAULTS.agent] : [...SUGGESTION_DEFAULTS.agent];
+      const defaults = getSuggestionDefaults(locale);
+      const recent = buildRecent(data.history, locale);
+      const agent = recent ? [recent, ...defaults.agent] : [...defaults.agent];
       return {
-        chat: SUGGESTION_DEFAULTS.chat,
+        chat: defaults.chat,
         agent,
       };
     },

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
+import { useT } from '../i18n/I18nProvider.jsx';
 
 export function CopyButton({ text }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
 
   const handle = async () => {
@@ -20,7 +22,7 @@ export function CopyButton({ text }) {
   };
 
   return (
-    <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={(e) => { e.stopPropagation(); handle(); }} title="复制">
+    <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={(e) => { e.stopPropagation(); handle(); }} title={t('copy.title')}>
       {copied ? <Check size={14} /> : <Copy size={14} />}
     </button>
   );

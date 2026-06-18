@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { uploadAttachment } from '../api/uploads.js';
+import { tStatic } from '../i18n/locale.js';
 
 // 管理输入栏的附件列表。
 //   attachments: [{ id, kind, name, mime, size, previewUrl, path, status, error }]
@@ -52,7 +53,7 @@ export function useAttachments() {
           name: result.name || pending.name,
         });
       } catch (err) {
-        update(id, { status: 'error', error: err?.message || '上传失败' });
+        update(id, { status: 'error', error: err?.message || tStatic('attachBar.failed') });
       }
     }
   }, []);

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { tStatic } from '../i18n/locale.js';
 
 const DEFAULT_MODEL_ID = 'minimaxai/minimax-m2.7';
 
@@ -127,7 +128,7 @@ export function touchSession(session, patch = {}) {
 export function getSessionTitle(messages) {
   const firstUserMessage = messages.find(item => item.role === 'user' && item.content.trim());
   if (!firstUserMessage) {
-    return '新对话';
+    return tStatic('session.newChat');
   }
 
   const text = firstUserMessage.content.replace(/\s+/g, ' ').trim();

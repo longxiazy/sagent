@@ -1,4 +1,5 @@
 import { RotateCcw } from 'lucide-react';
+import { useT } from '../i18n/I18nProvider.jsx';
 
 // 推荐任务/问题列表 + "换一组" 按钮。
 // 单击 → 把内容填入输入框;双击 → 直接发送。
@@ -14,17 +15,18 @@ export function SuggestionsList({
   onPick,
   onSubmit,
 }) {
+  const t = useT();
   return (
     <>
       <div className="suggestions-head">
-        <span className="suggestions-label">{mode === 'agent' ? '试试这些任务' : '试试这些问题'}</span>
+        <span className="suggestions-label">{mode === 'agent' ? t('suggestions.tryTasks') : t('suggestions.tryQuestions')}</span>
         <button
           className="suggestions-refresh"
           onClick={onShuffle}
           disabled={sessionLocked}
-          title="换一组"
+          title={t('suggestions.shuffle')}
         >
-          <RotateCcw size={12} /> 换一组
+          <RotateCcw size={12} /> {t('suggestions.shuffle')}
         </button>
       </div>
 

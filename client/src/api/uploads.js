@@ -1,6 +1,8 @@
 // 调用后端 /api/uploads,把文件 base64 化后上传,返回服务端存档绝对路径。
 // 单文件入口:把 File 对象转 base64,POST 给服务端,服务端落盘后返回 path。
 // 失败时抛错,由调用方在 UI 上标记 chip 为 error。
+import { tStatic } from '../i18n/locale.js';
+import { apiFetch } from './http.js';
 
 export async function uploadAttachment(file) {
   const buf = await file.arrayBuffer();
@@ -14,14 +16,14 @@ export async function uploadAttachment(file) {
     // 前端这里不主动传,以便将来扩展时由后端一处统一规则。
   };
 
-  const res = await fetch('/api/uploads', {
+  const res = await apiFetch('/api/uploads', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json?.ok) {
-    throw new Error(json?.error || `上传失败 HTTP ${res.status}`);
+    throw new Error(json?.error || tStatic('api.uploadFailed', { status: res.status }));
   }
   return {
     path: json.path,
