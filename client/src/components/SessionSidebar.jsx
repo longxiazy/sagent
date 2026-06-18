@@ -1,4 +1,7 @@
+import { useT } from '../i18n/I18nProvider.jsx';
+
 export function SessionSidebar({ open, onClose, children }) {
+  const t = useT();
   return (
     <>
       <div className={`sidebar ${open ? 'open' : ''}`}>
@@ -7,7 +10,7 @@ export function SessionSidebar({ open, onClose, children }) {
       <button
         className={`sidebar-backdrop ${open ? 'visible' : ''}`}
         onClick={onClose}
-        aria-label="关闭会话列表"
+        aria-label={t('session.closeSidebar')}
       />
     </>
   );

@@ -8,6 +8,7 @@ import {
 } from '../agent/core/memory.ts';
 import { summarizeText } from '../agent/core/summarizer.ts';
 import { log } from '../helpers/logger.ts';
+import { tReq } from '../helpers/i18n.ts';
 import type { AgentRouterContext } from './agent-types.ts';
 
 export function createAgentMemoryRouter({
@@ -33,7 +34,7 @@ export function createAgentMemoryRouter({
     }
   });
 
-  router.post('/api/agent/compact', async (_req, res) => {
+  router.post('/api/agent/compact', async (req, res) => {
     try {
       const memory = await loadMemory(memoryDir);
       if (memory) {
@@ -47,9 +48,9 @@ export function createAgentMemoryRouter({
         });
         await saveMemory(memoryDir, memory);
         log.info(`[Memory] 手动压缩完成，保留 ${memory.conversation.length} 条, 耗时 ${Date.now() - memStart}ms`);
-        res.json({ ok: true, message: '已压缩，保留 ' + memory.conversation.length + ' 条' });
+        res.json({ ok: true, message: tReq(req, 'memory.compacted', { n: memory.conversation.length }) });
       } else {
-        res.json({ ok: false, message: '无记忆数据' });
+        res.json({ ok: false, message: tReq(req, 'memory.noData') });
       }
     } catch (err: any) {
       res.status(500).json({ ok: false, error: err.message });

@@ -1,9 +1,11 @@
 import { RotateCcw } from 'lucide-react';
 import { ModelPlanCard } from './ModelPlanCard.jsx';
+import { useT } from '../../i18n/I18nProvider.jsx';
 
 // 多模型一步会产生多条 model_plan 事件。这个组件负责把零散事件重新聚合成
 // 一个"按 step 分组"的展示块，让用户能看到同一步里不同模型如何竞争/投票。
 export function ModelPlanGroup({ trace, step, models, modelList, running, cardsExpanded, onManualToggle, onRollback, rollbackLoading }) {
+  const t = useT();
   let strategyMode = 'race';
   let consensusEvent = null;
   const modelEvents = {};
@@ -45,9 +47,9 @@ export function ModelPlanGroup({ trace, step, models, modelList, running, cardsE
   return (
     <div className="model-plan-group">
       <span className="agent-trace-badge plan">
-        {strategyMode === 'vote' ? '投票' : '决策'}
+        {strategyMode === 'vote' ? t('modelPlan.vote') : t('modelPlan.decision')}
       </span>
-      <button className="trace-rollback-btn" onClick={(e) => { e.stopPropagation(); onRollback?.(step); }} disabled={rollbackLoading} title={`从 Step ${step} 重新执行`}>
+      <button className="trace-rollback-btn" onClick={(e) => { e.stopPropagation(); onRollback?.(step); }} disabled={rollbackLoading} title={t('agentPanel.rerunFromStep', { step })}>
         <RotateCcw size={10} />
       </button>
       <div className="model-plan-cards">
@@ -66,7 +68,7 @@ export function ModelPlanGroup({ trace, step, models, modelList, running, cardsE
       </div>
       {collapsedModels.length > 0 && (
         <details className="model-plan-collapsed">
-          <summary className="collapsed-summary">{collapsedModels.length} 个模型已取消/失败</summary>
+          <summary className="collapsed-summary">{t('modelPlan.collapsedModels', { n: collapsedModels.length })}</summary>
           <div className="model-plan-cards">
             {collapsedModels.map(m => (
               <ModelPlanCard

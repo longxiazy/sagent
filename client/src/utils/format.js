@@ -1,3 +1,5 @@
+import { tStatic } from '../i18n/locale.js';
+
 export function formatMsgTime(ts) {
   if (!ts) return '';
   return new Intl.DateTimeFormat('zh-CN', {
@@ -55,13 +57,13 @@ export function formatRelativeTime(ts) {
   }
 
   const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return '刚刚';
-  if (diffMin < 60) return `${diffMin}分钟前`;
+  if (diffMin < 1) return tStatic('time.justNow');
+  if (diffMin < 60) return tStatic('time.minutesAgo', { n: diffMin });
 
   const dayDiff = calendarDaysAgo(ts);
-  if (dayDiff === 0) return `${Math.floor(diffMin / 60)}小时前`;
-  if (dayDiff === 1) return '昨天';
-  if (dayDiff < 7) return `${dayDiff}天前`;
+  if (dayDiff === 0) return tStatic('time.hoursAgo', { n: Math.floor(diffMin / 60) });
+  if (dayDiff === 1) return tStatic('time.yesterday');
+  if (dayDiff < 7) return tStatic('time.daysAgo', { n: dayDiff });
 
   const sameYear = date.getFullYear() === new Date(now).getFullYear();
   return sameYear

@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { Paperclip } from 'lucide-react';
+import { useT } from '../i18n/I18nProvider.jsx';
 
 // 输入栏左侧的"+ 附件"按钮。隐藏的 input[type=file] 通过 ref 触发。
 // accept 默认是图片,以后可以扩展更多类型;multiple=true 一次性多选。
@@ -10,8 +11,9 @@ export function AttachButton({
   disabled = false,
   accept = 'image/*',
   multiple = true,
-  label = '添加附件',
+  label,
 }) {
+  const t = useT();
   const inputRef = useRef(null);
 
   const handleClick = () => {
@@ -33,10 +35,10 @@ export function AttachButton({
         className={`attach-btn ${uploading ? 'is-uploading' : ''}`}
         onClick={handleClick}
         disabled={disabled || uploading}
-        title={uploading ? '上传中…' : label}
+        title={uploading ? t('attachBtn.uploading') : (label || t('attachBtn.add'))}
       >
         <Paperclip size={14} />
-        <span>{uploading ? '上传中…' : '附件'}</span>
+        <span>{uploading ? t('attachBtn.uploading') : t('attachBtn.attach')}</span>
       </button>
       <input
         ref={inputRef}

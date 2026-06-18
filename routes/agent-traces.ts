@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { readTraceEvents } from '../helpers/trace-store.ts';
+import { tReq } from '../helpers/i18n.ts';
 import type { AgentRouterContext } from './agent-types.ts';
 
 export function createAgentTraceRouter({ memoryDir, agentRunStore }: AgentRouterContext) {
@@ -11,7 +12,7 @@ export function createAgentTraceRouter({ memoryDir, agentRunStore }: AgentRouter
     await Promise.allSettled(run?.traceWrites || []);
     const events = await readTraceEvents(memoryDir, runId);
     if (events.length === 0) {
-      return res.status(404).json({ error: 'trace 不存在' });
+      return res.status(404).json({ error: tReq(req, 'trace.notFound') });
     }
     return res.json({ runId, events });
   });

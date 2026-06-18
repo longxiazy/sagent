@@ -3,6 +3,7 @@ import type { AgentRouterContext } from './agent-types.ts';
 import { removeCheckpoint, removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
 import { readTraceEvents } from '../helpers/trace-store.ts';
 import { log } from '../helpers/logger.ts';
+import { tReq } from '../helpers/i18n.ts';
 
 export function createAgentRunControlRouter({ agentRunStore, approvalStore, checkpointDir, memoryDir }: AgentRouterContext) {
   const router = Router();
@@ -10,7 +11,7 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
   router.post('/api/agent/cancel', async (req, res) => {
     const { runId } = req.body ?? {};
     if (typeof runId !== 'string' || !runId) {
-      return res.status(400).json({ error: 'runId 不能为空' });
+      return res.status(400).json({ error: tReq(req, 'approval.runIdEmpty') });
     }
     log.warn(`[Cancel] 用户手动停止任务 runId=${runId}`);
     agentRunStore.cancelRun(runId);
@@ -52,7 +53,7 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
     if (!run) {
       const traceEvents = await readTraceEvents(memoryDir, runId);
       if (traceEvents.length === 0) {
-        return res.status(404).json({ error: '运行不存在' });
+        return res.status(404).json({ error: tReq(req, 'run.notFound') });
       }
 
       res.setHeader('Content-Type', 'text/event-stream');

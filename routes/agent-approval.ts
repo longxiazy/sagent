@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { tReq } from '../helpers/i18n.ts';
 import type { AgentRouterContext } from './agent-types.ts';
 
 export function createAgentApprovalRouter({ approvalStore }: AgentRouterContext) {
@@ -8,15 +9,15 @@ export function createAgentApprovalRouter({ approvalStore }: AgentRouterContext)
     const { runId, approvalId, decision } = req.body ?? {};
 
     if (typeof runId !== 'string' || !runId) {
-      return res.status(400).json({ error: 'runId 不能为空' });
+      return res.status(400).json({ error: tReq(req, 'approval.runIdEmpty') });
     }
 
     if (typeof approvalId !== 'string' || !approvalId) {
-      return res.status(400).json({ error: 'approvalId 不能为空' });
+      return res.status(400).json({ error: tReq(req, 'approval.approvalIdEmpty') });
     }
 
     if (!['approve', 'reject'].includes(decision)) {
-      return res.status(400).json({ error: 'decision 必须是 approve 或 reject' });
+      return res.status(400).json({ error: tReq(req, 'approval.decisionInvalid') });
     }
 
     try {
@@ -32,15 +33,15 @@ export function createAgentApprovalRouter({ approvalStore }: AgentRouterContext)
     const { runId, approvalId, response } = req.body ?? {};
 
     if (typeof runId !== 'string' || !runId) {
-      return res.status(400).json({ error: 'runId 不能为空' });
+      return res.status(400).json({ error: tReq(req, 'approval.runIdEmpty') });
     }
 
     if (typeof approvalId !== 'string' || !approvalId) {
-      return res.status(400).json({ error: 'approvalId 不能为空' });
+      return res.status(400).json({ error: tReq(req, 'approval.approvalIdEmpty') });
     }
 
     if (typeof response !== 'string') {
-      return res.status(400).json({ error: 'response 必须是字符串' });
+      return res.status(400).json({ error: tReq(req, 'approval.responseMustBeString') });
     }
 
     try {

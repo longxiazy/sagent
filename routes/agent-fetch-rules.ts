@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { tReq } from '../helpers/i18n.ts';
 import type { AgentRouterContext } from './agent-types.ts';
 
 export function createAgentFetchRulesRouter({ domainRules }: AgentRouterContext) {
@@ -14,11 +15,11 @@ export function createAgentFetchRulesRouter({ domainRules }: AgentRouterContext)
 
   router.post('/api/agent/fetch-rules', async (req, res) => {
     if (!domainRules) {
-      return res.status(400).json({ error: 'Domain rules 未启用' });
+      return res.status(400).json({ error: tReq(req, 'fetchRules.notEnabled') });
     }
     const { domain } = req.body ?? {};
     if (typeof domain !== 'string' || !domain.trim()) {
-      return res.status(400).json({ error: 'domain 不能为空' });
+      return res.status(400).json({ error: tReq(req, 'fetchRules.domainEmpty') });
     }
     await domainRules.addDomain(domain.trim());
     return res.json({ ok: true });
@@ -26,19 +27,19 @@ export function createAgentFetchRulesRouter({ domainRules }: AgentRouterContext)
 
   router.delete('/api/agent/fetch-rules', async (req, res) => {
     if (!domainRules) {
-      return res.status(400).json({ error: 'Domain rules 未启用' });
+      return res.status(400).json({ error: tReq(req, 'fetchRules.notEnabled') });
     }
     const { domain } = req.body ?? {};
     if (typeof domain !== 'string' || !domain.trim()) {
-      return res.status(400).json({ error: 'domain 不能为空' });
+      return res.status(400).json({ error: tReq(req, 'fetchRules.domainEmpty') });
     }
     await domainRules.removeDomain(domain.trim());
     return res.json({ ok: true });
   });
 
-  router.post('/api/agent/fetch-rules/reset', async (_req, res) => {
+  router.post('/api/agent/fetch-rules/reset', async (req, res) => {
     if (!domainRules) {
-      return res.status(400).json({ error: 'Domain rules 未启用' });
+      return res.status(400).json({ error: tReq(req, 'fetchRules.notEnabled') });
     }
     await domainRules.resetToDefaults();
     return res.json({ ok: true });

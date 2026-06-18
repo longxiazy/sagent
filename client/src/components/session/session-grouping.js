@@ -1,12 +1,13 @@
 import { calendarDaysAgo } from '../../utils/format.js';
 
 // 按“最近活动时间”落入的分组（从新到旧）；match 接收 calendarDaysAgo 的自然日差。
+// label 为 i18n key，渲染时经 t() 取译文。
 export const GROUP_DEFS = [
-  { key: 'today', label: '今天', match: d => d === 0 },
-  { key: 'yesterday', label: '昨天', match: d => d === 1 },
-  { key: 'week', label: '近 7 天', match: d => d >= 2 && d < 7 },
-  { key: 'month', label: '近 30 天', match: d => d >= 7 && d < 30 },
-  { key: 'earlier', label: '更早', match: d => d >= 30 },
+  { key: 'today', label: 'sessionGroup.today', match: d => d === 0 },
+  { key: 'yesterday', label: 'sessionGroup.yesterday', match: d => d === 1 },
+  { key: 'week', label: 'sessionGroup.week', match: d => d >= 2 && d < 7 },
+  { key: 'month', label: 'sessionGroup.month', match: d => d >= 7 && d < 30 },
+  { key: 'earlier', label: 'sessionGroup.earlier', match: d => d >= 30 },
 ];
 
 // 会话的最近活动时间：优先取最后一条带时间戳的消息（用户消息均带 ts，

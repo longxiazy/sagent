@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { CopyButton } from '../CopyButton.jsx';
 import { getModelLabel, PLAN_STAGE_LABELS, PLAN_STAGE_ICON } from './plan-stage.js';
+import { useT } from '../../i18n/I18nProvider.jsx';
 
 // 单个模型卡片负责展示某一步里某个模型的"决策快照"：
 // 当前状态、理由、动作、tokens，以及在竞速模式下是否被采纳。
 export function ModelPlanCard({ event, isWinner, modelList, result, forceExpanded, onManualToggle }) {
+  const t = useT();
   const label = getModelLabel(event.model, modelList);
   const stage = event.stage;
   const [showReasoning, setShowReasoning] = useState(false);
@@ -31,14 +33,14 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
       <div className="model-card-head">
         <span className="model-card-icon">{PLAN_STAGE_ICON[stage] || '·'}</span>
         <span className="model-card-label">{label}</span>
-        <span className={`model-card-status ${stage}`}>{PLAN_STAGE_LABELS[stage] || stage}</span>
+        <span className={`model-card-status ${stage}`}>{PLAN_STAGE_LABELS[stage] ? t(PLAN_STAGE_LABELS[stage]) : stage}</span>
         {copyText && <CopyButton text={copyText} />}
         <span className="model-card-expand-icon">{effectiveExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}</span>
       </div>
       {stage === 'pending' && (
         <div className="model-card-body">
           <p style={{ color: 'var(--c-text-tertiary)', fontSize: 12 }}>
-            {event.delay ? `${Math.round(event.delay / 1000)}s 后启动` : '排队中'}
+            {event.delay ? t('modelCard.startIn', { n: Math.round(event.delay / 1000) }) : t('modelCard.queued')}
           </p>
         </div>
       )}
@@ -57,7 +59,7 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
           {event.reasoning && (
             <div className="model-card-reasoning">
               <button className="model-card-reasoning-toggle" onClick={() => setShowReasoning(v => !v)}>
-                思考过程 {effectiveShowReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                {t('modelCard.reasoning')} {effectiveShowReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
               </button>
               {effectiveShowReasoning && (
                 <pre className="model-card-reasoning-text">{event.reasoning}</pre>
@@ -73,11 +75,11 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
           <pre className="model-card-json">{JSON.stringify(event.action, null, 2)}</pre>
           {isWinner && result && (
             <div className="model-card-result">
-              <span className="model-card-result-label">执行结果</span>
+              <span className="model-card-result-label">{t('modelCard.result')}</span>
               <p>{effectiveShowFullResult || result.length <= 50 ? result : result.slice(0, 50) + '…'}</p>
               {result.length > 50 && (
                 <button className="model-card-result-toggle" onClick={() => setShowFullResult(v => !v)}>
-                  {effectiveShowFullResult ? '收起' : '展开全部'}
+                  {effectiveShowFullResult ? t('modelCard.collapse') : t('modelCard.expandAll')}
                 </button>
               )}
             </div>
@@ -97,7 +99,7 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
       )}
       {stage === 'abandoned' && (
         <div className="model-card-body">
-          <p className="model-card-discarded">未完成，已被其他模型抢先</p>
+          <p className="model-card-discarded">{t('modelCard.abandoned')}</p>
         </div>
       )}
       {stage === 'cancelled' && event.rationale && (
@@ -106,7 +108,7 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
           {event.reasoning && (
             <div className="model-card-reasoning">
               <button className="model-card-reasoning-toggle" onClick={() => setShowReasoning(v => !v)}>
-                思考过程 {effectiveShowReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                {t('modelCard.reasoning')} {effectiveShowReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
               </button>
               {effectiveShowReasoning && (
                 <pre className="model-card-reasoning-text">{event.reasoning}</pre>
@@ -124,13 +126,13 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
       )}
       {stage === 'cancelled' && !event.rationale && (
         <div className="model-card-body">
-          <p className="model-card-discarded">任务已取消</p>
+          <p className="model-card-discarded">{t('modelCard.cancelled')}</p>
         </div>
       )}
       {stage === 'rate_limited' && (
         <div className="model-card-body">
           <p className="model-card-error">
-            {event.cooldown_ms ? `已限流，暂停 ${Math.round(event.cooldown_ms / 1000)}s` : '模型限流冷却中'}
+            {event.cooldown_ms ? t('modelCard.rateLimitedPause', { n: Math.round(event.cooldown_ms / 1000) }) : t('modelCard.rateLimited')}
           </p>
           {event.error && <p className="model-card-error">{event.error}</p>}
         </div>

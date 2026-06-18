@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { ChevronDown, ChevronUp, Search, Check } from 'lucide-react';
+import { useT } from '../i18n/I18nProvider.jsx';
 
 function filterModels(models, query) {
   const q = query.trim().toLowerCase();
@@ -12,13 +13,14 @@ function filterModels(models, query) {
 // chat 模式：可搜索的下拉。供应商接口可能返回上百个模型，原生 <select> 没法选，
 // 这里做成「点击展开 → 输入过滤 → 点选」的浮层。
 function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLocked }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
 
   const selected = availableModels.find(m => m.id === chatModel);
-  const selectedLabel = selected?.label || chatModel || '选择模型';
+  const selectedLabel = selected?.label || chatModel || t('modelSelector.selectModel');
   const filtered = useMemo(() => filterModels(availableModels, query), [availableModels, query]);
 
   useEffect(() => {
@@ -46,7 +48,7 @@ function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLo
         className="model-dropdown-trigger"
         onClick={openPanel}
         disabled={sessionLocked}
-        title="切换模型"
+        title={t('modelSelector.switchModel')}
       >
         <span className="model-dropdown-label">{selectedLabel}</span>
         <ChevronDown size={14} />
@@ -60,12 +62,12 @@ function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLo
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="搜索模型…"
+              placeholder={t('modelSelector.searchPlaceholder')}
               onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }}
             />
           </div>
           <div className="model-dropdown-list">
-            {filtered.length === 0 && <div className="model-dropdown-empty">无匹配模型</div>}
+            {filtered.length === 0 && <div className="model-dropdown-empty">{t('modelSelector.noMatch')}</div>}
             {filtered.map(item => (
               <button
                 type="button"
@@ -104,12 +106,13 @@ export function ModelSelector({
   sessionLocked,
   currentProvider,
 }) {
+  const t = useT();
   const [query, setQuery] = useState('');
 
   if (sessionStarted) return null;
 
   const providerBadge = currentProvider
-    ? <span className="provider-badge" title={`当前供应商：${currentProvider}`}>{currentProvider}</span>
+    ? <span className="provider-badge" title={t('modelSelector.providerTitle', { provider: currentProvider })}>{currentProvider}</span>
     : null;
 
   if (mode !== 'agent') {
@@ -163,15 +166,15 @@ export function ModelSelector({
           className={`model-tag ${isSelected ? 'selected' : ''}`}
           onClick={() => toggleAgentModel(item.id)}
           disabled={sessionLocked}
-          title={isSelected ? '取消选择' : '选择并发执行'}
+          title={isSelected ? t('modelSelector.deselect') : t('modelSelector.selectConcurrent')}
         >
           {item.label}
         </button>
         {isSelected && selectedAgentModels.length > 1 && (
           <span className="model-tag-order">
-            <button className="order-arrow" onClick={() => moveAgentModel(item.id, -1)} disabled={orderIdx <= 0 || sessionLocked} title="提高优先级"><ChevronUp size={10} /></button>
+            <button className="order-arrow" onClick={() => moveAgentModel(item.id, -1)} disabled={orderIdx <= 0 || sessionLocked} title={t('modelSelector.raisePriority')}><ChevronUp size={10} /></button>
             <span className="order-number">{orderIdx + 1}</span>
-            <button className="order-arrow" onClick={() => moveAgentModel(item.id, 1)} disabled={orderIdx >= selectedAgentModels.length - 1 || sessionLocked} title="降低优先级"><ChevronDown size={10} /></button>
+            <button className="order-arrow" onClick={() => moveAgentModel(item.id, 1)} disabled={orderIdx >= selectedAgentModels.length - 1 || sessionLocked} title={t('modelSelector.lowerPriority')}><ChevronDown size={10} /></button>
           </span>
         )}
       </span>
@@ -187,12 +190,12 @@ export function ModelSelector({
           type="text"
           value={query}
           onChange={e => setQuery(e.target.value)}
-          placeholder="搜索模型…"
+          placeholder={t('modelSelector.searchPlaceholder')}
           disabled={sessionLocked}
         />
       </div>
       <div className="model-tags">
-        {visibleItems.length === 0 && <span className="model-tags-empty">无匹配模型</span>}
+        {visibleItems.length === 0 && <span className="model-tags-empty">{t('modelSelector.noMatch')}</span>}
         {visibleItems.map(renderTag)}
       </div>
       {selectedAgentModels.length > 1 && (
@@ -201,14 +204,14 @@ export function ModelSelector({
             className={`strategy-btn ${agentStrategy === 'race' ? 'active' : ''}`}
             onClick={() => setAgentStrategy('race')}
             disabled={sessionLocked}
-            title="按优先级分批启动，先到先得"
-          >竞速</button>
+            title={t('modelSelector.raceTitle')}
+          >{t('modelSelector.race')}</button>
           <button
             className={`strategy-btn ${agentStrategy === 'vote' ? 'active' : ''}`}
             onClick={() => setAgentStrategy('vote')}
             disabled={sessionLocked}
-            title="等待所有模型完成，投票选最优"
-          >汇总</button>
+            title={t('modelSelector.voteTitle')}
+          >{t('modelSelector.vote')}</button>
         </div>
       )}
     </div>

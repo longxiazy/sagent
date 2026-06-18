@@ -1,3 +1,5 @@
+import { useT } from '../i18n/I18nProvider.jsx';
+
 function getAgentStepMetrics(trace) {
   const lastStep = trace.reduce((max, event) => (event.step != null ? Math.max(max, event.step) : max), 0);
   const totalTokens = trace.reduce((sum, event) => {
@@ -27,6 +29,7 @@ export function AgentPane({
   agentPanel,
   resizeDivider,
 }) {
+  const t = useT();
   const metrics = getAgentStepMetrics(agentTrace);
 
   return (
@@ -41,7 +44,7 @@ export function AgentPane({
             {metrics.totalTokens > 0 && <span className="agent-mobile-metric">{formatTokenCount(metrics.totalTokens)} tok</span>}
           </div>
         )}
-        <button className={`agent-mobile-tab ${agentMobileTab === 'chat' ? 'active' : ''}`} onClick={() => setAgentMobileTab('chat')}>对话</button>
+        <button className={`agent-mobile-tab ${agentMobileTab === 'chat' ? 'active' : ''}`} onClick={() => setAgentMobileTab('chat')}>{t('mode.chat')}</button>
       </div>
       <div
         className={`agent-panel-wrap ${agentMobileTab === 'chat' ? 'mobile-hidden' : ''}`}

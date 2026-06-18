@@ -1,7 +1,9 @@
 import { streamAgentRun, submitAgentApproval } from '../api/streams.js';
+import { apiFetch } from '../api/http.js';
 import { showAgentNotification } from '../notifications.js';
 import { touchSession } from './useChatSessions.js';
 import { PHONE_BREAKPOINT } from '../utils/constants.js';
+import { useT } from '../i18n/I18nProvider.jsx';
 
 function uniqueModelIds(value) {
   if (!Array.isArray(value)) {
@@ -54,6 +56,7 @@ export function useAgentTransport({
   // helpers
   updateSession,
 }) {
+  const t = useT();
   const stopAgent = () => {
     // 停止 Agent 既要通知后端取消 run，也要尽快把前端 SSE 断掉。
     // 这里给一个很短的缓冲时间，让最后一两个 in-flight 事件有机会落到 UI。
@@ -62,7 +65,7 @@ export function useAgentTransport({
     setPendingApproval(null);
     const rid = agentRunIdRef.current;
     if (rid) {
-      fetch('/api/agent/cancel', {
+      apiFetch('/api/agent/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ runId: rid }),
@@ -90,7 +93,7 @@ export function useAgentTransport({
     if (!isRetry) {
       updateSession(sessionId, session =>
         touchSession(session, {
-          messages: [...history, { role: 'assistant', content: 'Desktop Agent 正在执行任务，请稍候…', ts: Date.now() }],
+          messages: [...history, { role: 'assistant', content: t('agent.running'), pending: 'run', ts: Date.now() }],
           model: primaryModel,
           modelsUsed: runModels,
           agentTrace: [],
@@ -106,8 +109,8 @@ export function useAgentTransport({
       const cpStep = extraBody?.fromCheckpoint?.step;
       updateSession(sessionId, session => {
         const msgs = [...session.messages];
-        const stepInfo = cpStep ? `从第 ${cpStep} 步` : '';
-        msgs.push({ role: 'assistant', content: `Desktop Agent 正在${stepInfo}重新执行任务：${text}`, ts: Date.now() });
+        const stepInfo = cpStep ? t('agent.retryFromStep', { step: cpStep }) : '';
+        msgs.push({ role: 'assistant', content: t('agent.retrying', { step: stepInfo, task: text }), pending: 'run', ts: Date.now() });
         return touchSession(session, { messages: msgs, model: primaryModel, modelsUsed: runModels });
       });
     }
@@ -152,7 +155,7 @@ export function useAgentTransport({
             showAgentNotification({
               runId: event.runId,
               approvalId: event.approvalId,
-              message: event.message || '需要审批',
+              message: event.message || t('agent.approvalNeeded'),
               kind: 'approval',
             });
             // 不要 await：决策完成统一靠后端发的 approval_result event 清理 state，
@@ -166,7 +169,7 @@ export function useAgentTransport({
             showAgentNotification({
               runId: event.runId,
               approvalId: event.approvalId,
-              message: event.action?.question || event.message || 'Agent 有问题需要你回答',
+              message: event.action?.question || event.message || t('agent.questionNeeded'),
               kind: 'question',
             });
             // 同上：交给 user_response event 兜底清理
@@ -196,23 +199,18 @@ export function useAgentTransport({
           if (event.type === 'done') {
             showAgentNotification({
               runId: event.runId,
-              message: event.answer || 'Agent 已完成任务',
+              message: event.answer || t('agent.done'),
               kind: 'success',
             });
             setAgentTrace(prev => {
               updateSession(sessionId, session => {
                 const nextMessages = [...session.messages];
-                const lastMsg = nextMessages[nextMessages.length - 1];
-                // Keep retry placeholder, append result as new message
-                if (lastMsg?.content?.includes('从检查点')) {
-                  nextMessages.push({ role: 'assistant', content: event.answer || 'Agent 已完成任务。', ts: Date.now() });
-                } else {
-                  nextMessages[nextMessages.length - 1] = {
-                    role: 'assistant',
-                    content: event.answer || 'Agent 已完成任务。',
-                    ts: Date.now(),
-                  };
-                }
+                // 占位消息（pending:'run'）始终是最后一条助手消息，用结果替换它。
+                nextMessages[nextMessages.length - 1] = {
+                  role: 'assistant',
+                  content: event.answer || t('agent.done'),
+                  ts: Date.now(),
+                };
                 const modelsUsed = getEventModels(event, runModels);
                 return touchSession(session, {
                   messages: nextMessages,
@@ -229,22 +227,17 @@ export function useAgentTransport({
           if (event.type === 'error') {
             showAgentNotification({
               runId: event.runId,
-              message: event.error || 'Agent 执行失败',
+              message: event.error || t('agent.failedShort'),
               kind: 'failure',
             });
             setAgentTrace(prev => {
               updateSession(sessionId, session => {
                 const nextMessages = [...session.messages];
-                const lastMsg = nextMessages[nextMessages.length - 1];
-                if (lastMsg?.content?.includes('从检查点')) {
-                  nextMessages.push({ role: 'assistant', content: `⚠️ Desktop Agent 失败：${event.error}`, ts: Date.now() });
-                } else {
-                  nextMessages[nextMessages.length - 1] = {
-                    role: 'assistant',
-                    content: `⚠️ Desktop Agent 失败：${event.error}`,
-                    ts: Date.now(),
-                  };
-                }
+                nextMessages[nextMessages.length - 1] = {
+                  role: 'assistant',
+                  content: t('agent.failed', { error: event.error || t('common.unknownError') }),
+                  ts: Date.now(),
+                };
                 const modelsUsed = getEventModels(event, runModels);
                 return touchSession(session, {
                   messages: nextMessages,
@@ -271,7 +264,7 @@ export function useAgentTransport({
           const nextMessages = [...session.messages];
           nextMessages[nextMessages.length - 1] = {
             role: 'assistant',
-            content: `⚠️ Desktop Agent 请求失败：${err.message}${detail}`,
+            content: t('agent.requestFailed', { error: err.message, detail }),
           };
 
           return touchSession(session, { messages: nextMessages });
@@ -286,12 +279,12 @@ export function useAgentTransport({
           updateSession(sessionId, session => {
             const msgs = session.messages;
             const lastIdx = msgs.length - 1;
-            if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].content.includes('正在执行任务')) {
+            if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].pending === 'run') {
               const next = [...msgs];
               if (doneEvent) {
-                next[lastIdx] = { role: 'assistant', content: doneEvent.answer || 'Agent 已完成任务。', ts: Date.now() };
+                next[lastIdx] = { role: 'assistant', content: doneEvent.answer || t('agent.done'), ts: Date.now() };
               } else {
-                next[lastIdx] = { role: 'assistant', content: `⚠️ Desktop Agent 失败：${errorEvent.error || '连接中断'}`, ts: Date.now() };
+                next[lastIdx] = { role: 'assistant', content: t('agent.failed', { error: errorEvent.error || t('agent.connectionLostShort') }), ts: Date.now() };
               }
               const terminalEvent = doneEvent || errorEvent;
               const modelsUsed = getEventModels(terminalEvent, runModels);
@@ -317,9 +310,9 @@ export function useAgentTransport({
           updateSession(sessionId, session => {
             const msgs = session.messages;
             const lastIdx = msgs.length - 1;
-            if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].content.includes('正在执行任务')) {
+            if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].pending === 'run') {
               const next = [...msgs];
-              next[lastIdx] = { role: 'assistant', content: '⚠️ Desktop Agent 连接中断，未收到执行结果。', ts: Date.now() };
+              next[lastIdx] = { role: 'assistant', content: t('agent.connectionLost'), ts: Date.now() };
               return touchSession(session, {
                 messages: next,
                 model: primaryModel,
@@ -363,14 +356,14 @@ export function useAgentTransport({
       if (agentRunning) {
         // Running task — use pendingRollback for in-place rollback
         console.log('[Rollback] calling POST /api/agent/rollback');
-        const res = await fetch('/api/agent/rollback', {
+        const res = await apiFetch('/api/agent/rollback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ targetStep }),
         });
         const data = await res.json();
         if (!res.ok) {
-          alert(data.error || '回滚失败');
+          alert(data.error || t('rollback.failed'));
         }
       } else {
         // Finished task — restart from checkpoint
@@ -380,12 +373,12 @@ export function useAgentTransport({
           console.log('[Rollback] trace filtered:', prev.length, '->', filtered.length);
           return filtered;
         });
-        await sendAgentTask(lastAgentTaskRef.current || '继续任务', {
+        await sendAgentTask(lastAgentTaskRef.current || t('agent.continueTask'), {
           fromCheckpoint: { runId: rid, step: targetStep },
         });
       }
     } catch {
-      alert('回滚请求失败');
+      alert(t('rollback.requestFailed'));
     } finally {
       setRollbackLoading(false);
     }
@@ -408,7 +401,7 @@ export function useAgentTransport({
       approvalRequestRef.current = null;
       setPendingApproval(null);
     } catch (err) {
-      window.alert(`提交审批失败：${err.message}`);
+      window.alert(t('approval.submitFailed', { error: err.message }));
     } finally {
       setApprovalSubmitting(false);
     }

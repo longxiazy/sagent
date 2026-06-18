@@ -1,4 +1,5 @@
 import { createSession, normalizeChatState, touchSession } from './useChatSessions.js';
+import { tStatic } from '../i18n/locale.js';
 
 // 会话生命周期相关的 handler 集合：新建/切换/删除/清空/重置/换模型。
 // 这些 handler 各自独立、但都依赖同一组 props 上下文，所以打包成一个 hook 提供。
@@ -55,7 +56,7 @@ export function useSessionHandlers({
   };
 
   const handleDeleteSession = sessionId => {
-    if (sessionLocked || !window.confirm('删除这个会话？此操作不可撤销。')) {
+    if (sessionLocked || !window.confirm(tStatic('sessionOps.confirmDelete'))) {
       return;
     }
 
@@ -75,7 +76,7 @@ export function useSessionHandlers({
   };
 
   const handleClearAllSessions = () => {
-    if (sessionLocked || !window.confirm('清空所有会话？此操作不可撤销。')) {
+    if (sessionLocked || !window.confirm(tStatic('sessionOps.confirmClearAll'))) {
       return;
     }
     setChatState(normalizeChatState({ sessions: [], activeSessionId: null }));

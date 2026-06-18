@@ -1,5 +1,6 @@
 import { streamChatCompletion } from '../api/streams.js';
 import { touchSession } from './useChatSessions.js';
+import { useT } from '../i18n/I18nProvider.jsx';
 
 // 普通对话的核心流程：
 // 1. 先写入 user message + 一个空 assistant 占位
@@ -15,6 +16,7 @@ export function useChatTransport({
   abortRef,
   textareaRef,
 }) {
+  const t = useT();
   const stopGeneration = () => abortRef.current?.abort();
 
   const sendChatMessage = async text => {
@@ -60,7 +62,7 @@ export function useChatTransport({
           const lastMessage = nextMessages[nextMessages.length - 1];
           nextMessages[nextMessages.length - 1] = {
             ...lastMessage,
-            content: `${lastMessage?.content || ''}${lastMessage?.content ? '\n\n' : ''}_已停止生成_`,
+            content: `${lastMessage?.content || ''}${lastMessage?.content ? '\n\n' : ''}${t('chat.stopped')}`,
           };
 
           return touchSession(session, { messages: nextMessages });
@@ -71,7 +73,7 @@ export function useChatTransport({
           const nextMessages = [...session.messages];
           nextMessages[nextMessages.length - 1] = {
             role: 'assistant',
-            content: `⚠️ 请求失败：${err.message}${detail}`,
+            content: t('chat.requestFailed', { error: err.message, detail }),
           };
 
           return touchSession(session, { messages: nextMessages });

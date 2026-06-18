@@ -5,6 +5,7 @@ import { usePersistentState, jsonStorage } from '../../hooks/usePersistentState.
 import { formatRelativeTime, formatShortTime, formatFullTime } from '../../utils/format.js';
 import { buildGroups, lastActivityTs } from './session-grouping.js';
 import { MemoryPanel } from './MemoryPanel.jsx';
+import { useT } from '../../i18n/I18nProvider.jsx';
 
 const COLLAPSED_GROUPS_KEY = 'nvidia_chat_collapsed_groups';
 
@@ -36,7 +37,7 @@ function getTraceModels(trace) {
   return uniqueModelIds(planned);
 }
 
-function formatSessionModels(session, modelList) {
+function formatSessionModels(session, modelList, t) {
   const models = uniqueModelIds(session.modelsUsed);
   const traceModels = models.length > 0 ? models : getTraceModels(session.agentTrace);
   const displayModels = traceModels.length > 0
@@ -44,7 +45,7 @@ function formatSessionModels(session, modelList) {
     : uniqueModelIds(session.model ? [session.model] : []);
 
   if (displayModels.length === 0) {
-    return '未知模型';
+    return t('session.unknownModel');
   }
 
   const labels = displayModels.map(model => modelList.find(item => item.id === model)?.label || model);
@@ -53,13 +54,14 @@ function formatSessionModels(session, modelList) {
 }
 
 function SessionCard({ session, active, modelLabel, locked, canDelete, onSelect, onDelete }) {
+  const t = useT();
   const ts = lastActivityTs(session);
 
   return (
     <div className={`session-card ${active ? 'active' : ''}`}>
       <button className="session-main" onClick={() => onSelect(session.id)} disabled={locked || active}>
         <span className="session-card-title">{getSessionTitle(session.messages)}</span>
-        <span className="session-card-meta">{modelLabel} · {session.messages.length} 条</span>
+        <span className="session-card-meta">{modelLabel} · {t('session.messageCount', { n: session.messages.length })}</span>
         {ts ? (
           <span className="session-card-time" title={formatFullTime(ts)}>
             {formatRelativeTime(ts)} · {formatShortTime(ts)}
@@ -72,7 +74,7 @@ function SessionCard({ session, active, modelLabel, locked, canDelete, onSelect,
           className="session-delete-btn"
           onClick={() => onDelete(session.id)}
           disabled={locked}
-          title="删除会话"
+          title={t('session.deleteTitle')}
         >
           <Trash2 size={12} />
         </button>
@@ -82,6 +84,7 @@ function SessionCard({ session, active, modelLabel, locked, canDelete, onSelect,
 }
 
 export function SessionList({ sessions, activeSessionId, modelList, onDelete, onClearAll, onSelect, locked, showMemoryPanel, onToggleMemory }) {
+  const t = useT();
   const [query, setQuery] = useState('');
   const [collapsedGroups, setCollapsedGroups] = usePersistentState(COLLAPSED_GROUPS_KEY, [], jsonStorage);
 
@@ -99,8 +102,8 @@ export function SessionList({ sessions, activeSessionId, modelList, onDelete, on
   return (
     <aside className="session-panel">
       <div className="session-panel-header">
-        <h2 className="session-panel-title">会话</h2>
-        <button className={`session-memory-btn ${showMemoryPanel ? 'active' : ''}`} onClick={onToggleMemory} title="查看记忆">
+        <h2 className="session-panel-title">{t('session.title')}</h2>
+        <button className={`session-memory-btn ${showMemoryPanel ? 'active' : ''}`} onClick={onToggleMemory} title={t('session.viewMemory')}>
           <Brain size={13} />
         </button>
       </div>
@@ -114,12 +117,12 @@ export function SessionList({ sessions, activeSessionId, modelList, onDelete, on
             <input
               className="session-search-input"
               type="text"
-              placeholder="搜索会话…"
+              placeholder={t('session.searchPlaceholder')}
               value={query}
               onChange={event => setQuery(event.target.value)}
             />
             {query && (
-              <button className="session-search-clear" onClick={() => setQuery('')} title="清除">
+              <button className="session-search-clear" onClick={() => setQuery('')} title={t('session.clearSearch')}>
                 <X size={13} />
               </button>
             )}
@@ -127,7 +130,7 @@ export function SessionList({ sessions, activeSessionId, modelList, onDelete, on
 
           <div className="session-list">
             {groups.length === 0 ? (
-              <div className="session-empty">{searching ? '未找到匹配的会话' : '暂无会话'}</div>
+              <div className="session-empty">{searching ? t('session.noMatch') : t('session.empty')}</div>
             ) : (
               groups.map(group => {
                 const collapsed = isCollapsed(group.key);
@@ -139,7 +142,7 @@ export function SessionList({ sessions, activeSessionId, modelList, onDelete, on
                       onClick={() => toggleGroup(group.key)}
                     >
                       <ChevronDown size={14} className="session-group-chevron" />
-                      <span className="session-group-label">{group.label}</span>
+                      <span className="session-group-label">{t(group.label)}</span>
                       <span className="session-group-count">{group.sessions.length}</span>
                     </button>
 
@@ -148,7 +151,7 @@ export function SessionList({ sessions, activeSessionId, modelList, onDelete, on
                         key={session.id}
                         session={session}
                         active={session.id === activeSessionId}
-                        modelLabel={formatSessionModels(session, modelList)}
+                        modelLabel={formatSessionModels(session, modelList, t)}
                         locked={locked}
                         canDelete={sessions.length > 1}
                         onSelect={onSelect}
@@ -161,7 +164,7 @@ export function SessionList({ sessions, activeSessionId, modelList, onDelete, on
             )}
 
             {sessions.length > 1 && (
-              <button className="session-clear-all-btn" onClick={onClearAll} disabled={locked}>清空全部</button>
+              <button className="session-clear-all-btn" onClick={onClearAll} disabled={locked}>{t('common.clearAll')}</button>
             )}
           </div>
         </>

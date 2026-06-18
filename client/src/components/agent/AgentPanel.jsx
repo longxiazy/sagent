@@ -6,12 +6,14 @@ import {
 import { PHONE_BREAKPOINT } from '../../utils/constants.js';
 import { ModelPlanGroup } from './ModelPlanGroup.jsx';
 import { getModelLabel } from './plan-stage.js';
+import { useT } from '../../i18n/I18nProvider.jsx';
 
 // AgentPanel 既是执行面板，也是运行时仪表盘：
 // - 负责展示 trace
 // - 负责显示暂停/审批/用时/token 等运行态指标
 // - 在移动端和桌面端之间复用同一套事件展示逻辑
 export function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onRollback, rollbackLoading }) {
+  const t = useT();
   const traceBottomRef = useRef(null);
   const traceStickyRef = useRef(true);
   const startTimeRef = useRef(null);
@@ -35,10 +37,10 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
   const doneMeta = doneEvent?.meta || {};
   const doneStatus = doneEvent?.quality?.status || doneMeta.status || 'done';
   const doneStatusLabel = doneStatus === 'done_unverified'
-    ? '未核验完成'
+    ? t('agentPanel.statusUnverified')
     : doneStatus === 'done_degraded'
-      ? '降级完成'
-      : '完成';
+      ? t('agentPanel.statusDegraded')
+      : t('agentPanel.statusDone');
 
   // Detect if waiting for user question
   const hasPendingQuestion = running && trace.some(e => e.type === 'question_required') &&
@@ -121,27 +123,27 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
         <div className="agent-head-row-primary">
           <div>
             <p className="agent-panel-eyebrow">Desktop Agent</p>
-            <h3 className="agent-panel-title">{running ? '执行中' : '最近一次执行'}</h3>
+            <h3 className="agent-panel-title">{running ? t('agentPanel.running') : t('agentPanel.lastRun')}</h3>
           </div>
           <span className={`agent-status-chip ${running ? 'running' : 'idle'}`}>{running ? 'Running' : 'Idle'}</span>
           {running && onStop && (
-            <button className="agent-stop-btn" onClick={e => { e.stopPropagation(); onStop(); }} disabled={agentStopping} title="停止 Agent">
-              <Square size={10} /> {agentStopping ? '停止中…' : pendingApproval ? '停止并拒绝' : '停止'}
+            <button className="agent-stop-btn" onClick={e => { e.stopPropagation(); onStop(); }} disabled={agentStopping} title={t('agentPanel.stopTitle')}>
+              <Square size={10} /> {agentStopping ? t('agentPanel.stopping') : pendingApproval ? t('agentPanel.stopAndReject') : t('agentPanel.stop')}
             </button>
           )}
           <div className="agent-head-actions">
             {hasModelCards && !collapsed && (
               <>
-                <button className="agent-collapse-btn agent-expand-all" onClick={e => { e.stopPropagation(); setCardsExpanded(true); }} title="全部展开">
-                  <ChevronsDown size={12} /> 展开
+                <button className="agent-collapse-btn agent-expand-all" onClick={e => { e.stopPropagation(); setCardsExpanded(true); }} title={t('agentPanel.expandAllTitle')}>
+                  <ChevronsDown size={12} /> {t('agentPanel.expand')}
                 </button>
-                <button className="agent-collapse-btn agent-collapse-all" onClick={e => { e.stopPropagation(); setCardsExpanded(false); }} title="全部折叠">
-                  <ChevronsUp size={12} /> 折叠
+                <button className="agent-collapse-btn agent-collapse-all" onClick={e => { e.stopPropagation(); setCardsExpanded(false); }} title={t('agentPanel.collapseAllTitle')}>
+                  <ChevronsUp size={12} /> {t('agentPanel.collapse')}
                 </button>
               </>
             )}
             {trace.length > 0 && (
-              <button className="agent-collapse-btn agent-tablet-only" onClick={e => { e.stopPropagation(); onToggleCollapse(); }} title={collapsed ? '展开' : '收起'}>
+              <button className="agent-collapse-btn agent-tablet-only" onClick={e => { e.stopPropagation(); onToggleCollapse(); }} title={collapsed ? t('agentPanel.expand') : t('agentPanel.collapseShort')}>
                 {collapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
               </button>
             )}
@@ -156,7 +158,7 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
             <span className="agent-metric agent-metric-tokens">{totalTokens} tokens</span>
           )}
           {!running && doneMeta.step_count && (
-            <span className="agent-metric">共 {doneMeta.step_count} 步</span>
+            <span className="agent-metric">{t('agentPanel.stepCount', { n: doneMeta.step_count })}</span>
           )}
           {!running && doneEvent && doneStatus !== 'done' && (
             <span className="agent-metric">{doneStatusLabel}</span>
@@ -167,7 +169,7 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
       <div className="agent-panel-body">
         <>
           <p className="agent-panel-note">
-            当前支持 `browser`、`fs`、`terminal`、`macos` 工具。需要确认的动作会在这里暂停，等待你的批准或拒绝。
+            {t('agentPanel.note')}
           </p>
 
               {trace.length === 0 && running ? (
@@ -180,7 +182,7 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
               ) : trace.length === 0 ? (
                 <div className="agent-empty">
                   <Monitor size={28} className="agent-empty-icon" />
-                  <span>输入任务启动 Agent，例如"查看当前目录并告诉我 README 开头写了什么"</span>
+                  <span>{t('agentPanel.emptyHint')}</span>
                 </div>
               ) : (
                 <div className="agent-trace">
@@ -207,11 +209,11 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
             if (event.type === 'model_plan' && event.stage === 'consensus') {
               return (
                 <div key={`consensus-${event.step || index}`} className="agent-trace-item" data-type="consensus" data-stage="">
-                  <span className="agent-trace-badge consensus">投票</span>
+                  <span className="agent-trace-badge consensus">{t('agentPanel.voteBadge')}</span>
                   <div className="agent-trace-content consensus-content">
                     <div className="consensus-bar">
                       <span className="consensus-badge">
-                        {event.consensus?.unanimous ? '全票通过' : `${event.consensus?.agreed}/${event.consensus?.total} 多数`}
+                        {event.consensus?.unanimous ? t('agentPanel.unanimous') : t('agentPanel.majority', { agreed: event.consensus?.agreed, total: event.consensus?.total })}
                       </span>
                       <span className="consensus-action">{event.consensus?.actionKey}</span>
                       <div className="consensus-votes">
@@ -230,7 +232,7 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
             <div key={`${event.type}-${event.step || index}-${event.stage || index}`} className="agent-trace-item" data-type={event.type} data-stage={event.stage || ''}>
               {event.type === 'status' && (
                 <>
-                  <span className="agent-trace-badge">状态</span>
+                  <span className="agent-trace-badge">{t('agentPanel.badgeStatus')}</span>
                   <div className="agent-trace-content">
                     <strong>{event.message}</strong>
                   </div>
@@ -239,12 +241,12 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
 
               {event.type === 'step' && event.stage === 'observe' && (
                 <>
-                  <span className="agent-trace-badge">观察</span>
+                  <span className="agent-trace-badge">{t('agentPanel.badgeObserve')}</span>
                   <div className="agent-trace-content">
                     <strong>Step {event.step}</strong>
                     {event.observation?.desktop?.frontmostApp && (
                       <p>
-                        桌面: {event.observation.desktop.frontmostApp}
+                        {t('agentPanel.desktop')}: {event.observation.desktop.frontmostApp}
                         {event.observation.desktop.frontmostWindowTitle ? ` · ${event.observation.desktop.frontmostWindowTitle}` : ''}
                       </p>
                     )}
@@ -282,7 +284,7 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
 
               {event.type === 'step' && event.stage === 'action' && (
                 <>
-                  <span className="agent-trace-badge action">动作</span>
+                  <span className="agent-trace-badge action">{t('agentPanel.badgeAction')}</span>
                   <div className="agent-trace-content">
                     <div className="agent-step-header">
                       <strong>
@@ -296,7 +298,7 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
                           </span>
                         </span>
                       )}
-                      <button className="trace-rollback-btn" onClick={(e) => { e.stopPropagation(); onRollback(event.step); }} disabled={rollbackLoading} title={`从 Step ${event.step} 重新执行`}>
+                      <button className="trace-rollback-btn" onClick={(e) => { e.stopPropagation(); onRollback(event.step); }} disabled={rollbackLoading} title={t('agentPanel.rerunFromStep', { step: event.step })}>
                         <RotateCcw size={10} />
                       </button>
                     </div>
@@ -312,7 +314,7 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
                   const url = '/screenshots/' + screenshotMatch[2];
                   return (
                     <>
-                      <span className="agent-trace-badge result">结果</span>
+                      <span className="agent-trace-badge result">{t('agentPanel.badgeResult')}</span>
                       <div className="agent-trace-content">
                         <strong>Step {event.step}</strong>
                         <img className="screenshot-img clickable" src={url} alt="screenshot" onClick={() => setLightboxSrc(url)} />
@@ -322,7 +324,7 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
                 }
                 return (
                   <>
-                    <span className="agent-trace-badge result">结果</span>
+                    <span className="agent-trace-badge result">{t('agentPanel.badgeResult')}</span>
                     <div className="agent-trace-content">
                       <strong>Step {event.step}</strong>
                       <p>{event.result}</p>
@@ -335,14 +337,14 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
                 <>
                   <span className="agent-trace-badge done">
                     {(event.quality?.status || event.meta?.status) === 'done_unverified'
-                      ? '未核验'
+                      ? t('agentPanel.doneBadgeUnverified')
                       : (event.quality?.status || event.meta?.status) === 'done_degraded'
-                        ? '降级完成'
-                        : '完成'}
+                        ? t('agentPanel.statusDegraded')
+                        : t('agentPanel.statusDone')}
                   </span>
                   <div className="agent-trace-content">
-                    <strong>Agent 已完成</strong>
-                    {event.meta?.step_count && <span className="agent-trace-meta">共 {event.meta.step_count} 步</span>}
+                    <strong>{t('agentPanel.agentDone')}</strong>
+                    {event.meta?.step_count && <span className="agent-trace-meta">{t('agentPanel.stepCount', { n: event.meta.step_count })}</span>}
                     {event.quality?.reasons?.length > 0 && (
                       <p>{event.quality.reasons.join('；')}</p>
                     )}
@@ -361,7 +363,7 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
               {event.type === 'notification' && (
                 <>
                   <span className={`agent-trace-badge ${event.level === 'warning' ? 'error' : event.level === 'discovery' ? 'approval' : 'result'}`}>
-                    {event.level === 'warning' ? '警告' : event.level === 'discovery' ? '发现' : '通知'}
+                    {event.level === 'warning' ? t('agentPanel.levelWarning') : event.level === 'discovery' ? t('agentPanel.levelDiscovery') : t('agentPanel.levelNotification')}
                   </span>
                   <div className="agent-trace-content">
                     <p>{event.message}</p>
@@ -371,10 +373,10 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
 
               {event.type === 'user_response' && (
                 <>
-                  <span className="agent-trace-badge approval">回答</span>
+                  <span className="agent-trace-badge approval">{t('agentPanel.badgeAnswer')}</span>
                   <div className="agent-trace-content">
-                    <strong>用户回答</strong>
-                    <p style={{color: '#888', fontSize: '12px'}}><em>问:</em> {event.question}</p>
+                    <strong>{t('agentPanel.userAnswer')}</strong>
+                    <p style={{color: 'var(--c-text-muted)', fontSize: '12px'}}><em>{t('agentPanel.questionPrefix')}</em> {event.question}</p>
                     <p>{event.response}</p>
                   </div>
                 </>
@@ -382,9 +384,9 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
 
               {event.type === 'approval_required' && (
                 <>
-                  <span className="agent-trace-badge approval">审批</span>
+                  <span className="agent-trace-badge approval">{t('agentPanel.badgeApproval')}</span>
                   <div className="agent-trace-content">
-                    <strong>Step {event.step} 等待批准</strong>
+                    <strong>{t('agentPanel.awaitingApproval', { step: event.step })}</strong>
                     <p>{event.message}</p>
                     <pre className="agent-json">{JSON.stringify(event.action, null, 2)}</pre>
                   </div>
@@ -393,9 +395,9 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
 
               {event.type === 'approval_result' && (
                 <>
-                  <span className={`agent-trace-badge ${event.decision === 'approve' ? 'result' : 'error'}`}>审批</span>
+                  <span className={`agent-trace-badge ${event.decision === 'approve' ? 'result' : 'error'}`}>{t('agentPanel.badgeApproval')}</span>
                   <div className="agent-trace-content">
-                    <strong>Step {event.step} 审批结果</strong>
+                    <strong>{t('agentPanel.approvalResult', { step: event.step })}</strong>
                     <p>{event.message}</p>
                   </div>
                 </>
@@ -403,22 +405,22 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
 
               {event.type === 'error' && (
                 <>
-                  <span className="agent-trace-badge error">错误</span>
+                  <span className="agent-trace-badge error">{t('agentPanel.badgeError')}</span>
                   <div className="agent-trace-content">
-                    <strong>Agent 失败</strong>
+                    <strong>{t('agentPanel.agentFailed')}</strong>
                     <p>{event.error}</p>
                     {event.rollbackSuggestion && (() => {
                       const rs = event.rollbackSuggestion;
                       return (
                         <div className="rollback-suggestion">
                           <p className="rollback-suggestion-info">
-                            建议回滚到 Step {rs.step} 重新执行
-                            {rs.lastAction && <span className="rollback-suggestion-detail">（上一步: {rs.lastAction.tool}.{rs.lastAction.type}）</span>}
+                            {t('agentPanel.rollbackSuggest', { step: rs.step })}
+                            {rs.lastAction && <span className="rollback-suggestion-detail">{t('agentPanel.lastStepDetail', { action: `${rs.lastAction.tool}.${rs.lastAction.type}` })}</span>}
                           </p>
-                          {rs.lastRationale && <p className="rollback-suggestion-ctx">决策: {rs.lastRationale}</p>}
-                          {rs.lastResult && <p className="rollback-suggestion-ctx">结果: {rs.lastResult}</p>}
+                          {rs.lastRationale && <p className="rollback-suggestion-ctx">{t('agentPanel.decisionLabel', { text: rs.lastRationale })}</p>}
+                          {rs.lastResult && <p className="rollback-suggestion-ctx">{t('agentPanel.resultLabel', { text: rs.lastResult })}</p>}
                           <button className="rollback-suggestion-btn" onClick={() => onRollback(rs.step)} disabled={rollbackLoading}>
-                            <RotateCcw size={12} /> 回滚到 Step {rs.step}
+                            <RotateCcw size={12} /> {t('agentPanel.rollbackTo', { step: rs.step })}
                           </button>
                         </div>
                       );
@@ -429,9 +431,9 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
 
               {event.type === 'rollback' && (
                 <>
-                  <span className="agent-trace-badge rollback">回滚</span>
+                  <span className="agent-trace-badge rollback">{t('agentPanel.badgeRollback')}</span>
                   <div className="agent-trace-content">
-                    <strong>已回滚到 Step {event.targetStep}</strong>
+                    <strong>{t('agentPanel.rolledBackTo', { step: event.targetStep })}</strong>
                     <p>{event.message}</p>
                   </div>
                 </>
@@ -439,9 +441,9 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
 
               {event.type === 'session_checkpoint' && (
                 <>
-                  <span className="agent-trace-badge plan">快照</span>
+                  <span className="agent-trace-badge plan">{t('agentPanel.badgeSnapshot')}</span>
                   <div className="agent-trace-content">
-                    <strong>Step {event.step} 健康快照已保存</strong>
+                    <strong>{t('agentPanel.snapshotSaved', { step: event.step })}</strong>
                   </div>
                 </>
               )}

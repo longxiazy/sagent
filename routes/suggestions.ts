@@ -7,13 +7,14 @@
 
 import { Router } from 'express';
 import type { SuggestionStore } from '../helpers/suggestion-store.ts';
+import { pickLocale, tReq } from '../helpers/i18n.ts';
 
 export function createSuggestionsRouter({ store }: { store: SuggestionStore }) {
   const router = Router();
 
-  router.get('/api/suggestions', async (_req, res) => {
+  router.get('/api/suggestions', async (req, res) => {
     try {
-      const data = await store.getMerged();
+      const data = await store.getMerged(pickLocale(req));
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -23,7 +24,7 @@ export function createSuggestionsRouter({ store }: { store: SuggestionStore }) {
   router.post('/api/suggestions/use', async (req, res) => {
     const { title, text } = req.body ?? {};
     if (typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({ error: 'text 不能为空' });
+      return res.status(400).json({ error: tReq(req, 'suggestions.textEmpty') });
     }
     try {
       await store.recordUse({
