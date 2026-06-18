@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Timer, Square, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp,
-  RotateCcw, Monitor, Loader2,
+  Square, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp,
+  Monitor, Loader2,
 } from 'lucide-react';
 import { PHONE_BREAKPOINT } from '../../utils/constants.js';
 import { ModelPlanGroup } from './ModelPlanGroup.jsx';
-import { getModelLabel } from './plan-stage.js';
+import { ElapsedTimer } from './ElapsedTimer.jsx';
+import { TraceItem } from './TraceItem.jsx';
+import { computeTraceMetrics } from './trace-metrics.js';
+import { useIsMobile } from '../../hooks/useIsMobile.js';
 import { useT } from '../../i18n/I18nProvider.jsx';
 
 // AgentPanel 既是执行面板，也是运行时仪表盘：
@@ -16,13 +19,61 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
   const t = useT();
   const traceBottomRef = useRef(null);
   const traceStickyRef = useRef(true);
-  const startTimeRef = useRef(null);
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < PHONE_BREAKPOINT;
-  const pauseRef = useRef(null);
-  const [elapsed, setElapsed] = useState(0);
+  const isMobile = useIsMobile(PHONE_BREAKPOINT);
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [cardsExpanded, setCardsExpanded] = useState(null); // null=auto, true=all open, false=all closed
-  const hasModelCards = trace.some(e => e.type === 'model_plan' && e.stage === 'start' && e.models?.length > 0);
+
+  // onRollback 来自上层且每次 render 是新引用；用 ref 包出稳定回调，
+  // 这样 memo 化的 TraceItem 不会因为回调引用变化而整片重渲。
+  const rollbackRef = useRef(onRollback);
+  useEffect(() => { rollbackRef.current = onRollback; }, [onRollback]);
+  const stableRollback = useCallback(step => rollbackRef.current?.(step), []);
+
+  // 以下派生值原先每次 render（含每秒计时 tick）都对整条 trace 做 some/reduce/find，
+  // 现在统一 memo 化，只在 trace/running 变化时重算。
+  const metrics = useMemo(() => computeTraceMetrics(trace), [trace]);
+  const hasModelCards = useMemo(
+    () => trace.some(e => e.type === 'model_plan' && e.stage === 'start' && e.models?.length > 0),
+    [trace],
+  );
+  const doneEvent = useMemo(() => trace.find(e => e.type === 'done'), [trace]);
+  const agentFinished = useMemo(
+    () => !running && trace.some(e => e.type === 'done' || e.type === 'error'),
+    [running, trace],
+  );
+  // Detect if waiting for user question
+  const hasPendingQuestion = useMemo(
+    () => running && trace.some(e => e.type === 'question_required') && !trace.some(e => e.type === 'user_response'),
+    [running, trace],
+  );
+  // 把事件按 step 预分组一次，供 ModelPlanGroup 直接取用，避免每个 group 再各自
+  // 遍历整条 trace（否则 S 步 × N 事件 = O(N²)）。
+  const eventsByStep = useMemo(() => {
+    const map = new Map();
+    for (const e of trace) {
+      if (e.step == null) continue;
+      let arr = map.get(e.step);
+      if (!arr) { arr = []; map.set(e.step, arr); }
+      arr.push(e);
+    }
+    return map;
+  }, [trace]);
+  // 多模型规划的步：其 action/result 展示在模型卡片内部，trace 里需跳过单独项。
+  const multiModelSteps = useMemo(() => {
+    const set = new Set();
+    for (const e of trace) {
+      if (e.type === 'model_plan' && e.stage === 'start' && e.models?.length > 1) set.add(e.step);
+    }
+    return set;
+  }, [trace]);
+
+  const doneMeta = doneEvent?.meta || {};
+  const doneStatus = doneEvent?.quality?.status || doneMeta.status || 'done';
+  const doneStatusLabel = doneStatus === 'done_unverified'
+    ? t('agentPanel.statusUnverified')
+    : doneStatus === 'done_degraded'
+      ? t('agentPanel.statusDegraded')
+      : t('agentPanel.statusDone');
 
   // ESC closes lightbox
   useEffect(() => {
@@ -32,57 +83,10 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
     return () => window.removeEventListener('keydown', handler);
   }, [lightboxSrc]);
 
-  const lastStep = trace.reduce((max, e) => (e.step != null ? Math.max(max, e.step) : max), 0);
-  const doneEvent = trace.find(e => e.type === 'done');
-  const doneMeta = doneEvent?.meta || {};
-  const doneStatus = doneEvent?.quality?.status || doneMeta.status || 'done';
-  const doneStatusLabel = doneStatus === 'done_unverified'
-    ? t('agentPanel.statusUnverified')
-    : doneStatus === 'done_degraded'
-      ? t('agentPanel.statusDegraded')
-      : t('agentPanel.statusDone');
-
-  // Detect if waiting for user question
-  const hasPendingQuestion = running && trace.some(e => e.type === 'question_required') &&
-    !trace.some(e => e.type === 'user_response');
-
-  const totalTokens = trace.reduce((sum, e) => {
-    if (e.usage) {
-      return sum + (e.usage.prompt_tokens || 0) + (e.usage.completion_tokens || 0);
-    }
-    return sum;
-  }, 0);
-
-  useEffect(() => {
-    if (!running) {
-      startTimeRef.current = null;
-      pauseRef.current = null;
-      return;
-    }
-    startTimeRef.current = startedAt || Date.now();
-    pauseRef.current = null;
-    const timer = setInterval(() => {
-      if (startTimeRef.current) {
-        const paused = pauseRef.current ? Date.now() - pauseRef.current : 0;
-        setElapsed(Math.round((Date.now() - startTimeRef.current - paused) / 1000));
-      }
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [running, startedAt]);
-
-  // Pause/resume elapsed when waiting for question
-  useEffect(() => {
-    if (hasPendingQuestion && !pauseRef.current) {
-      pauseRef.current = Date.now();
-    } else if (!hasPendingQuestion && pauseRef.current) {
-      startTimeRef.current += Date.now() - pauseRef.current;
-      pauseRef.current = null;
-    }
-  }, [hasPendingQuestion]);
-
   useEffect(() => {
     if (!traceStickyRef.current) return;
-    traceBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // 流式追加期间用瞬时滚动，避免平滑动画相互打断造成抖动。
+    traceBottomRef.current?.scrollIntoView({ behavior: 'auto' });
   }, [trace]);
 
   // 用户在 trace 容器内手动滚动时维护 sticky 标志：距离底部 80px 内视为"在底部"。
@@ -103,18 +107,6 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
   if (mode !== 'agent') {
     return null;
   }
-
-  const formatElapsed = (sec) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return m > 0 ? `${m}m${s < 10 ? '0' : ''}${s}s` : `${s}s`;
-  };
-
-  const displayElapsed = running
-    ? formatElapsed(elapsed)
-    : doneMeta.elapsed_ms
-      ? formatElapsed(Math.round(doneMeta.elapsed_ms / 1000))
-      : elapsed > 0 ? formatElapsed(elapsed) : '-';
 
   return (
     <>
@@ -150,12 +142,10 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
           </div>
         </div>
         <div className="agent-head-row-metrics">
-          {lastStep > 0 && <span className="agent-metric">Step {lastStep}</span>}
-          <span className={`agent-metric ${running ? 'agent-metric-timer' : ''}`}>
-            {running ? <>{displayElapsed} <Timer size={12} /></> : displayElapsed}
-          </span>
-          {totalTokens > 0 && (
-            <span className="agent-metric agent-metric-tokens">{totalTokens} tokens</span>
+          {metrics.lastStep > 0 && <span className="agent-metric">Step {metrics.lastStep}</span>}
+          <ElapsedTimer running={running} startedAt={startedAt} paused={hasPendingQuestion} finalMs={doneMeta.elapsed_ms} />
+          {metrics.totalTokens > 0 && (
+            <span className="agent-metric agent-metric-tokens">{metrics.totalTokens} tokens</span>
           )}
           {!running && doneMeta.step_count && (
             <span className="agent-metric">{t('agentPanel.stepCount', { n: doneMeta.step_count })}</span>
@@ -186,270 +176,43 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
                 </div>
               ) : (
                 <div className="agent-trace">
-          {(() => {
-            // Track which steps have multi-model planning (action/result shown inside cards)
-            const multiModelSteps = new Set();
-            for (const e of trace) {
-              if (e.type === 'model_plan' && e.stage === 'start' && e.models?.length > 1) {
-                multiModelSteps.add(e.step);
-              }
-            }
-            return trace.map((event, index) => {
-            // model_plan events: only render 'start' as ModelPlanGroup, 'consensus' as standalone
+          {trace.map((event, index) => {
+            // model_plan events: only render 'start' as ModelPlanGroup, 'consensus' as standalone item
             // (other stages like thinking/success/failed are collected inside ModelPlanGroup)
             if (event.type === 'model_plan' && event.stage !== 'start' && event.stage !== 'consensus') return null;
             if (event.type === 'model_plan' && event.stage === 'start') {
-              return <ModelPlanGroup key={`model-plan-step-${event.step || index}-${index}`} trace={trace} step={event.step} models={event.models} modelList={modelList} running={running} cardsExpanded={cardsExpanded} onManualToggle={() => setCardsExpanded(null)} onRollback={onRollback} rollbackLoading={rollbackLoading} />;
+              return (
+                <ModelPlanGroup
+                  key={`model-plan-step-${event.step ?? index}-${index}`}
+                  events={eventsByStep.get(event.step) || []}
+                  step={event.step}
+                  models={event.models}
+                  modelList={modelList}
+                  agentFinished={agentFinished}
+                  cardsExpanded={cardsExpanded}
+                  onManualToggle={() => setCardsExpanded(null)}
+                  onRollback={stableRollback}
+                  rollbackLoading={rollbackLoading}
+                />
+              );
             }
             // For multi-model steps, skip separate action/result items (shown inside model cards)
             if (event.type === 'step' && (event.stage === 'action' || event.stage === 'result') && multiModelSteps.has(event.step)) {
               return null;
             }
-            // Render consensus event as standalone trace item
-            if (event.type === 'model_plan' && event.stage === 'consensus') {
-              return (
-                <div key={`consensus-${event.step || index}`} className="agent-trace-item" data-type="consensus" data-stage="">
-                  <span className="agent-trace-badge consensus">{t('agentPanel.voteBadge')}</span>
-                  <div className="agent-trace-content consensus-content">
-                    <div className="consensus-bar">
-                      <span className="consensus-badge">
-                        {event.consensus?.unanimous ? t('agentPanel.unanimous') : t('agentPanel.majority', { agreed: event.consensus?.agreed, total: event.consensus?.total })}
-                      </span>
-                      <span className="consensus-action">{event.consensus?.actionKey}</span>
-                      <div className="consensus-votes">
-                        {event.consensus?.allResults?.map(r => (
-                          <span key={r.model} className={`consensus-vote ${r.actionKey === event.consensus?.actionKey ? 'agree' : 'dissent'}`}>
-                            {getModelLabel(r.model, modelList)}: {r.actionKey}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            }
+            // consensus + 其余普通事件统一交给 memo 化的 TraceItem
             return (
-            <div key={`${event.type}-${event.step || index}-${event.stage || index}`} className="agent-trace-item" data-type={event.type} data-stage={event.stage || ''}>
-              {event.type === 'status' && (
-                <>
-                  <span className="agent-trace-badge">{t('agentPanel.badgeStatus')}</span>
-                  <div className="agent-trace-content">
-                    <strong>{event.message}</strong>
-                  </div>
-                </>
-              )}
-
-              {event.type === 'step' && event.stage === 'observe' && (
-                <>
-                  <span className="agent-trace-badge">{t('agentPanel.badgeObserve')}</span>
-                  <div className="agent-trace-content">
-                    <strong>Step {event.step}</strong>
-                    {event.observation?.desktop?.frontmostApp && (
-                      <p>
-                        {t('agentPanel.desktop')}: {event.observation.desktop.frontmostApp}
-                        {event.observation.desktop.frontmostWindowTitle ? ` · ${event.observation.desktop.frontmostWindowTitle}` : ''}
-                      </p>
-                    )}
-                    {event.observation?.desktop?.screenshotPath && (() => {
-                      const p = event.observation.desktop.screenshotPath;
-                      const url = '/screenshots/' + p.split('desktop-agent-observations').pop()?.replace(/^\//, '');
-                      return (
-                        <img className="screenshot-img clickable" src={url} alt="screenshot" onClick={() => setLightboxSrc(url)} />
-                      );
-                    })()}
-                    {event.observation?.browser?.title && <p>{event.observation.browser.title}</p>}
-                    {event.observation?.browser?.url && <p className="agent-trace-url">{event.observation.browser.url}</p>}
-                    {event.observation?.browser?.text && <p>{event.observation.browser.text}</p>}
-                    {event.observation?.desktop?.windows?.length > 0 && (
-                      <div className="agent-element-list">
-                        {event.observation.desktop.windows.slice(0, 6).map((window, windowIndex) => (
-                          <span key={`${window.app}-${window.title}-${windowIndex}`} className="agent-element-chip">
-                            {window.app} {window.title || 'Untitled'}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {event.observation?.browser?.elements?.length > 0 && (
-                      <div className="agent-element-list">
-                        {event.observation.browser.elements.slice(0, 6).map(element => (
-                          <span key={element.id} className="agent-element-chip">
-                            #{element.id} {element.tag} {element.text || element.href || ''}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {event.type === 'step' && event.stage === 'action' && (
-                <>
-                  <span className="agent-trace-badge action">{t('agentPanel.badgeAction')}</span>
-                  <div className="agent-trace-content">
-                    <div className="agent-step-header">
-                      <strong>
-                        Step {event.step} · {event.action?.tool || 'core'}.{event.action?.type}
-                      </strong>
-                      {event.usage && (
-                        <span className="agent-token-badge">
-                          {event.usage.prompt_tokens + event.usage.completion_tokens} tokens
-                          <span className="agent-token-detail">
-                            ↑{event.usage.prompt_tokens} ↓{event.usage.completion_tokens}
-                          </span>
-                        </span>
-                      )}
-                      <button className="trace-rollback-btn" onClick={(e) => { e.stopPropagation(); onRollback(event.step); }} disabled={rollbackLoading} title={t('agentPanel.rerunFromStep', { step: event.step })}>
-                        <RotateCcw size={10} />
-                      </button>
-                    </div>
-                    {event.rationale && <p>{event.rationale}</p>}
-                    <pre className="agent-json">{JSON.stringify(event.action, null, 2)}</pre>
-                  </div>
-                </>
-              )}
-
-              {event.type === 'step' && event.stage === 'result' && (() => {
-                const screenshotMatch = event.result?.match(/(?:\/[^\s\]]*)?\/(data\/screenshots|desktop-agent-observations)\/([^\s\]]+\.png)/);
-                if (screenshotMatch) {
-                  const url = '/screenshots/' + screenshotMatch[2];
-                  return (
-                    <>
-                      <span className="agent-trace-badge result">{t('agentPanel.badgeResult')}</span>
-                      <div className="agent-trace-content">
-                        <strong>Step {event.step}</strong>
-                        <img className="screenshot-img clickable" src={url} alt="screenshot" onClick={() => setLightboxSrc(url)} />
-                      </div>
-                    </>
-                  );
-                }
-                return (
-                  <>
-                    <span className="agent-trace-badge result">{t('agentPanel.badgeResult')}</span>
-                    <div className="agent-trace-content">
-                      <strong>Step {event.step}</strong>
-                      <p>{event.result}</p>
-                    </div>
-                  </>
-                );
-              })()}
-
-              {event.type === 'done' && (
-                <>
-                  <span className="agent-trace-badge done">
-                    {(event.quality?.status || event.meta?.status) === 'done_unverified'
-                      ? t('agentPanel.doneBadgeUnverified')
-                      : (event.quality?.status || event.meta?.status) === 'done_degraded'
-                        ? t('agentPanel.statusDegraded')
-                        : t('agentPanel.statusDone')}
-                  </span>
-                  <div className="agent-trace-content">
-                    <strong>{t('agentPanel.agentDone')}</strong>
-                    {event.meta?.step_count && <span className="agent-trace-meta">{t('agentPanel.stepCount', { n: event.meta.step_count })}</span>}
-                    {event.quality?.reasons?.length > 0 && (
-                      <p>{event.quality.reasons.join('；')}</p>
-                    )}
-                    {event.meta?.models_used?.length > 0 && (
-                      <div className="agent-models-used">
-                        {event.meta.models_used.map(m => {
-                          const short = m.split('/').pop();
-                          return <span key={m} className="agent-model-chip">{short}</span>;
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {event.type === 'notification' && (
-                <>
-                  <span className={`agent-trace-badge ${event.level === 'warning' ? 'error' : event.level === 'discovery' ? 'approval' : 'result'}`}>
-                    {event.level === 'warning' ? t('agentPanel.levelWarning') : event.level === 'discovery' ? t('agentPanel.levelDiscovery') : t('agentPanel.levelNotification')}
-                  </span>
-                  <div className="agent-trace-content">
-                    <p>{event.message}</p>
-                  </div>
-                </>
-              )}
-
-              {event.type === 'user_response' && (
-                <>
-                  <span className="agent-trace-badge approval">{t('agentPanel.badgeAnswer')}</span>
-                  <div className="agent-trace-content">
-                    <strong>{t('agentPanel.userAnswer')}</strong>
-                    <p style={{color: 'var(--c-text-muted)', fontSize: '12px'}}><em>{t('agentPanel.questionPrefix')}</em> {event.question}</p>
-                    <p>{event.response}</p>
-                  </div>
-                </>
-              )}
-
-              {event.type === 'approval_required' && (
-                <>
-                  <span className="agent-trace-badge approval">{t('agentPanel.badgeApproval')}</span>
-                  <div className="agent-trace-content">
-                    <strong>{t('agentPanel.awaitingApproval', { step: event.step })}</strong>
-                    <p>{event.message}</p>
-                    <pre className="agent-json">{JSON.stringify(event.action, null, 2)}</pre>
-                  </div>
-                </>
-              )}
-
-              {event.type === 'approval_result' && (
-                <>
-                  <span className={`agent-trace-badge ${event.decision === 'approve' ? 'result' : 'error'}`}>{t('agentPanel.badgeApproval')}</span>
-                  <div className="agent-trace-content">
-                    <strong>{t('agentPanel.approvalResult', { step: event.step })}</strong>
-                    <p>{event.message}</p>
-                  </div>
-                </>
-              )}
-
-              {event.type === 'error' && (
-                <>
-                  <span className="agent-trace-badge error">{t('agentPanel.badgeError')}</span>
-                  <div className="agent-trace-content">
-                    <strong>{t('agentPanel.agentFailed')}</strong>
-                    <p>{event.error}</p>
-                    {event.rollbackSuggestion && (() => {
-                      const rs = event.rollbackSuggestion;
-                      return (
-                        <div className="rollback-suggestion">
-                          <p className="rollback-suggestion-info">
-                            {t('agentPanel.rollbackSuggest', { step: rs.step })}
-                            {rs.lastAction && <span className="rollback-suggestion-detail">{t('agentPanel.lastStepDetail', { action: `${rs.lastAction.tool}.${rs.lastAction.type}` })}</span>}
-                          </p>
-                          {rs.lastRationale && <p className="rollback-suggestion-ctx">{t('agentPanel.decisionLabel', { text: rs.lastRationale })}</p>}
-                          {rs.lastResult && <p className="rollback-suggestion-ctx">{t('agentPanel.resultLabel', { text: rs.lastResult })}</p>}
-                          <button className="rollback-suggestion-btn" onClick={() => onRollback(rs.step)} disabled={rollbackLoading}>
-                            <RotateCcw size={12} /> {t('agentPanel.rollbackTo', { step: rs.step })}
-                          </button>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </>
-              )}
-
-              {event.type === 'rollback' && (
-                <>
-                  <span className="agent-trace-badge rollback">{t('agentPanel.badgeRollback')}</span>
-                  <div className="agent-trace-content">
-                    <strong>{t('agentPanel.rolledBackTo', { step: event.targetStep })}</strong>
-                    <p>{event.message}</p>
-                  </div>
-                </>
-              )}
-
-              {event.type === 'session_checkpoint' && (
-                <>
-                  <span className="agent-trace-badge plan">{t('agentPanel.badgeSnapshot')}</span>
-                  <div className="agent-trace-content">
-                    <strong>{t('agentPanel.snapshotSaved', { step: event.step })}</strong>
-                  </div>
-                </>
-              )}
-            </div>
+              <TraceItem
+                key={`${event.type}-${event.step ?? index}-${event.stage ?? index}`}
+                event={event}
+                modelList={modelList}
+                onRollback={stableRollback}
+                rollbackLoading={rollbackLoading}
+                openLightbox={setLightboxSrc}
+                t={t}
+              />
             );
-          })})()}
+          })}
           <div ref={traceBottomRef} />
         </div>
       )}
