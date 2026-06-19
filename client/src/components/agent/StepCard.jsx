@@ -1,10 +1,11 @@
 import { memo, useState } from 'react';
-import { RotateCcw, CornerDownRight, ChevronRight, ChevronDown } from 'lucide-react';
+import { RotateCcw, ChevronRight, ChevronDown } from 'lucide-react';
 import { getModelLabel } from './plan-stage.js';
 import { summarizeAction } from './action-summary.js';
-import { isFailureResult } from './result-status.js';
+import { isFailureResult, resultScreenshot } from './result-status.js';
 import { ToolIcon } from './tool-icon.jsx';
 import { ObserveSummary } from './ObserveSummary.jsx';
+import { ResultSummary } from './ResultSummary.jsx';
 
 // StepCard：把单模型一步的 observe + action + result 合并成一张卡。
 // 原先单模型一步会渲染 4 块（observe / 折叠的 model_plan 废卡 / action / result），
@@ -15,18 +16,15 @@ import { ObserveSummary } from './ObserveSummary.jsx';
 // memo 化：trace 是 append-only，旧步骤的切片引用稳定，新事件到达时不会整片重渲。
 // forceExpanded / onManualToggle 与 ModelPlanCard 同义，让面板头部「全部展开/折叠」生效。
 
-const RESULT_SCREENSHOT_RE = /(?:\/[^\s\]]*)?\/(data\/screenshots|desktop-agent-observations)\/([^\s\]]+\.png)/;
-const CLAMP_THRESHOLD = 80; // 超过该长度才显示「展开/收起」
+const CLAMP_THRESHOLD = 80; // 理由文本超过该长度才显示「展开/收起」
 
 export const StepCard = memo(function StepCard({ events, step, active, modelList, onRollback, rollbackLoading, openLightbox, forceExpanded, onManualToggle, t }) {
   const [jsonOpen, setJsonOpen] = useState(false);
   const [rationaleOpen, setRationaleOpen] = useState(false);
-  const [resultOpen, setResultOpen] = useState(false);
 
-  // 三处展开态统一受面板「全部展开/折叠」接管（forceExpanded 非 null 时），否则用本地态。
+  // 展开态受面板「全部展开/折叠」接管（forceExpanded 非 null 时），否则用本地态。
   const effJson = forceExpanded != null ? forceExpanded : jsonOpen;
   const effRationale = forceExpanded != null ? forceExpanded : rationaleOpen;
-  const effResult = forceExpanded != null ? forceExpanded : resultOpen;
 
   // 从本步事件切片里拆出各阶段。action 信息优先取 step/action 事件，
   // 缺失时（如授权被拒只有 result）回退到 model_plan 决策事件。
@@ -45,10 +43,8 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
   const summary = summarizeAction(action);
   const modelLabel = modelEvent ? getModelLabel(modelEvent.model, modelList) : null;
 
-  const resultShotMatch = result ? result.match(RESULT_SCREENSHOT_RE) : null;
-  const resultShot = resultShotMatch ? '/screenshots/' + resultShotMatch[2] : null;
   // 文本结果命中失败模式时整卡标红（截图结果不参与判定）
-  const failed = !!result && !resultShot && isFailureResult(result);
+  const failed = !!result && !resultScreenshot(result) && isFailureResult(result);
 
   // 切换本地展开态；若当前受 forceExpanded 接管，先通知父组件解除接管再翻转本地态。
   const toggle = setter => () => { if (forceExpanded != null) onManualToggle?.(); setter(v => !v); };
@@ -100,23 +96,8 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
           </div>
         )}
 
-        {/* 执行结果：截图走缩略图（点开放大），纯文本以 ↳ 锚点引出、截断可展开 */}
-        {resultShot && (
-          <img className="screenshot-thumb clickable" src={resultShot} alt="screenshot" onClick={() => openLightbox(resultShot)} />
-        )}
-        {result && !resultShot && (
-          <div className="step-card-result">
-            <CornerDownRight size={12} className="step-card-result-icon" />
-            <div className="step-card-result-body">
-              <p className={effResult ? '' : 'clamp-2'}>{result}</p>
-              {result.length > CLAMP_THRESHOLD && (
-                <button className="step-card-toggle" onClick={toggle(setResultOpen)}>
-                  {effResult ? t('agentPanel.showLess') : t('agentPanel.showMore')}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+        {/* 执行结果（与多模型卡组共用同一组件，口径一致） */}
+        <ResultSummary result={result} openLightbox={openLightbox} forceExpanded={forceExpanded} onManualToggle={onManualToggle} t={t} />
       </div>
     </div>
   );

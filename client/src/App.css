@@ -2214,9 +2214,12 @@ select,
 .agent-trace-item[data-type="done"][data-status="done_degraded"]::after { background: var(--c-badge-rollback); }
 
 /* 失败步骤：圆点转红，结果 ↳ 图标与文字标红——失败在时间线上一眼可辨（放在最后以压过工具色） */
-.agent-trace-item.result-failed::after { background: var(--c-badge-error); }
+.agent-trace-item.result-failed::after,
+.model-plan-group.result-failed::after { background: var(--c-badge-error); }
 .agent-trace-item.result-failed .step-card-result-icon,
-.agent-trace-item.result-failed .step-card-result-body > p { color: var(--c-badge-error); }
+.agent-trace-item.result-failed .step-card-result-body > p,
+.model-plan-group.result-failed .step-card-result-icon,
+.model-plan-group.result-failed .step-card-result-body > p { color: var(--c-badge-error); }
 
 /* 当前正在执行的步：节点圆点向外扩散脉冲（脉冲色跟随该步的工具色），强化时间线的"执行流"叙事 */
 .agent-trace-item.running::after { animation: traceNodePulse 1.6s ease-out infinite; }
@@ -2593,6 +2596,8 @@ select,
   gap: 6px;
   margin-bottom: 2px;
 }
+/* 卡组回滚按钮靠右，与单模型 StepCard head 行尾的回滚位置一致 */
+.model-plan-rollback { margin-left: auto; }
 
 .model-plan-cards {
   flex: 1;

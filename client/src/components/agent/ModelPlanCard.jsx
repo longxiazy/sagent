@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
 import { CopyButton } from '../CopyButton.jsx';
 import { getModelLabel, PLAN_STAGE_LABELS, PLAN_STAGE_ICON } from './plan-stage.js';
 import { summarizeAction } from './action-summary.js';
@@ -8,17 +8,15 @@ import { useT } from '../../i18n/I18nProvider.jsx';
 
 // 单个模型卡片负责展示某一步里某个模型的"决策快照"：
 // 当前状态、理由、动作、tokens，以及在竞速模式下是否被采纳。
-export function ModelPlanCard({ event, isWinner, modelList, result, forceExpanded, onManualToggle, onRollback, step, rollbackLoading }) {
+export function ModelPlanCard({ event, isWinner, modelList, result, forceExpanded, onManualToggle }) {
   const t = useT();
   const label = getModelLabel(event.model, modelList);
   const stage = event.stage;
   const [showReasoning, setShowReasoning] = useState(false);
-  const [showFullResult, setShowFullResult] = useState(false);
   const [showJson, setShowJson] = useState(false);
   const [expanded, setExpanded] = useState(isWinner || stage === 'failed');
   const effectiveExpanded = forceExpanded != null ? forceExpanded : expanded;
   const effectiveShowReasoning = forceExpanded === true ? true : showReasoning;
-  const effectiveShowFullResult = forceExpanded === true ? true : showFullResult;
   const effectiveShowJson = forceExpanded === true ? true : showJson;
 
   if (stage === 'start') return null;
@@ -58,11 +56,6 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
         )}
         {copyText && <CopyButton text={copyText} />}
         <span className="model-card-expand-icon">{effectiveExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}</span>
-        {isWinner && onRollback && (
-          <button className="trace-rollback-btn" onClick={e => { e.stopPropagation(); onRollback(step); }} disabled={rollbackLoading} title={t('agentPanel.rerunFromStep', { step })}>
-            <RotateCcw size={10} />
-          </button>
-        )}
       </div>
       {stage === 'pending' && (
         <div className="model-card-body">
@@ -99,21 +92,10 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
               <span className="model-card-tokens">{event.usage.prompt_tokens + event.usage.completion_tokens} tokens</span>
             )}
           </div>
-          <button className="model-card-json-toggle" onClick={e => { e.stopPropagation(); setShowJson(v => !v); }}>
-            {effectiveShowJson ? t('agentPanel.hideJson') : t('agentPanel.showJson')}
+          <button className="step-card-json-toggle" onClick={e => { e.stopPropagation(); setShowJson(v => !v); }}>
+            {effectiveShowJson ? <ChevronDown size={11} /> : <ChevronRight size={11} />} JSON
           </button>
           {effectiveShowJson && <pre className="model-card-json">{JSON.stringify(event.action, null, 2)}</pre>}
-          {isWinner && result && (
-            <div className="model-card-result">
-              <span className="model-card-result-label">{t('modelCard.result')}</span>
-              <p>{effectiveShowFullResult || result.length <= 50 ? result : result.slice(0, 50) + '…'}</p>
-              {result.length > 50 && (
-                <button className="model-card-result-toggle" onClick={() => setShowFullResult(v => !v)}>
-                  {effectiveShowFullResult ? t('modelCard.collapse') : t('modelCard.expandAll')}
-                </button>
-              )}
-            </div>
-          )}
         </div>
       )}
       {stage === 'failed' && (event.error || event.rationale) && (
@@ -151,8 +133,8 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
               <span className="model-card-tokens">{event.usage.prompt_tokens + event.usage.completion_tokens} tokens</span>
             )}
           </div>
-          <button className="model-card-json-toggle" onClick={e => { e.stopPropagation(); setShowJson(v => !v); }}>
-            {effectiveShowJson ? t('agentPanel.hideJson') : t('agentPanel.showJson')}
+          <button className="step-card-json-toggle" onClick={e => { e.stopPropagation(); setShowJson(v => !v); }}>
+            {effectiveShowJson ? <ChevronDown size={11} /> : <ChevronRight size={11} />} JSON
           </button>
           {effectiveShowJson && <pre className="model-card-json">{JSON.stringify(event.action, null, 2)}</pre>}
         </div>

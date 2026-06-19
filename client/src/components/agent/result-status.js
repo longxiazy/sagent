@@ -11,3 +11,11 @@ export function isFailureResult(result) {
   if (!result || typeof result !== 'string') return false;
   return FAILURE_PATTERN.test(result);
 }
+
+// 结果文本若包含截图路径，提取成可访问的 /screenshots/ URL（供结果区显示缩略图）。
+const RESULT_SCREENSHOT_RE = /(?:\/[^\s\]]*)?\/(data\/screenshots|desktop-agent-observations)\/([^\s\]]+\.png)/;
+export function resultScreenshot(result) {
+  if (!result || typeof result !== 'string') return null;
+  const m = result.match(RESULT_SCREENSHOT_RE);
+  return m ? '/screenshots/' + m[2] : null;
+}
