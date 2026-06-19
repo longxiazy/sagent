@@ -1,4 +1,3 @@
-import { RotateCcw } from 'lucide-react';
 import { ModelPlanCard } from './ModelPlanCard.jsx';
 import { ObserveSummary } from './ObserveSummary.jsx';
 import { ResultSummary } from './ResultSummary.jsx';
@@ -50,25 +49,24 @@ export function ModelPlanGroup({ events, step, models, modelList, agentFinished,
   // 这步执行结果命中失败模式时整节点标红（与单模型 StepCard 一致；截图结果不判失败）
   const failed = !!stepResult && !resultScreenshot(stepResult) && isFailureResult(stepResult);
 
+  // winner 排第一行——它带 step 号与回滚，等价于单模型那一行。
+  const orderedVisible = winnerModel && visibleModels.includes(winnerModel)
+    ? [winnerModel, ...visibleModels.filter(m => m !== winnerModel)]
+    : visibleModels;
+
   return (
     <div className={`model-plan-group${failed ? ' result-failed' : ''}`} data-tool={(winnerModel && getEvent(winnerModel)?.action?.tool) || undefined}>
       <div className="agent-trace-content">
-        <div className="model-plan-head">
-          <span className="step-card-step">{step}</span>
-          <button className="trace-rollback-btn model-plan-rollback" onClick={(e) => { e.stopPropagation(); onRollback?.(step); }} disabled={rollbackLoading} title={t('agentPanel.rerunFromStep', { step })}>
-            <RotateCcw size={10} />
-          </button>
-        </div>
-        <ObserveSummary observation={observation} openLightbox={openLightbox} t={t} />
         <div className="model-plan-cards">
-          {visibleModels.map(m => (
+          {orderedVisible.map(m => (
             <ModelPlanCard
               key={m}
               event={getEvent(m)}
               isWinner={winnerModel === m}
               modelList={modelList}
-              strategy={strategyMode}
-              result={winnerModel === m ? stepResult : null}
+              step={step}
+              onRollback={onRollback}
+              rollbackLoading={rollbackLoading}
               forceExpanded={cardsExpanded}
               onManualToggle={onManualToggle}
             />
@@ -84,8 +82,6 @@ export function ModelPlanGroup({ events, step, models, modelList, agentFinished,
                   event={getEvent(m)}
                   isWinner={false}
                   modelList={modelList}
-                  strategy={strategyMode}
-                  result={null}
                   forceExpanded={cardsExpanded}
                   onManualToggle={onManualToggle}
                 />
@@ -93,6 +89,8 @@ export function ModelPlanGroup({ events, step, models, modelList, agentFinished,
             </div>
           </details>
         )}
+        {/* 观察概要：放在模型行之后、结果之前（与单模型 StepCard 的 head→observe 顺序一致） */}
+        <ObserveSummary observation={observation} openLightbox={openLightbox} t={t} />
         {/* 执行结果：节点底部统一展示（winner 的结果），与单模型 StepCard 口径一致 */}
         <ResultSummary result={stepResult} openLightbox={openLightbox} forceExpanded={cardsExpanded} onManualToggle={onManualToggle} t={t} />
       </div>
