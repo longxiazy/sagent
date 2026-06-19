@@ -1,4 +1,3 @@
-import { RotateCcw } from 'lucide-react';
 import { ModelPlanCard } from './ModelPlanCard.jsx';
 import { useT } from '../../i18n/I18nProvider.jsx';
 
@@ -46,9 +45,6 @@ export function ModelPlanGroup({ events, step, models, modelList, agentFinished,
       <span className="agent-trace-badge plan">
         {strategyMode === 'vote' ? t('modelPlan.vote') : t('modelPlan.decision')}
       </span>
-      <button className="trace-rollback-btn" onClick={(e) => { e.stopPropagation(); onRollback?.(step); }} disabled={rollbackLoading} title={t('agentPanel.rerunFromStep', { step })}>
-        <RotateCcw size={10} />
-      </button>
       <div className="model-plan-cards">
         {visibleModels.map(m => (
           <ModelPlanCard
@@ -60,6 +56,9 @@ export function ModelPlanGroup({ events, step, models, modelList, agentFinished,
             result={winnerModel === m ? stepResult : null}
             forceExpanded={cardsExpanded}
             onManualToggle={onManualToggle}
+            onRollback={onRollback}
+            step={step}
+            rollbackLoading={rollbackLoading}
           />
         ))}
       </div>

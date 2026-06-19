@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import { CopyButton } from '../CopyButton.jsx';
 import { getModelLabel, PLAN_STAGE_LABELS, PLAN_STAGE_ICON } from './plan-stage.js';
 import { summarizeAction } from './action-summary.js';
@@ -8,7 +8,7 @@ import { useT } from '../../i18n/I18nProvider.jsx';
 
 // 单个模型卡片负责展示某一步里某个模型的"决策快照"：
 // 当前状态、理由、动作、tokens，以及在竞速模式下是否被采纳。
-export function ModelPlanCard({ event, isWinner, modelList, result, forceExpanded, onManualToggle }) {
+export function ModelPlanCard({ event, isWinner, modelList, result, forceExpanded, onManualToggle, onRollback, step, rollbackLoading }) {
   const t = useT();
   const label = getModelLabel(event.model, modelList);
   const stage = event.stage;
@@ -35,6 +35,7 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
   // 有动作的稳定态（winner/success/cancelled）让"动作"当主角，与单模型 StepCard 行同构；
   // 思考/排队/失败/放弃等过渡或异常态没有可对比的动作，仍以"模型名 + 状态"为主。
   const showActionPrimary = !!event.action && (stage === 'winner' || stage === 'success' || stage === 'cancelled');
+  const tokens = event.usage ? (event.usage.prompt_tokens || 0) + (event.usage.completion_tokens || 0) : 0;
 
   return (
     <div className={`model-card ${stage} ${isWinner ? 'winner' : ''} ${effectiveExpanded ? 'expanded' : ''}`} data-tool={event.action?.tool || undefined} onClick={() => { if (forceExpanded != null) onManualToggle?.(); setExpanded(v => !v); }}>
@@ -45,7 +46,7 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
             <span className="model-card-summary">{summarizeAction(event.action)}</span>
             <span className="model-card-meta">
               {isWinner && <span className="model-card-winner-star">★</span>}
-              {label}
+              {label}{tokens > 0 ? ` · ${tokens} tok` : ''}
             </span>
           </>
         ) : (
@@ -57,6 +58,11 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
         )}
         {copyText && <CopyButton text={copyText} />}
         <span className="model-card-expand-icon">{effectiveExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}</span>
+        {isWinner && onRollback && (
+          <button className="trace-rollback-btn" onClick={e => { e.stopPropagation(); onRollback(step); }} disabled={rollbackLoading} title={t('agentPanel.rerunFromStep', { step })}>
+            <RotateCcw size={10} />
+          </button>
+        )}
       </div>
       {stage === 'pending' && (
         <div className="model-card-body">
