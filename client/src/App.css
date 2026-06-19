@@ -2083,7 +2083,7 @@ select,
   margin-top: 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
@@ -2096,30 +2096,85 @@ select,
   }
 }
 
+/* 执行轨迹 = 一条时间线：每个节点（步骤卡/事件/决策卡组）左侧串一颗状态色圆点，
+   圆点用竖线连成执行流。去掉每项的整框背景与粗左边框，让时间线本身成为主视觉。 */
+.agent-trace-item,
+.model-plan-group {
+  position: relative;
+  padding-left: 22px;
+}
+
 .agent-trace-item {
   display: flex;
   gap: 8px;
-  padding: 6px 8px;
-  border-radius: var(--r-md);
-  background: var(--c-surface-hover);
-  border: 1px solid var(--c-border);
-  border-left: 3px solid var(--c-border);
-  transition: border-color var(--dur-fast);
+  padding-top: 2px;
+  padding-bottom: 2px;
 }
 
-.agent-trace-item[data-type="step"][data-stage="action"] { border-left-color: var(--c-badge-action); }
+/* 连接线：贯穿节点并跨过 gap 连到下一个圆点；圆点描边盖住交点形成"串珠" */
+.agent-trace-item::before,
+.model-plan-group::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: -8px;
+  width: 2px;
+  background: var(--c-border);
+}
+/* 第一个节点：竖线从圆点起，不向上溢出 */
+.agent-trace > :first-child.agent-trace-item::before,
+.agent-trace > :first-child.model-plan-group::before { top: 11px; }
+/* 最后一个真实节点（其后是 traceBottom 占位 div）：线到自身底部即止，不悬空 */
+.agent-trace > :nth-last-child(2)::before { bottom: 0; }
+
+/* 节点圆点：默认色，下面按事件语义着色 */
+.agent-trace-item::after,
+.model-plan-group::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--c-text-tertiary);
+  box-shadow: 0 0 0 3px var(--c-surface);
+  z-index: 1;
+}
+
 @keyframes traceItemIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.agent-trace-item { animation: traceItemIn var(--dur-normal) ease-out; }
-.agent-trace-item[data-type="step"][data-stage="result"] { border-left-color: var(--c-badge-result); }
-.agent-trace-item[data-type="done"] { border-left-color: var(--c-badge-done); }
-.agent-trace-item[data-type="error"] { border-left-color: var(--c-badge-error); }
-.agent-trace-item[data-type="approval_required"] { border-left-color: var(--c-badge-approval); }
-.agent-trace-item[data-type="rollback"] { border-left-color: var(--c-badge-rollback); }
-.agent-trace-item[data-type="session_checkpoint"] { border-left-color: var(--c-badge-plan); }
-.agent-trace-item[data-type="notification"] { border-left-color: var(--c-primary); }
+.agent-trace-item,
+.model-plan-group { animation: traceItemIn var(--dur-normal) ease-out; }
+
+/* 圆点状态色（沿用原 border-left 的语义映射） */
+.agent-trace-item[data-stage="merged"]::after,
+.agent-trace-item[data-type="step"][data-stage="action"]::after { background: var(--c-badge-action); }
+.agent-trace-item[data-type="step"][data-stage="result"]::after { background: var(--c-badge-result); }
+.agent-trace-item[data-type="done"]::after { background: var(--c-badge-done); }
+.agent-trace-item[data-type="error"]::after { background: var(--c-badge-error); }
+.agent-trace-item[data-type="approval_required"]::after { background: var(--c-badge-approval); }
+.agent-trace-item[data-type="rollback"]::after { background: var(--c-badge-rollback); }
+.agent-trace-item[data-type="session_checkpoint"]::after { background: var(--c-badge-plan); }
+.agent-trace-item[data-type="notification"]::after { background: var(--c-primary); }
+.model-plan-group::after { background: var(--c-badge-plan); }
+
+/* 当前正在执行的步：节点圆点向外扩散脉冲，强化时间线的"执行流"叙事 */
+.agent-trace-item.running::after { animation: traceNodePulse 1.6s ease-out infinite; }
+@keyframes traceNodePulse {
+  0% { box-shadow: 0 0 0 3px var(--c-surface), 0 0 0 3px var(--c-badge-action); }
+  75%, 100% { box-shadow: 0 0 0 3px var(--c-surface), 0 0 0 9px transparent; }
+}
+
+/* 尊重系统的减少动态偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .agent-trace-item,
+  .model-plan-group { animation: none; }
+  .agent-trace-item.running::after { animation: none; }
+}
 
 .agent-trace-badge {
   display: inline-flex;
@@ -2248,6 +2303,19 @@ select,
 .screenshot-img.clickable { cursor: zoom-in; transition: transform var(--dur-fast), box-shadow var(--dur-fast); }
 .screenshot-img.clickable:hover { transform: scale(1.02); box-shadow: var(--shadow-card); }
 
+/* 缩略图：trace 里默认用小尺寸（点击走 lightbox 放大），避免全宽截图撑高面板 */
+.screenshot-thumb {
+  display: block;
+  margin-top: 6px;
+  max-height: 72px;
+  max-width: 200px;
+  width: auto;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--c-border);
+}
+.screenshot-thumb.clickable { cursor: zoom-in; transition: transform var(--dur-fast), box-shadow var(--dur-fast); }
+.screenshot-thumb.clickable:hover { transform: scale(1.04); box-shadow: var(--shadow-card); }
+
 .screenshot-lightbox {
   position: fixed;
   inset: 0;
@@ -2324,7 +2392,137 @@ select,
   line-height: 1.4;
   overflow-x: auto;
   max-width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
 }
+
+/* ── StepCard（单模型合并卡）与折叠/截断工具 ── */
+
+/* 多行文本截断：超出部分隐藏，配合「展开/收起」按钮使用 */
+.clamp-1,
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.clamp-1 { -webkit-line-clamp: 1; }
+.clamp-2 { -webkit-line-clamp: 2; }
+
+/* ── StepCard 头部：步号(弱) + 工具图标 + 动作摘要(主) + meta(轻) + 回滚 ── */
+.step-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.step-card-tool-icon {
+  flex-shrink: 0;
+  color: var(--c-text-secondary);
+}
+
+.step-card-step {
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--c-text-tertiary);
+  min-width: 12px;
+}
+
+.step-card-summary {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--f-sm);
+  font-weight: 600;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 模型·token 合并成一行次要文字，弱化视觉权重 */
+.step-card-meta {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--c-text-tertiary);
+  white-space: nowrap;
+}
+
+.step-card-observe { color: var(--c-text-secondary); }
+
+/* 结果：↳ 图标锚点 + 文本，区别于上方的决策理由 */
+.step-card-result {
+  display: flex;
+  gap: 5px;
+  margin-top: 4px;
+}
+.step-card-result-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--c-badge-result);
+}
+.step-card-result-body { min-width: 0; flex: 1; }
+.step-card-result-body > p { color: var(--c-text); }
+
+/* 「展开/收起」纯文字小开关（理由/结果） */
+.step-card-toggle {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: var(--f-xs);
+  color: var(--c-primary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.step-card-toggle:hover { text-decoration: underline; }
+
+.step-card-json { margin-top: 4px; }
+/* JSON 折叠开关做成一颗带 chevron 的小 chip */
+.step-card-json-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 7px 1px 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--c-text-secondary);
+  background: var(--c-surface-inline);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
+}
+.step-card-json-toggle:hover {
+  color: var(--c-primary);
+  border-color: var(--c-primary-light);
+  background: var(--c-primary-bg);
+}
+
+/* 用 <details> 折叠的 observe 详情 / 兜底 action JSON */
+.step-card-details,
+.agent-observe-details,
+.agent-json-details { margin-top: 4px; }
+.step-card-details > summary,
+.agent-observe-details > summary,
+.agent-json-details > summary {
+  font-size: var(--f-xs);
+  color: var(--c-primary);
+  cursor: pointer;
+  list-style: none;
+}
+.step-card-details > summary,
+.agent-observe-details > summary { color: var(--c-text-tertiary); }
+.step-card-details > summary::-webkit-details-marker,
+.agent-observe-details > summary::-webkit-details-marker,
+.agent-json-details > summary::-webkit-details-marker { display: none; }
+
+/* details 展开后的 chips 不应被移动端 .agent-element-list 的 40px 裁剪 */
+.agent-observe-details .agent-element-list,
+.step-card-details .agent-element-list { max-height: none; overflow: visible; }
 
 /* ── Model Plan Cards ── */
 
@@ -2528,6 +2726,9 @@ select,
 }
 
 .model-card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 9px;
   color: var(--c-agent-idle);
   background: var(--c-surface-inline);
@@ -2559,6 +2760,18 @@ select,
   white-space: pre;
   color: var(--c-badge-default);
 }
+
+.model-card-json-toggle {
+  display: inline-block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--c-primary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.model-card-json-toggle:hover { text-decoration: underline; }
 
 .model-card-result {
   margin-top: 4px;
@@ -3505,10 +3718,10 @@ textarea:disabled {
     padding: 1px 5px;
   }
 
-  .agent-trace { margin-top: 6px; gap: 3px; }
+  .agent-trace { margin-top: 6px; gap: 6px; }
 
   .agent-trace-item {
-    padding: 5px 6px;
+    padding: 2px 0 2px 20px;
     gap: 6px;
     align-items: flex-start;
   }
@@ -3691,7 +3904,7 @@ textarea:disabled {
   .agent-metric-tokens { font-size: 9px; padding: 1px 4px; }
   .agent-metric:last-child { display: none; }
 
-  .agent-trace-item { padding: 4px 5px; gap: 5px; }
+  .agent-trace-item { padding: 2px 0 2px 18px; gap: 5px; }
 
   .agent-trace-badge { height: 15px; font-size: 8px; padding: 0 4px; }
 
