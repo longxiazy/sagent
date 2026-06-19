@@ -85,6 +85,9 @@
   --c-tool-spawn:    #e11d48;
   --c-tool-core:     #64748b;
 
+  /* observe 节点专属色：多模型场景下单独渲染的「观察」节点，柔和蓝灰——中性、明确区别于动作的鲜艳工具色 */
+  --c-trace-observe: #6b8aa8;
+
   /* Semantic surfaces */
   --c-surface-hover: #f9fafb;
   --c-surface-inline: #f3f4f6;
@@ -219,6 +222,9 @@
   --c-tool-vision:   #e879f9;
   --c-tool-spawn:    #fb7185;
   --c-tool-core:     #94a3b8;
+
+  /* observe 节点专属色（暗版：提亮的柔和蓝灰） */
+  --c-trace-observe: #8aa6c4;
 
   /* Semantic surfaces */
   --c-surface-hover: #2a2a36;
@@ -2191,6 +2197,8 @@ select,
 .agent-trace-item[data-stage="merged"]::after,
 .agent-trace-item[data-type="step"][data-stage="action"]::after { background: var(--tool-c, var(--c-badge-action)); }
 .agent-trace-item[data-type="step"][data-stage="result"]::after { background: var(--c-badge-result); }
+/* 多模型场景下单独渲染的 observe 节点：用专属中性色（observe 本身不属于具体工具，故不参与工具色） */
+.agent-trace-item[data-type="step"][data-stage="observe"]::after { background: var(--c-trace-observe); }
 .agent-trace-item[data-type="done"]::after { background: var(--c-badge-done); }
 .agent-trace-item[data-type="error"]::after { background: var(--c-badge-error); }
 .agent-trace-item[data-type="approval_required"]::after { background: var(--c-badge-approval); }
