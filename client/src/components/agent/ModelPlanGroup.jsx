@@ -42,7 +42,7 @@ export function ModelPlanGroup({ events, step, models, modelList, agentFinished,
   const collapsedModels = models.filter(m => { const s = getEvent(m).stage; return s === 'cancelled' || s === 'failed' || s === 'rate_limited'; });
 
   return (
-    <div className="model-plan-group">
+    <div className="model-plan-group" data-tool={(winnerModel && getEvent(winnerModel)?.action?.tool) || undefined}>
       <span className="agent-trace-badge plan">
         {strategyMode === 'vote' ? t('modelPlan.vote') : t('modelPlan.decision')}
       </span>

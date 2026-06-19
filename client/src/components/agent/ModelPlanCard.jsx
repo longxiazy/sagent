@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { CopyButton } from '../CopyButton.jsx';
 import { getModelLabel, PLAN_STAGE_LABELS, PLAN_STAGE_ICON } from './plan-stage.js';
+import { summarizeAction } from './action-summary.js';
 import { ToolIcon } from './tool-icon.jsx';
 import { useT } from '../../i18n/I18nProvider.jsx';
 
@@ -36,6 +37,9 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
       <div className="model-card-head">
         <span className="model-card-icon">{PLAN_STAGE_ICON[stage] || '·'}</span>
         <span className="model-card-label">{label}</span>
+        {event.action && (
+          <span className="model-card-summary"><ToolIcon tool={event.action.tool} size={10} /> {summarizeAction(event.action)}</span>
+        )}
         <span className={`model-card-status ${stage}`}>{PLAN_STAGE_LABELS[stage] ? t(PLAN_STAGE_LABELS[stage]) : stage}</span>
         {copyText && <CopyButton text={copyText} />}
         <span className="model-card-expand-icon">{effectiveExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}</span>
