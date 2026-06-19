@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CornerDownRight } from 'lucide-react';
-import { resultScreenshot } from './result-status.js';
+import { resultScreenshot, splitFailureHighlights } from './result-status.js';
 
 // 执行结果概要：截图走缩略图（点开放大），纯文本以 ↳ 锚点引出、超长截断可展开。
 // 单模型 StepCard 与多模型决策卡组的节点底部共用，保证「执行结果」展示口径一致。
@@ -27,7 +27,11 @@ export function ResultSummary({ result, openLightbox, forceExpanded, onManualTog
     <div className="step-card-result">
       <CornerDownRight size={12} className="step-card-result-icon" />
       <div className="step-card-result-body">
-        <p className={eff ? '' : 'clamp-2'}>{result}</p>
+        <p className={eff ? '' : 'clamp-2'}>
+          {splitFailureHighlights(result).map((seg, i) => (
+            seg.hit ? <span key={i} className="result-keyword">{seg.text}</span> : seg.text
+          ))}
+        </p>
         {result.length > CLAMP_THRESHOLD && (
           <button className="step-card-toggle" onClick={toggle}>
             {eff ? t('agentPanel.showLess') : t('agentPanel.showMore')}

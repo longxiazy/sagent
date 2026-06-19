@@ -12,6 +12,23 @@ export function isFailureResult(result) {
   return FAILURE_PATTERN.test(result);
 }
 
+// 把结果文本切成片段，命中失败关键词的片段标记 hit=true——供前端只高亮关键词，
+// 而非整段标红（主体文字保持正常可读）。与 isFailureResult 用同一套模式，口径一致。
+export function splitFailureHighlights(text) {
+  if (!text || typeof text !== 'string') return [];
+  const re = new RegExp(FAILURE_PATTERN.source, 'gi');
+  const parts = [];
+  let last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push({ text: text.slice(last, m.index), hit: false });
+    parts.push({ text: m[0], hit: true });
+    last = m.index + m[0].length;
+    if (re.lastIndex === m.index) re.lastIndex++; // 防零宽匹配死循环
+  }
+  if (last < text.length) parts.push({ text: text.slice(last), hit: false });
+  return parts;
+}
+
 // 结果文本若包含截图路径，提取成可访问的 /screenshots/ URL（供结果区显示缩略图）。
 const RESULT_SCREENSHOT_RE = /(?:\/[^\s\]]*)?\/(data\/screenshots|desktop-agent-observations)\/([^\s\]]+\.png)/;
 export function resultScreenshot(result) {

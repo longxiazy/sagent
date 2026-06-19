@@ -2216,10 +2216,18 @@ select,
 /* 失败步骤：圆点转红，结果 ↳ 图标与文字标红——失败在时间线上一眼可辨（放在最后以压过工具色） */
 .agent-trace-item.result-failed::after,
 .model-plan-group.result-failed::after { background: var(--c-badge-error); }
+/* 失败步：圆点 + ↳ 图标转红做状态指示；结果正文不再整段标红，改为只高亮命中的关键词 */
 .agent-trace-item.result-failed .step-card-result-icon,
-.agent-trace-item.result-failed .step-card-result-body > p,
-.model-plan-group.result-failed .step-card-result-icon,
-.model-plan-group.result-failed .step-card-result-body > p { color: var(--c-badge-error); }
+.model-plan-group.result-failed .step-card-result-icon { color: var(--c-badge-error); }
+
+/* 命中失败模式的关键词高亮（红字 + 淡红底），结果主体文字保持正常可读 */
+.result-keyword {
+  color: var(--c-badge-error);
+  background: var(--c-badge-error-bg);
+  font-weight: 600;
+  border-radius: 3px;
+  padding: 0 3px;
+}
 
 /* 当前正在执行的步：节点圆点向外扩散脉冲（脉冲色跟随该步的工具色），强化时间线的"执行流"叙事 */
 .agent-trace-item.running::after { animation: traceNodePulse 1.6s ease-out infinite; }
