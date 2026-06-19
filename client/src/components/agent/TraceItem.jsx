@@ -31,7 +31,7 @@ export const TraceItem = memo(function TraceItem({ event, modelList, onRollback,
   }
 
   return (
-    <div className="agent-trace-item" data-type={event.type} data-stage={event.stage || ''}>
+    <div className="agent-trace-item" data-type={event.type} data-stage={event.stage || ''} data-tool={event.action?.tool || undefined} data-status={event.type === 'done' ? (event.quality?.status || event.meta?.status || undefined) : undefined}>
       {event.type === 'status' && (
         <>
           <span className="agent-trace-badge">{t('agentPanel.badgeStatus')}</span>

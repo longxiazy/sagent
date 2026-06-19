@@ -32,7 +32,7 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
   ].filter(Boolean).join('\n\n');
 
   return (
-    <div className={`model-card ${stage} ${isWinner ? 'winner' : ''} ${effectiveExpanded ? 'expanded' : ''}`} onClick={() => { if (forceExpanded != null) onManualToggle?.(); setExpanded(v => !v); }}>
+    <div className={`model-card ${stage} ${isWinner ? 'winner' : ''} ${effectiveExpanded ? 'expanded' : ''}`} data-tool={event.action?.tool || undefined} onClick={() => { if (forceExpanded != null) onManualToggle?.(); setExpanded(v => !v); }}>
       <div className="model-card-head">
         <span className="model-card-icon">{PLAN_STAGE_ICON[stage] || '·'}</span>
         <span className="model-card-label">{label}</span>

@@ -2,6 +2,7 @@ import { memo, useState } from 'react';
 import { RotateCcw, CornerDownRight, ChevronRight, ChevronDown } from 'lucide-react';
 import { getModelLabel } from './plan-stage.js';
 import { summarizeAction } from './action-summary.js';
+import { isFailureResult } from './result-status.js';
 import { ToolIcon } from './tool-icon.jsx';
 
 // StepCard：把单模型一步的 observe + action + result 合并成一张卡。
@@ -51,6 +52,8 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
 
   const resultShotMatch = result ? result.match(RESULT_SCREENSHOT_RE) : null;
   const resultShot = resultShotMatch ? '/screenshots/' + resultShotMatch[2] : null;
+  // 文本结果命中失败模式时整卡标红（截图结果不参与判定）
+  const failed = !!result && !resultShot && isFailureResult(result);
 
   // 切换本地展开态；若当前受 forceExpanded 接管，先通知父组件解除接管再翻转本地态。
   const toggle = setter => () => { if (forceExpanded != null) onManualToggle?.(); setter(v => !v); };
@@ -60,7 +63,12 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
   const hasObserveDetail = windows.length > 0 || elements.length > 0;
 
   return (
-    <div className={`agent-trace-item step-card${active ? ' running' : ''}`} data-type="step" data-stage="merged">
+    <div
+      className={`agent-trace-item step-card${active ? ' running' : ''}${failed ? ' result-failed' : ''}`}
+      data-type="step"
+      data-stage="merged"
+      data-tool={action?.tool || undefined}
+    >
       <div className="agent-trace-content">
         <div className="step-card-head">
           <span className="step-card-step">{step}</span>

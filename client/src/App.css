@@ -72,6 +72,19 @@
   --c-badge-consensus-bg: #dcfce7;
   --c-badge-consensus: #166534;
 
+  /* 工具语义色：按领域分组，时间线圆点 + 工具图标据此着色，让「这步在用哪类工具」一眼可辨。
+     网络蓝青(browser/chrome/search) · 文件命令暖色(fs/terminal) · 桌面紫靛(macos/ide) · 智能粉玫(vision/spawn) · 控制灰(core) */
+  --c-tool-browser:  #2563eb;
+  --c-tool-chrome:   #0891b2;
+  --c-tool-search:   #0d9488;
+  --c-tool-fs:       #d97706;
+  --c-tool-terminal: #16a34a;
+  --c-tool-macos:    #7c3aed;
+  --c-tool-ide:      #4f46e5;
+  --c-tool-vision:   #c026d3;
+  --c-tool-spawn:    #e11d48;
+  --c-tool-core:     #64748b;
+
   /* Semantic surfaces */
   --c-surface-hover: #f9fafb;
   --c-surface-inline: #f3f4f6;
@@ -194,6 +207,18 @@
   --c-badge-rollback: #f0a050;
   --c-badge-consensus-bg: #14331f;
   --c-badge-consensus: #6ee0a0;
+
+  /* 工具语义色（暗版：整体提亮以保证在深色背景上的对比与可辨识度） */
+  --c-tool-browser:  #6ea8fe;
+  --c-tool-chrome:   #38bdf8;
+  --c-tool-search:   #2dd4bf;
+  --c-tool-fs:       #fbbf24;
+  --c-tool-terminal: #4ade80;
+  --c-tool-macos:    #a78bfa;
+  --c-tool-ide:      #818cf8;
+  --c-tool-vision:   #e879f9;
+  --c-tool-spawn:    #fb7185;
+  --c-tool-core:     #94a3b8;
 
   /* Semantic surfaces */
   --c-surface-hover: #2a2a36;
@@ -2150,9 +2175,21 @@ select,
 .agent-trace-item,
 .model-plan-group { animation: traceItemIn var(--dur-normal) ease-out; }
 
-/* 圆点状态色（沿用原 border-left 的语义映射） */
+/* ── 工具语义色映射：任一带 data-tool 的元素都把 --tool-c 定下来，圆点 / 工具图标共用 ── */
+[data-tool="browser"]  { --tool-c: var(--c-tool-browser); }
+[data-tool="chrome"]   { --tool-c: var(--c-tool-chrome); }
+[data-tool="search"]   { --tool-c: var(--c-tool-search); }
+[data-tool="fs"]       { --tool-c: var(--c-tool-fs); }
+[data-tool="terminal"] { --tool-c: var(--c-tool-terminal); }
+[data-tool="macos"]    { --tool-c: var(--c-tool-macos); }
+[data-tool="ide"]      { --tool-c: var(--c-tool-ide); }
+[data-tool="vision"]   { --tool-c: var(--c-tool-vision); }
+[data-tool="spawn"]    { --tool-c: var(--c-tool-spawn); }
+[data-tool="core"]     { --tool-c: var(--c-tool-core); }
+
+/* 圆点状态色：动作类节点用工具色（--tool-c），其余事件沿用原语义映射 */
 .agent-trace-item[data-stage="merged"]::after,
-.agent-trace-item[data-type="step"][data-stage="action"]::after { background: var(--c-badge-action); }
+.agent-trace-item[data-type="step"][data-stage="action"]::after { background: var(--tool-c, var(--c-badge-action)); }
 .agent-trace-item[data-type="step"][data-stage="result"]::after { background: var(--c-badge-result); }
 .agent-trace-item[data-type="done"]::after { background: var(--c-badge-done); }
 .agent-trace-item[data-type="error"]::after { background: var(--c-badge-error); }
@@ -2162,10 +2199,19 @@ select,
 .agent-trace-item[data-type="notification"]::after { background: var(--c-primary); }
 .model-plan-group::after { background: var(--c-badge-plan); }
 
-/* 当前正在执行的步：节点圆点向外扩散脉冲，强化时间线的"执行流"叙事 */
+/* done 三态：完成绿 / 未核验琥珀 / 降级橙，圆点与右上角状态标签呼应 */
+.agent-trace-item[data-type="done"][data-status="done_unverified"]::after { background: var(--c-badge-approval); }
+.agent-trace-item[data-type="done"][data-status="done_degraded"]::after { background: var(--c-badge-rollback); }
+
+/* 失败步骤：圆点转红，结果 ↳ 图标与文字标红——失败在时间线上一眼可辨（放在最后以压过工具色） */
+.agent-trace-item.result-failed::after { background: var(--c-badge-error); }
+.agent-trace-item.result-failed .step-card-result-icon,
+.agent-trace-item.result-failed .step-card-result-body > p { color: var(--c-badge-error); }
+
+/* 当前正在执行的步：节点圆点向外扩散脉冲（脉冲色跟随该步的工具色），强化时间线的"执行流"叙事 */
 .agent-trace-item.running::after { animation: traceNodePulse 1.6s ease-out infinite; }
 @keyframes traceNodePulse {
-  0% { box-shadow: 0 0 0 3px var(--c-surface), 0 0 0 3px var(--c-badge-action); }
+  0% { box-shadow: 0 0 0 3px var(--c-surface), 0 0 0 3px var(--tool-c, var(--c-badge-action)); }
   75%, 100% { box-shadow: 0 0 0 3px var(--c-surface), 0 0 0 9px transparent; }
 }
 
@@ -2417,7 +2463,7 @@ select,
 
 .step-card-tool-icon {
   flex-shrink: 0;
-  color: var(--c-text-secondary);
+  color: var(--tool-c, var(--c-text-secondary));
 }
 
 .step-card-step {
@@ -2735,6 +2781,9 @@ select,
   padding: 1px 5px;
   border-radius: var(--r-sm);
 }
+
+/* 模型卡里的工具图标也染工具色（文字保持中性，与 StepCard 口径一致：只让图标承载工具语义） */
+.model-card[data-tool] .model-card-action > svg { color: var(--tool-c); }
 
 .model-card-tokens {
   font-size: 9px;
