@@ -31,7 +31,7 @@ export const TraceItem = memo(function TraceItem({ event, modelList, onRollback,
   }
 
   return (
-    <div className="agent-trace-item" data-type={event.type} data-stage={event.stage || ''}>
+    <div className="agent-trace-item" data-type={event.type} data-stage={event.stage || ''} data-tool={event.action?.tool || undefined} data-status={event.type === 'done' ? (event.quality?.status || event.meta?.status || undefined) : undefined}>
       {event.type === 'status' && (
         <>
           <span className="agent-trace-badge">{t('agentPanel.badgeStatus')}</span>
@@ -56,29 +56,35 @@ export const TraceItem = memo(function TraceItem({ event, modelList, onRollback,
               const p = event.observation.desktop.screenshotPath;
               const url = '/screenshots/' + p.split('desktop-agent-observations').pop()?.replace(/^\//, '');
               return (
-                <img className="screenshot-img clickable" src={url} alt="screenshot" onClick={() => openLightbox(url)} />
+                <img className="screenshot-thumb clickable" src={url} alt="screenshot" onClick={() => openLightbox(url)} />
               );
             })()}
             {event.observation?.browser?.title && <p>{event.observation.browser.title}</p>}
             {event.observation?.browser?.url && <p className="agent-trace-url">{event.observation.browser.url}</p>}
             {event.observation?.browser?.text && <p>{event.observation.browser.text}</p>}
             {event.observation?.desktop?.windows?.length > 0 && (
-              <div className="agent-element-list">
-                {event.observation.desktop.windows.slice(0, 6).map((window, windowIndex) => (
-                  <span key={`${window.app}-${window.title}-${windowIndex}`} className="agent-element-chip">
-                    {window.app} {window.title || 'Untitled'}
-                  </span>
-                ))}
-              </div>
+              <details className="agent-observe-details">
+                <summary>{t('agentPanel.moreDetails', { n: event.observation.desktop.windows.length })}</summary>
+                <div className="agent-element-list">
+                  {event.observation.desktop.windows.slice(0, 6).map((window, windowIndex) => (
+                    <span key={`${window.app}-${window.title}-${windowIndex}`} className="agent-element-chip">
+                      {window.app} {window.title || 'Untitled'}
+                    </span>
+                  ))}
+                </div>
+              </details>
             )}
             {event.observation?.browser?.elements?.length > 0 && (
-              <div className="agent-element-list">
-                {event.observation.browser.elements.slice(0, 6).map(element => (
-                  <span key={element.id} className="agent-element-chip">
-                    #{element.id} {element.tag} {element.text || element.href || ''}
-                  </span>
-                ))}
-              </div>
+              <details className="agent-observe-details">
+                <summary>{t('agentPanel.moreDetails', { n: event.observation.browser.elements.length })}</summary>
+                <div className="agent-element-list">
+                  {event.observation.browser.elements.slice(0, 6).map(element => (
+                    <span key={element.id} className="agent-element-chip">
+                      #{element.id} {element.tag} {element.text || element.href || ''}
+                    </span>
+                  ))}
+                </div>
+              </details>
             )}
           </div>
         </>
@@ -105,7 +111,10 @@ export const TraceItem = memo(function TraceItem({ event, modelList, onRollback,
               </button>
             </div>
             {event.rationale && <p>{event.rationale}</p>}
-            <pre className="agent-json">{JSON.stringify(event.action, null, 2)}</pre>
+            <details className="agent-json-details">
+              <summary>{t('agentPanel.showJson')}</summary>
+              <pre className="agent-json">{JSON.stringify(event.action, null, 2)}</pre>
+            </details>
           </div>
         </>
       )}
@@ -119,7 +128,7 @@ export const TraceItem = memo(function TraceItem({ event, modelList, onRollback,
               <span className="agent-trace-badge result">{t('agentPanel.badgeResult')}</span>
               <div className="agent-trace-content">
                 <strong>Step {event.step}</strong>
-                <img className="screenshot-img clickable" src={url} alt="screenshot" onClick={() => openLightbox(url)} />
+                <img className="screenshot-thumb clickable" src={url} alt="screenshot" onClick={() => openLightbox(url)} />
               </div>
             </>
           );

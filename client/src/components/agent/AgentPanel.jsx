@@ -7,6 +7,7 @@ import { PHONE_BREAKPOINT } from '../../utils/constants.js';
 import { ModelPlanGroup } from './ModelPlanGroup.jsx';
 import { ElapsedTimer } from './ElapsedTimer.jsx';
 import { TraceItem } from './TraceItem.jsx';
+import { StepCard } from './StepCard.jsx';
 import { computeTraceMetrics } from './trace-metrics.js';
 import { useIsMobile } from '../../hooks/useIsMobile.js';
 import { useT } from '../../i18n/I18nProvider.jsx';
@@ -63,6 +64,14 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
     const set = new Set();
     for (const e of trace) {
       if (e.type === 'model_plan' && e.stage === 'start' && e.models?.length > 1) set.add(e.step);
+    }
+    return set;
+  }, [trace]);
+  // 单模型的步：observe/action/result 合并成一张 StepCard，model_plan 折叠废卡不再单独渲染。
+  const singleModelSteps = useMemo(() => {
+    const set = new Set();
+    for (const e of trace) {
+      if (e.type === 'model_plan' && e.stage === 'start' && e.models?.length === 1) set.add(e.step);
     }
     return set;
   }, [trace]);
@@ -177,30 +186,61 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
               ) : (
                 <div className="agent-trace">
           {trace.map((event, index) => {
-            // model_plan events: only render 'start' as ModelPlanGroup, 'consensus' as standalone item
-            // (other stages like thinking/success/failed are collected inside ModelPlanGroup)
-            if (event.type === 'model_plan' && event.stage !== 'start' && event.stage !== 'consensus') return null;
-            if (event.type === 'model_plan' && event.stage === 'start') {
-              return (
-                <ModelPlanGroup
-                  key={`model-plan-step-${event.step ?? index}-${index}`}
-                  events={eventsByStep.get(event.step) || []}
-                  step={event.step}
-                  models={event.models}
-                  modelList={modelList}
-                  agentFinished={agentFinished}
-                  cardsExpanded={cardsExpanded}
-                  onManualToggle={() => setCardsExpanded(null)}
-                  onRollback={stableRollback}
-                  rollbackLoading={rollbackLoading}
-                />
-              );
+            // 系统级提示不进时间线：启动提示 / 浏览器就绪 / 后台健康快照都是噪音，
+            // 不是 agent 的实质步骤；断点恢复 status='resuming' 有信息量，保留。
+            if (event.type === 'session_checkpoint') return null;
+            if (event.type === 'status' && (event.status === 'starting' || event.status === 'browser_ready')) return null;
+            // ── model_plan ──
+            if (event.type === 'model_plan') {
+              // start：多模型渲染对比卡组；单模型并入 StepCard，不单独渲染
+              if (event.stage === 'start') {
+                return event.models?.length > 1 ? (
+                  <ModelPlanGroup
+                    key={`model-plan-step-${event.step ?? index}-${index}`}
+                    events={eventsByStep.get(event.step) || []}
+                    step={event.step}
+                    models={event.models}
+                    modelList={modelList}
+                    agentFinished={agentFinished}
+                    cardsExpanded={cardsExpanded}
+                    onManualToggle={() => setCardsExpanded(null)}
+                    onRollback={stableRollback}
+                    rollbackLoading={rollbackLoading}
+                    openLightbox={setLightboxSrc}
+                  />
+                ) : null;
+              }
+              // consensus 落到底部 TraceItem 单独展示；其它阶段在卡组内显示，跳过
+              if (event.stage !== 'consensus') return null;
             }
-            // For multi-model steps, skip separate action/result items (shown inside model cards)
-            if (event.type === 'step' && (event.stage === 'action' || event.stage === 'result') && multiModelSteps.has(event.step)) {
-              return null;
+
+            // ── step ──
+            if (event.type === 'step') {
+              // 单模型：observe/action/result 合并成一张 StepCard，只在 observe 处渲染一次
+              if (singleModelSteps.has(event.step)) {
+                return event.stage === 'observe' ? (
+                  <StepCard
+                    key={`step-card-${event.step ?? index}`}
+                    events={eventsByStep.get(event.step) || []}
+                    step={event.step}
+                    active={running && event.step === metrics.lastStep}
+                    modelList={modelList}
+                    onRollback={stableRollback}
+                    rollbackLoading={rollbackLoading}
+                    openLightbox={setLightboxSrc}
+                    forceExpanded={cardsExpanded}
+                    onManualToggle={() => setCardsExpanded(null)}
+                    t={t}
+                  />
+                ) : null;
+              }
+              // 多模型：observe/action/result 都并入决策卡组（与单模型 StepCard 一致，一步一节点），这里跳过
+              if (multiModelSteps.has(event.step) && (event.stage === 'observe' || event.stage === 'action' || event.stage === 'result')) {
+                return null;
+              }
             }
-            // consensus + 其余普通事件统一交给 memo 化的 TraceItem
+
+            // consensus + 其余事件（status/notification/approval/done/error/...）
             return (
               <TraceItem
                 key={`${event.type}-${event.step ?? index}-${event.stage ?? index}`}

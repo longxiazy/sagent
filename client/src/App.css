@@ -72,6 +72,22 @@
   --c-badge-consensus-bg: #dcfce7;
   --c-badge-consensus: #166534;
 
+  /* 工具语义色：按领域分组，时间线圆点 + 工具图标据此着色，让「这步在用哪类工具」一眼可辨。
+     网络蓝青(browser/chrome/search) · 文件命令暖色(fs/terminal) · 桌面紫靛(macos/ide) · 智能粉玫(vision/spawn) · 控制灰(core) */
+  --c-tool-browser:  #2563eb;
+  --c-tool-chrome:   #0891b2;
+  --c-tool-search:   #0d9488;
+  --c-tool-fs:       #d97706;
+  --c-tool-terminal: #16a34a;
+  --c-tool-macos:    #7c3aed;
+  --c-tool-ide:      #4f46e5;
+  --c-tool-vision:   #c026d3;
+  --c-tool-spawn:    #e11d48;
+  --c-tool-core:     #64748b;
+
+  /* observe 节点专属色：多模型场景下单独渲染的「观察」节点，柔和蓝灰——中性、明确区别于动作的鲜艳工具色 */
+  --c-trace-observe: #6b8aa8;
+
   /* Semantic surfaces */
   --c-surface-hover: #f9fafb;
   --c-surface-inline: #f3f4f6;
@@ -194,6 +210,21 @@
   --c-badge-rollback: #f0a050;
   --c-badge-consensus-bg: #14331f;
   --c-badge-consensus: #6ee0a0;
+
+  /* 工具语义色（暗版：整体提亮以保证在深色背景上的对比与可辨识度） */
+  --c-tool-browser:  #6ea8fe;
+  --c-tool-chrome:   #38bdf8;
+  --c-tool-search:   #2dd4bf;
+  --c-tool-fs:       #fbbf24;
+  --c-tool-terminal: #4ade80;
+  --c-tool-macos:    #a78bfa;
+  --c-tool-ide:      #818cf8;
+  --c-tool-vision:   #e879f9;
+  --c-tool-spawn:    #fb7185;
+  --c-tool-core:     #94a3b8;
+
+  /* observe 节点专属色（暗版：提亮的柔和蓝灰） */
+  --c-trace-observe: #8aa6c4;
 
   /* Semantic surfaces */
   --c-surface-hover: #2a2a36;
@@ -2083,7 +2114,7 @@ select,
   margin-top: 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
@@ -2096,30 +2127,121 @@ select,
   }
 }
 
+/* 执行轨迹 = 一条时间线：每个节点（步骤卡/事件/决策卡组）左侧串一颗状态色圆点，
+   圆点用竖线连成执行流。去掉每项的整框背景与粗左边框，让时间线本身成为主视觉。 */
+.agent-trace-item,
+.model-plan-group {
+  position: relative;
+  padding-left: 22px;
+}
+
 .agent-trace-item {
   display: flex;
   gap: 8px;
-  padding: 6px 8px;
-  border-radius: var(--r-md);
-  background: var(--c-surface-hover);
-  border: 1px solid var(--c-border);
-  border-left: 3px solid var(--c-border);
-  transition: border-color var(--dur-fast);
+  padding-top: 2px;
+  padding-bottom: 2px;
 }
 
-.agent-trace-item[data-type="step"][data-stage="action"] { border-left-color: var(--c-badge-action); }
+/* 连接线：贯穿节点并跨过 gap 连到下一个圆点；圆点描边盖住交点形成"串珠" */
+.agent-trace-item::before,
+.model-plan-group::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: -8px;
+  width: 2px;
+  background: var(--c-border);
+}
+/* 第一个节点：竖线从圆点起，不向上溢出 */
+.agent-trace > :first-child.agent-trace-item::before,
+.agent-trace > :first-child.model-plan-group::before { top: 11px; }
+/* 最后一个真实节点（其后是 traceBottom 占位 div）：线到自身底部即止，不悬空 */
+.agent-trace > :nth-last-child(2)::before { bottom: 0; }
+
+/* 节点圆点：默认色，下面按事件语义着色 */
+.agent-trace-item::after,
+.model-plan-group::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--c-text-tertiary);
+  box-shadow: 0 0 0 3px var(--c-surface);
+  z-index: 1;
+}
+
 @keyframes traceItemIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.agent-trace-item { animation: traceItemIn var(--dur-normal) ease-out; }
-.agent-trace-item[data-type="step"][data-stage="result"] { border-left-color: var(--c-badge-result); }
-.agent-trace-item[data-type="done"] { border-left-color: var(--c-badge-done); }
-.agent-trace-item[data-type="error"] { border-left-color: var(--c-badge-error); }
-.agent-trace-item[data-type="approval_required"] { border-left-color: var(--c-badge-approval); }
-.agent-trace-item[data-type="rollback"] { border-left-color: var(--c-badge-rollback); }
-.agent-trace-item[data-type="session_checkpoint"] { border-left-color: var(--c-badge-plan); }
-.agent-trace-item[data-type="notification"] { border-left-color: var(--c-primary); }
+.agent-trace-item,
+.model-plan-group { animation: traceItemIn var(--dur-normal) ease-out; }
+
+/* ── 工具语义色映射：任一带 data-tool 的元素都把 --tool-c 定下来，圆点 / 工具图标共用 ── */
+[data-tool="browser"]  { --tool-c: var(--c-tool-browser); }
+[data-tool="chrome"]   { --tool-c: var(--c-tool-chrome); }
+[data-tool="search"]   { --tool-c: var(--c-tool-search); }
+[data-tool="fs"]       { --tool-c: var(--c-tool-fs); }
+[data-tool="terminal"] { --tool-c: var(--c-tool-terminal); }
+[data-tool="macos"]    { --tool-c: var(--c-tool-macos); }
+[data-tool="ide"]      { --tool-c: var(--c-tool-ide); }
+[data-tool="vision"]   { --tool-c: var(--c-tool-vision); }
+[data-tool="spawn"]    { --tool-c: var(--c-tool-spawn); }
+[data-tool="core"]     { --tool-c: var(--c-tool-core); }
+
+/* 圆点状态色：动作类节点用工具色（--tool-c），其余事件沿用原语义映射 */
+.agent-trace-item[data-stage="merged"]::after,
+.agent-trace-item[data-type="step"][data-stage="action"]::after { background: var(--tool-c, var(--c-badge-action)); }
+.agent-trace-item[data-type="step"][data-stage="result"]::after { background: var(--c-badge-result); }
+/* 多模型场景下单独渲染的 observe 节点：用专属中性色（observe 本身不属于具体工具，故不参与工具色） */
+.agent-trace-item[data-type="step"][data-stage="observe"]::after { background: var(--c-trace-observe); }
+.agent-trace-item[data-type="done"]::after { background: var(--c-badge-done); }
+.agent-trace-item[data-type="error"]::after { background: var(--c-badge-error); }
+.agent-trace-item[data-type="approval_required"]::after { background: var(--c-badge-approval); }
+.agent-trace-item[data-type="rollback"]::after { background: var(--c-badge-rollback); }
+.agent-trace-item[data-type="session_checkpoint"]::after { background: var(--c-badge-plan); }
+.agent-trace-item[data-type="notification"]::after { background: var(--c-primary); }
+.model-plan-group::after { background: var(--c-badge-plan); }
+/* 卡组圆点改用 winner 的工具色（与单模型步一致）；无 winner 时回落到 plan 紫 */
+.model-plan-group[data-tool]::after { background: var(--tool-c); }
+
+/* done 三态：完成绿 / 未核验琥珀 / 降级橙，圆点与右上角状态标签呼应 */
+.agent-trace-item[data-type="done"][data-status="done_unverified"]::after { background: var(--c-badge-approval); }
+.agent-trace-item[data-type="done"][data-status="done_degraded"]::after { background: var(--c-badge-rollback); }
+
+/* 失败步骤：圆点转红，结果 ↳ 图标与文字标红——失败在时间线上一眼可辨（放在最后以压过工具色） */
+.agent-trace-item.result-failed::after,
+.model-plan-group.result-failed::after { background: var(--c-badge-error); }
+/* 失败步：圆点 + ↳ 图标转红做状态指示；结果正文不再整段标红，改为只高亮命中的关键词 */
+.agent-trace-item.result-failed .step-card-result-icon,
+.model-plan-group.result-failed .step-card-result-icon { color: var(--c-badge-error); }
+
+/* 命中失败模式的关键词高亮（红字 + 淡红底），结果主体文字保持正常可读 */
+.result-keyword {
+  color: var(--c-badge-error);
+  background: var(--c-badge-error-bg);
+  font-weight: 600;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+/* 当前正在执行的步：节点圆点向外扩散脉冲（脉冲色跟随该步的工具色），强化时间线的"执行流"叙事 */
+.agent-trace-item.running::after { animation: traceNodePulse 1.6s ease-out infinite; }
+@keyframes traceNodePulse {
+  0% { box-shadow: 0 0 0 3px var(--c-surface), 0 0 0 3px var(--tool-c, var(--c-badge-action)); }
+  75%, 100% { box-shadow: 0 0 0 3px var(--c-surface), 0 0 0 9px transparent; }
+}
+
+/* 尊重系统的减少动态偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .agent-trace-item,
+  .model-plan-group { animation: none; }
+  .agent-trace-item.running::after { animation: none; }
+}
 
 .agent-trace-badge {
   display: inline-flex;
@@ -2248,6 +2370,19 @@ select,
 .screenshot-img.clickable { cursor: zoom-in; transition: transform var(--dur-fast), box-shadow var(--dur-fast); }
 .screenshot-img.clickable:hover { transform: scale(1.02); box-shadow: var(--shadow-card); }
 
+/* 缩略图：trace 里默认用小尺寸（点击走 lightbox 放大），避免全宽截图撑高面板 */
+.screenshot-thumb {
+  display: block;
+  margin-top: 6px;
+  max-height: 72px;
+  max-width: 200px;
+  width: auto;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--c-border);
+}
+.screenshot-thumb.clickable { cursor: zoom-in; transition: transform var(--dur-fast), box-shadow var(--dur-fast); }
+.screenshot-thumb.clickable:hover { transform: scale(1.04); box-shadow: var(--shadow-card); }
+
 .screenshot-lightbox {
   position: fixed;
   inset: 0;
@@ -2324,17 +2459,153 @@ select,
   line-height: 1.4;
   overflow-x: auto;
   max-width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
 }
+
+/* ── StepCard（单模型合并卡）与折叠/截断工具 ── */
+
+/* 多行文本截断：超出部分隐藏，配合「展开/收起」按钮使用 */
+.clamp-1,
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.clamp-1 { -webkit-line-clamp: 1; }
+.clamp-2 { -webkit-line-clamp: 2; }
+
+/* ── StepCard 头部：步号(弱) + 工具图标 + 动作摘要(主) + meta(轻) + 回滚 ── */
+.step-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.step-card-tool-icon {
+  flex-shrink: 0;
+  color: var(--tool-c, var(--c-text-secondary));
+}
+
+.step-card-step {
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--c-text-tertiary);
+  min-width: 12px;
+}
+
+.step-card-summary {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--f-sm);
+  font-weight: 600;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 模型·token 合并成一行次要文字，弱化视觉权重 */
+.step-card-meta {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--c-text-tertiary);
+  white-space: nowrap;
+}
+
+.step-card-observe { color: var(--c-text-secondary); }
+
+/* 结果：↳ 图标锚点 + 文本，区别于上方的决策理由 */
+.step-card-result {
+  display: flex;
+  gap: 5px;
+  margin-top: 4px;
+}
+.step-card-result-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--c-badge-result);
+}
+.step-card-result-body { min-width: 0; flex: 1; }
+.step-card-result-body > p { color: var(--c-text); }
+
+/* 「展开/收起」纯文字小开关（理由/结果） */
+.step-card-toggle {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: var(--f-xs);
+  color: var(--c-primary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.step-card-toggle:hover { text-decoration: underline; }
+
+.step-card-json { margin-top: 4px; }
+/* JSON 折叠开关做成一颗带 chevron 的小 chip */
+.step-card-json-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 7px 1px 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--c-text-secondary);
+  background: var(--c-surface-inline);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
+}
+.step-card-json-toggle:hover {
+  color: var(--c-primary);
+  border-color: var(--c-primary-light);
+  background: var(--c-primary-bg);
+}
+
+/* 用 <details> 折叠的 observe 详情 / 兜底 action JSON */
+.step-card-details,
+.agent-observe-details,
+.agent-json-details { margin-top: 4px; }
+.step-card-details > summary,
+.agent-observe-details > summary,
+.agent-json-details > summary {
+  font-size: var(--f-xs);
+  color: var(--c-primary);
+  cursor: pointer;
+  list-style: none;
+}
+.step-card-details > summary,
+.agent-observe-details > summary { color: var(--c-text-tertiary); }
+.step-card-details > summary::-webkit-details-marker,
+.agent-observe-details > summary::-webkit-details-marker,
+.agent-json-details > summary::-webkit-details-marker { display: none; }
+
+/* details 展开后的 chips 不应被移动端 .agent-element-list 的 40px 裁剪 */
+.agent-observe-details .agent-element-list,
+.step-card-details .agent-element-list { max-height: none; overflow: visible; }
 
 /* ── Model Plan Cards ── */
 
 .model-plan-group {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 6px;
   width: 100%;
 }
+
+/* 决策卡组头部（决策/投票 badge），与单模型 StepCard 的 head 行对齐 */
+.model-plan-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+/* 卡组回滚按钮靠右，与单模型 StepCard head 行尾的回滚位置一致 */
+.model-plan-rollback { margin-left: auto; }
 
 .model-plan-cards {
   flex: 1;
@@ -2355,39 +2626,29 @@ select,
   color: var(--c-text-secondary);
 }
 
+/* 瘦身：去掉重边框/卡片底色，融入时间线（与单模型 StepCard 一致）；hover 才点亮底色 */
 .model-card {
   flex: 1 1 0;
   min-width: 140px;
   max-width: 360px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--c-border);
-  background: var(--c-surface);
-  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  border: none;
+  background: none;
+  padding: 2px 6px;
   font-size: var(--f-xs);
-  transition: border-color 0.2s;
+  transition: background var(--dur-fast);
   position: relative;
   overflow: hidden;
 }
+.model-card:hover { background: var(--c-surface-hover); }
 
-.model-card.winner {
-  border-color: var(--c-success);
-  background: var(--c-success-bg);
-}
-
-.model-card.failed {
-  border-color: var(--c-agent-stop-border);
-  background: var(--c-agent-stop-bg);
-}
+/* winner / failed 不再用整块底色，改左侧 2px 色条锚定（winner 用工具色，failed 用错误红） */
+/* winner 靠 ★ + step 号 + 回滚 标记，failed 靠状态图标/标签；不再用左色条（避免动作图标前多一道竖线） */
 
 .model-card.discarded,
 .model-card.abandoned,
 .model-card.cancelled {
   opacity: 0.5;
-}
-
-.model-card.cancelled {
-  border-color: var(--c-border);
-  background: var(--c-surface-hover);
 }
 
 .model-card-head {
@@ -2398,7 +2659,6 @@ select,
 }
 
 .model-card-expand-icon {
-  margin-left: auto;
   color: var(--c-text-muted);
   flex-shrink: 0;
 }
@@ -2436,17 +2696,45 @@ select,
   display: block;
 }
 
-.model-card-icon { font-size: 12px; }
+.model-card-icon { font-size: 12px; flex-shrink: 0; }
+.model-card.winner .model-card-icon { color: var(--tool-c, var(--c-badge-result)); }
+.model-card.failed .model-card-icon { color: var(--c-badge-error); }
 
 .model-card-label {
   font-weight: 700;
   color: var(--c-text);
-  flex: 1;
+  flex-shrink: 0;
+  max-width: 96px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 11px;
 }
+
+/* 动作为主（winner/success/cancelled 行）：工具图标 + 动作摘要当主角，字号/字重对齐单模型 StepCard；
+   模型名 + winner★ 退为右侧 meta。整条时间线的"动作行"统一为一种视觉语言。 */
+.model-card-tool-icon { flex-shrink: 0; color: var(--tool-c, var(--c-text-secondary)); }
+.model-card-summary {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--f-sm);
+  font-weight: 600;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.model-card-meta {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--c-text-tertiary);
+  white-space: nowrap;
+}
+.model-card-winner-star { color: var(--tool-c, var(--c-badge-result)); }
 
 .model-card-status {
   font-weight: 600;
@@ -2454,6 +2742,8 @@ select,
   padding: 1px 5px;
   border-radius: var(--r-pill);
   white-space: nowrap;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .model-card-status.thinking { background: var(--c-warning-bg); color: var(--c-warning-text); }
@@ -2466,7 +2756,11 @@ select,
 
 .model-card-body { margin-top: 4px; }
 .model-card-body p { margin: 0; color: var(--c-text-secondary); line-height: 1.3; font-size: 11px; }
-.model-card-head .copy-btn { opacity: 0; width: 22px; height: 22px; border-radius: 4px; margin-left: auto; }
+
+/* 扁平行下的理由 / 过渡态次要文字（与单模型 StepCard 正文口径一致） */
+.model-card-rationale { margin: 2px 0 0; font-size: 12px; color: var(--c-text-secondary); line-height: 1.35; }
+.model-card-sub { margin: 2px 0 0; font-size: 12px; color: var(--c-text-tertiary); }
+.model-card-head .copy-btn { opacity: 0; width: 22px; height: 22px; border-radius: 4px; flex-shrink: 0; }
 .model-card:hover .model-card-head .copy-btn { opacity: 1; }
 .model-card-head .copy-btn.copied { opacity: 1; }
 
@@ -2528,12 +2822,18 @@ select,
 }
 
 .model-card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 9px;
   color: var(--c-agent-idle);
   background: var(--c-surface-inline);
   padding: 1px 5px;
   border-radius: var(--r-sm);
 }
+
+/* 模型卡里的工具图标也染工具色（文字保持中性，与 StepCard 口径一致：只让图标承载工具语义） */
+.model-card[data-tool] .model-card-action > svg { color: var(--tool-c); }
 
 .model-card-tokens {
   font-size: 9px;
@@ -2559,6 +2859,18 @@ select,
   white-space: pre;
   color: var(--c-badge-default);
 }
+
+.model-card-json-toggle {
+  display: inline-block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--c-primary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.model-card-json-toggle:hover { text-decoration: underline; }
 
 .model-card-result {
   margin-top: 4px;
@@ -3505,10 +3817,10 @@ textarea:disabled {
     padding: 1px 5px;
   }
 
-  .agent-trace { margin-top: 6px; gap: 3px; }
+  .agent-trace { margin-top: 6px; gap: 6px; }
 
   .agent-trace-item {
-    padding: 5px 6px;
+    padding: 2px 0 2px 20px;
     gap: 6px;
     align-items: flex-start;
   }
@@ -3691,7 +4003,7 @@ textarea:disabled {
   .agent-metric-tokens { font-size: 9px; padding: 1px 4px; }
   .agent-metric:last-child { display: none; }
 
-  .agent-trace-item { padding: 4px 5px; gap: 5px; }
+  .agent-trace-item { padding: 2px 0 2px 18px; gap: 5px; }
 
   .agent-trace-badge { height: 15px; font-size: 8px; padding: 0 4px; }
 
