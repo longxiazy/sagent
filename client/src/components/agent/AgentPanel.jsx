@@ -206,6 +206,7 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
                     onManualToggle={() => setCardsExpanded(null)}
                     onRollback={stableRollback}
                     rollbackLoading={rollbackLoading}
+                    openLightbox={setLightboxSrc}
                   />
                 ) : null;
               }
@@ -233,13 +234,13 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
                   />
                 ) : null;
               }
-              // 多模型：action/result 在模型卡内显示，这里跳过（observe 仍单独渲染）
-              if (multiModelSteps.has(event.step) && (event.stage === 'action' || event.stage === 'result')) {
+              // 多模型：observe/action/result 都并入决策卡组（与单模型 StepCard 一致，一步一节点），这里跳过
+              if (multiModelSteps.has(event.step) && (event.stage === 'observe' || event.stage === 'action' || event.stage === 'result')) {
                 return null;
               }
             }
 
-            // consensus + 多模型 observe + 其余事件（status/notification/approval/done/error/...）
+            // consensus + 其余事件（status/notification/approval/done/error/...）
             return (
               <TraceItem
                 key={`${event.type}-${event.step ?? index}-${event.stage ?? index}`}

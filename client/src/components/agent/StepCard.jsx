@@ -4,6 +4,7 @@ import { getModelLabel } from './plan-stage.js';
 import { summarizeAction } from './action-summary.js';
 import { isFailureResult } from './result-status.js';
 import { ToolIcon } from './tool-icon.jsx';
+import { ObserveSummary } from './ObserveSummary.jsx';
 
 // StepCard：把单模型一步的 observe + action + result 合并成一张卡。
 // 原先单模型一步会渲染 4 块（observe / 折叠的 model_plan 废卡 / action / result），
@@ -44,12 +45,6 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
   const summary = summarizeAction(action);
   const modelLabel = modelEvent ? getModelLabel(modelEvent.model, modelList) : null;
 
-  const desktop = observation?.desktop;
-  const browser = observation?.browser;
-  const observeShot = desktop?.screenshotPath
-    ? '/screenshots/' + desktop.screenshotPath.split('desktop-agent-observations').pop()?.replace(/^\//, '')
-    : null;
-
   const resultShotMatch = result ? result.match(RESULT_SCREENSHOT_RE) : null;
   const resultShot = resultShotMatch ? '/screenshots/' + resultShotMatch[2] : null;
   // 文本结果命中失败模式时整卡标红（截图结果不参与判定）
@@ -57,10 +52,6 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
 
   // 切换本地展开态；若当前受 forceExpanded 接管，先通知父组件解除接管再翻转本地态。
   const toggle = setter => () => { if (forceExpanded != null) onManualToggle?.(); setter(v => !v); };
-
-  const windows = desktop?.windows || [];
-  const elements = browser?.elements || [];
-  const hasObserveDetail = windows.length > 0 || elements.length > 0;
 
   return (
     <div
@@ -84,30 +75,8 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
           </button>
         </div>
 
-        {/* observe 概要：桌面应用/窗口或浏览器标题 + URL + 截图缩略图 */}
-        {desktop?.frontmostApp && (
-          <p className="step-card-observe">
-            {desktop.frontmostApp}{desktop.frontmostWindowTitle ? ` · ${desktop.frontmostWindowTitle}` : ''}
-          </p>
-        )}
-        {browser?.title && <p className="step-card-observe">{browser.title}</p>}
-        {browser?.url && <p className="agent-trace-url clamp-1">{browser.url}</p>}
-        {observeShot && (
-          <img className="screenshot-thumb clickable" src={observeShot} alt="screenshot" onClick={() => openLightbox(observeShot)} />
-        )}
-        {hasObserveDetail && (
-          <details className="step-card-details">
-            <summary>{t('agentPanel.moreDetails', { n: windows.length + elements.length })}</summary>
-            <div className="agent-element-list">
-              {windows.slice(0, 6).map((w, i) => (
-                <span key={`${w.app}-${w.title}-${i}`} className="agent-element-chip">{w.app} {w.title || 'Untitled'}</span>
-              ))}
-              {elements.slice(0, 6).map(el => (
-                <span key={el.id} className="agent-element-chip">#{el.id} {el.tag} {el.text || el.href || ''}</span>
-              ))}
-            </div>
-          </details>
-        )}
+        {/* observe 概要（与多模型卡组共用同一组件，口径一致） */}
+        <ObserveSummary observation={observation} openLightbox={openLightbox} t={t} />
 
         {/* 决策理由：截断，超长可展开 */}
         {rationale && (
