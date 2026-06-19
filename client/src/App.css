@@ -2695,22 +2695,30 @@ select,
   font-size: 11px;
 }
 
-/* head 内动作摘要：折叠态也能对比各模型选了什么动作；工具图标染工具色 */
+/* 动作为主（winner/success/cancelled 行）：工具图标 + 动作摘要当主角，字号/字重对齐单模型 StepCard；
+   模型名 + winner★ 退为右侧 meta。整条时间线的"动作行"统一为一种视觉语言。 */
+.model-card-tool-icon { flex-shrink: 0; color: var(--tool-c, var(--c-text-secondary)); }
 .model-card-summary {
   flex: 1;
   min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10px;
-  color: var(--c-text-secondary);
+  font-size: var(--f-sm);
+  font-weight: 600;
+  color: var(--c-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.model-card-summary svg { flex-shrink: 0; color: var(--tool-c, var(--c-text-tertiary)); }
-.model-card.winner .model-card-summary { color: var(--c-text); }
+.model-card-meta {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--c-text-tertiary);
+  white-space: nowrap;
+}
+.model-card-winner-star { color: var(--tool-c, var(--c-badge-result)); }
 
 .model-card-status {
   font-weight: 600;

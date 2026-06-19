@@ -32,15 +32,29 @@ export function ModelPlanCard({ event, isWinner, modelList, result, forceExpande
     result,
   ].filter(Boolean).join('\n\n');
 
+  // 有动作的稳定态（winner/success/cancelled）让"动作"当主角，与单模型 StepCard 行同构；
+  // 思考/排队/失败/放弃等过渡或异常态没有可对比的动作，仍以"模型名 + 状态"为主。
+  const showActionPrimary = !!event.action && (stage === 'winner' || stage === 'success' || stage === 'cancelled');
+
   return (
     <div className={`model-card ${stage} ${isWinner ? 'winner' : ''} ${effectiveExpanded ? 'expanded' : ''}`} data-tool={event.action?.tool || undefined} onClick={() => { if (forceExpanded != null) onManualToggle?.(); setExpanded(v => !v); }}>
       <div className="model-card-head">
-        <span className="model-card-icon">{PLAN_STAGE_ICON[stage] || '·'}</span>
-        <span className="model-card-label">{label}</span>
-        {event.action && (
-          <span className="model-card-summary"><ToolIcon tool={event.action.tool} size={10} /> {summarizeAction(event.action)}</span>
+        {showActionPrimary ? (
+          <>
+            <ToolIcon tool={event.action.tool} size={13} className="model-card-tool-icon" />
+            <span className="model-card-summary">{summarizeAction(event.action)}</span>
+            <span className="model-card-meta">
+              {isWinner && <span className="model-card-winner-star">★</span>}
+              {label}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="model-card-icon">{PLAN_STAGE_ICON[stage] || '·'}</span>
+            <span className="model-card-label">{label}</span>
+            <span className={`model-card-status ${stage}`}>{PLAN_STAGE_LABELS[stage] ? t(PLAN_STAGE_LABELS[stage]) : stage}</span>
+          </>
         )}
-        <span className={`model-card-status ${stage}`}>{PLAN_STAGE_LABELS[stage] ? t(PLAN_STAGE_LABELS[stage]) : stage}</span>
         {copyText && <CopyButton text={copyText} />}
         <span className="model-card-expand-icon">{effectiveExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}</span>
       </div>
