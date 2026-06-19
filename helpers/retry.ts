@@ -87,13 +87,18 @@ function extractRetryDelayMs(err) {
   return null;
 }
 
-export async function retryAsync(fn, maxRetries = MAX_RETRIES, context = {}) {
+export async function retryAsync(fn, maxRetries = MAX_RETRIES, context = {}, options: { retryRateLimit?: boolean } = {}) {
+  const { retryRateLimit = true } = options;
   const contextText = Object.keys(context).length ? ` context=${JSON.stringify(context)}` : '';
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     try {
       return await fn();
     } catch (err) {
-      if (attempt === maxRetries || !isRetryableError(err)) {
+      // 默认会重试 429 限流。但带单步超时的调用（如 agentPlan）会传 retryRateLimit=false：
+      // 让 429 立即上抛，交由 planner 层处理（展示真实配额错误 + 冷却/降级）。
+      // 否则这里的长退避（30~60s × 多次）会撑满模型超时，把“配额超限”掩盖成“模型超时”。
+      const rateLimitedNoRetry = !retryRateLimit && isRateLimitError(err);
+      if (attempt === maxRetries || !isRetryableError(err) || rateLimitedNoRetry) {
         log.warn(`[Retry] final failure${contextText} error=${formatErrorDiagnostics(err)}`);
         throw err;
       }

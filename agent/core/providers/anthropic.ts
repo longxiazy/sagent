@@ -108,7 +108,7 @@ export function createAnthropicProvider(client: any): LLMProvider {
       if (signal) streamOpts.signal = signal;
 
       logLlmRequest(model, messages);
-      const stream = await retryAsync(() => client.messages.stream(streamOpts));
+      const stream = await retryAsync(() => client.messages.stream(streamOpts), undefined, undefined, { retryRateLimit: false });
       for await (const _event of stream) {
         // 仅用最终消息拿完整 tool_use
       }
