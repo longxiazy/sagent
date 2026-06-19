@@ -55,9 +55,6 @@ export function ModelPlanGroup({ events, step, models, modelList, agentFinished,
       <div className="agent-trace-content">
         <div className="model-plan-head">
           <span className="step-card-step">{step}</span>
-          <span className="agent-trace-badge plan">
-            {strategyMode === 'vote' ? t('modelPlan.vote') : t('modelPlan.decision')}
-          </span>
           <button className="trace-rollback-btn model-plan-rollback" onClick={(e) => { e.stopPropagation(); onRollback?.(step); }} disabled={rollbackLoading} title={t('agentPanel.rerunFromStep', { step })}>
             <RotateCcw size={10} />
           </button>
