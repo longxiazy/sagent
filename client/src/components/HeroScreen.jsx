@@ -49,7 +49,7 @@ export function HeroScreen({
   };
 
   return (
-    <div className="hero-wrap">
+    <div className={`hero-wrap${suggestionsHidden ? ' hero-wrap--centered' : ''}`}>
       <div className="hero">
         <button className="session-toggle-btn hero-menu" onClick={onToggleSessions} title={t('header.sessionList')}>
           <Menu size={16} />
@@ -60,7 +60,6 @@ export function HeroScreen({
 
         <div className="hero-brand">
           <h1 className="hero-title">sagent</h1>
-          <p className="hero-subtitle">{t('hero.subtitle')}</p>
         </div>
 
         <div className="hero-input-card">

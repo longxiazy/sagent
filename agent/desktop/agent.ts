@@ -33,6 +33,7 @@ import { createAgentAuthorizer, createReadOnlyAuthorizer } from '../policy/appro
 import { executeBrowserAction } from '../tools/browser/execute.ts';
 import { executeFsAction } from '../tools/fs/execute.ts';
 import { executeSearchAction } from '../tools/search/execute.ts';
+import { executeCodegraphQueryAction } from '../tools/codegraph/execute.ts';
 import { executeVisionAction } from '../tools/vision/execute.ts';
 import { executeSpawnAction } from '../tools/spawn/execute.ts';
 import { createDomainRules } from '../tools/fetch/domain-rules.ts';
@@ -79,7 +80,7 @@ export function createDesktopAgentRunner({
   }
 
   // Sub-agent runner factory: creates isolated runners for parallel execution
-  function createSubAgentRunner(parentRunId: string, parentModel: string, parentAgentModels: string[], parentStrategy: string, parentSystemPrompt: string | null, parentCancelSignal: AbortSignal, parentProjectRoot: string | null = null) {
+  function createSubAgentRunner(parentRunId: string, parentModel: string, parentAgentModels: string[], parentStrategy: string, parentSystemPrompt: string | null, parentCancelSignal: AbortSignal, parentProjectRoot: string | null = null, parentDataDir: string | null = null) {
     const subBrowserManager = createSharedBrowserSessionManager();
 
     return async (task: string, subIndex: number) => {
@@ -117,6 +118,7 @@ export function createDesktopAgentRunner({
           },
           fs: async (_state, action) => executeFsAction(action, { cwd: parentProjectRoot }),
           search: async (_state, action) => executeSearchAction(action),
+          codegraph: async (_state, action) => executeCodegraphQueryAction(action, { dataDir: parentDataDir }),
           vision: async (_state, action) => executeVisionAction(action, { openai_client, visionModel }),
           ide: async (_state, action) => executeIdeAction(action),
           chrome: async (_state, action) => executeChromeAction(action),
@@ -210,6 +212,7 @@ export function createDesktopAgentRunner({
       },
       fs: async (state, action) => executeFsAction(action, { cwd: state.projectRoot }),
       search: async (_state, action) => executeSearchAction(action),
+      codegraph: async (state, action) => executeCodegraphQueryAction(action, { dataDir: state.dataDir }),
       vision: async (_state, action) => executeVisionAction(action, { openai_client, visionModel }),
       ide: async (_state, action) => executeIdeAction(action),
       chrome: async (_state, action) => executeChromeAction(action),
@@ -227,7 +230,8 @@ export function createDesktopAgentRunner({
           state.strategy,
           state.systemPrompt,
           state.cancelSignal,
-          state.projectRoot
+          state.projectRoot,
+          state.dataDir
         );
         return executeSpawnAction(action, { runSubAgent });
       },
@@ -297,6 +301,7 @@ export function createDesktopAgentRunner({
         systemPrompt,
         cancelSignal,
         projectRoot,
+        dataDir,
       }),
       observe: observeDesktopAgent,
       decide: async ({ task: currentTask, step, history, observation }) =>

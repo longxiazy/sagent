@@ -173,6 +173,17 @@ export function createModelTools() {
       },
     },
     {
+      name: 'codegraph_query',
+      description: '查询项目代码知识图谱：按关键词返回相关模块的路径、职责、导出与依赖，帮你快速定位代码而无需逐个 read_file/list_dir 探索。适合任务开始时先了解项目结构。图谱需用户先在记忆面板「Code Graph」生成，未生成时工具会给出提示。',
+      input_schema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '要查找的模块/功能关键词（如 "记忆 memory"、"项目隔离 project"、"路由 router"）' },
+        },
+        required: ['query'],
+      },
+    },
+    {
       name: 'run_safe',
       description: '运行只读终端命令（白名单内，不含管道等复杂操作）',
       input_schema: {

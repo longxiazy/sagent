@@ -370,6 +370,11 @@ select,
   -webkit-overflow-scrolling: touch;
 }
 
+/* 隐藏建议面板后内容变短，让输入卡在竖直方向居中 */
+.hero-wrap--centered {
+  align-items: center;
+}
+
 .hero {
   width: 100%;
   max-width: 680px;
@@ -414,12 +419,6 @@ select,
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-}
-
-.hero-subtitle {
-  margin-top: 8px;
-  font-size: var(--f-base);
-  color: var(--c-text-muted);
 }
 
 .hero-input-card {
@@ -4203,10 +4202,6 @@ textarea:disabled {
     font-size: 20px;
   }
 
-  .hero-subtitle {
-    font-size: var(--f-xs);
-  }
-
   .hero-input-card {
     padding: 10px;
     gap: 8px;
@@ -4458,6 +4453,145 @@ textarea:disabled {
 }
 .memory-compact-btn:hover { background: var(--c-primary-bg); }
 .memory-compact-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Code Graph tab ── */
+
+.codegraph-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.codegraph-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.codegraph-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.codegraph-stats-main { font-size: 11px; font-weight: 500; color: var(--c-text); }
+.codegraph-stats-sub { font-size: 10px; color: var(--c-text-tertiary); }
+.codegraph-stats-empty { font-size: 11px; color: var(--c-text-secondary); }
+
+.codegraph-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.codegraph-model-select {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 11px;
+  color: var(--c-text);
+  background: var(--c-surface-inline);
+  border: 1px solid var(--c-border-input);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.codegraph-reindex-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--c-badge-plan);
+  background: var(--c-badge-plan-bg);
+  border: 1px solid var(--c-primary-light);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.codegraph-reindex-btn:hover:not(:disabled) { background: var(--c-primary-bg); }
+.codegraph-reindex-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.codegraph-reindex-btn .spinning { animation: codegraph-spin 1s linear infinite; }
+@keyframes codegraph-spin { to { transform: rotate(360deg); } }
+
+.codegraph-progress {
+  font-size: 11px;
+  color: var(--c-text-secondary);
+  background: var(--c-surface-hover);
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+}
+.codegraph-progress-error { color: var(--c-danger); background: var(--c-danger-bg); }
+
+.codegraph-summary {
+  font-size: 11px;
+  color: var(--c-text-secondary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.codegraph-search-input {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: var(--c-text);
+  background: var(--c-surface-inline);
+  border: 1px solid var(--c-border-input);
+  border-radius: var(--r-sm);
+}
+
+.codegraph-modules {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.codegraph-group-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--c-badge-plan);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--c-badge-plan-bg);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.codegraph-group-count {
+  font-weight: 400;
+  color: var(--c-text-tertiary);
+  text-transform: none;
+}
+
+.codegraph-module {
+  padding: 5px 8px;
+  margin-bottom: 4px;
+  background: var(--c-surface-hover);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+}
+.codegraph-module-path {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--c-text);
+  word-break: break-all;
+}
+.codegraph-module-desc {
+  font-size: 10px;
+  color: var(--c-text-secondary);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+.codegraph-module-deps {
+  font-size: 9px;
+  color: var(--c-text-tertiary);
+  margin-top: 2px;
+}
 
 /* ── Focus-visible outlines ── */
 

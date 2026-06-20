@@ -19,6 +19,7 @@ import { createAgentCheckpointRouter } from './agent-checkpoints.ts';
 import { createAgentTraceRouter } from './agent-traces.ts';
 import { createAgentUploadsRouter } from './agent-uploads.ts';
 import { createAgentProjectsRouter } from './agent-projects.ts';
+import { createAgentCodegraphRouter } from './agent-codegraph.ts';
 import type { AgentRouterContext } from './agent-types.ts';
 
 export function createAgentRouter(context: AgentRouterContext) {
@@ -33,6 +34,7 @@ export function createAgentRouter(context: AgentRouterContext) {
   router.use(createAgentTraceRouter(context));
   router.use(createAgentUploadsRouter(context));
   router.use(createAgentProjectsRouter(context));
+  router.use(createAgentCodegraphRouter(context));
 
   return router;
 }
