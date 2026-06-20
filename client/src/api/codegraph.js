@@ -29,10 +29,3 @@ export async function reindexCodegraph(projectId, model) {
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }
-
-// 静态关键词搜索,返回 { results: [...modules] }。
-export async function searchCodegraph(projectId, q) {
-  const res = await apiFetch(withParams('/api/agent/codegraph/query', projectId, { q }));
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
