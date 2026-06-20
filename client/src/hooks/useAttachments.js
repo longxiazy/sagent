@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { uploadAttachment } from '../api/uploads.js';
 import { tStatic } from '../i18n/locale.js';
 // 管理输入栏的附件列表。
@@ -16,8 +16,11 @@ export function useAttachments(activeProjectId = null) {
   const [attachments, setAttachments] = useState([]);
   const idRef = useRef(0);
   // 用 ref 持有最新 projectId，让 addFiles 的 useCallback 保持稳定。
+  // 在 effect 里同步（不可在 render 期间写 ref）。
   const projectIdRef = useRef(activeProjectId);
-  projectIdRef.current = activeProjectId;
+  useEffect(() => {
+    projectIdRef.current = activeProjectId;
+  }, [activeProjectId]);
 
   const update = (id, patch) => {
     setAttachments(prev => prev.map(a => (a.id === id ? { ...a, ...patch } : a)));
