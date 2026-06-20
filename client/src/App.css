@@ -502,6 +502,55 @@ select,
   cursor: not-allowed;
 }
 
+.suggestions-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 收起整个推荐面板的小按钮(标题栏右侧 X) */
+.suggestions-hide {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  color: var(--c-text-muted);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all var(--ease);
+}
+
+.suggestions-hide:hover {
+  color: var(--c-primary);
+  border-color: var(--c-primary-light);
+  background: var(--c-primary-bg);
+}
+
+/* 面板隐藏后,输入卡下方的"显示建议"重新唤出入口 */
+.suggestions-show {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px dashed var(--c-border);
+  background: transparent;
+  color: var(--c-text-muted);
+  border-radius: 999px;
+  font-size: var(--f-xs);
+  cursor: pointer;
+  transition: all var(--ease);
+}
+
+.suggestions-show:hover {
+  color: var(--c-primary);
+  border-color: var(--c-primary-light);
+  background: var(--c-primary-bg);
+}
+
 .suggestions-tabs {
   width: 100%;
   display: flex;

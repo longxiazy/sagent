@@ -257,6 +257,8 @@ export const zh = {
   'suggestions.tryTasks': '试试这些任务',
   'suggestions.tryQuestions': '试试这些问题',
   'suggestions.shuffle': '换一组',
+  'suggestions.hide': '隐藏',
+  'suggestions.show': '显示建议',
   'think.done': '思考过程',
   'think.thinking': '思考中',
   'think.organizing': '正在组织思路…',

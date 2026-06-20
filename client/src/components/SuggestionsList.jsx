@@ -1,9 +1,10 @@
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, X } from 'lucide-react';
 import { useT } from '../i18n/I18nProvider.jsx';
 
-// 推荐任务/问题列表 + "换一组" 按钮。
+// 推荐任务/问题列表 + "换一组" 按钮 + "隐藏" 按钮。
 // 单击 → 把内容填入输入框;双击 → 直接发送。
 // agent 模式下,categories 非空时显示分类 Tabs。
+// onHide:点右上角 X 收起整个面板(由父组件决定隐藏后的展示)。
 export function SuggestionsList({
   mode,
   suggestions,
@@ -14,20 +15,31 @@ export function SuggestionsList({
   onShuffle,
   onPick,
   onSubmit,
+  onHide,
 }) {
   const t = useT();
   return (
     <>
       <div className="suggestions-head">
         <span className="suggestions-label">{mode === 'agent' ? t('suggestions.tryTasks') : t('suggestions.tryQuestions')}</span>
-        <button
-          className="suggestions-refresh"
-          onClick={onShuffle}
-          disabled={sessionLocked}
-          title={t('suggestions.shuffle')}
-        >
-          <RotateCcw size={12} /> {t('suggestions.shuffle')}
-        </button>
+        <div className="suggestions-head-actions">
+          <button
+            className="suggestions-refresh"
+            onClick={onShuffle}
+            disabled={sessionLocked}
+            title={t('suggestions.shuffle')}
+          >
+            <RotateCcw size={12} /> {t('suggestions.shuffle')}
+          </button>
+          <button
+            className="suggestions-hide"
+            onClick={onHide}
+            title={t('suggestions.hide')}
+            aria-label={t('suggestions.hide')}
+          >
+            <X size={14} />
+          </button>
+        </div>
       </div>
 
       {categories && categories.length > 0 && (
