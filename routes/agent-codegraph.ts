@@ -4,7 +4,6 @@
  * 端点(均按 ?projectId 隔离;未指定即全局,语义同 resolveRunPaths):
  *   GET  /api/agent/codegraph              返回 codegraph.json 内容 + 当前索引任务状态(供轮询进度)
  *   POST /api/agent/codegraph/reindex      body { model } 触发后台异步索引,立即返回;已在跑→409
- *   GET  /api/agent/codegraph/query?q=     纯静态关键词搜索匹配模块
  *
  * 索引是分钟级重操作:POST 立即返回,后台跑 scanSkeleton → buildCodegraphWithLLM → saveCodegraph,
  * 进度记录在内存 IndexJob,前端轮询 GET 拿 done/total。
@@ -17,7 +16,6 @@ import {
   saveCodegraph,
   scanSkeleton,
   buildCodegraphWithLLM,
-  queryCodegraph,
 } from '../agent/core/codegraph.ts';
 import { resolveRunPaths } from '../agent/core/project-store.ts';
 import { log } from '../helpers/logger.ts';
@@ -115,18 +113,6 @@ export function createAgentCodegraphRouter({
         log.warn(`[Codegraph] 索引失败: ${job.error}`);
       }
     })();
-  });
-
-  // 静态关键词搜索
-  router.get('/api/agent/codegraph/query', async (req, res) => {
-    try {
-      const { dataDir } = resolvePaths(req);
-      const q = typeof req.query.q === 'string' ? req.query.q : '';
-      const graph = await loadCodegraph(dataDir);
-      res.json({ results: queryCodegraph(graph, q) });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
   });
 
   return router;

@@ -130,13 +130,10 @@ async function walkFiles(rootPath: string): Promise<string[]> {
     for (const entry of entries) {
       if (out.length >= MAX_FILES) return;
       const name = entry.name;
-      if (name.startsWith('.') && name !== '.gitignore') {
-        // 跳过点目录/点文件(.git/.idea 等),但目录扫描本就不读文件内容的隐藏文件
-        if (entry.isDirectory()) continue;
-      }
       const full = path.join(dir, name);
       if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(name) || extra.has(name)) continue;
+        // 跳过隐藏目录(.git/.idea 等)与默认 / .gitignore 忽略目录
+        if (name.startsWith('.') || SKIP_DIRS.has(name) || extra.has(name)) continue;
         await walk(full);
       } else if (entry.isFile()) {
         if (CODE_EXTS.includes(path.extname(name))) out.push(full);
@@ -323,19 +320,19 @@ function buildBatchMessages(batch: FileSkeleton[]): any[] {
     return `- ${parts.join(' | ')}`;
   }).join('\n');
 
+  // 指令并入单条 user message:Anthropic 的 messages 不接受 system 角色(system 须作顶层参数,
+  // 见 providers/anthropic.ts agentPlan),单条 user message 对 anthropic/gemini/openai-compat 都安全。
+  const instruction = [
+    '你是代码库分析助手。根据每个文件的路径、头注释、导出符号、依赖,',
+    '为每个文件生成一句话中文职责描述(description,≤30字)和一个模块分组(group,简短英文短横线命名,如 agent-core / routes / client-ui)。',
+    '只输出一个 JSON 数组,每项形如 {"path":"...","description":"...","group":"..."},',
+    'path 必须与输入完全一致。不要输出 JSON 以外的任何文字、不要用 markdown 围栏。',
+  ].join('');
+
   return [
     {
-      role: 'system',
-      content: [
-        '你是代码库分析助手。根据每个文件的路径、头注释、导出符号、依赖,',
-        '为每个文件生成一句话中文职责描述(description,≤30字)和一个模块分组(group,简短英文短横线命名,如 agent-core / routes / client-ui)。',
-        '只输出一个 JSON 数组,每项形如 {"path":"...","description":"...","group":"..."},',
-        'path 必须与输入完全一致。不要输出 JSON 以外的任何文字、不要用 markdown 围栏。',
-      ].join(''),
-    },
-    {
       role: 'user',
-      content: `请分析以下 ${batch.length} 个文件:\n${fileLines}`,
+      content: `${instruction}\n\n请分析以下 ${batch.length} 个文件:\n${fileLines}`,
     },
   ];
 }
