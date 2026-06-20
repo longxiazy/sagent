@@ -26,6 +26,7 @@ import { AppHeader } from './components/AppHeader.jsx';
 import { HeroScreen } from './components/HeroScreen.jsx';
 import { useAgentRun } from './hooks/useAgentRun.js';
 import { createSession, getSessionTitle, normalizeChatState, touchSession, useChatSessions } from './hooks/useChatSessions.js';
+import { useProjects } from './hooks/useProjects.js';
 import { booleanStorage, jsonStorage, usePersistentState } from './hooks/usePersistentState.js';
 import { useResponsiveLayout } from './hooks/useResponsiveLayout.js';
 import { useThemeColorSync } from './hooks/useThemeColorSync.js';
@@ -105,6 +106,15 @@ export default function App() {
     chatModel,
     updateSession,
   } = useChatSessions();
+  const {
+    projects,
+    activeProjectId,
+    loading: projectsLoading,
+    createProject,
+    updateProject,
+    deleteProject,
+    activateProject,
+  } = useProjects();
   const [availableModels, setAvailableModels] = useState(DEFAULT_MODELS);
   // availableModels 在首屏渲染时先用 DEFAULT_MODELS 占位；
   // modelsLoaded 用来区分“占位值”和“真实从后端拿到的列表”，
@@ -438,7 +448,7 @@ export default function App() {
       if (!rid) return;
       let events;
       try {
-        events = await fetchAgentTrace(rid);
+        events = await fetchAgentTrace(rid, { projectId: activeSession.projectId ?? null });
       } catch {
         return;
       }
@@ -516,7 +526,7 @@ export default function App() {
     if (savedRunId) {
       agentRunIdRef.current = savedRunId;
       setAgentRunId(savedRunId);
-      fetchAgentTrace(savedRunId, { signal: controller.signal })
+      fetchAgentTrace(savedRunId, { signal: controller.signal, projectId: activeSession.projectId ?? null })
         .then(events => {
           if (events.length === 0 || controller.signal.aborted) return;
           const deduped = events.filter((e, i) => {
@@ -617,7 +627,47 @@ export default function App() {
     setShowSessions,
     updateSession,
     textareaRef,
+    activeProjectId,
   });
+
+  // 切换项目：激活项目并把当前会话切到该项目下最近的一条，没有则新建一条空白会话。
+  const handleActivateProject = (projectId) => {
+    if (sessionLocked) return;
+    Promise.resolve(activateProject(projectId)).catch(() => {});
+    setChatState(prev => {
+      const inProject = prev.sessions
+        .filter(s => (s.projectId ?? null) === (projectId ?? null))
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      if (inProject.length > 0) {
+        return normalizeChatState({ ...prev, activeSessionId: inProject[0].id });
+      }
+      const blank = createSession({ projectId });
+      return normalizeChatState({ sessions: [blank, ...prev.sessions], activeSessionId: blank.id });
+    });
+    setInput('');
+    setShowReset(false);
+  };
+
+  // 初始加载后把当前会话对齐到后端的激活项目：避免侧边栏按 activeProjectId 过滤、
+  // 而打开的对话却属于另一个项目(或旧的 null 会话)导致“切了项目没生效”的错觉。
+  // 一次性执行；之后的切换走 handleActivateProject，选择会话只在本项目内。
+  const projectsReconciledRef = useRef(false);
+  useEffect(() => {
+    if (projectsLoading || projectsReconciledRef.current) return;
+    projectsReconciledRef.current = true;
+    setChatState(prev => {
+      const cur = prev.sessions.find(s => s.id === prev.activeSessionId);
+      if (cur && (cur.projectId ?? null) === (activeProjectId ?? null)) return prev;
+      const inProject = prev.sessions
+        .filter(s => (s.projectId ?? null) === (activeProjectId ?? null))
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      if (inProject.length > 0) {
+        return normalizeChatState({ ...prev, activeSessionId: inProject[0].id });
+      }
+      const blank = createSession({ projectId: activeProjectId });
+      return normalizeChatState({ sessions: [blank, ...prev.sessions], activeSessionId: blank.id });
+    });
+  }, [projectsLoading, activeProjectId, setChatState]);
 
   const { sendAgentTask, stopAgent, handleRollback, handleApprovalDecision } = useAgentTransport({
     activeSession,
@@ -658,7 +708,7 @@ export default function App() {
     consumeReady: consumeReadyAttachments,
     uploading: attachmentsUploading,
     hasReady: hasReadyAttachments,
-  } = useAttachments();
+  } = useAttachments(activeProjectId);
 
   const handleSubmit = async () => {
     const userText = input.trim();
@@ -805,6 +855,12 @@ export default function App() {
           locked={sessionLocked}
           showMemoryPanel={showMemoryPanel}
           onToggleMemory={() => setShowMemoryPanel(v => !v)}
+          projects={projects}
+          activeProjectId={activeProjectId}
+          onActivateProject={handleActivateProject}
+          onCreateProject={createProject}
+          onUpdateProject={updateProject}
+          onDeleteProject={deleteProject}
         />
       </SessionSidebar>
 

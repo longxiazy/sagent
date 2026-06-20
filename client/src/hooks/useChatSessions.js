@@ -41,6 +41,7 @@ export function createSession({
   modelsUsed = [],
   agentTrace = [],
   agentRunId = null,
+  projectId = null,
   createdAt = Date.now(),
   updatedAt = Date.now(),
 } = {}) {
@@ -51,6 +52,8 @@ export function createSession({
     modelsUsed: normalizeModelIds(modelsUsed),
     agentTrace: Array.isArray(agentTrace) ? agentTrace : [],
     agentRunId: typeof agentRunId === 'string' ? agentRunId : null,
+    // 会话归属的项目；null = 无项目（全局态，向后兼容旧会话）。
+    projectId: typeof projectId === 'string' && projectId ? projectId : null,
     createdAt,
     updatedAt,
   };
@@ -71,6 +74,7 @@ export function normalizeChatState(rawState) {
             modelsUsed: session.modelsUsed,
             agentTrace: session.agentTrace,
             agentRunId: session.agentRunId,
+            projectId: session.projectId,
             createdAt: Number.isFinite(session.createdAt) ? session.createdAt : Date.now(),
             updatedAt: Number.isFinite(session.updatedAt) ? session.updatedAt : Date.now(),
           });

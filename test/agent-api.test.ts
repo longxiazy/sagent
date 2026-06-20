@@ -37,9 +37,13 @@ beforeEach(async () => {
   const { createAgentRunStore } = await import('../helpers/run-store.js');
   const { createApprovalStore } = await import('../agent/core/approval-store.js');
   const { runtimeConfig } = await import('../agent/core/runtime-config.js');
+  const { createProjectStore } = await import('../agent/core/project-store.js');
 
   const agentRunStore = createAgentRunStore();
   const approvalStore = createApprovalStore();
+  // 空注册表 → resolveRunPaths 回退到 tmpDir/process.cwd()，与无项目态一致。
+  const projectStore = createProjectStore(tmpDir);
+  await projectStore.init();
 
   const router = createAgentRouter({
     runDesktopAgent: async () => ({ answer: 'done', steps: [] }),
@@ -51,6 +55,7 @@ beforeEach(async () => {
     modelConfig: [{ id: 'test-model', provider: 'test' }],
     registry: mockRegistry,
     runtimeConfig,
+    projectStore,
   });
 
   app = express();

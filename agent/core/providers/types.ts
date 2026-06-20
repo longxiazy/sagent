@@ -51,6 +51,8 @@ export interface ChatStreamOpts {
   max_tokens: number;
   res: Response;
   startedAt: number;
+  // 命中项目时的文件工具根；缺省走 process.cwd()（无项目态）。
+  cwd?: string | null;
 }
 
 export interface CompletionOpts {

@@ -8,6 +8,7 @@ import { createAgentRunSession } from './agent-run-session.ts';
 import { parseAgentRunRequest, resolveCheckpointSeed } from './agent-run-request.ts';
 import { executeAgentRun } from './agent-run-execution.ts';
 import { removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
+import { resolveRunPaths } from '../agent/core/project-store.ts';
 
 export function createAgentRunStartRouter({
   runDesktopAgent,
@@ -17,6 +18,7 @@ export function createAgentRunStartRouter({
   checkpointDir,
   modelConfig,
   registry,
+  projectStore,
 }: AgentRouterContext) {
   const router = Router();
   const defaultModel = modelConfig?.[0]?.id || 'minimaxai/minimax-m2.7';
@@ -26,22 +28,25 @@ export function createAgentRunStartRouter({
     if ('error' in parsed) {
       return res.status(400).json({ error: tReq(req, parsed.error) });
     }
-    const { task, model, agentModels, strategy, headless, useMemory, conversationHistory, fromCheckpoint } = parsed;
+    const { task, model, agentModels, strategy, headless, useMemory, conversationHistory, fromCheckpoint, projectId } = parsed;
 
     const activeRun = agentRunStore.getActiveRun();
     if (activeRun) {
       return res.status(409).json({ error: tReq(req, 'run.alreadyRunning'), runId: activeRun.runId });
     }
 
-    const { checkpointInitialStep, checkpointInitialHistory } = await resolveCheckpointSeed(checkpointDir, fromCheckpoint);
+    // 解析本次 run 的落盘目录与文件工具根：命中项目用项目目录，否则回退全局（无项目态）。
+    const { projectId: resolvedProjectId, projectRoot, dataDir } = resolveRunPaths(projectStore, projectId, memoryDir);
+    const runCheckpointDir = dataDir;
+
+    const { checkpointInitialStep, checkpointInitialHistory } = await resolveCheckpointSeed(runCheckpointDir, fromCheckpoint);
 
     // 清理上一个 run 的 session snapshots（fromCheckpoint 回滚时保留当前 run 的快照）
-    const prevRunId = fromCheckpoint?.runId;
-    if (checkpointDir && !fromCheckpoint) {
+    if (runCheckpointDir && !fromCheckpoint) {
       const { listSessionCheckpointRuns } = await import('../agent/core/checkpoint.ts');
-      const runs = await listSessionCheckpointRuns(checkpointDir);
+      const runs = await listSessionCheckpointRuns(runCheckpointDir);
       for (const rid of runs) {
-        removeSessionCheckpoints(checkpointDir, rid).catch(() => {});
+        removeSessionCheckpoints(runCheckpointDir, rid).catch(() => {});
       }
     }
 
@@ -54,6 +59,10 @@ export function createAgentRunStartRouter({
       model,
       agentModels,
       task: normalizedTask,
+      // 项目信息盖到 run 记录上，供 trace/checkpoint 读取端点定位落盘目录
+      projectId: resolvedProjectId,
+      dataDir,
+      projectRoot,
     }, startedAt, existingRunId);
     const runId = runRecord.runId;
     let finalAnswer: string | null = null;
@@ -67,13 +76,13 @@ export function createAgentRunStartRouter({
       runId,
       startedAt,
       agentRunStore,
-      memoryDir,
+      memoryDir: dataDir,
     });
 
     let memory = null;
     let systemPrompt = '';
     if (useMemory) {
-      const loaded = await loadMemoryForPrompt(memoryDir);
+      const loaded = await loadMemoryForPrompt(dataDir);
       memory = loaded.memory;
       systemPrompt = loaded.systemPrompt;
     }
@@ -94,8 +103,10 @@ export function createAgentRunStartRouter({
       useMemory,
       checkpointInitialStep,
       checkpointInitialHistory,
-      checkpointDir,
+      checkpointDir: runCheckpointDir,
       agentRunStore,
+      projectRoot,
+      dataDir,
     });
     const { agentResult, finalAnswer: nextFinalAnswer, agentError: nextAgentError } = result;
     finalAnswer = nextFinalAnswer;
@@ -108,7 +119,7 @@ export function createAgentRunStartRouter({
           const { stepModels } = session.getTrackingState();
           await persistAgentRunMemory({
             memory,
-            memoryDir,
+            memoryDir: dataDir,
             normalizedTask,
             finalAnswer,
             agentError,

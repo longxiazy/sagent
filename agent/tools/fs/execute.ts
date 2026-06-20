@@ -48,9 +48,12 @@ function assertSafePath(targetPath) {
   }
 }
 
-export async function executeFsAction(action) {
+export async function executeFsAction(action, opts: { cwd?: string | null } = {}) {
+  // 文件工具根：命中项目用项目 rootPath，否则回退 process.cwd()（无项目态，旧行为）。
+  const baseCwd = opts?.cwd || process.cwd();
+
   if (action.type === 'list_dir') {
-    const targetPath = resolveInputPath(action.path);
+    const targetPath = resolveInputPath(action.path, baseCwd);
     const entries = await fs.readdir(targetPath, { withFileTypes: true });
     const summary = entries
       .slice(0, 40)
@@ -62,7 +65,7 @@ export async function executeFsAction(action) {
   }
 
   if (action.type === 'read_file') {
-    const targetPath = resolveInputPath(action.path);
+    const targetPath = resolveInputPath(action.path, baseCwd);
     assertSafePath(targetPath);
     const buffer = await fs.readFile(targetPath);
     const text = buffer.toString('utf8', 0, Math.min(buffer.length, action.maxBytes || 12000));
@@ -70,7 +73,7 @@ export async function executeFsAction(action) {
   }
 
   if (action.type === 'write_file') {
-    const sandbox = process.cwd();
+    const sandbox = baseCwd;
     const targetPath = resolveInputPath(action.path, sandbox);
     assertWithinSandbox(targetPath, sandbox);
     assertSafePath(targetPath);
@@ -84,7 +87,7 @@ export async function executeFsAction(action) {
   }
 
   if (action.type === 'search_files') {
-    const targetPath = resolveInputPath(action.path);
+    const targetPath = resolveInputPath(action.path, baseCwd);
     const query = action.query || '';
     if (!query) {
       throw new Error('search_files 缺少 query');

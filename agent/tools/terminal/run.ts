@@ -2,11 +2,11 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { SAFE_COMMANDS, getFirstToken } from './safe-policy';
 
-function resolveCwd(value) {
+function resolveCwd(value, base = process.cwd()) {
   if (typeof value !== 'string' || !value.trim()) {
-    return process.cwd();
+    return base;
   }
-  return path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
+  return path.isAbsolute(value) ? value : path.resolve(base, value);
 }
 
 function assertSafeCommand(command) {
@@ -92,9 +92,11 @@ async function runShellCommand(command, { cwd, timeoutMs }) {
   });
 }
 
-export async function executeTerminalAction(action) {
+export async function executeTerminalAction(action, opts: { cwd?: string | null } = {}) {
   const command = action.command || '';
-  const cwd = resolveCwd(action.cwd);
+  // 命中项目用项目 rootPath 作为默认 cwd，否则回退 process.cwd()（无项目态，旧行为）。
+  const base = opts?.cwd || process.cwd();
+  const cwd = resolveCwd(action.cwd, base);
   const timeoutMs = action.timeoutMs || 8000;
 
   if (!command) {

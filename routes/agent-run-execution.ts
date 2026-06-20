@@ -54,6 +54,8 @@ export async function executeAgentRun({
   checkpointInitialHistory,
   checkpointDir,
   agentRunStore,
+  projectRoot,
+  dataDir,
 }: {
   runDesktopAgent: any;
   task: string;
@@ -72,6 +74,8 @@ export async function executeAgentRun({
   checkpointInitialHistory: any;
   checkpointDir: string;
   agentRunStore: any;
+  projectRoot?: string;
+  dataDir?: string;
 }) {
   let finalAnswer: string | null = null;
   let agentError: any = null;
@@ -93,6 +97,8 @@ export async function executeAgentRun({
       memory: useMemory,
       initialStep: checkpointInitialStep,
       initialHistory: checkpointInitialHistory,
+      projectRoot,
+      dataDir,
     });
 
     finalAnswer = agentResult.answer;

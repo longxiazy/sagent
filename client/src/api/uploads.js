@@ -4,7 +4,7 @@
 import { tStatic } from '../i18n/locale.js';
 import { apiFetch } from './http.js';
 
-export async function uploadAttachment(file) {
+export async function uploadAttachment(file, projectId = null) {
   const buf = await file.arrayBuffer();
   const base64 = arrayBufferToBase64(buf);
 
@@ -12,6 +12,8 @@ export async function uploadAttachment(file) {
     name: file.name,
     mime: file.type || 'application/octet-stream',
     data: base64,
+    // 命中项目时落到项目数据目录的 uploads/，否则全局。
+    projectId: projectId || null,
     // kind 留给后端推断(image/ 前缀 → image,其余 → file)。
     // 前端这里不主动传,以便将来扩展时由后端一处统一规则。
   };

@@ -83,7 +83,7 @@ export function createOpenAICompatProvider(client: any): LLMProvider {
     },
 
     async chatStream(opts: ChatStreamOpts) {
-      const { model, messages, temperature, top_p, max_tokens, res, startedAt } = opts;
+      const { model, messages, temperature, top_p, max_tokens, res, startedAt, cwd } = opts;
       const chatTools = buildOpenAiChatTools();
       let currentMessages = [...messages];
       let usage = null;
@@ -133,7 +133,7 @@ export function createOpenAICompatProvider(client: any): LLMProvider {
             ? JSON.parse(toolCall.function.arguments)
             : toolCall.function.arguments;
           try {
-            const result = await executeChatTool(toolCall.function.name, args);
+            const result = await executeChatTool(toolCall.function.name, args, { cwd });
             currentMessages.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
             log.debug(`[Chat Tool] ${toolCall.function.name} → ${String(result).slice(0, 100)}`);
           } catch (err: any) {

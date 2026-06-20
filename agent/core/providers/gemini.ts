@@ -137,7 +137,7 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
     },
 
     async chatStream(opts: ChatStreamOpts) {
-      const { model, messages, temperature, max_tokens, res, startedAt } = opts;
+      const { model, messages, temperature, max_tokens, res, startedAt, cwd } = opts;
       const geminiTools = [{ functionDeclarations: createChatTools().map(toolToGeminiTool) }];
       const { systemInstruction, contents } = toGeminiContents(messages);
       let usage = null;
@@ -180,7 +180,7 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
         const responseParts = [];
         for (const call of functionCalls) {
           try {
-            const result = await executeChatTool(call.name, call.args || {});
+            const result = await executeChatTool(call.name, call.args || {}, { cwd });
             responseParts.push({ functionResponse: { name: call.name, response: { result } } });
             log.debug(`[Chat Tool] ${call.name} → ${String(result).slice(0, 100)}`);
           } catch (err: any) {

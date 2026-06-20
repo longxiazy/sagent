@@ -2,9 +2,10 @@ import { Router } from 'express';
 import { listSessionCheckpoints } from '../agent/core/checkpoint.ts';
 import { log } from '../helpers/logger.ts';
 import { tReq } from '../helpers/i18n.ts';
+import { resolveRunPaths } from '../agent/core/project-store.ts';
 import type { AgentRouterContext } from './agent-types.ts';
 
-export function createAgentCheckpointRouter({ checkpointDir, agentRunStore }: AgentRouterContext) {
+export function createAgentCheckpointRouter({ checkpointDir, agentRunStore, memoryDir, projectStore }: AgentRouterContext) {
   const router = Router();
 
   router.get('/api/agent/checkpoints', async (req, res) => {
@@ -17,8 +18,12 @@ export function createAgentCheckpointRouter({ checkpointDir, agentRunStore }: Ag
     if (!runId) {
       return res.json({ checkpoints: [] });
     }
+    // 会话快照目录优先取 run 记录里的 dataDir；否则按 ?projectId 解析；都没有回退全局。
+    const run = agentRunStore.getRun(runId);
+    const pid = typeof req.query.projectId === 'string' ? req.query.projectId : null;
+    const dir = run?.meta?.dataDir || resolveRunPaths(projectStore, pid, memoryDir).dataDir;
     try {
-      const checkpoints = await listSessionCheckpoints(checkpointDir, runId);
+      const checkpoints = await listSessionCheckpoints(dir, runId);
       return res.json({ runId, checkpoints });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
