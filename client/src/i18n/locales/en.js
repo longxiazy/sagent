@@ -234,6 +234,23 @@ export const en = {
   'memory.clearKnowledge': 'Clear knowledge',
   'memory.clearAllTitle': 'Clear all memory',
 
+  // Code Graph
+  'codegraph.tab': 'Code Graph',
+  'codegraph.stats': '{files} files · {modules} modules · {coverage} coverage',
+  'codegraph.lastIndexed': 'Last indexed {time}',
+  'codegraph.notIndexed': 'Not indexed yet',
+  'codegraph.empty': 'No code graph for this project yet. Pick a model and click "Reindex" to generate.',
+  'codegraph.reindex': 'Reindex',
+  'codegraph.indexing': 'Indexing…',
+  'codegraph.scanning': 'Scanning files…',
+  'codegraph.describing': 'Describing {done}/{total}',
+  'codegraph.searchPlaceholder': 'Search modules…',
+  'codegraph.noMatch': 'No matching modules',
+  'codegraph.noModel': 'No models available',
+  'codegraph.modelTitle': 'Model used to generate graph semantics',
+  'codegraph.dependsOn': 'deps {n}',
+  'codegraph.error': 'Index failed: {error}',
+
   // Dialogs
   'reset.title': 'Clear current session?',
   'reset.desc': 'The session is kept, but its messages are removed.',

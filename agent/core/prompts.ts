@@ -169,6 +169,7 @@ export function buildNvidiaTaskMessages({
         '{"rationale":"搜索并提取链接","action":{"tool":"browser","type":"http_fetch","url":"https://example.com/search?q=关键词","extractLinks":true}}',
         '{"rational":"并发抓取多个页面","action":{"tool":"browser","type":"parallel_fetch","urls":["https://example.com/a","https://example.com/b"]}}',
         '{"rationale":"网络搜索关键词","action":{"tool":"search","type":"web_search","query":"2026 北京最低工资标准"}}',
+        '{"rationale":"查询项目代码图谱定位相关模块","action":{"tool":"codegraph","type":"codegraph_query","query":"记忆 memory"}}',
         '{"rationale":"分析图片内容","action":{"tool":"vision","type":"image_analyze","image":"/abs/path/to/image.png","question":"图片里有什么内容？请详细描述。"}}',
         '{"rationale":"并行分析多个文件","action":{"tool":"spawn","type":"spawn","tasks":["分析 src/index.ts 的架构","检查 test/ 目录的测试覆盖率","搜索项目中的 TODO 注释"]}}',
         ...(ideEnabled

@@ -133,7 +133,7 @@ export function SessionList({
       </div>
 
       {showMemoryPanel ? (
-        <MemoryPanel onClose={onToggleMemory} activeProjectId={activeProjectId} />
+        <MemoryPanel onClose={onToggleMemory} activeProjectId={activeProjectId} modelList={modelList} />
       ) : (
         <>
           <ProjectSwitcher

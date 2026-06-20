@@ -21,6 +21,8 @@ export const ACTION_TYPE_TO_TOOL = {
   parallel_fetch: 'browser',
   // search
   web_search: 'search',
+  // codegraph
+  codegraph_query: 'codegraph',
   // vision
   image_analyze: 'vision',
   // fs
