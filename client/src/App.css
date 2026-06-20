@@ -395,30 +395,15 @@ select,
   .hero {
     max-width: 960px;
   }
-
-  .hero-title {
-    font-size: 40px;
-  }
 }
 
-.hero-menu {
+.hero-corner-actions {
   position: absolute;
-  top: 0;
-  right: 0;
-}
-
-.hero-brand {
-  text-align: center;
-  margin-top: 40px;
-}
-
-.hero-title {
-  font-size: 32px;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--c-primary), var(--c-primary-accent));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  top: 10px;
+  right: 16px;
+  z-index: 8;
+  display: flex;
+  gap: 8px;
 }
 
 .hero-input-card {
@@ -1571,8 +1556,7 @@ select,
   overflow: hidden;
 }
 
-.model-dropdown-search,
-.model-tags-search {
+.model-dropdown-search {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1581,15 +1565,7 @@ select,
   color: var(--c-text-muted);
 }
 
-.model-tags-search {
-  border: 1px solid var(--c-border-input);
-  border-radius: var(--r-sm);
-  margin-bottom: 8px;
-  background: var(--c-surface);
-}
-
-.model-dropdown-search input,
-.model-tags-search input {
+.model-dropdown-search input {
   flex: 1;
   border: none;
   outline: none;
@@ -1597,6 +1573,22 @@ select,
   font-size: var(--f-sm);
   color: var(--c-text);
   min-width: 0;
+}
+
+/* ── agent 模式：多选下拉浮层 ── */
+.agent-model-panel { width: 320px; }
+.agent-model-panel .model-tags {
+  padding: 8px;
+  max-height: 220px;
+}
+.agent-model-panel .strategy-toggle {
+  display: flex;
+  margin: 0 8px 8px;
+}
+.agent-model-panel .strategy-btn { flex: 1; }
+.model-dropdown-trigger.has-selection {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
 }
 
 .model-dropdown-list {
@@ -3154,14 +3146,6 @@ select,
 
 /* ── Strategy Toggle ── */
 
-.model-tags-wrap {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .strategy-toggle {
   display: inline-flex;
   border-radius: var(--r-sm);
@@ -3403,9 +3387,40 @@ textarea:disabled {
 .dialog-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Settings dialog ── */
-.hero-settings { position: absolute; top: 0; right: 40px; }
 
-.settings-dialog { width: min(560px, 94vw); max-height: 86vh; overflow-y: auto; }
+.settings-dialog { width: min(720px, 94vw); max-height: 86vh; overflow-y: auto; }
+
+/* 左导航 + 右内容两栏布局 */
+.settings-layout { display: flex; gap: 20px; }
+.settings-nav {
+  flex-shrink: 0;
+  width: 132px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-nav-btn {
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-text-secondary);
+  font-size: var(--f-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.settings-nav-btn:hover { background: var(--c-surface-hover); }
+.settings-nav-btn.active { background: var(--c-primary-bg); color: var(--c-primary); font-weight: 600; }
+.settings-content { flex: 1; min-width: 0; }
+.settings-content .settings-section:last-child { margin-bottom: 0; }
+
+@media (max-width: 560px) {
+  .settings-layout { flex-direction: column; gap: 12px; }
+  .settings-nav { width: 100%; flex-direction: row; flex-wrap: wrap; }
+}
+
 .settings-section { margin-bottom: 20px; }
 .settings-section-title { font-size: var(--f-sm); font-weight: 600; margin-bottom: 4px; }
 
@@ -3774,14 +3789,6 @@ textarea:disabled {
 
   .hero {
     gap: 12px;
-  }
-
-  .hero-brand {
-    margin-top: 8px;
-  }
-
-  .hero-title {
-    font-size: 22px;
   }
 
   .suggestions {
@@ -4198,10 +4205,6 @@ textarea:disabled {
 }
 
 @media (max-width: 480px) {
-  .hero-title {
-    font-size: 20px;
-  }
-
   .hero-input-card {
     padding: 10px;
     gap: 8px;

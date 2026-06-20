@@ -9,7 +9,6 @@ export function ChatPane({
   handleKeyDown,
   placeholder,
   disabled,
-  memoryToggle,
   sendButton,
   attachButton,
   attachmentBar,
@@ -69,7 +68,6 @@ export function ChatPane({
               disabled={disabled}
             />
             <div className="input-toolbar">
-              {memoryToggle}
               {attachButton}
               {sendButton}
             </div>
