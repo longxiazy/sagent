@@ -266,7 +266,6 @@ export const en = {
   'question.answer': 'Answer',
 
   // Hero / toolbar
-  'hero.subtitle': 'Multi-model AI chat + desktop Agent',
   'mode.ariaLabel': 'Mode switch',
   'mode.chat': 'Chat',
   'mode.agent': 'Agent',

@@ -370,6 +370,11 @@ select,
   -webkit-overflow-scrolling: touch;
 }
 
+/* 隐藏建议面板后内容变短，让输入卡在竖直方向居中 */
+.hero-wrap--centered {
+  align-items: center;
+}
+
 .hero {
   width: 100%;
   max-width: 680px;
@@ -414,12 +419,6 @@ select,
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-}
-
-.hero-subtitle {
-  margin-top: 8px;
-  font-size: var(--f-base);
-  color: var(--c-text-muted);
 }
 
 .hero-input-card {
@@ -4201,10 +4200,6 @@ textarea:disabled {
 @media (max-width: 480px) {
   .hero-title {
     font-size: 20px;
-  }
-
-  .hero-subtitle {
-    font-size: var(--f-xs);
   }
 
   .hero-input-card {

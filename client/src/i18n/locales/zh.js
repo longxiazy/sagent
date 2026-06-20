@@ -267,7 +267,6 @@ export const zh = {
   'question.answer': '回答',
 
   // 英雄屏 / 工具栏
-  'hero.subtitle': '多模型 AI 聊天 + 桌面 Agent',
   'mode.ariaLabel': '模式切换',
   'mode.chat': '对话',
   'mode.agent': 'Agent',
