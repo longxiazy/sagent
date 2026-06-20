@@ -1,6 +1,17 @@
-import { Menu, Settings } from 'lucide-react';
+import { useState } from 'react';
+import { Menu, Settings, Lightbulb } from 'lucide-react';
 import { SuggestionsList } from './SuggestionsList.jsx';
 import { useT } from '../i18n/I18nProvider.jsx';
+
+// 首页推荐面板的隐藏状态持久化到 localStorage(纯前端 UI 偏好,刷新/下次打开保持)。
+const SUGGESTIONS_HIDDEN_KEY = 'sagent.suggestionsHidden';
+function readSuggestionsHidden() {
+  try {
+    return localStorage.getItem(SUGGESTIONS_HIDDEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 // 首屏：brand + 输入卡 + 推荐列表。
 // 工具栏控件（ModeSwitch / ModelSelector / MemoryToggle / SendButton / AttachButton）
@@ -26,6 +37,17 @@ export function HeroScreen({
 }) {
   const { modeSwitch, modelSelect, memoryToggle, sendButton, attachButton } = toolbarSlots;
   const t = useT();
+  const [suggestionsHidden, setSuggestionsHidden] = useState(readSuggestionsHidden);
+
+  const hideSuggestions = () => {
+    setSuggestionsHidden(true);
+    try { localStorage.setItem(SUGGESTIONS_HIDDEN_KEY, '1'); } catch { /* 隐私模式下忽略写入失败 */ }
+  };
+  const showSuggestions = () => {
+    setSuggestionsHidden(false);
+    try { localStorage.removeItem(SUGGESTIONS_HIDDEN_KEY); } catch { /* 隐私模式下忽略写入失败 */ }
+  };
+
   return (
     <div className="hero-wrap">
       <div className="hero">
@@ -61,17 +83,24 @@ export function HeroScreen({
           </div>
         </div>
 
-        <SuggestionsList
-          mode={mode}
-          suggestions={suggestions}
-          categories={categories}
-          activeCategoryId={activeCategoryId}
-          onSelectCategory={onSelectCategory}
-          sessionLocked={sessionLocked}
-          onShuffle={onShuffle}
-          onPick={onPickSuggestion}
-          onSubmit={onSubmitSuggestion}
-        />
+        {suggestionsHidden ? (
+          <button className="suggestions-show" onClick={showSuggestions} title={t('suggestions.show')}>
+            <Lightbulb size={12} /> {t('suggestions.show')}
+          </button>
+        ) : (
+          <SuggestionsList
+            mode={mode}
+            suggestions={suggestions}
+            categories={categories}
+            activeCategoryId={activeCategoryId}
+            onSelectCategory={onSelectCategory}
+            sessionLocked={sessionLocked}
+            onShuffle={onShuffle}
+            onPick={onPickSuggestion}
+            onSubmit={onSubmitSuggestion}
+            onHide={hideSuggestions}
+          />
+        )}
       </div>
     </div>
   );

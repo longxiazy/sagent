@@ -256,6 +256,8 @@ export const en = {
   'suggestions.tryTasks': 'Try these tasks',
   'suggestions.tryQuestions': 'Try these questions',
   'suggestions.shuffle': 'Shuffle',
+  'suggestions.hide': 'Hide',
+  'suggestions.show': 'Show suggestions',
   'think.done': 'Thoughts',
   'think.thinking': 'Thinking',
   'think.organizing': 'Organizing thoughts…',
