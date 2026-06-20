@@ -139,7 +139,7 @@ export function createAnthropicProvider(client: any): LLMProvider {
     },
 
     async chatStream(opts: ChatStreamOpts) {
-      const { model, messages, max_tokens, temperature, res, startedAt } = opts;
+      const { model, messages, max_tokens, temperature, res, startedAt, cwd } = opts;
       const chatTools = createChatTools().map(tool => ({
         name: tool.name,
         description: tool.description,
@@ -176,7 +176,7 @@ export function createAnthropicProvider(client: any): LLMProvider {
         const toolResults = [];
         for (const block of toolUseBlocks) {
           try {
-            const result = await executeChatTool(block.name, block.input);
+            const result = await executeChatTool(block.name, block.input, { cwd });
             toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
             log.debug(`[Chat Tool] ${block.name} → ${String(result).slice(0, 100)}`);
           } catch (err: any) {

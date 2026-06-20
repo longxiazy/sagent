@@ -3,28 +3,31 @@ import { ChevronUp } from 'lucide-react';
 import { useT } from '../../i18n/I18nProvider.jsx';
 import { apiFetch } from '../../api/http.js';
 
-export function MemoryPanel({ onClose }) {
+export function MemoryPanel({ onClose, activeProjectId = null }) {
   const t = useT();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [compacting, setCompacting] = useState(false);
   const [tab, setTab] = useState('conversation');
 
+  // 记忆按项目隔离：所有请求带上当前项目 id（无项目则查全局）。
+  const qs = activeProjectId ? `?projectId=${encodeURIComponent(activeProjectId)}` : '';
+
   useEffect(() => {
     setLoading(true);
-    apiFetch('/api/agent/memory')
+    apiFetch(`/api/agent/memory${qs}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  }, [qs]);
 
   const handleCompact = async () => {
     setCompacting(true);
     try {
-      const r = await apiFetch('/api/agent/compact', { method: 'POST' });
+      const r = await apiFetch(`/api/agent/compact${qs}`, { method: 'POST' });
       const result = await r.json();
       if (result.ok) {
-        const r2 = await apiFetch('/api/agent/memory');
+        const r2 = await apiFetch(`/api/agent/memory${qs}`);
         setData(await r2.json());
       }
     } finally {
@@ -32,13 +35,13 @@ export function MemoryPanel({ onClose }) {
     }
   };
 
-  const handleClear = async (url) => {
+  const handleClear = async (path) => {
     if (!confirm(t('memory.confirmClear'))) return;
     try {
-      const r = await apiFetch(url, { method: 'DELETE' });
+      const r = await apiFetch(`${path}${qs}`, { method: 'DELETE' });
       const result = await r.json();
       if (result.ok) {
-        const r2 = await apiFetch('/api/agent/memory');
+        const r2 = await apiFetch(`/api/agent/memory${qs}`);
         setData(await r2.json());
       }
     } catch { /* ignore */ }

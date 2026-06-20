@@ -79,7 +79,7 @@ export function createDesktopAgentRunner({
   }
 
   // Sub-agent runner factory: creates isolated runners for parallel execution
-  function createSubAgentRunner(parentRunId: string, parentModel: string, parentAgentModels: string[], parentStrategy: string, parentSystemPrompt: string | null, parentCancelSignal: AbortSignal) {
+  function createSubAgentRunner(parentRunId: string, parentModel: string, parentAgentModels: string[], parentStrategy: string, parentSystemPrompt: string | null, parentCancelSignal: AbortSignal, parentProjectRoot: string | null = null) {
     const subBrowserManager = createSharedBrowserSessionManager();
 
     return async (task: string, subIndex: number) => {
@@ -115,12 +115,12 @@ export function createDesktopAgentRunner({
             const session = await subBrowserManager.ensureBrowserSession(state, undefined);
             return executeBrowserAction(session.view, action);
           },
-          fs: async (_state, action) => executeFsAction(action),
+          fs: async (_state, action) => executeFsAction(action, { cwd: parentProjectRoot }),
           search: async (_state, action) => executeSearchAction(action),
           vision: async (_state, action) => executeVisionAction(action, { openai_client, visionModel }),
           ide: async (_state, action) => executeIdeAction(action),
           chrome: async (_state, action) => executeChromeAction(action),
-          terminal: async (_state, action) => executeTerminalAction(action),
+          terminal: async (_state, action) => executeTerminalAction(action, { cwd: parentProjectRoot }),
           macos: async (state, action) => executeMacOSAction(action, { runId: state.runId }),
           spawn: async () => {
             throw new Error('子 Agent 不支持嵌套 spawn 调用');
@@ -208,12 +208,12 @@ export function createDesktopAgentRunner({
         const session = await ensureBrowserSession(state, state.onEvent);
         return executeBrowserAction(session.view, action);
       },
-      fs: async (_state, action) => executeFsAction(action),
+      fs: async (state, action) => executeFsAction(action, { cwd: state.projectRoot }),
       search: async (_state, action) => executeSearchAction(action),
       vision: async (_state, action) => executeVisionAction(action, { openai_client, visionModel }),
       ide: async (_state, action) => executeIdeAction(action),
       chrome: async (_state, action) => executeChromeAction(action),
-      terminal: async (_state, action) => executeTerminalAction(action),
+      terminal: async (state, action) => executeTerminalAction(action, { cwd: state.projectRoot }),
       macos: async (state, action) =>
         executeMacOSAction(action, {
           runId: state.runId,
@@ -226,7 +226,8 @@ export function createDesktopAgentRunner({
           state.agentModels,
           state.strategy,
           state.systemPrompt,
-          state.cancelSignal
+          state.cancelSignal,
+          state.projectRoot
         );
         return executeSpawnAction(action, { runSubAgent });
       },
@@ -250,6 +251,8 @@ export function createDesktopAgentRunner({
     initialHistory = [],
     conversationHistory = [],
     memory = true,
+    projectRoot = null,
+    dataDir = null,
   }) {
     const { maxSteps, modelTimeoutMs, staggerDelayMs, batchSize, observeDesktop } = liveConfig();
     const blacklistedModels = new Set();
@@ -261,6 +264,9 @@ export function createDesktopAgentRunner({
       onEvent,
     });
 
+    // 本次 run 的落盘目录：命中项目用项目目录，否则回退工厂注入的全局 checkpointDir。
+    const runCheckpointDir = dataDir || checkpointDir;
+
     return runAgentRuntime({
       task,
       maxSteps,
@@ -269,13 +275,14 @@ export function createDesktopAgentRunner({
       initialStep,
       initialHistory,
       // v2: 会话级健康检查点支持
-      sessionCheckpointDir: checkpointDir,
+      sessionCheckpointDir: runCheckpointDir,
       runRecord,
-      onCheckpoint: checkpointDir
-        ? (history, step) => saveCheckpoint(checkpointDir, {
+      onCheckpoint: runCheckpointDir
+        ? (history, step) => saveCheckpoint(runCheckpointDir, {
             runId, task, model, systemPrompt, headless,
             history, step, maxSteps, startedAt,
             agentModels, strategy, conversationHistory, memory,
+            projectRoot, dataDir,
           })
         : null,
       initialize: async () => ({
@@ -289,6 +296,7 @@ export function createDesktopAgentRunner({
         strategy,
         systemPrompt,
         cancelSignal,
+        projectRoot,
       }),
       observe: observeDesktopAgent,
       decide: async ({ task: currentTask, step, history, observation }) =>

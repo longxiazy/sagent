@@ -41,6 +41,7 @@ export function useChatTransport({
       await streamChatCompletion({
         messages: apiMessages,
         model: chatModel,
+        projectId: activeSession.projectId ?? null,
         signal: controller.signal,
         onContent(content) {
           updateSession(sessionId, session => {

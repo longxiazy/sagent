@@ -13,6 +13,7 @@ export function useSessionHandlers({
   setShowSessions,
   updateSession,
   textareaRef,
+  activeProjectId = null,
 }) {
   const handleSelectSession = sessionId => {
     if (sessionLocked || sessionId === activeSession.id) {
@@ -35,14 +36,17 @@ export function useSessionHandlers({
       return;
     }
 
-    const blankSession = sessions.find(session => session.messages.length === 0);
+    // 复用当前项目下的空白会话；没有则新建并归属当前项目。
+    const blankSession = sessions.find(
+      session => session.messages.length === 0 && (session.projectId ?? null) === (activeProjectId ?? null)
+    );
     if (blankSession) {
       handleSelectSession(blankSession.id);
       if (window.innerWidth < 768) setShowSessions(false);
       return;
     }
 
-    const nextSession = createSession();
+    const nextSession = createSession({ projectId: activeProjectId });
 
     setChatState(prev =>
       normalizeChatState({
@@ -63,7 +67,9 @@ export function useSessionHandlers({
     setChatState(prev => {
       const nextSessions = prev.sessions.filter(session => session.id !== sessionId);
       const nextActiveSessionId =
-        sessionId === prev.activeSessionId ? nextSessions[0]?.id || createSession().id : prev.activeSessionId;
+        sessionId === prev.activeSessionId
+          ? nextSessions[0]?.id || createSession({ projectId: activeProjectId }).id
+          : prev.activeSessionId;
 
       return normalizeChatState({
         sessions: nextSessions,

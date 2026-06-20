@@ -204,7 +204,9 @@ function normalizeTerminalAction(type, action) {
       tool: 'terminal',
       type,
       command: typeof action.command === 'string' ? action.command.trim() : '',
-      cwd: normalizePath(action.cwd, process.cwd()),
+      // 不在此兜底成 process.cwd()：留空让执行层按当前项目根(或 process.cwd())解析，
+      // 否则写死的绝对路径会盖掉项目根。模型可显式指定 cwd（绝对或相对项目根）。
+      cwd: normalizePath(action.cwd, ''),
       timeoutMs: Number.isFinite(Number(action.timeoutMs))
         ? Math.min(Math.max(Number(action.timeoutMs), 1000), 20000)
         : 8000,

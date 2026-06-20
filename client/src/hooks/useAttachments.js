@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { uploadAttachment } from '../api/uploads.js';
 import { tStatic } from '../i18n/locale.js';
-
 // 管理输入栏的附件列表。
 //   attachments: [{ id, kind, name, mime, size, previewUrl, path, status, error }]
 //
@@ -13,9 +12,12 @@ import { tStatic } from '../i18n/locale.js';
 //
 // 这个 hook 故意不限制类型,onPickFiles 接什么文件都生成 chip;
 // 后端 /api/uploads 会按 mime 推 kind。如果以后要加 PDF/音频,前端只要把 AttachButton 的 accept 改宽即可。
-export function useAttachments() {
+export function useAttachments(activeProjectId = null) {
   const [attachments, setAttachments] = useState([]);
   const idRef = useRef(0);
+  // 用 ref 持有最新 projectId，让 addFiles 的 useCallback 保持稳定。
+  const projectIdRef = useRef(activeProjectId);
+  projectIdRef.current = activeProjectId;
 
   const update = (id, patch) => {
     setAttachments(prev => prev.map(a => (a.id === id ? { ...a, ...patch } : a)));
@@ -43,7 +45,7 @@ export function useAttachments() {
       setAttachments(prev => [...prev, pending]);
 
       try {
-        const result = await uploadAttachment(file);
+        const result = await uploadAttachment(file, projectIdRef.current);
         update(id, {
           status: 'ready',
           path: result.path,

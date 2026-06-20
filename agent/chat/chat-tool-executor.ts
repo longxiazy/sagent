@@ -16,20 +16,21 @@ import { executeFsAction } from '../tools/fs/execute.ts';
 import { executeSearchAction } from '../tools/search/execute.ts';
 import { executeTerminalAction } from '../tools/terminal/run.ts';
 
-export async function executeChatTool(name, input) {
+export async function executeChatTool(name, input, opts: { cwd?: string | null } = {}) {
   const MAX_RESULT = 12000;
+  const cwd = opts?.cwd || null;
 
   if (name === 'search_files') {
-    return truncate(await executeFsAction({ tool: 'fs', type: 'search_files', ...input }), MAX_RESULT);
+    return truncate(await executeFsAction({ tool: 'fs', type: 'search_files', ...input }, { cwd }), MAX_RESULT);
   }
   if (name === 'read_file') {
-    return truncate(await executeFsAction({ tool: 'fs', type: 'read_file', ...input }), MAX_RESULT);
+    return truncate(await executeFsAction({ tool: 'fs', type: 'read_file', ...input }, { cwd }), MAX_RESULT);
   }
   if (name === 'list_dir') {
-    return truncate(await executeFsAction({ tool: 'fs', type: 'list_dir', ...input }), MAX_RESULT);
+    return truncate(await executeFsAction({ tool: 'fs', type: 'list_dir', ...input }, { cwd }), MAX_RESULT);
   }
   if (name === 'run_safe') {
-    return truncate(await executeTerminalAction({ tool: 'terminal', type: 'run_safe', ...input }), MAX_RESULT);
+    return truncate(await executeTerminalAction({ tool: 'terminal', type: 'run_safe', ...input }, { cwd }), MAX_RESULT);
   }
   if (name === 'web_search') {
     return truncate(await executeSearchAction({ tool: 'search', type: 'web_search', ...input }), MAX_RESULT);

@@ -635,6 +635,202 @@ select,
   color: var(--c-text);
 }
 
+/* ── 项目切换器 ─────────────────────────────── */
+.project-switcher {
+  position: relative;
+}
+
+.project-switcher-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: var(--f-sm);
+  cursor: pointer;
+}
+
+.project-switcher-trigger:hover {
+  border-color: var(--c-primary);
+}
+
+.project-switcher-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.project-switcher-icon {
+  color: var(--c-primary);
+  flex-shrink: 0;
+}
+
+.project-switcher-label {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-switcher-chevron {
+  flex-shrink: 0;
+  color: var(--c-text-soft, var(--c-text));
+  transition: transform 0.15s ease;
+}
+
+.project-switcher-chevron.open {
+  transform: rotate(180deg);
+}
+
+.project-switcher-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+
+.project-switcher-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.project-switcher-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-text);
+  font-size: var(--f-sm);
+  cursor: pointer;
+  text-align: left;
+}
+
+.project-switcher-item:hover {
+  background: var(--c-bg, rgba(127, 127, 127, 0.1));
+}
+
+.project-switcher-item.active {
+  color: var(--c-primary);
+}
+
+.project-switcher-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-switcher-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.project-switcher-mini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border-radius: var(--r-sm);
+  color: var(--c-text-soft, var(--c-text));
+  opacity: 0.6;
+}
+
+.project-switcher-mini:hover {
+  opacity: 1;
+  background: var(--c-border);
+}
+
+.project-switcher-empty {
+  padding: 10px 8px;
+  font-size: var(--f-xs, 12px);
+  color: var(--c-text-soft, var(--c-text));
+  text-align: center;
+  opacity: 0.7;
+}
+
+.project-switcher-new {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 7px 8px;
+  border: none;
+  border-top: 1px solid var(--c-border);
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  background: transparent;
+  color: var(--c-primary);
+  font-size: var(--f-sm);
+  cursor: pointer;
+}
+
+.project-switcher-new:hover {
+  background: var(--c-bg, rgba(127, 127, 127, 0.1));
+}
+
+/* ── 项目对话框字段 ─────────────────────────── */
+.project-field-label {
+  display: block;
+  margin: 12px 0 4px;
+  font-size: var(--f-sm);
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.project-field-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: var(--f-sm);
+  box-sizing: border-box;
+}
+
+.project-field-input:focus {
+  outline: none;
+  border-color: var(--c-primary);
+}
+
+.project-field-hint {
+  margin: 6px 0 0;
+  font-size: var(--f-xs, 12px);
+  color: var(--c-text-soft, var(--c-text));
+  opacity: 0.7;
+}
+
+.project-field-error {
+  margin: 8px 0 0;
+  font-size: var(--f-sm);
+  color: var(--c-danger, #e5484d);
+}
+
 .page-create-btn,
 .header-new-session-btn {
   height: 30px;

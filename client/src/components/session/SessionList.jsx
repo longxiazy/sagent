@@ -5,6 +5,7 @@ import { usePersistentState, jsonStorage } from '../../hooks/usePersistentState.
 import { formatRelativeTime, formatShortTime, formatFullTime } from '../../utils/format.js';
 import { buildGroups, lastActivityTs } from './session-grouping.js';
 import { MemoryPanel } from './MemoryPanel.jsx';
+import { ProjectSwitcher } from './ProjectSwitcher.jsx';
 import { useT } from '../../i18n/I18nProvider.jsx';
 
 const COLLAPSED_GROUPS_KEY = 'nvidia_chat_collapsed_groups';
@@ -83,12 +84,35 @@ function SessionCard({ session, active, modelLabel, locked, canDelete, onSelect,
   );
 }
 
-export function SessionList({ sessions, activeSessionId, modelList, onDelete, onClearAll, onSelect, locked, showMemoryPanel, onToggleMemory }) {
+export function SessionList({
+  sessions,
+  activeSessionId,
+  modelList,
+  onDelete,
+  onClearAll,
+  onSelect,
+  locked,
+  showMemoryPanel,
+  onToggleMemory,
+  // project
+  projects = [],
+  activeProjectId = null,
+  onActivateProject,
+  onCreateProject,
+  onUpdateProject,
+  onDeleteProject,
+}) {
   const t = useT();
   const [query, setQuery] = useState('');
   const [collapsedGroups, setCollapsedGroups] = usePersistentState(COLLAPSED_GROUPS_KEY, [], jsonStorage);
 
-  const groups = useMemo(() => buildGroups(sessions, query), [sessions, query]);
+  // 只显示当前项目的会话；无项目态显示未归属项目的旧会话。
+  const visibleSessions = useMemo(
+    () => sessions.filter(s => (s.projectId ?? null) === (activeProjectId ?? null)),
+    [sessions, activeProjectId]
+  );
+
+  const groups = useMemo(() => buildGroups(visibleSessions, query), [visibleSessions, query]);
   const searching = query.trim().length > 0;
 
   // 搜索时强制展开所有命中分组，避免折叠把结果藏起来。
@@ -109,9 +133,19 @@ export function SessionList({ sessions, activeSessionId, modelList, onDelete, on
       </div>
 
       {showMemoryPanel ? (
-        <MemoryPanel onClose={onToggleMemory} />
+        <MemoryPanel onClose={onToggleMemory} activeProjectId={activeProjectId} />
       ) : (
         <>
+          <ProjectSwitcher
+            projects={projects}
+            activeProjectId={activeProjectId}
+            onActivate={onActivateProject}
+            onCreate={onCreateProject}
+            onUpdate={onUpdateProject}
+            onDelete={onDeleteProject}
+            locked={locked}
+          />
+
           <div className="session-search">
             <Search size={14} className="session-search-icon" />
             <input
@@ -153,7 +187,7 @@ export function SessionList({ sessions, activeSessionId, modelList, onDelete, on
                         active={session.id === activeSessionId}
                         modelLabel={formatSessionModels(session, modelList, t)}
                         locked={locked}
-                        canDelete={sessions.length > 1}
+                        canDelete={visibleSessions.length > 1}
                         onSelect={onSelect}
                         onDelete={onDelete}
                       />
@@ -163,7 +197,7 @@ export function SessionList({ sessions, activeSessionId, modelList, onDelete, on
               })
             )}
 
-            {sessions.length > 1 && (
+            {visibleSessions.length > 1 && (
               <button className="session-clear-all-btn" onClick={onClearAll} disabled={locked}>{t('common.clearAll')}</button>
             )}
           </div>

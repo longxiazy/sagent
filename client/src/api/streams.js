@@ -79,6 +79,7 @@ export async function streamChatCompletion({
   temperature = 1,
   top_p = 0.95,
   max_tokens = 8192,
+  projectId = null,
   onContent,
   onDone,
 }) {
@@ -86,7 +87,7 @@ export async function streamChatCompletion({
 
   await streamSseJson({
     url: API_URL,
-    body: { messages, model, temperature, top_p, max_tokens },
+    body: { messages, model, temperature, top_p, max_tokens, projectId },
     signal,
     onEvent(json) {
       if (json.content) {
@@ -181,10 +182,11 @@ export async function submitAgentQuestion({ runId, approvalId, response }) {
   return res.json();
 }
 
-export async function fetchAgentTrace(runId, { signal } = {}) {
+export async function fetchAgentTrace(runId, { signal, projectId } = {}) {
   if (!runId) return [];
 
-  const res = await apiFetch(`/api/agent/traces/${encodeURIComponent(runId)}`, { signal });
+  const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
+  const res = await apiFetch(`/api/agent/traces/${encodeURIComponent(runId)}${qs}`, { signal });
   if (res.status === 404) return [];
   if (!res.ok) {
     const errorText = await res.text();
