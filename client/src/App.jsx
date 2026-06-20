@@ -109,6 +109,7 @@ export default function App() {
   const {
     projects,
     activeProjectId,
+    loading: projectsLoading,
     createProject,
     updateProject,
     deleteProject,
@@ -646,6 +647,27 @@ export default function App() {
     setInput('');
     setShowReset(false);
   };
+
+  // 初始加载后把当前会话对齐到后端的激活项目：避免侧边栏按 activeProjectId 过滤、
+  // 而打开的对话却属于另一个项目(或旧的 null 会话)导致“切了项目没生效”的错觉。
+  // 一次性执行；之后的切换走 handleActivateProject，选择会话只在本项目内。
+  const projectsReconciledRef = useRef(false);
+  useEffect(() => {
+    if (projectsLoading || projectsReconciledRef.current) return;
+    projectsReconciledRef.current = true;
+    setChatState(prev => {
+      const cur = prev.sessions.find(s => s.id === prev.activeSessionId);
+      if (cur && (cur.projectId ?? null) === (activeProjectId ?? null)) return prev;
+      const inProject = prev.sessions
+        .filter(s => (s.projectId ?? null) === (activeProjectId ?? null))
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      if (inProject.length > 0) {
+        return normalizeChatState({ ...prev, activeSessionId: inProject[0].id });
+      }
+      const blank = createSession({ projectId: activeProjectId });
+      return normalizeChatState({ sessions: [blank, ...prev.sessions], activeSessionId: blank.id });
+    });
+  }, [projectsLoading, activeProjectId, setChatState]);
 
   const { sendAgentTask, stopAgent, handleRollback, handleApprovalDecision } = useAgentTransport({
     activeSession,

@@ -25,7 +25,8 @@ export function createChatRouter({ registry, modelConfig, projectStore }: { regi
     }
 
     // chat 模式工具(read/list/search/run_safe)的文件根：命中项目用项目 rootPath，否则回退 process.cwd()。
-    const project = projectStore?.resolve(typeof projectId === 'string' ? projectId : null);
+    // 未指定 projectId 即全局(不按 getActive 兜底)，与 resolveRunPaths 语义一致。
+    const project = projectStore && typeof projectId === 'string' && projectId ? projectStore.get(projectId) : null;
     const cwd = project?.rootPath ?? null;
 
     const time = new Date().toLocaleString('zh-CN', { hour12: false });

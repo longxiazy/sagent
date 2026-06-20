@@ -173,16 +173,20 @@ export function createProjectStore(memoryRoot: string) {
 export type ProjectStore = ReturnType<typeof createProjectStore>;
 
 /**
- * 解析一次 run 的落盘目录与项目根。
- * - 命中项目: 用 {MEMORY_DIR}/projects/<id> 与 project.rootPath
- * - 无项目(注册表空 / 传 null): 回退全局 MEMORY_DIR 与 process.cwd(),保持旧行为
+ * 解析一次 run / 读取的落盘目录与项目根。
+ * - 传入有效 projectId 且项目存在: 用 {MEMORY_DIR}/projects/<id> 与 project.rootPath
+ * - 未指定 projectId(null/空)或项目已删除: 回退全局 MEMORY_DIR 与 process.cwd()
+ *
+ * 注意: 这里**不**用 getActive() 兜底——「未指定」语义上等于全局，而非「当前激活项目」。
+ * 否则旧的 null 会话读取 trace/memory 时会被错误地路由到激活项目目录(404/读错)。
+ * 哪个项目由调用方显式传入(前端按会话的 projectId 传)。
  */
 export function resolveRunPaths(
   projectStore: ProjectStore,
   projectId: string | null | undefined,
   globalMemoryDir: string,
 ): { projectId: string | null; projectRoot: string; dataDir: string } {
-  const project = projectStore.resolve(projectId);
+  const project = projectId ? projectStore.get(projectId) : null;
   if (project) {
     return {
       projectId: project.projectId,

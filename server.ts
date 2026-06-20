@@ -228,7 +228,7 @@ app.listen(Number(PORT), HOST, async () => {
   if (AGENT_RESUME) {
     const found = await collectAllCheckpoints();
     if (found.length > 0) {
-      const { cp, dir } = found[found.length - 1];
+      const { cp } = found[found.length - 1];
       // 模型所属 provider 未配置（缺对应 API key）时跳过恢复
       let providerAvailable = true;
       try {
@@ -237,11 +237,11 @@ app.listen(Number(PORT), HOST, async () => {
         providerAvailable = false;
       }
       if (!providerAvailable) {
-        console.log(`[Resume] 跳过: ${cp.runId} 所需供应商未配置 API key，清理 checkpoint`);
-        await clearCheckpoints(dir);
+        console.log(`[Resume] 跳过: ${cp.runId} 所需供应商未配置 API key，清理全部 checkpoint`);
+        for (const d of new Set(found.map(f => f.dir))) await clearCheckpoints(d);
       } else if (cp.history?.some(h => h.action?.type === 'finish')) {
-        console.log(`[Resume] ${cp.runId} 已完成（含 finish 动作），跳过恢复，清理 checkpoint`);
-        await clearCheckpoints(dir);
+        console.log(`[Resume] ${cp.runId} 已完成（含 finish 动作），跳过恢复，清理全部 checkpoint`);
+        for (const d of new Set(found.map(f => f.dir))) await clearCheckpoints(d);
       } else {
         console.log(`[Resume] 发现 ${found.length} 个未完成任务，恢复最后一个: ${cp.runId}`);
         agentRunStore.createRun({ model: cp.model, task: cp.task, projectId: cp.dataDir ? undefined : null, dataDir: cp.dataDir || MEMORY_DIR, projectRoot: cp.projectRoot || null }, cp.startedAt, cp.runId);
