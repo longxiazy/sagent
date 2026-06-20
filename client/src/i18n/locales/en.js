@@ -63,6 +63,10 @@ export const en = {
 
   // Settings dialog
   'settings.title': 'Settings',
+  'settings.group.appearance': 'Appearance',
+  'settings.group.agent': 'Agent',
+  'settings.group.memory': 'Memory',
+  'settings.group.apiKeys': 'API Keys',
   'settings.agentParams': 'Agent behavior',
   'settings.agentParamsDesc': 'Takes effect on the next task after saving; no backend restart needed.',
   'settings.maxSteps': 'Max steps per task',
@@ -73,6 +77,8 @@ export const en = {
   'settings.maxResultChars': 'Max chars per step result',
   'settings.maxParallelResultChars': 'Max parallel-fetch chars',
   'settings.memoryMaxEntries': 'Memory compaction threshold',
+  'settings.memoryEnabled': 'Enable memory',
+  'settings.memoryDesc': 'Whether the agent uses history memory to assist tasks (frontend preference, applies immediately).',
   'settings.observeDesktop': 'Observe macOS desktop',
   'settings.apiKeys': 'API Keys (read-only)',
   'settings.apiKeysDesc': 'Keys are set in .env; restart the backend after changes.',
@@ -269,10 +275,6 @@ export const en = {
   'mode.ariaLabel': 'Mode switch',
   'mode.chat': 'Chat',
   'mode.agent': 'Agent',
-  'memoryToggle.onTitle': 'Use history memory to assist tasks',
-  'memoryToggle.offTitle': 'Do not use memory',
-  'memoryToggle.on': 'Memory on',
-  'memoryToggle.off': 'Memory off',
   'send.stop': 'Stop',
   'send.stopping': 'Stopping…',
   'send.stopReject': 'Stop & reject',
@@ -301,6 +303,8 @@ export const en = {
 
   // Model selector
   'modelSelector.selectModel': 'Select model',
+  'modelSelector.selectModels': 'Select models',
+  'modelSelector.selectedCount': '{count} models selected',
   'modelSelector.switchModel': 'Switch model',
   'modelSelector.searchPlaceholder': 'Search models…',
   'modelSelector.noMatch': 'No matching models',

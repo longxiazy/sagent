@@ -4,8 +4,8 @@ import { useTheme } from '../../theme/ThemeProvider.jsx';
 import { useI18n, useT } from '../../i18n/I18nProvider.jsx';
 
 // Agent 行为参数（可写，热生效）。单位与 .env 一致，换算放后端消费点。
-// label 改为 i18n key，渲染时经 t() 取文案。
-const NUM_FIELDS = [
+// label 改为 i18n key，渲染时经 t() 取文案。memoryMaxEntries 归到「记忆」组。
+const AGENT_FIELDS = [
   { key: 'maxSteps', labelKey: 'settings.maxSteps' },
   { key: 'modelTimeoutSec', labelKey: 'settings.modelTimeoutSec' },
   { key: 'staggerDelaySec', labelKey: 'settings.staggerDelaySec' },
@@ -13,7 +13,6 @@ const NUM_FIELDS = [
   { key: 'maxHistorySteps', labelKey: 'settings.maxHistorySteps' },
   { key: 'maxResultChars', labelKey: 'settings.maxResultChars' },
   { key: 'maxParallelResultChars', labelKey: 'settings.maxParallelResultChars' },
-  { key: 'memoryMaxEntries', labelKey: 'settings.memoryMaxEntries' },
 ];
 
 const THEME_OPTIONS = [
@@ -22,11 +21,22 @@ const THEME_OPTIONS = [
   { value: 'system', labelKey: 'appearance.theme.system' },
 ];
 
-// 设置面板：外观（主题/语言，前台即时生效）、Agent 行为参数（保存后下次任务生效）、API Key 只读展示。
-export function SettingsDialog({ onClose }) {
+// 设置分组：左侧导航 → 右侧内容。
+const GROUPS = [
+  { id: 'appearance', labelKey: 'settings.group.appearance' },
+  { id: 'agent', labelKey: 'settings.group.agent' },
+  { id: 'memory', labelKey: 'settings.group.memory' },
+  { id: 'apiKeys', labelKey: 'settings.group.apiKeys' },
+];
+
+// 设置面板：左导航分组 + 右内容。
+// 外观（主题/语言，前台即时生效）、Agent 参数（保存后下次任务生效）、
+// 记忆（记忆开关为前端偏好即时生效 + 记忆最大条数后端参数）、API Key 只读展示。
+export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
   const t = useT();
   const { theme, setTheme } = useTheme();
   const { locale, setLocale } = useI18n();
+  const [activeGroup, setActiveGroup] = useState('appearance');
   const [agent, setAgent] = useState(null);
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -80,11 +90,27 @@ export function SettingsDialog({ onClose }) {
     }
   };
 
-  return (
-    <div className="dialog-mask" onClick={onClose}>
-      <div className="dialog settings-dialog" onClick={e => e.stopPropagation()}>
-        <p className="dialog-title">{t('settings.title')}</p>
+  const numberField = (key, labelKey) => (
+    <label key={key} className="settings-field">
+      <span>{t(labelKey)}</span>
+      <input
+        type="number"
+        value={agent[key]}
+        onChange={e => setField(key, e.target.value === '' ? '' : Number(e.target.value))}
+      />
+    </label>
+  );
 
+  // 需要后端配置的分组在未加载/加载失败时给出占位。
+  const renderBackendGuard = () => {
+    if (loading) return <p className="dialog-desc">{t('common.loading')}</p>;
+    if (!agent) return <p className="settings-error">{error || t('common.loadFailed')}</p>;
+    return null;
+  };
+
+  const renderGroup = () => {
+    if (activeGroup === 'appearance') {
+      return (
         <div className="settings-section">
           <p className="settings-section-title">{t('appearance.title')}</p>
           <div className="settings-field settings-field-switch">
@@ -115,62 +141,108 @@ export function SettingsDialog({ onClose }) {
             </div>
           </div>
         </div>
+      );
+    }
 
-        {loading ? (
-          <p className="dialog-desc">{t('common.loading')}</p>
-        ) : !agent ? (
-          <p className="settings-error">{error || t('common.loadFailed')}</p>
-        ) : (
-          <>
-            <div className="settings-section">
-              <p className="settings-section-title">{t('settings.agentParams')}</p>
-              <p className="dialog-desc">{t('settings.agentParamsDesc')}</p>
-              <div className="settings-grid">
-                {NUM_FIELDS.map(f => (
-                  <label key={f.key} className="settings-field">
-                    <span>{t(f.labelKey)}</span>
-                    <input
-                      type="number"
-                      value={agent[f.key]}
-                      onChange={e => setField(f.key, e.target.value === '' ? '' : Number(e.target.value))}
-                    />
-                  </label>
-                ))}
-                <label className="settings-field settings-field-switch">
-                  <span>{t('settings.observeDesktop')}</span>
-                  <input
-                    type="checkbox"
-                    checked={!!agent.observeDesktop}
-                    onChange={e => setField('observeDesktop', e.target.checked)}
-                  />
-                </label>
-              </div>
+    if (activeGroup === 'agent') {
+      return (
+        <div className="settings-section">
+          <p className="settings-section-title">{t('settings.agentParams')}</p>
+          <p className="dialog-desc">{t('settings.agentParamsDesc')}</p>
+          {renderBackendGuard() || (
+            <div className="settings-grid">
+              {AGENT_FIELDS.map(f => numberField(f.key, f.labelKey))}
+              <label className="settings-field settings-field-switch">
+                <span>{t('settings.observeDesktop')}</span>
+                <input
+                  type="checkbox"
+                  checked={!!agent.observeDesktop}
+                  onChange={e => setField('observeDesktop', e.target.checked)}
+                />
+              </label>
             </div>
+          )}
+        </div>
+      );
+    }
 
-            <div className="settings-section">
-              <p className="settings-section-title">{t('settings.apiKeys')}</p>
-              <p className="dialog-desc">{t('settings.apiKeysDesc')}</p>
-              <div className="settings-keys">
-                {keys.map(k => (
-                  <div key={k.envVar} className="settings-key-row">
-                    <span className="settings-key-provider">{k.provider}</span>
-                    <span className={`settings-key-status ${k.configured ? 'on' : 'off'}`}>
-                      {k.configured ? k.masked : t('settings.keyNotConfigured')}
-                    </span>
-                  </div>
-                ))}
+    if (activeGroup === 'memory') {
+      return (
+        <div className="settings-section">
+          <p className="settings-section-title">{t('settings.group.memory')}</p>
+          <p className="dialog-desc">{t('settings.memoryDesc')}</p>
+          <div className="settings-grid">
+            <label className="settings-field settings-field-switch">
+              <span>{t('settings.memoryEnabled')}</span>
+              <input
+                type="checkbox"
+                checked={!!agentMemory}
+                onChange={e => setAgentMemory(e.target.checked)}
+              />
+            </label>
+            {renderBackendGuard() || numberField('memoryMaxEntries', 'settings.memoryMaxEntries')}
+          </div>
+        </div>
+      );
+    }
+
+    // apiKeys
+    return (
+      <div className="settings-section">
+        <p className="settings-section-title">{t('settings.apiKeys')}</p>
+        <p className="dialog-desc">{t('settings.apiKeysDesc')}</p>
+        {renderBackendGuard() || (
+          <div className="settings-keys">
+            {keys.map(k => (
+              <div key={k.envVar} className="settings-key-row">
+                <span className="settings-key-provider">{k.provider}</span>
+                <span className={`settings-key-status ${k.configured ? 'on' : 'off'}`}>
+                  {k.configured ? k.masked : t('settings.keyNotConfigured')}
+                </span>
               </div>
-            </div>
-
-            {error && <p className="settings-error">{error}</p>}
-            {saved && !error && <p className="settings-ok">{t('common.saved')}</p>}
-          </>
+            ))}
+          </div>
         )}
+      </div>
+    );
+  };
+
+  // 保存/重置只对后端 agent 配置生效，外观/记忆开关是前端偏好（即时生效，无需保存）。
+  const showSaveBar = activeGroup === 'agent' || activeGroup === 'memory' || activeGroup === 'apiKeys';
+
+  return (
+    <div className="dialog-mask" onClick={onClose}>
+      <div className="dialog settings-dialog" onClick={e => e.stopPropagation()}>
+        <p className="dialog-title">{t('settings.title')}</p>
+
+        <div className="settings-layout">
+          <nav className="settings-nav">
+            {GROUPS.map(g => (
+              <button
+                key={g.id}
+                className={`settings-nav-btn${activeGroup === g.id ? ' active' : ''}`}
+                onClick={() => setActiveGroup(g.id)}
+              >
+                {t(g.labelKey)}
+              </button>
+            ))}
+          </nav>
+
+          <div className="settings-content">
+            {renderGroup()}
+            {showSaveBar && error && <p className="settings-error">{error}</p>}
+            {showSaveBar && saved && !error && <p className="settings-ok">{t('common.saved')}</p>}
+          </div>
+        </div>
 
         <div className="dialog-actions">
           <button className="dialog-btn cancel" onClick={onClose} disabled={saving}>{t('common.close')}</button>
-          <button className="dialog-btn" onClick={handleReset} disabled={loading || saving || !agent}>{t('common.resetDefault')}</button>
-          <button className="dialog-btn primary" onClick={handleSave} disabled={loading || saving || !agent}>{t('common.save')}</button>
+          {showSaveBar && (
+            <>
+              <button className="dialog-btn" onClick={handleReset} disabled={loading || saving || !agent}>{t('common.resetDefault')}</button>
+              <button className="dialog-btn primary" onClick={handleSave} disabled={loading || saving || !agent}>{t('common.save')}</button>
+            </>
+          )}
         </div>
       </div>
     </div>

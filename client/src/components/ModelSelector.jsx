@@ -10,18 +10,12 @@ function filterModels(models, query) {
   );
 }
 
-// chat 模式：可搜索的下拉。供应商接口可能返回上百个模型，原生 <select> 没法选，
-// 这里做成「点击展开 → 输入过滤 → 点选」的浮层。
-function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLocked }) {
-  const t = useT();
+// 浮层下拉的通用交互：点击外部关闭、ESC 关闭、打开时聚焦搜索框。
+// chat / agent 两种模型选择器共用这套逻辑。
+function useDropdown() {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
-
-  const selected = availableModels.find(m => m.id === chatModel);
-  const selectedLabel = selected?.label || chatModel || t('modelSelector.selectModel');
-  const filtered = useMemo(() => filterModels(availableModels, query), [availableModels, query]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -35,6 +29,20 @@ function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLo
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
+
+  return { open, setOpen, wrapRef, inputRef };
+}
+
+// chat 模式：可搜索的下拉。供应商接口可能返回上百个模型，原生 <select> 没法选，
+// 这里做成「点击展开 → 输入过滤 → 点选」的浮层。
+function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLocked }) {
+  const t = useT();
+  const { open, setOpen, wrapRef, inputRef } = useDropdown();
+  const [query, setQuery] = useState('');
+
+  const selected = availableModels.find(m => m.id === chatModel);
+  const selectedLabel = selected?.label || chatModel || t('modelSelector.selectModel');
+  const filtered = useMemo(() => filterModels(availableModels, query), [availableModels, query]);
 
   const openPanel = () => {
     setQuery('');
@@ -87,47 +95,25 @@ function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLo
   );
 }
 
-// 模型选择控件：
-// - chat 模式：可搜索下拉
-// - agent 模式：多选 tag + 优先级排序 + race/vote 策略切换
-//
-// 只在 sessionStarted=false 时渲染。组件自己判断这个条件，让 App
-// 那边可以无条件 <ModelSelector .../> 写成一行。
-export function ModelSelector({
-  sessionStarted,
-  mode,
+// agent 模式：多选 + 优先级排序 + race/vote 策略。
+// 收进与 chat 同构的浮层：触发按钮显示已选数量，展开后在面板内搜索/多选/排序/切策略，
+// 避免一排模型标签直接铺在输入卡工具栏里把版面撑乱。
+function AgentModelDropdown({
   availableModels,
-  chatModel,
-  setChatModel,
   selectedAgentModels,
   setSelectedAgentModels,
   agentStrategy,
   setAgentStrategy,
   sessionLocked,
-  currentProvider,
 }) {
   const t = useT();
+  const { open, setOpen, wrapRef, inputRef } = useDropdown();
   const [query, setQuery] = useState('');
 
-  if (sessionStarted) return null;
-
-  const providerBadge = currentProvider
-    ? <span className="provider-badge" title={t('modelSelector.providerTitle', { provider: currentProvider })}>{currentProvider}</span>
-    : null;
-
-  if (mode !== 'agent') {
-    return (
-      <div className="model-select-row">
-        {providerBadge}
-        <ChatModelDropdown
-          availableModels={availableModels}
-          chatModel={chatModel}
-          setChatModel={setChatModel}
-          sessionLocked={sessionLocked}
-        />
-      </div>
-    );
-  }
+  const openPanel = () => {
+    setQuery('');
+    setOpen(o => !o);
+  };
 
   const toggleAgentModel = id => {
     setSelectedAgentModels(prev => (prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]));
@@ -157,6 +143,11 @@ export function ModelSelector({
     : unselectedItems;
   const visibleItems = [...selectedItems, ...filteredUnselected];
 
+  const count = selectedAgentModels.length;
+  const triggerLabel = count > 0
+    ? t('modelSelector.selectedCount', { count })
+    : t('modelSelector.selectModels');
+
   const renderTag = item => {
     const isSelected = selectedSet.has(item.id);
     const orderIdx = selectedAgentModels.indexOf(item.id);
@@ -182,38 +173,109 @@ export function ModelSelector({
   };
 
   return (
-    <div className="model-tags-wrap">
-      <div className="model-tags-search">
-        {providerBadge}
-        <Search size={13} />
-        <input
-          type="text"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder={t('modelSelector.searchPlaceholder')}
-          disabled={sessionLocked}
-        />
-      </div>
-      <div className="model-tags">
-        {visibleItems.length === 0 && <span className="model-tags-empty">{t('modelSelector.noMatch')}</span>}
-        {visibleItems.map(renderTag)}
-      </div>
-      {selectedAgentModels.length > 1 && (
-        <div className="strategy-toggle">
-          <button
-            className={`strategy-btn ${agentStrategy === 'race' ? 'active' : ''}`}
-            onClick={() => setAgentStrategy('race')}
-            disabled={sessionLocked}
-            title={t('modelSelector.raceTitle')}
-          >{t('modelSelector.race')}</button>
-          <button
-            className={`strategy-btn ${agentStrategy === 'vote' ? 'active' : ''}`}
-            onClick={() => setAgentStrategy('vote')}
-            disabled={sessionLocked}
-            title={t('modelSelector.voteTitle')}
-          >{t('modelSelector.vote')}</button>
+    <div className="model-dropdown" ref={wrapRef}>
+      <button
+        type="button"
+        className={`model-dropdown-trigger ${count > 0 ? 'has-selection' : ''}`}
+        onClick={openPanel}
+        disabled={sessionLocked}
+        title={t('modelSelector.switchModel')}
+      >
+        <span className="model-dropdown-label">{triggerLabel}</span>
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className="model-dropdown-panel agent-model-panel">
+          <div className="model-dropdown-search">
+            <Search size={13} />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder={t('modelSelector.searchPlaceholder')}
+              onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }}
+              disabled={sessionLocked}
+            />
+          </div>
+          <div className="model-tags">
+            {visibleItems.length === 0 && <span className="model-tags-empty">{t('modelSelector.noMatch')}</span>}
+            {visibleItems.map(renderTag)}
+          </div>
+          {selectedAgentModels.length > 1 && (
+            <div className="strategy-toggle">
+              <button
+                className={`strategy-btn ${agentStrategy === 'race' ? 'active' : ''}`}
+                onClick={() => setAgentStrategy('race')}
+                disabled={sessionLocked}
+                title={t('modelSelector.raceTitle')}
+              >{t('modelSelector.race')}</button>
+              <button
+                className={`strategy-btn ${agentStrategy === 'vote' ? 'active' : ''}`}
+                onClick={() => setAgentStrategy('vote')}
+                disabled={sessionLocked}
+                title={t('modelSelector.voteTitle')}
+              >{t('modelSelector.vote')}</button>
+            </div>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+// 模型选择控件：
+// - chat 模式：可搜索下拉
+// - agent 模式：多选下拉（搜索 + 多选 + 优先级排序 + race/vote 策略）
+//
+// 只在 sessionStarted=false 时渲染。组件自己判断这个条件，让 App
+// 那边可以无条件 <ModelSelector .../> 写成一行。
+export function ModelSelector({
+  sessionStarted,
+  mode,
+  availableModels,
+  chatModel,
+  setChatModel,
+  selectedAgentModels,
+  setSelectedAgentModels,
+  agentStrategy,
+  setAgentStrategy,
+  sessionLocked,
+  currentProvider,
+}) {
+  const t = useT();
+
+  if (sessionStarted) return null;
+
+  const providerBadge = currentProvider
+    ? <span className="provider-badge" title={t('modelSelector.providerTitle', { provider: currentProvider })}>{currentProvider}</span>
+    : null;
+
+  if (mode !== 'agent') {
+    return (
+      <div className="model-select-row">
+        {providerBadge}
+        <ChatModelDropdown
+          availableModels={availableModels}
+          chatModel={chatModel}
+          setChatModel={setChatModel}
+          sessionLocked={sessionLocked}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="model-select-row">
+      {providerBadge}
+      <AgentModelDropdown
+        availableModels={availableModels}
+        selectedAgentModels={selectedAgentModels}
+        setSelectedAgentModels={setSelectedAgentModels}
+        agentStrategy={agentStrategy}
+        setAgentStrategy={setAgentStrategy}
+        sessionLocked={sessionLocked}
+      />
     </div>
   );
 }

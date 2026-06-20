@@ -64,6 +64,10 @@ export const zh = {
 
   // 设置弹窗
   'settings.title': '设置',
+  'settings.group.appearance': '外观',
+  'settings.group.agent': 'Agent 参数',
+  'settings.group.memory': '记忆',
+  'settings.group.apiKeys': 'API Key',
   'settings.agentParams': 'Agent 行为参数',
   'settings.agentParamsDesc': '保存后下次任务即生效，无需重启后端。',
   'settings.maxSteps': '单次任务最大步数',
@@ -74,6 +78,8 @@ export const zh = {
   'settings.maxResultChars': '每步结果最大字符数',
   'settings.maxParallelResultChars': '并行抓取字符上限',
   'settings.memoryMaxEntries': '记忆压缩阈值',
+  'settings.memoryEnabled': '启用记忆',
+  'settings.memoryDesc': 'Agent 是否使用历史记忆辅助任务（前端偏好，即时生效）。',
   'settings.observeDesktop': '观测 macOS 桌面',
   'settings.apiKeys': 'API Key（只读）',
   'settings.apiKeysDesc': 'Key 在 .env 配置，修改后需重启后端。',
@@ -270,10 +276,6 @@ export const zh = {
   'mode.ariaLabel': '模式切换',
   'mode.chat': '对话',
   'mode.agent': 'Agent',
-  'memoryToggle.onTitle': '使用历史记忆辅助任务',
-  'memoryToggle.offTitle': '不使用记忆',
-  'memoryToggle.on': '记忆开',
-  'memoryToggle.off': '记忆关',
   'send.stop': '停止',
   'send.stopping': '正在停止…',
   'send.stopReject': '停止并拒绝',
@@ -302,6 +304,8 @@ export const zh = {
 
   // 模型选择器
   'modelSelector.selectModel': '选择模型',
+  'modelSelector.selectModels': '选择模型',
+  'modelSelector.selectedCount': '已选 {count} 个模型',
   'modelSelector.switchModel': '切换模型',
   'modelSelector.searchPlaceholder': '搜索模型…',
   'modelSelector.noMatch': '无匹配模型',

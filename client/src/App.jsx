@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Menu, Settings } from 'lucide-react';
 import './App.css';
 import { fetchAgentTrace } from './api/streams.js';
 import { ensureServiceWorker, notificationPermission, notificationsSupported, requestNotificationPermission } from './notifications.js';
@@ -18,7 +19,6 @@ import { AgentPanel } from './components/agent/AgentPanel.jsx';
 import { ModelSelector } from './components/ModelSelector.jsx';
 import { ModeSwitch } from './components/ModeSwitch.jsx';
 import { SendButton } from './components/SendButton.jsx';
-import { MemoryToggle } from './components/MemoryToggle.jsx';
 import { AttachButton } from './components/AttachButton.jsx';
 import { AttachmentBar } from './components/AttachmentBar.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
@@ -816,9 +816,6 @@ export default function App() {
       onStopAgent={stopAgent}
     />
   );
-  const memoryToggle = (
-    <MemoryToggle mode={mode} sessionStarted={sessionStarted} agentMemory={agentMemory} setAgentMemory={setAgentMemory} />
-  );
   const attachButton = (
     <AttachButton
       onPickFiles={addAttachmentFiles}
@@ -877,6 +874,16 @@ export default function App() {
           {t('header.newSession')}
         </button>
       )}
+      {showHero && (
+        <div className="hero-corner-actions">
+          <button className="session-toggle-btn" onClick={() => setShowSessions(v => !v)} title={t('header.sessionList')}>
+            <Menu size={16} />
+          </button>
+          <button className="session-toggle-btn" onClick={() => setShowSettings(true)} title={t('header.settings')}>
+            <Settings size={16} />
+          </button>
+        </div>
+      )}
       {showHero ? (
         <HeroScreen
           mode={mode}
@@ -885,7 +892,7 @@ export default function App() {
           onKeyDown={handleKeyDown}
           textareaRef={textareaRef}
           sessionLocked={sessionLocked}
-          toolbarSlots={{ modeSwitch, modelSelect, memoryToggle, sendButton, attachButton }}
+          toolbarSlots={{ modeSwitch, modelSelect, sendButton, attachButton }}
           attachmentBar={attachmentBar}
           suggestions={suggestions}
           categories={mode === 'agent' ? agentCategories : null}
@@ -902,8 +909,6 @@ export default function App() {
             setInput(text);
             setTimeout(() => handleSubmit(), 0);
           }}
-          onToggleSessions={() => setShowSessions(v => !v)}
-          onOpenSettings={() => setShowSettings(true)}
         />
       ) : (
         <div className="layout">
@@ -967,7 +972,6 @@ export default function App() {
               handleKeyDown={handleKeyDown}
               placeholder={mode === 'agent' ? t('input.agentPlaceholder') : t('input.chatPlaceholder')}
               disabled={sessionLocked}
-              memoryToggle={memoryToggle}
               sendButton={sendButton}
               attachButton={attachButton}
               attachmentBar={attachmentBar}
@@ -1003,7 +1007,7 @@ export default function App() {
       />
 
       {showReset && <ResetDialog onConfirm={handleReset} onCancel={() => setShowReset(false)} />}
-      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} agentMemory={agentMemory} setAgentMemory={setAgentMemory} />}
     </div>
     </ErrorBoundary>
   );
