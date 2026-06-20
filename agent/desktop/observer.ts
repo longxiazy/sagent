@@ -25,7 +25,7 @@ export async function observeDesktopAgent(state: {
     browser,
     filesystem: {
       cwd,
-      note: '使用 fs 工具可读取或写入文件',
+      note: '当前工作目录;仅当任务确需读写文件时才使用 fs 工具',
     },
     terminal: {
       cwd,
