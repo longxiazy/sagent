@@ -1707,6 +1707,22 @@ select,
   overflow-y: auto;
   padding: 4px;
 }
+.model-provider-group + .model-provider-group {
+  margin-top: 6px;
+}
+.model-provider-heading {
+  padding: 6px 8px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+}
+.model-provider-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 
 .model-dropdown-option {
   display: flex;
@@ -1749,9 +1765,8 @@ select,
 
 .model-tags {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
+  gap: 8px;
   max-height: 160px;
   overflow-y: auto;
 }
@@ -1760,6 +1775,8 @@ select,
   display: inline-flex;
   align-items: center;
   gap: 0;
+  max-width: 100%;
+  min-width: 0;
   border-radius: var(--r-sm);
 }
 
@@ -1770,6 +1787,9 @@ select,
 }
 
 .model-tag {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
   height: 30px;
   padding: 0 10px;
   border-radius: var(--r-sm);
@@ -1781,6 +1801,11 @@ select,
   outline: none;
   transition: all 0.15s;
   white-space: nowrap;
+}
+.model-tag-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .model-tag:hover {

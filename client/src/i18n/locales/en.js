@@ -305,6 +305,7 @@ export const en = {
   'modelSelector.selectModel': 'Select model',
   'modelSelector.selectModels': 'Select models',
   'modelSelector.selectedCount': '{count} models selected',
+  'modelSelector.providerCount': '{count} providers',
   'modelSelector.switchModel': 'Switch model',
   'modelSelector.searchPlaceholder': 'Search models…',
   'modelSelector.noMatch': 'No matching models',
