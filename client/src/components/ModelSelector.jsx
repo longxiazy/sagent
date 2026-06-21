@@ -10,7 +10,7 @@ function filterModels(models, query) {
   );
 }
 
-// 浮层下拉的通用交互：点击外部关闭、ESC 关闭、打开时聚焦搜索框。
+// 浮层下拉的通用交互：点击外部关闭、ESC 关闭。
 // chat / agent 两种模型选择器共用这套逻辑。
 function useDropdown() {
   const [open, setOpen] = useState(false);
@@ -26,16 +26,12 @@ function useDropdown() {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [open]);
 
-  useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
-
   return { open, setOpen, wrapRef, inputRef };
 }
 
 // chat 模式：可搜索的下拉。供应商接口可能返回上百个模型，原生 <select> 没法选，
 // 这里做成「点击展开 → 输入过滤 → 点选」的浮层。
-function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLocked }) {
+function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLocked, currentProvider }) {
   const t = useT();
   const { open, setOpen, wrapRef, inputRef } = useDropdown();
   const [query, setQuery] = useState('');
@@ -58,7 +54,14 @@ function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLo
         disabled={sessionLocked}
         title={t('modelSelector.switchModel')}
       >
-        <span className="model-dropdown-label">{selectedLabel}</span>
+        <span className="model-dropdown-main">
+          {currentProvider && (
+            <span className="model-dropdown-provider" title={t('modelSelector.providerTitle', { provider: currentProvider })}>
+              {currentProvider}
+            </span>
+          )}
+          <span className="model-dropdown-label">{selectedLabel}</span>
+        </span>
         <ChevronDown size={14} />
       </button>
       {open && (
@@ -105,6 +108,7 @@ function AgentModelDropdown({
   agentStrategy,
   setAgentStrategy,
   sessionLocked,
+  currentProvider,
 }) {
   const t = useT();
   const { open, setOpen, wrapRef, inputRef } = useDropdown();
@@ -144,9 +148,11 @@ function AgentModelDropdown({
   const visibleItems = [...selectedItems, ...filteredUnselected];
 
   const count = selectedAgentModels.length;
-  const triggerLabel = count > 0
-    ? t('modelSelector.selectedCount', { count })
-    : t('modelSelector.selectModels');
+  const triggerLabel = count === 1
+    ? (selectedItems[0]?.label || selectedAgentModels[0])
+    : count > 1
+      ? t('modelSelector.selectedCount', { count })
+      : t('modelSelector.selectModels');
 
   const renderTag = item => {
     const isSelected = selectedSet.has(item.id);
@@ -181,7 +187,14 @@ function AgentModelDropdown({
         disabled={sessionLocked}
         title={t('modelSelector.switchModel')}
       >
-        <span className="model-dropdown-label">{triggerLabel}</span>
+        <span className="model-dropdown-main">
+          {currentProvider && (
+            <span className="model-dropdown-provider" title={t('modelSelector.providerTitle', { provider: currentProvider })}>
+              {currentProvider}
+            </span>
+          )}
+          <span className="model-dropdown-label">{triggerLabel}</span>
+        </span>
         <ChevronDown size={14} />
       </button>
       {open && (
@@ -243,23 +256,17 @@ export function ModelSelector({
   sessionLocked,
   currentProvider,
 }) {
-  const t = useT();
-
   if (sessionStarted) return null;
-
-  const providerBadge = currentProvider
-    ? <span className="provider-badge" title={t('modelSelector.providerTitle', { provider: currentProvider })}>{currentProvider}</span>
-    : null;
 
   if (mode !== 'agent') {
     return (
       <div className="model-select-row">
-        {providerBadge}
         <ChatModelDropdown
           availableModels={availableModels}
           chatModel={chatModel}
           setChatModel={setChatModel}
           sessionLocked={sessionLocked}
+          currentProvider={currentProvider}
         />
       </div>
     );
@@ -267,7 +274,6 @@ export function ModelSelector({
 
   return (
     <div className="model-select-row">
-      {providerBadge}
       <AgentModelDropdown
         availableModels={availableModels}
         selectedAgentModels={selectedAgentModels}
@@ -275,6 +281,7 @@ export function ModelSelector({
         agentStrategy={agentStrategy}
         setAgentStrategy={setAgentStrategy}
         sessionLocked={sessionLocked}
+        currentProvider={currentProvider}
       />
     </div>
   );
