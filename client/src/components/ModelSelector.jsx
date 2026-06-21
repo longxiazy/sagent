@@ -6,7 +6,37 @@ function filterModels(models, query) {
   const q = query.trim().toLowerCase();
   if (!q) return models;
   return models.filter(m =>
-    m.id.toLowerCase().includes(q) || (m.label && m.label.toLowerCase().includes(q))
+    m.id.toLowerCase().includes(q)
+      || (m.label && m.label.toLowerCase().includes(q))
+      || (m.provider && m.provider.toLowerCase().includes(q))
+  );
+}
+
+function providerOf(model) {
+  return model?.provider || 'unknown';
+}
+
+function groupByProvider(models) {
+  const groups = [];
+  const byName = new Map();
+  for (const model of models) {
+    const provider = providerOf(model);
+    if (!byName.has(provider)) {
+      const group = { provider, models: [] };
+      byName.set(provider, group);
+      groups.push(group);
+    }
+    byName.get(provider).models.push(model);
+  }
+  return groups;
+}
+
+function ProviderPill({ provider }) {
+  if (!provider) return null;
+  return (
+    <span className="model-dropdown-provider" title={provider}>
+      {provider}
+    </span>
   );
 }
 
@@ -31,7 +61,7 @@ function useDropdown() {
 
 // chat 模式：可搜索的下拉。供应商接口可能返回上百个模型，原生 <select> 没法选，
 // 这里做成「点击展开 → 输入过滤 → 点选」的浮层。
-function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLocked, currentProvider }) {
+function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLocked }) {
   const t = useT();
   const { open, setOpen, wrapRef, inputRef } = useDropdown();
   const [query, setQuery] = useState('');
@@ -39,6 +69,7 @@ function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLo
   const selected = availableModels.find(m => m.id === chatModel);
   const selectedLabel = selected?.label || chatModel || t('modelSelector.selectModel');
   const filtered = useMemo(() => filterModels(availableModels, query), [availableModels, query]);
+  const grouped = useMemo(() => groupByProvider(filtered), [filtered]);
 
   const openPanel = () => {
     setQuery('');
@@ -55,11 +86,7 @@ function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLo
         title={t('modelSelector.switchModel')}
       >
         <span className="model-dropdown-main">
-          {currentProvider && (
-            <span className="model-dropdown-provider" title={t('modelSelector.providerTitle', { provider: currentProvider })}>
-              {currentProvider}
-            </span>
-          )}
+          <ProviderPill provider={selected?.provider} />
           <span className="model-dropdown-label">{selectedLabel}</span>
         </span>
         <ChevronDown size={14} />
@@ -79,17 +106,22 @@ function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLo
           </div>
           <div className="model-dropdown-list">
             {filtered.length === 0 && <div className="model-dropdown-empty">{t('modelSelector.noMatch')}</div>}
-            {filtered.map(item => (
-              <button
-                type="button"
-                key={item.id}
-                className={`model-dropdown-option ${item.id === chatModel ? 'selected' : ''}`}
-                onClick={() => { setChatModel(item.id); setOpen(false); }}
-                title={item.id}
-              >
-                <span className="model-dropdown-option-label">{item.label}</span>
-                {item.id === chatModel && <Check size={13} />}
-              </button>
+            {grouped.map(group => (
+              <div key={group.provider} className="model-provider-group">
+                <div className="model-provider-heading">{group.provider}</div>
+                {group.models.map(item => (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={`model-dropdown-option ${item.id === chatModel ? 'selected' : ''}`}
+                    onClick={() => { setChatModel(item.id); setOpen(false); }}
+                    title={item.id}
+                  >
+                    <span className="model-dropdown-option-label">{item.label}</span>
+                    {item.id === chatModel && <Check size={13} />}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
         </div>
@@ -108,7 +140,6 @@ function AgentModelDropdown({
   agentStrategy,
   setAgentStrategy,
   sessionLocked,
-  currentProvider,
 }) {
   const t = useT();
   const { open, setOpen, wrapRef, inputRef } = useDropdown();
@@ -136,18 +167,24 @@ function AgentModelDropdown({
   };
 
   // 已选模型始终置顶且不受搜索影响，避免选中后被过滤掉看不到。
-  const q = query.trim().toLowerCase();
   const selectedSet = new Set(selectedAgentModels);
   const selectedItems = selectedAgentModels
     .map(id => availableModels.find(m => m.id === id))
     .filter(Boolean);
   const unselectedItems = availableModels.filter(m => !selectedSet.has(m.id));
-  const filteredUnselected = q
-    ? unselectedItems.filter(m => m.id.toLowerCase().includes(q) || (m.label && m.label.toLowerCase().includes(q)))
-    : unselectedItems;
+  const filteredUnselected = filterModels(unselectedItems, query);
   const visibleItems = [...selectedItems, ...filteredUnselected];
+  // visibleItems 每次渲染都是新数组,手动 useMemo 反而被 React Compiler 拒绝优化;
+  // 这里直接调用,交给编译器自动 memo(与 ChatModelDropdown 不同——那边依赖的是已 memo 的 filtered)。
+  const grouped = groupByProvider(visibleItems);
 
   const count = selectedAgentModels.length;
+  const selectedProviders = [...new Set(selectedItems.map(providerOf))];
+  const triggerProvider = count === 0
+    ? null
+    : selectedProviders.length === 1
+      ? selectedProviders[0]
+      : t('modelSelector.providerCount', { count: selectedProviders.length });
   const triggerLabel = count === 1
     ? (selectedItems[0]?.label || selectedAgentModels[0])
     : count > 1
@@ -165,7 +202,7 @@ function AgentModelDropdown({
           disabled={sessionLocked}
           title={isSelected ? t('modelSelector.deselect') : t('modelSelector.selectConcurrent')}
         >
-          {item.label}
+          <span className="model-tag-label">{item.label}</span>
         </button>
         {isSelected && selectedAgentModels.length > 1 && (
           <span className="model-tag-order">
@@ -188,11 +225,7 @@ function AgentModelDropdown({
         title={t('modelSelector.switchModel')}
       >
         <span className="model-dropdown-main">
-          {currentProvider && (
-            <span className="model-dropdown-provider" title={t('modelSelector.providerTitle', { provider: currentProvider })}>
-              {currentProvider}
-            </span>
-          )}
+          <ProviderPill provider={triggerProvider} />
           <span className="model-dropdown-label">{triggerLabel}</span>
         </span>
         <ChevronDown size={14} />
@@ -213,7 +246,14 @@ function AgentModelDropdown({
           </div>
           <div className="model-tags">
             {visibleItems.length === 0 && <span className="model-tags-empty">{t('modelSelector.noMatch')}</span>}
-            {visibleItems.map(renderTag)}
+            {grouped.map(group => (
+              <div key={group.provider} className="model-provider-group">
+                <div className="model-provider-heading">{group.provider}</div>
+                <div className="model-provider-tags">
+                  {group.models.map(renderTag)}
+                </div>
+              </div>
+            ))}
           </div>
           {selectedAgentModels.length > 1 && (
             <div className="strategy-toggle">
@@ -254,7 +294,6 @@ export function ModelSelector({
   agentStrategy,
   setAgentStrategy,
   sessionLocked,
-  currentProvider,
 }) {
   if (sessionStarted) return null;
 
@@ -266,7 +305,6 @@ export function ModelSelector({
           chatModel={chatModel}
           setChatModel={setChatModel}
           sessionLocked={sessionLocked}
-          currentProvider={currentProvider}
         />
       </div>
     );
@@ -281,7 +319,6 @@ export function ModelSelector({
         agentStrategy={agentStrategy}
         setAgentStrategy={setAgentStrategy}
         sessionLocked={sessionLocked}
-        currentProvider={currentProvider}
       />
     </div>
   );

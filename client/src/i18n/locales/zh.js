@@ -306,6 +306,7 @@ export const zh = {
   'modelSelector.selectModel': '选择模型',
   'modelSelector.selectModels': '选择模型',
   'modelSelector.selectedCount': '已选 {count} 个模型',
+  'modelSelector.providerCount': '{count} 个供应商',
   'modelSelector.switchModel': '切换模型',
   'modelSelector.searchPlaceholder': '搜索模型…',
   'modelSelector.noMatch': '无匹配模型',
