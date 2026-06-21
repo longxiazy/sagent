@@ -27,7 +27,7 @@ import { HeroScreen } from './components/HeroScreen.jsx';
 import { useAgentRun } from './hooks/useAgentRun.js';
 import { createSession, getSessionTitle, normalizeChatState, touchSession, useChatSessions } from './hooks/useChatSessions.js';
 import { useProjects } from './hooks/useProjects.js';
-import { booleanStorage, jsonStorage, usePersistentState } from './hooks/usePersistentState.js';
+import { booleanStorage, usePersistentState, useProjectScopedState } from './hooks/usePersistentState.js';
 import { useResponsiveLayout } from './hooks/useResponsiveLayout.js';
 import { useThemeColorSync } from './hooks/useThemeColorSync.js';
 import { useTheme } from './theme/ThemeProvider.jsx';
@@ -51,6 +51,9 @@ import {
 import { formatMsgTime } from './utils/format.js';
 import { shuffled } from './utils/random.js';
 import { hasThinkContent } from './utils/markdown.js';
+
+// 稳定的空数组:作为 useProjectScopedState 的 initialValue,scope 缺省时返回同一引用,避免无谓重渲染。
+const EMPTY_AGENT_MODELS = [];
 
 // 把已上传的附件拼到任务文本中。
 // 单独成段 [附件] 块,让 LLM 容易识别;对图片显式提示 image_analyze 工具,
@@ -170,9 +173,9 @@ export default function App() {
     dockedBreakpoint: DOCKED_LAYOUT_BREAKPOINT,
     panelSizeKey: PANEL_SIZE_KEY,
   });
-  // Agent 的模型集合、策略、headless、memory 目前是“应用级偏好”，
-  // 不跟随 chat session 存储；chat session 只保存单模型对话所用的 model。
-  const [selectedAgentModels, setSelectedAgentModels] = usePersistentState('agent_models', [], jsonStorage);
+  // Agent 的多模型选择与策略「按项目」存储:useProjectScopedState 内部按 activeProjectId 分桶,
+  // 切项目时派生值自动跟着变。chat 单模型走 session(本身已按项目过滤);memory 仍是应用级偏好。
+  const [selectedAgentModels, setSelectedAgentModels] = useProjectScopedState('agent_models_by_project', activeProjectId, EMPTY_AGENT_MODELS);
   // Filter out models no longer available
   useEffect(() => {
     if (!modelsLoaded) {
@@ -188,7 +191,33 @@ export default function App() {
       }
     }
   }, [availableModels, modelsLoaded, selectedAgentModels, setSelectedAgentModels]);
-  const [agentStrategy, setAgentStrategy] = usePersistentState('agent_strategy', 'race');
+  const [agentStrategy, setAgentStrategy] = useProjectScopedState('agent_strategy_by_project', activeProjectId, 'race');
+
+  // 一次性迁移:历史版本 agent 模型/策略是全局存储(所有项目共用一份),现改为按项目存。
+  // 等项目就绪(projectsLoading=false,此时 activeProjectId 已是后端真实值)后跑一次,
+  // 把旧的全局选择迁移到「当前项目」名下,再删旧 key;其余项目从空开始。
+  const agentPrefsMigratedRef = useRef(false);
+  useEffect(() => {
+    if (projectsLoading || agentPrefsMigratedRef.current) return;
+    agentPrefsMigratedRef.current = true;
+    try {
+      const legacy = localStorage.getItem('agent_models');
+      if (legacy != null) {
+        const parsed = JSON.parse(legacy);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSelectedAgentModels(prev => (prev.length ? prev : parsed));
+        }
+        localStorage.removeItem('agent_models');
+      }
+    } catch { /* 忽略损坏的旧数据 */ }
+    try {
+      const legacy = localStorage.getItem('agent_strategy');
+      if (legacy != null) {
+        setAgentStrategy(prev => (prev && prev !== 'race' ? prev : legacy));
+        localStorage.removeItem('agent_strategy');
+      }
+    } catch { /* 忽略损坏的旧数据 */ }
+  }, [projectsLoading, setSelectedAgentModels, setAgentStrategy]);
 
   // 桌面通知权限：default = 未询问，granted = 已开，denied = 用户拒绝过。
   // SW 在 App 挂载时静默注册，权限请求必须由用户点击触发。
