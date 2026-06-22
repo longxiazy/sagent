@@ -1686,6 +1686,38 @@ select,
   min-width: 0;
 }
 
+/* 多选浮层:已选数量 + 一键清空 */
+.model-dropdown-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--c-border);
+}
+.model-dropdown-count {
+  font-size: var(--f-sm);
+  color: var(--c-text-muted);
+}
+.model-clear-btn {
+  font-size: var(--f-sm);
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 1px solid var(--c-border-input);
+  border-radius: var(--r-sm);
+  padding: 2px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.model-clear-btn:hover:not(:disabled) {
+  color: var(--c-danger);
+  border-color: var(--c-danger);
+}
+.model-clear-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── agent 模式：多选下拉浮层 ── */
 .agent-model-panel { width: 320px; }
 .agent-model-panel .model-tags {
