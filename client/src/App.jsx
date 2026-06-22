@@ -742,6 +742,10 @@ export default function App() {
     if (sessionLocked) {
       return;
     }
+    // agent 模式必须至少选一个模型,否则没有执行目标,直接拦截(UI 上发送按钮也已禁用)。
+    if (mode === 'agent' && selectedAgentModels.length === 0) {
+      return;
+    }
     if (attachmentsUploading) {
       // 还在上传:不提前发送,UI 上发送按钮已经禁用了,这里再兜一层。
       return;
@@ -834,6 +838,8 @@ export default function App() {
       pendingApproval={pendingApproval}
       // 输入栏要有正文 *或* 已就绪附件才能发送;上传中按钮也置灰。
       inputValue={attachmentsUploading ? '' : (input || (hasReadyAttachments ? ' ' : ''))}
+      // agent 模式一个模型都没选时禁止发送,并给出原因提示。
+      blockReason={mode === 'agent' && selectedAgentModels.length === 0 ? t('send.needModel') : ''}
       onSend={handleSubmit}
       onStopGeneration={stopGeneration}
       onStopAgent={stopAgent}

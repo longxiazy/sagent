@@ -244,6 +244,17 @@ function AgentModelDropdown({
               disabled={sessionLocked}
             />
           </div>
+          {count > 0 && (
+            <div className="model-dropdown-actions">
+              <span className="model-dropdown-count">{t('modelSelector.selectedCount', { count })}</span>
+              <button
+                type="button"
+                className="model-clear-btn"
+                onClick={() => setSelectedAgentModels([])}
+                disabled={sessionLocked}
+              >{t('modelSelector.clearAll')}</button>
+            </div>
+          )}
           <div className="model-tags">
             {visibleItems.length === 0 && <span className="model-tags-empty">{t('modelSelector.noMatch')}</span>}
             {grouped.map(group => (

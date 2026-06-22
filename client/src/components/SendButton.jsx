@@ -8,6 +8,7 @@ export function SendButton({
   agentStopping,
   pendingApproval,
   inputValue,
+  blockReason,
   onSend,
   onStopGeneration,
   onStopAgent,
@@ -27,8 +28,14 @@ export function SendButton({
       </button>
     );
   }
+  // blockReason 非空时(例如 agent 模式一个模型都没选)禁用并把原因作为 tooltip。
   return (
-    <button className="send-btn idle" onClick={onSend} disabled={!inputValue.trim()}>
+    <button
+      className="send-btn idle"
+      onClick={onSend}
+      disabled={!inputValue.trim() || !!blockReason}
+      title={blockReason || undefined}
+    >
       <Send size={14} /> {t('send.send')}
     </button>
   );
