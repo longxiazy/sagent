@@ -127,7 +127,7 @@ function sanitizeState(state: any) {
   delete safe.onEvent;
   delete safe.browserSession;
   delete safe.observeDesktop;
-  safe.browserSessionActive = Boolean(state.browserSession);
+  safe.browserSessionActive = Boolean(state.browserSession) || Boolean(state.browserSessionActive);
   return safe;
 }
 

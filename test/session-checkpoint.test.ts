@@ -200,6 +200,40 @@ describe('runtime: session checkpoint integration', () => {
     expect(cp.history.length).toBeGreaterThanOrEqual(5);
   });
 
+  it('delegates session snapshot persistence to a callback with serializable state', async () => {
+    const runId = 'run_rt_worker_snapshot';
+    const cancelSignal = new AbortController().signal;
+    const snapshots: any[] = [];
+
+    await runAgentRuntime({
+      task: 'test',
+      maxSteps: 1,
+      onEvent: noop,
+      cancelSignal,
+      sessionCheckpointDir: tmpDir,
+      runRecord: { runId, pendingRollback: null },
+      saveSessionSnapshot: snapshot => snapshots.push(snapshot),
+      initialize: () => ({
+        runId,
+        onEvent: noop,
+        browserSession: { view: { circular: true } },
+        observeDesktop: true,
+        keep: 'ok',
+      }),
+      observe: noop,
+      decide: () => ({ action: { type: 'finish', answer: 'done' }, rationale: 'ok' }),
+      authorize: noop,
+      execute: () => 'done',
+      cleanup: noop,
+    });
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].state.browserSession).toBeUndefined();
+    expect(snapshots[0].state.observeDesktop).toBeUndefined();
+    expect(snapshots[0].state.browserSessionActive).toBe(true);
+    expect(snapshots[0].state.keep).toBe('ok');
+  });
+
   it('manual rollback restores snapshot history and continues', { timeout: 15000 }, async () => {
     const runId = 'run_rt3';
     const cancelSignal = new AbortController().signal;

@@ -93,6 +93,18 @@ function shouldRollback(runRecord) {
   return runRecord?.pendingRollback != null;
 }
 
+function sanitizeStateForSnapshot(state) {
+  if (!state) return null;
+  const safe = { ...state };
+  delete safe.chromium;
+  delete safe.browserCandidatePaths;
+  delete safe.onEvent;
+  delete safe.browserSession;
+  delete safe.observeDesktop;
+  safe.browserSessionActive = Boolean(state.browserSession) || Boolean(state.browserSessionActive);
+  return safe;
+}
+
 export async function runAgentRuntime({
   task,
   maxSteps = 8,
@@ -108,6 +120,7 @@ export async function runAgentRuntime({
   initialStep = 1,
   initialHistory = [],
   onCheckpoint = null,
+  saveSessionSnapshot = null,
   // v2: 会话检查点 & 手动回滚
   sessionCheckpointDir = null,
   runRecord = null,
@@ -285,11 +298,12 @@ export async function runAgentRuntime({
           runId,
           step,
           history: history.map(h => ({ ...h })),
-          state: { ...state },
+          state: saveSessionSnapshot ? sanitizeStateForSnapshot(state) : { ...state },
           result,
           usage: decision.usage,
         };
-        saveHealthySnapshot(snapData).catch(err => {
+        const saveSnapshot = saveSessionSnapshot || saveHealthySnapshot;
+        Promise.resolve(saveSnapshot(snapData)).catch(err => {
           log.error(`[Runtime] 健康快照保存失败: ${err.message}`);
         });
         onEvent?.({

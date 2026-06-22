@@ -25,7 +25,7 @@ When the Agent needs your approval, sagent shows a browser desktop notification 
 
 ## Security: Sandbox Policy
 
-When started with `npm run sandbox`, the Agent runs inside the macOS sandbox, with permissions controlled by `sandbox.sb`.
+When started with `npm run sandbox`, the UI/API server stays outside the macOS sandbox and each Agent run starts a short-lived worker inside `sandbox-exec`, with permissions controlled by `sandbox.sb` and `PROJECT_DIR` set to that run's project root.
 
 You can customize `sandbox.sb` to adjust the Agent's permission boundary. Modifying the file may cause some Agent functions to lose permission (e.g., unable to access the network, unable to open the browser, etc.).
 

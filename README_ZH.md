@@ -25,7 +25,7 @@ Agent 等待审批时，sagent 会通过浏览器桌面通知提醒你，并提�
 
 ## 安全：沙盒策略
 
-通过 `npm run sandbox` 启动时，Agent 在 macOS 沙盒内运行，权限由 `sandbox.sb` 文件控制。
+通过 `npm run sandbox` 启动时，UI/API server 常驻在沙盒外，每次 Agent run 会启动一个短生命周期 worker，并用 `sandbox-exec` 将该 worker 限制在当前 run 的项目根目录内；权限由 `sandbox.sb` 文件控制。
 
 你可以自定义 `sandbox.sb` 来调整 Agent 的权限边界。修改该文件可能导致 Agent 部分功能无权限执行（如无法访问网络、无法打开浏览器等）。
 

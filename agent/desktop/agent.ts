@@ -257,6 +257,7 @@ export function createDesktopAgentRunner({
     memory = true,
     projectRoot = null,
     dataDir = null,
+    checkpointWriter = null,
   }) {
     const { maxSteps, modelTimeoutMs, staggerDelayMs, batchSize, observeDesktop } = liveConfig();
     const blacklistedModels = new Set();
@@ -282,13 +283,19 @@ export function createDesktopAgentRunner({
       sessionCheckpointDir: runCheckpointDir,
       runRecord,
       onCheckpoint: runCheckpointDir
-        ? (history, step) => saveCheckpoint(runCheckpointDir, {
-            runId, task, model, systemPrompt, headless,
-            history, step, maxSteps, startedAt,
-            agentModels, strategy, conversationHistory, memory,
-            projectRoot, dataDir,
-          })
+        ? (history, step) => {
+            const checkpoint = {
+              runId, task, model, systemPrompt, headless,
+              history, step, maxSteps, startedAt,
+              agentModels, strategy, conversationHistory, memory,
+              projectRoot, dataDir,
+            };
+            return checkpointWriter?.saveCheckpoint
+              ? checkpointWriter.saveCheckpoint(checkpoint)
+              : saveCheckpoint(runCheckpointDir, checkpoint);
+          }
         : null,
+      saveSessionSnapshot: checkpointWriter?.saveHealthySnapshot,
       initialize: async () => ({
         runId,
         onEvent,

@@ -36,6 +36,7 @@ import { createAgentRunStore } from './helpers/run-store.ts';
 import { createApprovalStore } from './agent/core/approval-store.ts';
 import { initLlmLogger } from './agent/core/llm-logger.ts';
 import { createDesktopAgentRunner } from './agent/desktop/agent.ts';
+import { createSandboxedWorkerAgentRunner } from './agent/worker/runner.ts';
 import { DEFAULT_VISION_MODEL } from './agent/tools/vision/execute.ts';
 import { createClients, loadAgentMultiModels, deriveProviderName } from './agent/core/ai-client.ts';
 import { createProviderRegistry } from './agent/core/providers/registry.ts';
@@ -85,9 +86,11 @@ await projectStore.init();
 
 const AGENT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS || 8);
 const VISION_MODEL = (process.env.VISION_MODEL || DEFAULT_VISION_MODEL).trim();
+const AGENT_SANDBOXED_WORKERS = process.env.AGENT_SANDBOXED_WORKERS === 'true';
+const AGENT_WORKER_SANDBOX = process.env.AGENT_WORKER_SANDBOX !== 'false';
 const agentRunStore = createAgentRunStore();
 const approvalStore = createApprovalStore();
-const runDesktopAgent = createDesktopAgentRunner({
+const directRunDesktopAgent = createDesktopAgentRunner({
   registry,
   openai_client,
   modelConfig,
@@ -102,6 +105,17 @@ const runDesktopAgent = createDesktopAgentRunner({
   checkpointDir: CHECKPOINT_DIR,
   visionModel: VISION_MODEL,
 });
+const runDesktopAgent = AGENT_SANDBOXED_WORKERS
+  ? createSandboxedWorkerAgentRunner({
+      memoryDir: MEMORY_DIR,
+      checkpointDir: CHECKPOINT_DIR,
+      modelConfig,
+      approvalStore,
+      visionModel: VISION_MODEL,
+      sandbox: AGENT_WORKER_SANDBOX,
+    }) as any
+  : directRunDesktopAgent;
+runDesktopAgent.domainRules = directRunDesktopAgent.domainRules;
 
 const SCREENSHOT_DIR = path.join(MEMORY_DIR, 'screenshots');
 app.use('/screenshots', express.static(SCREENSHOT_DIR));
@@ -212,6 +226,7 @@ app.listen(Number(PORT), HOST, async () => {
   ${row('AGENT_HEADLESS', process.env.AGENT_HEADLESS || false)}
   ${row('AGENT_OBSERVE_DESKTOP', cfg.observeDesktop)}
   ${row('AGENT_RESUME', AGENT_RESUME)}
+  ${row('AGENT_WORKERS', AGENT_SANDBOXED_WORKERS ? (AGENT_WORKER_SANDBOX ? 'sandboxed' : 'plain') : 'disabled')}
   ${row('CHROME_PATH', process.env.AGENT_BROWSER_PATH || 'auto')}
   ${ideConfig.enabled ? row('IDE_MCP', `${ideConfig.transport} @ ${ideConfig.transport === 'stdio' ? ideConfig.command : (ideConfig.url || `${ideConfig.host}:${ideConfig.port}${ideConfig.ssePath}`)}`) : row('IDE_MCP', 'disabled')}
   ${ideConfig.enabled ? row('IDE_PROJECT_PATH', ideConfig.projectPath) : ''}
