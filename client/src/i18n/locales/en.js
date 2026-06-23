@@ -203,7 +203,7 @@ export const en = {
   'project.none': 'No project (global)',
   'project.noneShort': 'No project',
   'project.switcherTitle': 'Switch project',
-  'project.new': '+ New project',
+  'project.new': 'New project',
   'project.edit': 'Edit',
   'project.delete': 'Delete',
   'project.deleteConfirm': 'Delete project "{name}"? Only removed from the list; disk data is kept.',

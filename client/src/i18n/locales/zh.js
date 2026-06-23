@@ -204,7 +204,7 @@ export const zh = {
   'project.none': '无项目（全局）',
   'project.noneShort': '无项目',
   'project.switcherTitle': '切换项目',
-  'project.new': '+ 新建项目',
+  'project.new': '新建项目',
   'project.edit': '编辑',
   'project.delete': '删除',
   'project.deleteConfirm': '确定删除项目「{name}」？仅从列表移除，磁盘数据保留。',
