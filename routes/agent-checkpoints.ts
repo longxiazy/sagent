@@ -46,6 +46,7 @@ export function createAgentCheckpointRouter({ checkpointDir, agentRunStore, memo
       return res.status(409).json({ error: tReq(req, 'checkpoint.rollbackInProgress') });
     }
     activeRun.pendingRollback = targetStep;
+    activeRun.workerControl?.rollback?.(targetStep);
     log.info(`[API] 设置回滚请求: runId=${activeRun.runId} targetStep=${targetStep}`);
     return res.json({ ok: true, runId: activeRun.runId, targetStep });
   });

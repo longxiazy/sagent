@@ -26,10 +26,14 @@ export function createApprovalStore() {
      * 创建审批请求并返回阻塞 Promise
      *
      * @param {Object} payload - 审批上下文（step, action 等）
+     * @param {string} requestedApprovalId - worker bridge 已发给前端的审批 ID
      * @returns {{ approvalId: string, promise: Promise<string> }}
      */
-    request(payload = {}) {
-      const approvalId = createApprovalId();
+    request(payload = {}, requestedApprovalId?: string) {
+      const approvalId = requestedApprovalId || createApprovalId();
+      if (pending.has(approvalId)) {
+        throw new Error(`审批已存在: ${approvalId}`);
+      }
       let settled = false;
       let resolvePromise;
 
