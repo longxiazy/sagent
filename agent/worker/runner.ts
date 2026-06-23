@@ -7,6 +7,8 @@ import { log } from '../../helpers/logger.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
+const DEFAULT_CANCEL_GRACE_MS = 3000;
+const DEFAULT_CANCEL_KILL_GRACE_MS = 2000;
 
 function resolveBunCommand(env: Record<string, string | undefined> = process.env) {
   if (env.BUN_BIN) return env.BUN_BIN;
@@ -77,6 +79,18 @@ function createWorkerLogStream(baseDir: string, runId: string) {
   }
 }
 
+function envMs(env: Record<string, string | undefined>, name: string, fallback: number) {
+  const value = Number(env[name]);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+export function getWorkerCancelDelays(env: Record<string, string | undefined> = process.env) {
+  return {
+    terminateAfterMs: envMs(env, 'AGENT_WORKER_CANCEL_GRACE_MS', DEFAULT_CANCEL_GRACE_MS),
+    killAfterMs: envMs(env, 'AGENT_WORKER_CANCEL_KILL_GRACE_MS', DEFAULT_CANCEL_KILL_GRACE_MS),
+  };
+}
+
 export function createSandboxedWorkerAgentRunner({
   memoryDir,
   checkpointDir,
@@ -122,7 +136,10 @@ export function createSandboxedWorkerAgentRunner({
     let stdoutBuffer = '';
     let stderrText = '';
     let settled = false;
-    let cancelTimer: NodeJS.Timeout | null = null;
+    let childClosed = false;
+    let cancelRequested = false;
+    let terminateTimer: NodeJS.Timeout | null = null;
+    let killTimer: NodeJS.Timeout | null = null;
 
     const persist = (promise: Promise<any>) => {
       pendingPersistence.push(promise.catch(err => {
@@ -206,10 +223,16 @@ export function createSandboxedWorkerAgentRunner({
     });
 
     const abortHandler = () => {
+      if (cancelRequested) return;
+      cancelRequested = true;
       writeWorkerMessage(child, { type: 'cancel' });
-      cancelTimer = setTimeout(() => {
-        if (!child.killed) child.kill('SIGTERM');
-      }, Number(process.env.AGENT_WORKER_CANCEL_GRACE_MS || 3000));
+      const { terminateAfterMs, killAfterMs } = getWorkerCancelDelays();
+      terminateTimer = setTimeout(() => {
+        if (!childClosed) child.kill('SIGTERM');
+        killTimer = setTimeout(() => {
+          if (!childClosed) child.kill('SIGKILL');
+        }, killAfterMs);
+      }, terminateAfterMs);
     };
     opts.cancelSignal?.addEventListener?.('abort', abortHandler, { once: true });
 
@@ -227,7 +250,9 @@ export function createSandboxedWorkerAgentRunner({
     });
 
     child.on('close', (code, signal) => {
-      if (cancelTimer) clearTimeout(cancelTimer);
+      childClosed = true;
+      if (terminateTimer) clearTimeout(terminateTimer);
+      if (killTimer) clearTimeout(killTimer);
       opts.cancelSignal?.removeEventListener?.('abort', abortHandler);
       if (opts.runRecord?.workerControl) {
         opts.runRecord.workerControl = null;

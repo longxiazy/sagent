@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildWorkerCommand } from '../agent/worker/runner.ts';
+import { buildWorkerCommand, getWorkerCancelDelays } from '../agent/worker/runner.ts';
 
 describe('worker runner command', () => {
   it('wraps the worker with sandbox-exec and the run project root', () => {
@@ -36,6 +36,35 @@ describe('worker runner command', () => {
     expect(cmd).toEqual({
       command: '/usr/local/bin/bun',
       args: ['/repo/agent/worker/agent-worker.ts'],
+    });
+  });
+});
+
+describe('worker runner cancellation delays', () => {
+  it('uses the default SIGTERM and SIGKILL grace periods', () => {
+    expect(getWorkerCancelDelays({})).toEqual({
+      terminateAfterMs: 3000,
+      killAfterMs: 2000,
+    });
+  });
+
+  it('allows both cancellation grace periods to be configured', () => {
+    expect(getWorkerCancelDelays({
+      AGENT_WORKER_CANCEL_GRACE_MS: '25',
+      AGENT_WORKER_CANCEL_KILL_GRACE_MS: '50',
+    })).toEqual({
+      terminateAfterMs: 25,
+      killAfterMs: 50,
+    });
+  });
+
+  it('falls back for invalid cancellation delay values', () => {
+    expect(getWorkerCancelDelays({
+      AGENT_WORKER_CANCEL_GRACE_MS: '-1',
+      AGENT_WORKER_CANCEL_KILL_GRACE_MS: 'bad',
+    })).toEqual({
+      terminateAfterMs: 3000,
+      killAfterMs: 2000,
     });
   });
 });

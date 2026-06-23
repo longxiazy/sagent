@@ -66,6 +66,14 @@ export function createAgentRunStore() {
       return null;
     },
 
+    getActiveRuns() {
+      return Array.from(runs.values()).filter(run => run.status === 'running' && !run.cancelAc.signal.aborted);
+    },
+
+    getRunningRuns() {
+      return Array.from(runs.values()).filter(run => run.status === 'running');
+    },
+
     /**
      * 追加 SSE 事件到运行记录
      * 调用时机：每次 sendEvent 都会同时 addEvent，用于 SSE 重连时回放

@@ -36,7 +36,7 @@ import { createAgentRunStore } from './helpers/run-store.ts';
 import { createApprovalStore } from './agent/core/approval-store.ts';
 import { initLlmLogger } from './agent/core/llm-logger.ts';
 import { createDesktopAgentRunner } from './agent/desktop/agent.ts';
-import { createSandboxedWorkerAgentRunner } from './agent/worker/runner.ts';
+import { createSandboxedWorkerAgentRunner, getWorkerCancelDelays } from './agent/worker/runner.ts';
 import { DEFAULT_VISION_MODEL } from './agent/tools/vision/execute.ts';
 import { createClients, loadAgentMultiModels, deriveProviderName } from './agent/core/ai-client.ts';
 import { createProviderRegistry } from './agent/core/providers/registry.ts';
@@ -127,6 +127,17 @@ app.use(createSuggestionsRouter({ store: createSuggestionStore(path.join(__dirna
 
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
+const SIGNAL_EXIT_CODES: Record<string, number> = { SIGINT: 130, SIGTERM: 143 };
+
+function envMs(name: string, fallback: number) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function defaultShutdownGraceMs() {
+  const { terminateAfterMs, killAfterMs } = getWorkerCancelDelays();
+  return terminateAfterMs + killAfterMs + 1000;
+}
 
 async function resumeFromCheckpoint(cp) {
   const { runId, task, model, headless, history, step, maxSteps: _maxSteps, startedAt } = cp;
@@ -150,6 +161,7 @@ async function resumeFromCheckpoint(cp) {
   sendEvent({ type: 'status', status: 'resuming', runId, message: `从断点恢复：从第 ${step + 1} 步继续执行任务「${task.slice(0, 60)}」` });
 
   try {
+    const runRecord = agentRunStore.getRun(runId);
     const result = await runDesktopAgent({
       task,
       model,
@@ -158,14 +170,14 @@ async function resumeFromCheckpoint(cp) {
       systemPrompt,
       headless,
       runId,
-      runRecord: agentRunStore.getRun(runId),
+      runRecord,
       startedAt,
       initialStep: step + 1,
       initialHistory: history,
       conversationHistory: cp.conversationHistory || [],
       memory: cp.memory !== false,
       onEvent: sendEventWithTrace,
-      cancelSignal: new AbortController().signal,
+      cancelSignal: runRecord?.cancelAc?.signal || new AbortController().signal,
       projectRoot,
       dataDir,
     });
@@ -198,7 +210,7 @@ async function collectAllCheckpoints() {
   return all;
 }
 
-app.listen(Number(PORT), HOST, async () => {
+const httpServer = app.listen(Number(PORT), HOST, async () => {
   const cfg = runtimeConfig.get();
   const multiModels = loadAgentMultiModels();
   const ideConfig = loadIdeMcpConfig();
@@ -278,3 +290,43 @@ app.listen(Number(PORT), HOST, async () => {
     }
   }
 });
+
+let shuttingDown = false;
+function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  const activeRuns = agentRunStore.getRunningRuns();
+  const activeRunIds = activeRuns.map((run: any) => run.runId);
+  log.warn(`[Shutdown] 收到 ${signal}，关闭 HTTP server，取消 ${activeRuns.length} 个 active run${activeRunIds.length ? `: ${activeRunIds.join(', ')}` : ''}`);
+
+  httpServer.close(err => {
+    if (err) log.warn(`[Shutdown] HTTP server close failed: ${err.message}`);
+  });
+
+  for (const run of activeRuns) {
+    agentRunStore.cancelRun(run.runId);
+    run.workerControl?.cancel?.();
+  }
+  approvalStore.rejectAll();
+
+  const graceMs = envMs('AGENT_SERVER_SHUTDOWN_GRACE_MS', defaultShutdownGraceMs());
+  const startedAt = Date.now();
+  const exitCode = SIGNAL_EXIT_CODES[signal] || 0;
+  const interval = setInterval(() => {
+    const remainingRuns = agentRunStore.getRunningRuns();
+    if (remainingRuns.length === 0) {
+      clearInterval(interval);
+      log.warn('[Shutdown] active runs 已结束，退出');
+      process.exit(0);
+    }
+    if (Date.now() - startedAt >= graceMs) {
+      clearInterval(interval);
+      log.warn(`[Shutdown] 等待 ${graceMs}ms 后仍有 ${remainingRuns.length} 个 active run，退出进程`);
+      process.exit(exitCode);
+    }
+  }, 100);
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
