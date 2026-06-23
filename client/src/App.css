@@ -2515,7 +2515,8 @@ select,
 /* ── Agent Trace ── */
 
 .agent-trace {
-  margin-top: 8px;
+  margin-top: 2px;
+  padding-top: 6px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2536,7 +2537,7 @@ select,
 .agent-trace-item,
 .model-plan-group {
   position: relative;
-  padding-left: 22px;
+  padding-left: 30px;
 }
 
 .agent-trace-item {
@@ -2551,7 +2552,7 @@ select,
 .model-plan-group::before {
   content: '';
   position: absolute;
-  left: 5px;
+  left: 17px;
   top: 0;
   bottom: -8px;
   width: 2px;
@@ -2568,7 +2569,7 @@ select,
 .model-plan-group::after {
   content: '';
   position: absolute;
-  left: 1px;
+  left: 13px;
   top: 6px;
   width: 10px;
   height: 10px;
@@ -4220,6 +4221,7 @@ textarea:disabled {
   .tab-status-dot {
     width: 6px;
     height: 6px;
+    margin-left: 6px;
     border-radius: 50%;
     background: var(--c-info);
     animation: agent-timer-pulse 1.5s ease-in-out infinite;
@@ -4364,7 +4366,7 @@ textarea:disabled {
   .agent-trace { margin-top: 6px; gap: 6px; }
 
   .agent-trace-item {
-    padding: 2px 0 2px 20px;
+    padding: 2px 0 2px 28px;
     gap: 6px;
     align-items: flex-start;
   }
@@ -4560,7 +4562,7 @@ textarea:disabled {
   .agent-metric-tokens { font-size: 9px; padding: 1px 4px; }
   .agent-metric:last-child { display: none; }
 
-  .agent-trace-item { padding: 2px 0 2px 18px; gap: 5px; }
+  .agent-trace-item { padding: 2px 0 2px 26px; gap: 5px; }
 
   .agent-trace-badge { height: 15px; font-size: 8px; padding: 0 4px; }
 
