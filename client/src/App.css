@@ -393,6 +393,29 @@ select,
   position: relative;
 }
 
+.hero-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--c-text);
+  user-select: none;
+}
+
+.hero-logo {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(47, 47, 83, 0.16);
+  flex: 0 0 auto;
+}
+
+.hero-brand-name {
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 700;
+}
+
 @media (min-width: 1200px) {
   .hero {
     max-width: 820px;
@@ -440,6 +463,10 @@ select,
 
 .hero-input-card textarea:focus {
   border: none;
+}
+
+.hero-input-card textarea:focus-visible {
+  outline: none;
 }
 
 .hero-input-card textarea:disabled {
@@ -4108,6 +4135,20 @@ textarea:disabled {
 
   .hero {
     gap: 12px;
+  }
+
+  .hero-brand {
+    gap: 8px;
+  }
+
+  .hero-logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+
+  .hero-brand-name {
+    font-size: 22px;
   }
 
   .suggestions {

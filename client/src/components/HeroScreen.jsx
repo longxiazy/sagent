@@ -50,6 +50,11 @@ export function HeroScreen({
   return (
     <div className={`hero-wrap${suggestionsHidden ? ' hero-wrap--centered' : ''}`}>
       <div className="hero">
+        <div className="hero-brand" aria-label="sagent">
+          <img className="hero-logo" src="/favicon.svg?v=3" alt="" aria-hidden="true" />
+          <span className="hero-brand-name">sagent</span>
+        </div>
+
         <div className="hero-input-card">
           {attachmentBar}
           <textarea

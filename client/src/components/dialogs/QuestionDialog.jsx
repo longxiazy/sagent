@@ -6,6 +6,13 @@ export function QuestionDialog({ question, submitting, onSubmit, onSkip }) {
   const [response, setResponse] = useState('');
   if (!question) return null;
 
+  const handleKeyDown = e => {
+    if (e.key === 'Enter' && e.metaKey) {
+      e.preventDefault();
+      if (!submitting) onSubmit(response);
+    }
+  };
+
   return (
     <div className="dialog-mask">
       <div className="dialog approval-dialog">
@@ -18,7 +25,7 @@ export function QuestionDialog({ question, submitting, onSubmit, onSkip }) {
           onChange={e => setResponse(e.target.value)}
           placeholder={t('question.placeholder')}
           rows={3}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit(response); } }}
+          onKeyDown={handleKeyDown}
           autoFocus
         />
         <div className="dialog-actions">
