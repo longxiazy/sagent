@@ -785,7 +785,7 @@ export default function App() {
 
   const handleKeyDown = e => {
     const isMobile = window.innerWidth < TABLET_BREAKPOINT;
-    if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
+    if (e.key === 'Enter' && e.metaKey && !isMobile) {
       e.preventDefault();
       handleSubmit();
     }
