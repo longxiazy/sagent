@@ -45,13 +45,17 @@ export function createAgentAuthorizer({
       };
     }
 
-    const { approvalId, promise } = approvalStore.request({
-      step: context.step,
-      action,
-    });
-
     const isQuestion = action.type === 'ask_user';
     const eventType = isQuestion ? 'question_required' : 'approval_required';
+    const message = isQuestion ? action.question : policy.reason;
+
+    const { approvalId, promise } = approvalStore.request({
+      type: eventType,
+      runId,
+      step: context.step,
+      action,
+      message,
+    });
 
     onEvent?.({
       type: eventType,
@@ -59,7 +63,7 @@ export function createAgentAuthorizer({
       approvalId,
       step: context.step,
       action,
-      message: isQuestion ? action.question : policy.reason,
+      message,
     });
 
     const decision = await promise;

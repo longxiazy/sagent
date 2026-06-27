@@ -3526,9 +3526,25 @@ textarea:disabled {
 .dialog-desc { font-size: var(--f-sm); line-height: 1.6; color: var(--c-text-muted); margin-bottom: 20px; }
 .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
 
-.approval-dialog { width: min(520px, 94vw); }
+.approval-dialog {
+  width: min(520px, 94vw);
+  max-height: min(720px, 88vh);
+  display: flex;
+  flex-direction: column;
+}
 .approval-eyebrow { margin-bottom: 8px; font-size: var(--f-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-warning-text); }
-.approval-json { margin-top: 0; }
+.approval-message {
+  max-height: 96px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.approval-dialog .approval-json {
+  margin-top: 0;
+  flex: 1 1 auto;
+  max-height: min(320px, 40vh);
+  overflow-y: auto;
+}
+.approval-dialog .dialog-actions { flex-shrink: 0; }
 .approval-confirm { min-width: 84px; }
 
 .dialog-btn {

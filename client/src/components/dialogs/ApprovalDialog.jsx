@@ -5,14 +5,15 @@ export function ApprovalDialog({ approval, submitting, onApprove, onReject }) {
   if (!approval) {
     return null;
   }
+  const actionJson = JSON.stringify(approval.action, null, 2);
 
   return (
     <div className="dialog-mask">
       <div className="dialog approval-dialog">
         <p className="approval-eyebrow">{t('approval.eyebrow')}</p>
         <p className="dialog-title">{t('approval.title', { step: approval.step })}</p>
-        <p className="dialog-desc">{approval.message}</p>
-        <pre className="agent-json approval-json">{JSON.stringify(approval.action, null, 2)}</pre>
+        <p className="dialog-desc approval-message">{approval.message}</p>
+        <pre className="agent-json approval-json">{actionJson}</pre>
         <div className="dialog-actions">
           <button className="dialog-btn cancel" onClick={onReject} disabled={submitting}>
             {t('approval.reject')}

@@ -17,6 +17,14 @@ function createApprovalId() {
   return `approval_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function serializeApproval(approval: any) {
+  const payload = approval.payload && typeof approval.payload === 'object' ? approval.payload : {};
+  return {
+    ...payload,
+    approvalId: approval.approvalId,
+  };
+}
+
 export function createApprovalStore() {
   /** @type {Map<string, {approvalId: string, payload: Object, resolve: Function}>} approvalId → 审批记录 */
   const pending = new Map();
@@ -69,6 +77,16 @@ export function createApprovalStore() {
       pending.delete(approvalId);
       approval.resolve(decision);
       return approval.payload;
+    },
+
+    listPendingForRun(runId: string) {
+      return [...pending.values()]
+        .map(serializeApproval)
+        .filter(approval => approval.runId === runId);
+    },
+
+    getPendingForRun(runId: string) {
+      return this.listPendingForRun(runId)[0] || null;
     },
 
     /** 拒绝所有待审批（取消/关闭运行时调用） */

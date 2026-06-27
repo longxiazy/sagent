@@ -292,6 +292,17 @@ export default function App() {
       });
     };
 
+    const restorePendingEvent = event => {
+      if (!event || typeof event !== 'object') return;
+      if (event.type === 'approval_required') {
+        approvalRequestRef.current = { ...event, resolve: () => {} };
+        setPendingApproval(event);
+      } else if (event.type === 'question_required') {
+        questionRequestRef.current = { ...event, resolve: () => {} };
+        setPendingQuestion(event);
+      }
+    };
+
     (async () => {
       try {
         const res = await apiFetch('/api/agent/active', { signal: controller.signal });
@@ -307,6 +318,8 @@ export default function App() {
         agentRunIdRef.current = data.runId;
         setMode('agent');
         agentAbortRef.current = controller;
+        restorePendingEvent(data.pendingApproval);
+        restorePendingEvent(data.pendingQuestion);
 
         // 刷新重连时，如果当前会话看起来不是这次 Agent 任务对应的会话，
         // 就临时创建一个“占位会话”承接运行态，避免把其他历史会话的消息替换掉。

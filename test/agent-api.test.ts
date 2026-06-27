@@ -30,6 +30,8 @@ const mockRegistry: any = {
 
 let tmpDir;
 let app;
+let agentRunStore;
+let approvalStore;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sagent-api-test-'));
@@ -39,8 +41,8 @@ beforeEach(async () => {
   const { runtimeConfig } = await import('../agent/core/runtime-config.js');
   const { createProjectStore } = await import('../agent/core/project-store.js');
 
-  const agentRunStore = createAgentRunStore();
-  const approvalStore = createApprovalStore();
+  agentRunStore = createAgentRunStore();
+  approvalStore = createApprovalStore();
   // 空注册表 → resolveRunPaths 回退到 tmpDir/process.cwd()，与无项目态一致。
   const projectStore = createProjectStore(tmpDir);
   await projectStore.init();
@@ -116,6 +118,75 @@ describe('GET /api/agent/memory', () => {
     expect(res.body.conversation).toHaveLength(1);
     expect(res.body.conversation[0].task).toBe('test');
     expect(res.body.projectKnowledge).toBeDefined();
+  });
+});
+
+describe('GET /api/agent/active', () => {
+  it('returns pending approval details for a reconnected run', async () => {
+    const run = agentRunStore.createRun({
+      model: 'test-model',
+      task: 'needs approval',
+    });
+    approvalStore.request({
+      type: 'approval_required',
+      runId: run.runId,
+      step: 3,
+      action: { tool: 'terminal', type: 'run', command: 'npm test' },
+      message: '命令需要确认',
+    }, 'approval_reconnect_1');
+
+    const res = await request(app).get('/api/agent/active');
+    expect(res.status).toBe(200);
+    expect(res.body.active).toBe(true);
+    expect(res.body.runId).toBe(run.runId);
+    expect(res.body.pendingApproval).toMatchObject({
+      type: 'approval_required',
+      runId: run.runId,
+      approvalId: 'approval_reconnect_1',
+      step: 3,
+      message: '命令需要确认',
+      action: { tool: 'terminal', type: 'run', command: 'npm test' },
+    });
+    expect(res.body.pendingQuestion).toBeNull();
+
+    approvalStore.rejectAll();
+  });
+});
+
+describe('GET /api/agent/stream/:runId', () => {
+  it('replays pending approval details for reconnect streams', async () => {
+    const run = agentRunStore.createRun({
+      model: 'test-model',
+      task: 'needs stream approval',
+    });
+    approvalStore.request({
+      type: 'approval_required',
+      runId: run.runId,
+      step: 4,
+      action: { tool: 'fs', type: 'write_file', path: 'out.txt' },
+      message: '文件写入需要确认',
+    }, 'approval_stream_1');
+    run.status = 'done';
+
+    const res = await request(app)
+      .get(`/api/agent/stream/${run.runId}`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', chunk => {
+          body += chunk;
+        });
+        response.on('end', () => callback(null, body));
+      });
+
+    expect(res.status).toBe(200);
+    const responseText = typeof res.text === 'string' ? res.text : String(res.body || '');
+    expect(responseText).toContain('"type":"approval_required"');
+    expect(responseText).toContain('"approvalId":"approval_stream_1"');
+    expect(responseText).toContain('"message":"文件写入需要确认"');
+
+    approvalStore.rejectAll();
   });
 });
 
