@@ -95,6 +95,17 @@ export function createModelTools() {
       },
     },
     {
+      name: 'get_file_info',
+      description: '读取文件或目录的元数据（类型、大小、修改时间），不读取文件内容。适合先判断大文件大小或确认路径是否存在。',
+      input_schema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '文件或目录路径' },
+        },
+        required: ['path'],
+      },
+    },
+    {
       name: 'write_file',
       description: '写入或追加文件',
       input_schema: {

@@ -153,6 +153,7 @@ export function buildNvidiaTaskMessages({
         '{"rationale":"打开网页","action":{"tool":"browser","type":"navigate","url":"https://example.com"}}',
         '{"rationale":"点击网页元素","action":{"tool":"browser","type":"click","elementId":"3"}}',
         '{"rationale":"读取目录","action":{"tool":"fs","type":"list_dir","path":"."}}',
+        '{"rationale":"查看文件大小和修改时间","action":{"tool":"fs","type":"get_file_info","path":"README.md"}}',
         '{"rationale":"读取文件","action":{"tool":"fs","type":"read_file","path":"README.md"}}',
         '{"rationale":"写文件","action":{"tool":"fs","type":"write_file","path":"notes.txt","content":"内容","append":false}}',
         '{"rationale":"搜索文件内容","action":{"tool":"fs","type":"search_files","query":"关键词","path":".","include":"*.js"}}',

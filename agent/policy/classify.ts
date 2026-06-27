@@ -133,7 +133,7 @@ export function classifyAgentAction(action) {
     };
   }
 
-  if (tool === 'fs' && ['list_dir', 'read_file', 'search_files'].includes(type)) {
+  if (tool === 'fs' && ['list_dir', 'get_file_info', 'read_file', 'search_files'].includes(type)) {
     return {
       level: 'safe',
       reason: '只读文件系统操作',
