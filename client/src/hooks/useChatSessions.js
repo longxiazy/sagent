@@ -23,6 +23,9 @@ function normalizeMessages(value) {
       role: item.role,
       content: item.content,
       ...(item.ts ? { ts: item.ts } : {}),
+      ...(typeof item.model === 'string' && item.model ? { model: item.model } : {}),
+      ...(Array.isArray(item.modelsUsed) ? { modelsUsed: normalizeModelIds(item.modelsUsed) } : {}),
+      ...(item.pending ? { pending: item.pending } : {}),
     }));
 }
 

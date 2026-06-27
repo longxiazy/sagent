@@ -22,13 +22,15 @@ export function useChatTransport({
   const sendChatMessage = async text => {
     const sessionId = activeSession.id;
     const now = Date.now();
-    const userMsg = { role: 'user', content: text, ts: now };
+    const modelForTurn = chatModel;
+    const userMsg = { role: 'user', content: text, ts: now, model: modelForTurn };
     const history = [...messages, userMsg];
-    const apiMessages = history;
+    const apiMessages = history.map(message => ({ role: message.role, content: message.content }));
 
     updateSession(sessionId, session =>
       touchSession(session, {
-        messages: [...history, { role: 'assistant', content: '', ts: now }],
+        model: modelForTurn,
+        messages: [...history, { role: 'assistant', content: '', ts: now, model: modelForTurn }],
       })
     );
     setInput('');
@@ -40,7 +42,7 @@ export function useChatTransport({
     try {
       await streamChatCompletion({
         messages: apiMessages,
-        model: chatModel,
+        model: modelForTurn,
         projectId: activeSession.projectId ?? null,
         signal: controller.signal,
         onContent(content) {
@@ -48,8 +50,10 @@ export function useChatTransport({
             const nextMessages = [...session.messages];
             const lastMessage = nextMessages[nextMessages.length - 1] || { role: 'assistant', content: '' };
             nextMessages[nextMessages.length - 1] = {
+              ...lastMessage,
               role: 'assistant',
               content: (lastMessage.content || '') + content,
+              model: lastMessage.model || modelForTurn,
             };
 
             return touchSession(session, { messages: nextMessages });
@@ -64,6 +68,7 @@ export function useChatTransport({
           nextMessages[nextMessages.length - 1] = {
             ...lastMessage,
             content: `${lastMessage?.content || ''}${lastMessage?.content ? '\n\n' : ''}${t('chat.stopped')}`,
+            model: lastMessage?.model || modelForTurn,
           };
 
           return touchSession(session, { messages: nextMessages });
@@ -75,6 +80,7 @@ export function useChatTransport({
           nextMessages[nextMessages.length - 1] = {
             role: 'assistant',
             content: t('chat.requestFailed', { error: err.message, detail }),
+            model: modelForTurn,
           };
 
           return touchSession(session, { messages: nextMessages });
