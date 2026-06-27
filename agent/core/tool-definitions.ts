@@ -5,8 +5,7 @@
  * 同时提供 Claude SDK 格式转换。
  *
  * 调用场景：
- *   - ai-client.js 的 claudeAgentPlan() 将工具列表传给 Claude API
- *   - agent/chat/chat-tools.js 从中过滤出 Chat 模式的安全子集
+ *   - 各 provider 的 agentPlan() 将工具列表传给对应模型 API
  */
 
 import { isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';

@@ -1,7 +1,7 @@
 import { createSession, normalizeChatState, touchSession } from './useChatSessions.js';
 import { tStatic } from '../i18n/locale.js';
 
-// 会话生命周期相关的 handler 集合：新建/切换/删除/清空/重置/换模型。
+// 会话生命周期相关的 handler 集合：新建/切换/删除/清空/重置。
 // 这些 handler 各自独立、但都依赖同一组 props 上下文，所以打包成一个 hook 提供。
 export function useSessionHandlers({
   sessions,
@@ -99,16 +99,11 @@ export function useSessionHandlers({
     setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
-  const setChatModel = nextModel => {
-    updateSession(activeSession.id, session => touchSession(session, { model: nextModel }));
-  };
-
   return {
     handleCreateSession,
     handleSelectSession,
     handleDeleteSession,
     handleClearAllSessions,
     handleReset,
-    setChatModel,
   };
 }

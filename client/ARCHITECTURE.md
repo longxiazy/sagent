@@ -125,16 +125,15 @@ client/src/
 
 | 状态 | 来源 | 用途 |
 |---|---|---|
-| `sessions / activeSession / messages / chatModel` | `useChatSessions()` | 全部会话 + 当前会话 + 消息列表 + 聊天模型 |
+| `sessions / activeSession / messages` | `useChatSessions()` | 全部会话 + 当前会话 + 消息列表 |
 | `availableModels` | useState | 后端可用模型列表（启动占位 → 加载替换） |
 | `modelsLoaded` | useState | 区分"占位"和"真数据"，避免启动时把用户已选多模型裁掉 |
 | `input` | useState | 输入框文字 |
-| `mode` | usePersistentState | `chat` / `agent`，持久化到 localStorage |
 | `useAgentRun()` 一大堆 | hook | Agent 运行态：`agentRunning / agentTrace / pendingApproval / ...` + 一堆 ref |
 | `notifyPerm` | useState | 桌面通知权限：`default / granted / denied` |
 | `agentMemory / selectedAgentModels / agentStrategy` | usePersistentState | Agent 偏好（应用级，不跟 session 存） |
 | `showReset / showSessions / showMemoryPanel` | useState | 各种弹窗/抽屉的开关 |
-| `abortRef / bottomRef / textareaRef` | useRef | chat 请求中止器、聊天底部 DOM（滚动用）、textarea DOM（focus + 高度计算） |
+| `bottomRef / textareaRef` | useRef | 聊天底部 DOM（滚动用）、textarea DOM（focus + 高度计算） |
 
 **关键区分**：
 - `useState` 的值用 `set*` 改，会重渲染。
@@ -196,23 +195,22 @@ client/src/
 ### ⑦ 卸载清理（469-477）
 
 组件卸载（页面关闭、导航）时：
-- 中止 chat / agent 的网络流；
+- 中止 Agent 的网络流；
 - 拒绝挂起的审批 Promise（避免悬挂的 `await`）。
 
-### ⑧ 三个业务 hook（479-538）
+### ⑧ 业务 hook（479-538）
 
 | Hook | 返回 | 干嘛 |
 |---|---|---|
-| `useChatTransport` | `sendChatMessage / stopGeneration` | chat 模式发消息 + 停止 |
-| `useSessionHandlers` | 6 个 handler | 新建/选择/删除/清空/重置/换模型 |
-| `useAgentTransport` | `sendAgentTask / stopAgent / handleRollback / handleApprovalDecision` | Agent 模式的全部操作 |
+| `useSessionHandlers` | 5 个 handler | 新建/选择/删除/清空/重置 |
+| `useAgentTransport` | `sendAgentTask / stopAgent / handleRollback / handleApprovalDecision` | Agent 的全部操作 |
 
 **为什么抽 hook**：把"一坨相关的状态+函数"打包，避免 App.jsx 里全是 200 行的内联函数。
 
 ### ⑨ 提交 + 快捷键（540-561）
 
 ```js
-handleSubmit  // 按发送：根据 mode 分流到 sendAgentTask 或 sendChatMessage
+handleSubmit  // 按发送：调用 sendAgentTask
 handleKeyDown // 桌面按 Enter 直接发送；手机不拦截（要换行）
 ```
 
@@ -220,14 +218,12 @@ handleKeyDown // 桌面按 Enter 直接发送；手机不拦截（要换行）
 
 派生数据：
 ```js
-sessionStarted = messages.length > 0
 suggestions = useMemo(...)  // 依赖不变就用缓存值，避免每次渲染重洗牌
 ```
 
 **Slot 变量**（重要模式）：
 
 ```jsx
-const modeSwitch = <ModeSwitch ... />
 const modelSelect = <ModelSelector ... />
 const sendButton = <SendButton ... />
 const memoryToggle = <MemoryToggle ... />
@@ -236,8 +232,8 @@ const memoryToggle = <MemoryToggle ... />
 React 里可以把一段 JSX 表达式**赋给变量**，之后多处插入。`sendButton` 在 hero 首屏、layout header、聊天框底部都要用——写成变量后只构造一次、多处复用：
 
 ```jsx
-<HeroScreen toolbarSlots={{ modeSwitch, modelSelect, memoryToggle, sendButton }} />
-<AppHeader  modeSwitch={modeSwitch} modelSelect={modelSelect} />
+<HeroScreen toolbarSlots={{ modelSelect, memoryToggle, sendButton }} />
+<AppHeader  modelSelect={modelSelect} />
 <ChatPane   memoryToggle={memoryToggle} sendButton={sendButton} />
 ```
 
@@ -344,9 +340,8 @@ App.jsx 主要做三件事：
 | `components/CopyButton.jsx` | 复制到剪贴板按钮 |
 | `components/AppHeader.jsx` | 已开始会话后的顶部 header |
 | `components/HeroScreen.jsx` | 首屏（brand + 输入卡 + 推荐列表） |
-| `components/ModelSelector.jsx` | 模型选择（chat 下拉 / agent 多选 tag + 排序 + 策略） |
-| `components/ModeSwitch.jsx` | chat / agent 模式切换 |
-| `components/SendButton.jsx` | 发送/停止三态按钮 |
+| `components/ModelSelector.jsx` | Agent 多模型选择（多选 tag + 排序 + 策略） |
+| `components/SendButton.jsx` | 发送/停止按钮 |
 | `components/MemoryToggle.jsx` | Agent 记忆开关 |
 | `components/SuggestionsList.jsx` | 推荐任务/问题列表 + "换一组" |
 | `components/NotificationBanner.jsx` | 桌面通知权限提示 banner |
@@ -373,9 +368,8 @@ App.jsx 主要做三件事：
 | `hooks/useResponsiveLayout.js` | 窄屏/宽屏切换时的侧栏可见性 + 面板宽度恢复 |
 | `hooks/useThemeColorSync.js` | 同步 `<meta theme-color>` |
 | `hooks/useKeyboardShortcuts.js` | 全局快捷键 |
-| `hooks/useSessionHandlers.js` | 新建/选择/删除/清空/重置/换模型 |
-| `hooks/useChatTransport.js` | chat 模式发消息 + 停止 |
-| `hooks/useAgentTransport.js` | Agent 模式的全部操作 |
+| `hooks/useSessionHandlers.js` | 新建/选择/删除/清空/重置 |
+| `hooks/useAgentTransport.js` | Agent 的全部操作 |
 | `hooks/useQuestionSubmit.js` | QuestionDialog 的 submit/skip 回调封装 |
 
 ---

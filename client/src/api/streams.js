@@ -1,7 +1,6 @@
 import { tStatic } from '../i18n/locale.js';
 import { apiFetch } from './http.js';
 
-const API_URL = '/api/chat';
 const AGENT_API_URL = '/api/agent';
 const AGENT_APPROVAL_API_URL = '/api/agent/approvals';
 
@@ -70,37 +69,6 @@ async function streamSseJson({ url, body, signal, onEvent }) {
 
   buffer += decoder.decode();
   await flushBuffer(true);
-}
-
-export async function streamChatCompletion({
-  messages,
-  model,
-  signal,
-  temperature = 1,
-  top_p = 0.95,
-  max_tokens = 8192,
-  projectId = null,
-  onContent,
-  onDone,
-}) {
-  let donePayload = null;
-
-  await streamSseJson({
-    url: API_URL,
-    body: { messages, model, temperature, top_p, max_tokens, projectId },
-    signal,
-    onEvent(json) {
-      if (json.content) {
-        onContent?.(json.content);
-      }
-      if (json.done) {
-        donePayload = json;
-        onDone?.(json);
-      }
-    },
-  });
-
-  return donePayload;
 }
 
 export async function streamAgentRun({ task, model, models, strategy, memory, signal, onEvent, messages, ...extra }) {

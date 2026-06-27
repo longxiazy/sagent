@@ -45,6 +45,7 @@ export const zh = {
   'agent.retryFromStep': '从第 {step} 步',
   'agent.approvalNeeded': '需要审批',
   'agent.questionNeeded': 'Agent 有问题需要你回答',
+  'agent.conversationTab': '对话',
   'agent.continueTask': '继续任务',
   'agent.connectionLostShort': '连接中断',
   'rollback.failed': '回滚失败',
@@ -53,7 +54,6 @@ export const zh = {
 
   // 输入框
   'input.agentPlaceholder': '描述要让 Agent 完成的任务…',
-  'input.chatPlaceholder': '输入消息…',
 
   // 附件（任务文本块 + 展示）
   'attach.taskBlockHeader': '[附件]',
@@ -273,8 +273,6 @@ export const zh = {
   'question.answer': '回答',
 
   // 英雄屏 / 工具栏
-  'mode.ariaLabel': '模式切换',
-  'mode.chat': '对话',
   'mode.agent': 'Agent',
   'send.stop': '停止',
   'send.stopping': '正在停止…',
@@ -322,9 +320,7 @@ export const zh = {
   'modelSelector.voteTitle': '等待所有模型完成，投票选最优',
   'modelSelector.vote': '汇总',
 
-  // 普通对话 / 会话操作
-  'chat.stopped': '_已停止生成_',
-  'chat.requestFailed': '⚠️ 请求失败：{error}{detail}',
+  // 会话操作
   'session.newChat': '新对话',
   'sessionOps.confirmDelete': '删除这个会话？此操作不可撤销。',
   'sessionOps.confirmClearAll': '清空所有会话？此操作不可撤销。',

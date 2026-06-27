@@ -10,7 +10,6 @@ export type Locale = 'zh' | 'en';
 const MESSAGES: Record<Locale, Record<string, string>> = {
   zh: {
     'trace.notFound': 'trace 不存在',
-    'chat.messagesMustBeArray': 'messages 字段必须是数组',
     'memory.compacted': '已压缩，保留 {n} 条',
     'memory.noData': '无记忆数据',
     'config.validationFailed': '配置校验失败',
@@ -33,7 +32,6 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
   },
   en: {
     'trace.notFound': 'trace not found',
-    'chat.messagesMustBeArray': 'messages must be an array',
     'memory.compacted': 'Compacted, kept {n} entries',
     'memory.noData': 'No memory data',
     'config.validationFailed': 'Config validation failed',

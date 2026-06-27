@@ -29,7 +29,6 @@ export function useAgentTransport({
   agentTrace,
   agentRunning,
   selectedAgentModels,
-  chatModel,
   agentStrategy,
   agentMemory,
   availableModels,
@@ -75,7 +74,7 @@ export function useAgentTransport({
     setTimeout(() => agentAbortRef.current?.abort(), 1500);
   };
 
-  // Agent 流程和普通对话不一样：聊天区只保留"任务 + 最终回答"，
+  // Agent 流程里，消息区只保留"任务 + 最终回答"，
   // 详细的中间步骤全部写进 agentTrace，再由 AgentPanel 单独展示。
   const sendAgentTask = async (text, extraBody) => {
     const sessionId = activeSession.id;
@@ -85,8 +84,8 @@ export function useAgentTransport({
     const selectedModels = availableModels.length > 0
       ? selectedModelCandidates.filter(model => availableModelIds.has(model))
       : selectedModelCandidates;
-    const runModels = selectedModels.length > 0 ? selectedModels : [chatModel];
-    const primaryModel = runModels[0] || chatModel;
+    const runModels = selectedModels;
+    const primaryModel = runModels[0];
     lastAgentTaskRef.current = text;
     const now = Date.now();
     const history = isRetry

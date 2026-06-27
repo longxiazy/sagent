@@ -6,7 +6,7 @@
  *   1. 加载 .env 配置
  *   2. 创建 LLM 客户端（NVIDIA / Anthropic）
  *   3. 初始化 Agent 运行器、审批存储、记忆目录
- *   4. 挂载路由：chat、agent、completions
+ *   4. 挂载路由：agent、completions
  *   5. 检查断点（checkpoint），自动恢复上次未完成的任务
  *   6. 输出图形化启动信息（表格样式）
  *
@@ -43,7 +43,6 @@ import { createProviderRegistry } from './agent/core/providers/registry.ts';
 import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
 import { loadIdeMcpConfig } from './agent/tools/ide/mcp-client.ts';
 import { loadChromeMcpConfig } from './agent/tools/chrome/mcp-client.ts';
-import { createChatRouter } from './routes/chat.ts';
 import { createAgentRouter } from './routes/agent.ts';
 import { createCompletionsRouter } from './routes/completions.ts';
 import { createSuggestionsRouter } from './routes/suggestions.ts';
@@ -120,7 +119,6 @@ runDesktopAgent.domainRules = directRunDesktopAgent.domainRules;
 const SCREENSHOT_DIR = path.join(MEMORY_DIR, 'screenshots');
 app.use('/screenshots', express.static(SCREENSHOT_DIR));
 
-app.use(createChatRouter({ registry, modelConfig, projectStore }));
 app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, domainRules: runDesktopAgent.domainRules, modelConfig, registry, runtimeConfig, projectStore }));
 app.use(createCompletionsRouter({ registry, modelConfig }));
 app.use(createSuggestionsRouter({ store: createSuggestionStore(path.join(__dirname, 'data')) }));

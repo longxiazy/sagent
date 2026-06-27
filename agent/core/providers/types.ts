@@ -43,18 +43,6 @@ export interface AgentPlanResult {
   reasoning?: string | null;
 }
 
-export interface ChatStreamOpts {
-  model: string;
-  messages: any[];
-  temperature: number;
-  top_p: number;
-  max_tokens: number;
-  res: Response;
-  startedAt: number;
-  // 命中项目时的文件工具根；缺省走 process.cwd()（无项目态）。
-  cwd?: string | null;
-}
-
 export interface CompletionOpts {
   model: string;
   messages: any[];
@@ -87,9 +75,6 @@ export interface LLMProvider {
 
   // agent 决策：调用 LLM → 解析 → 归一成 { rationale, action, usage, reasoning }。
   agentPlan(opts: AgentPlanOpts): Promise<AgentPlanResult>;
-
-  // chat 模式：带工具的多轮对话，流式写 SSE（含末尾 done 事件）。
-  chatStream(opts: ChatStreamOpts): Promise<void>;
 
   // /v1/chat/completions 非流式：返回标准 chat.completion 对象。
   completionJson(opts: CompletionOpts): Promise<any>;

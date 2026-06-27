@@ -25,7 +25,7 @@ export function AgentPane({
             {metrics.totalTokens > 0 && <span className="agent-mobile-metric">{formatTokenCount(metrics.totalTokens)} tok</span>}
           </div>
         )}
-        <button className={`agent-mobile-tab ${agentMobileTab === 'chat' ? 'active' : ''}`} onClick={() => setAgentMobileTab('chat')}>{t('mode.chat')}</button>
+        <button className={`agent-mobile-tab ${agentMobileTab === 'chat' ? 'active' : ''}`} onClick={() => setAgentMobileTab('chat')}>{t('agent.conversationTab')}</button>
       </div>
       <div
         className={`agent-panel-wrap ${agentMobileTab === 'chat' ? 'mobile-hidden' : ''}`}
