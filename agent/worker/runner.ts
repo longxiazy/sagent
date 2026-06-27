@@ -19,6 +19,7 @@ function resolveBunCommand(env: Record<string, string | undefined> = process.env
 export function buildWorkerCommand({
   sandbox,
   projectRoot,
+  memoryDir,
   sandboxFile = path.join(REPO_ROOT, 'sandbox.sb'),
   workerFile = path.join(REPO_ROOT, 'agent/worker/agent-worker.ts'),
   bunCommand = resolveBunCommand(),
@@ -26,6 +27,7 @@ export function buildWorkerCommand({
 }: {
   sandbox: boolean;
   projectRoot: string;
+  memoryDir?: string;
   sandboxFile?: string;
   workerFile?: string;
   bunCommand?: string;
@@ -43,6 +45,8 @@ export function buildWorkerCommand({
       `HOME=${env.HOME || ''}`,
       '-D',
       `PROJECT_DIR=${projectRoot}`,
+      '-D',
+      `MEMORY_DIR=${memoryDir || path.join(REPO_ROOT, 'data')}`,
       bunCommand,
       workerFile,
     ],
@@ -117,6 +121,7 @@ export function createSandboxedWorkerAgentRunner({
     const { command, args } = buildWorkerCommand({
       sandbox,
       projectRoot,
+      memoryDir,
       sandboxFile,
       workerFile,
     });

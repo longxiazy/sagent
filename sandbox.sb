@@ -39,6 +39,10 @@
 (allow file-write*
   (subpath (param "PROJECT_DIR")))
 
+;; ── Sagent 全局数据目录写入（LLM 日志、运行时配置等）────
+(allow file-write*
+  (subpath (param "MEMORY_DIR")))
+
 ;; ── Bun.WebView 临时目录 & Socket ──────────────
 (allow file-read* file-write*
   (subpath "/private/var/folders"))

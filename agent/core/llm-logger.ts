@@ -41,8 +41,8 @@ async function flushLog(filePath, lines) {
   try {
     await mkdir(filePath.slice(0, filePath.lastIndexOf('/')), { recursive: true });
     await appendFile(filePath, lines.join('\n') + '\n');
-  } catch {
-    // best effort
+  } catch (err: any) {
+    log.warn(`[LLM] 日志写入失败 file=${filePath}: ${err?.message || err}`);
   }
 }
 

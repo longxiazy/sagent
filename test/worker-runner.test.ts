@@ -6,6 +6,7 @@ describe('worker runner command', () => {
     const cmd = buildWorkerCommand({
       sandbox: true,
       projectRoot: '/tmp/project-a',
+      memoryDir: '/repo/data',
       sandboxFile: '/repo/sandbox.sb',
       workerFile: '/repo/agent/worker/agent-worker.ts',
       bunCommand: '/usr/local/bin/bun',
@@ -20,6 +21,8 @@ describe('worker runner command', () => {
       'HOME=/Users/test',
       '-D',
       'PROJECT_DIR=/tmp/project-a',
+      '-D',
+      'MEMORY_DIR=/repo/data',
       '/usr/local/bin/bun',
       '/repo/agent/worker/agent-worker.ts',
     ]);
