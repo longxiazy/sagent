@@ -22,6 +22,17 @@ function formatFileType(dirent) {
   return 'file';
 }
 
+function formatStatsType(stats) {
+  if (stats.isDirectory()) return 'dir';
+  if (stats.isFile()) return 'file';
+  if (stats.isSymbolicLink()) return 'symlink';
+  if (stats.isBlockDevice()) return 'block_device';
+  if (stats.isCharacterDevice()) return 'character_device';
+  if (stats.isFIFO()) return 'fifo';
+  if (stats.isSocket()) return 'socket';
+  return 'other';
+}
+
 function assertWithinSandbox(targetPath, sandboxPath) {
   const normalized = path.normalize(targetPath);
   const sandbox = path.normalize(sandboxPath);
@@ -62,6 +73,22 @@ export async function executeFsAction(action, opts: { cwd?: string | null } = {}
     return summary
       ? `目录 ${targetPath} 包含:\n${summary}`
       : `目录 ${targetPath} 为空`;
+  }
+
+  if (action.type === 'get_file_info') {
+    const targetPath = resolveInputPath(action.path, baseCwd);
+    assertSafePath(targetPath);
+    const stats = await fs.lstat(targetPath);
+    const info = {
+      path: targetPath,
+      type: formatStatsType(stats),
+      sizeBytes: stats.size,
+      modifiedAt: stats.mtime.toISOString(),
+      createdAt: stats.birthtime.toISOString(),
+      mode: stats.mode.toString(8),
+      symlink: stats.isSymbolicLink(),
+    };
+    return `文件信息:\n${JSON.stringify(info, null, 2)}`;
   }
 
   if (action.type === 'read_file') {

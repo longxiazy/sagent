@@ -27,6 +27,7 @@ export const ACTION_TYPE_TO_TOOL = {
   image_analyze: 'vision',
   // fs
   list_dir: 'fs',
+  get_file_info: 'fs',
   read_file: 'fs',
   write_file: 'fs',
   search_files: 'fs',

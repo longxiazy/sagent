@@ -174,6 +174,14 @@ function normalizeFsAction(type, action) {
     };
   }
 
+  if (type === 'get_file_info') {
+    return {
+      tool: 'fs',
+      type,
+      path: normalizePath(action.path),
+    };
+  }
+
   if (type === 'read_file') {
     return {
       tool: 'fs',
