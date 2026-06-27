@@ -179,7 +179,10 @@ export function createSandboxedWorkerAgentRunner({
       }
       if (message.type === 'approval_request') {
         try {
-          const { approvalId, promise } = approvalStore.request(message.payload || {}, message.approvalId);
+          const { approvalId, promise } = approvalStore.request({
+            ...(message.payload || {}),
+            runId,
+          }, message.approvalId);
           promise.then((decision: string) => {
             writeWorkerMessage(child, { type: 'approval_response', approvalId, decision });
           });

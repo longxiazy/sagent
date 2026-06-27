@@ -17,4 +17,34 @@ describe('approval store', () => {
 
     expect(() => store.request({}, 'worker_approval_dup')).toThrow('审批已存在');
   });
+
+  it('lists pending approvals for an active run', () => {
+    const store = createApprovalStore();
+    store.request({
+      type: 'approval_required',
+      runId: 'run_abc_123',
+      step: 2,
+      action: { tool: 'terminal', type: 'run', command: 'npm test' },
+      message: '需要确认',
+    }, 'approval_pending_1');
+    store.request({
+      type: 'approval_required',
+      runId: 'run_other_456',
+      step: 1,
+      action: { tool: 'fs', type: 'write_file' },
+      message: 'other',
+    }, 'approval_pending_2');
+
+    expect(store.listPendingForRun('run_abc_123')).toEqual([
+      {
+        type: 'approval_required',
+        runId: 'run_abc_123',
+        approvalId: 'approval_pending_1',
+        step: 2,
+        action: { tool: 'terminal', type: 'run', command: 'npm test' },
+        message: '需要确认',
+      },
+    ]);
+    expect(store.getPendingForRun('run_abc_123')?.approvalId).toBe('approval_pending_1');
+  });
 });

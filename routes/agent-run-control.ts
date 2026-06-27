@@ -5,6 +5,17 @@ import { readTraceEvents } from '../helpers/trace-store.ts';
 import { log } from '../helpers/logger.ts';
 import { tReq } from '../helpers/i18n.ts';
 
+function pendingApprovalState(approvalStore: any, runId: string) {
+  const pending = typeof approvalStore.listPendingForRun === 'function'
+    ? approvalStore.listPendingForRun(runId)
+    : [];
+  return {
+    pendingApproval: pending.find((item: any) => item.type === 'approval_required') || null,
+    pendingQuestion: pending.find((item: any) => item.type === 'question_required') || null,
+    pendingEvents: pending,
+  };
+}
+
 export function createAgentRunControlRouter({ agentRunStore, approvalStore, checkpointDir, memoryDir }: AgentRouterContext) {
   const router = Router();
 
@@ -36,6 +47,7 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
     if (!run) {
       return res.json({ active: false });
     }
+    const pending = pendingApprovalState(approvalStore, run.runId);
     return res.json({
       active: true,
       runId: run.runId,
@@ -43,6 +55,8 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
       model: run.meta?.model,
       task: run.meta?.task,
       meta: run.meta,
+      pendingApproval: pending.pendingApproval,
+      pendingQuestion: pending.pendingQuestion,
     });
   });
 
@@ -83,6 +97,11 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
       agentModels: run.meta?.agentModels,
       task: run.meta?.task,
     })}\n\n`);
+
+    const pending = pendingApprovalState(approvalStore, run.runId);
+    for (const event of pending.pendingEvents) {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    }
 
     let writer = null;
     if (run.status === 'running' && !run.cancelAc.signal.aborted) {
