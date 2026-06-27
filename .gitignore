@@ -31,6 +31,7 @@ npm-debug.log*
 # 必须用前导 / 锚定到项目根，否则会匹配所有层级同名目录
 # （早先写成 `data` 时把 client/src/data/ 也错杀过）
 /data/
+/data-docker/
 
 /artifacts/
 

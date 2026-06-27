@@ -9,10 +9,9 @@ function maskKey(key?: string): string | null {
   return `••••${key.slice(-4)}`;
 }
 
-// 三家供应商的 Key 状态（只读）。Key 仍在 .env 配置，前台仅展示是否已配置 + 脱敏尾号。
+// 供应商 Key 状态（只读）。Key 仍在 .env 配置，前台仅展示是否已配置 + 脱敏尾号。
 function describeKeys() {
   const nvidiaKey = process.env.NVIDIA_API_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
   return [
     {
@@ -21,13 +20,6 @@ function describeKeys() {
       baseUrl: process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1',
       configured: !!nvidiaKey,
       masked: maskKey(nvidiaKey),
-    },
-    {
-      envVar: 'ANTHROPIC_API_KEY',
-      provider: 'anthropic',
-      baseUrl: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com',
-      configured: !!anthropicKey,
-      masked: maskKey(anthropicKey),
     },
     {
       envVar: 'GEMINI_API_KEY',

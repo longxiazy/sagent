@@ -1,0 +1,16 @@
+services:
+  sagent:
+    build:
+      context: .
+    image: sagent:local
+    ports:
+      - "${HOST_PORT:-5173}:5173"
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 5173
+      MEMORY_DIR: /app/data
+    volumes:
+      - ./data-docker:/app/data
+    restart: unless-stopped

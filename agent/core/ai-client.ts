@@ -2,7 +2,7 @@
  * AI Client — LLM SDK 客户端构造 + 供应商通用工具函数
  *
  * 职责 / Responsibilities:
- *   1. createClients() — 按 .env 构造 OpenAI(NVIDIA) / Anthropic / Gemini 三套 SDK 客户端
+ *   1. createClients() — 按 .env 构造 OpenAI(NVIDIA) / Gemini 两套 SDK 客户端
  *   2. deriveProviderName() / isChatCapableModel() — 供各 provider 复用的纯工具函数
  *   3. loadAgentMultiModels() — 读取多模型竞速配置
  *
@@ -11,7 +11,6 @@
  */
 
 import OpenAI from 'openai';
-import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 
 export { createModelTools } from './tool-definitions.ts';
@@ -50,24 +49,19 @@ export function loadAgentMultiModels() {
 
 export function createClients() {
   const nvidiaKey = process.env.NVIDIA_API_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
 
   const openai_client = nvidiaKey
     ? new OpenAI({ apiKey: nvidiaKey, baseURL: process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1', maxRetries: 0 })
     : null;
 
-  const anthropic_client = anthropicKey
-    ? new Anthropic({ apiKey: anthropicKey, baseURL: process.env.ANTHROPIC_BASE_URL || undefined })
-    : null;
-
   const gemini_client = geminiKey
     ? new GoogleGenAI({ apiKey: geminiKey })
     : null;
 
-  if (!openai_client && !anthropic_client && !gemini_client) {
-    throw new Error('至少需要配置 NVIDIA_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY 之一');
+  if (!openai_client && !gemini_client) {
+    throw new Error('至少需要配置 NVIDIA_API_KEY / GEMINI_API_KEY 之一');
   }
 
-  return { openai_client, anthropic_client, gemini_client };
+  return { openai_client, gemini_client };
 }
