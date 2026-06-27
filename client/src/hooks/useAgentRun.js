@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 
 export function useAgentRun() {
-  const [streaming, setStreaming] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentStopping, setAgentStopping] = useState(false);
   const [_agentRunId, setAgentRunId] = useState(null);
@@ -25,8 +24,6 @@ export function useAgentRun() {
   const lastAgentTaskRef = useRef(null);
 
   return {
-    streaming,
-    setStreaming,
     agentRunning,
     setAgentRunning,
     agentStopping,

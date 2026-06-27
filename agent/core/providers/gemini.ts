@@ -16,25 +16,19 @@ import {
 import { createModelTools, toolToGeminiTool } from '../tool-definitions.ts';
 import { normalizeDesktopAgentDecision } from '../schemas.ts';
 import { isChatCapableModel } from '../ai-client.ts';
-import { createChatTools } from '../../chat/chat-tools.ts';
-import { executeChatTool } from '../../chat/chat-tool-executor.ts';
 import { logLlmRequest, logLlmResponse } from '../llm-logger.ts';
-import { buildMetrics, initSse, writeSse, writeSseDone } from '../../../helpers/streaming.ts';
+import { initSse, writeSse, writeSseDone } from '../../../helpers/streaming.ts';
 import { retryAsync } from '../../../helpers/retry.ts';
-import { log } from '../../../helpers/logger.ts';
 import { buildSummaryPrompt } from './anthropic.ts';
 import type {
   LLMProvider,
   ModelInfo,
   AgentPlanOpts,
   AgentPlanResult,
-  ChatStreamOpts,
   CompletionOpts,
   CompletionStreamOpts,
   SummarizeOpts,
 } from './types.ts';
-
-const MAX_TOOL_ROUNDS = 5;
 
 // Gemini usageMetadata → 内部归一 usage。
 function buildGeminiUsage(meta: any) {
@@ -134,67 +128,6 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
         }
       }
       throw new Error('Gemini 未返回有效的 functionCall');
-    },
-
-    async chatStream(opts: ChatStreamOpts) {
-      const { model, messages, temperature, max_tokens, res, startedAt, cwd } = opts;
-      const geminiTools = [{ functionDeclarations: createChatTools().map(toolToGeminiTool) }];
-      const { systemInstruction, contents } = toGeminiContents(messages);
-      let usage = null;
-
-      for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-        const config: Record<string, any> = {
-          maxOutputTokens: max_tokens,
-          temperature,
-          tools: geminiTools,
-        };
-        if (systemInstruction) config.systemInstruction = systemInstruction;
-
-        const stream = await client.models.generateContentStream({ model, contents, config } as any);
-        // 直接累积模型这一轮输出的原始 parts。part 级别的 thoughtSignature 必须原样回写，
-        // 否则下一轮带 functionCall 历史的请求会被 Gemini 拒绝（400 missing thought_signature）。
-        // 注意：chunk.text / chunk.functionCalls 这两个便捷访问器会丢掉 thoughtSignature，
-        // 不能用它们重建 parts。
-        const modelParts: any[] = [];
-        const functionCalls: any[] = [];
-
-        for await (const chunk of stream) {
-          const parts = (chunk as any).candidates?.[0]?.content?.parts;
-          if (Array.isArray(parts)) {
-            for (const part of parts) {
-              // 思维摘要（thought=true）不作为可见正文流式输出，但仍需原样保留以携带签名。
-              if (typeof part.text === 'string' && !part.thought) writeSse(res, { content: part.text });
-              if (part.functionCall) functionCalls.push(part.functionCall);
-              modelParts.push(part);
-            }
-          }
-          const meta = (chunk as any).usageMetadata;
-          if (meta) usage = buildGeminiUsage(meta);
-        }
-
-        if (functionCalls.length === 0) break;
-
-        // 模型这一轮的输出原样记入 contents（含 thoughtSignature），供下一轮请求校验。
-        contents.push({ role: 'model', parts: modelParts });
-
-        const responseParts = [];
-        for (const call of functionCalls) {
-          try {
-            const result = await executeChatTool(call.name, call.args || {}, { cwd });
-            responseParts.push({ functionResponse: { name: call.name, response: { result } } });
-            log.debug(`[Chat Tool] ${call.name} → ${String(result).slice(0, 100)}`);
-          } catch (err: any) {
-            responseParts.push({ functionResponse: { name: call.name, response: { error: `工具执行失败: ${err.message}` } } });
-          }
-        }
-        contents.push({ role: 'user', parts: responseParts });
-      }
-
-      writeSse(res, {
-        done: true,
-        finish_reason: 'stop',
-        meta: buildMetrics(startedAt, usage),
-      });
     },
 
     async completionJson(opts: CompletionOpts) {

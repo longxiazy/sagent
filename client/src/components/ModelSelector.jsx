@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
-import { ChevronDown, ChevronUp, Search, Check } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { ChevronDown, ChevronUp, Search } from 'lucide-react';
 import { useT } from '../i18n/I18nProvider.jsx';
 
 function filterModels(models, query) {
@@ -41,7 +41,6 @@ function ProviderPill({ provider }) {
 }
 
 // 浮层下拉的通用交互：点击外部关闭、ESC 关闭。
-// chat / agent 两种模型选择器共用这套逻辑。
 function useDropdown() {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
@@ -59,79 +58,8 @@ function useDropdown() {
   return { open, setOpen, wrapRef, inputRef };
 }
 
-// chat 模式：可搜索的下拉。供应商接口可能返回上百个模型，原生 <select> 没法选，
-// 这里做成「点击展开 → 输入过滤 → 点选」的浮层。
-function ChatModelDropdown({ availableModels, chatModel, setChatModel, sessionLocked }) {
-  const t = useT();
-  const { open, setOpen, wrapRef, inputRef } = useDropdown();
-  const [query, setQuery] = useState('');
-
-  const selected = availableModels.find(m => m.id === chatModel);
-  const selectedLabel = selected?.label || chatModel || t('modelSelector.selectModel');
-  const filtered = useMemo(() => filterModels(availableModels, query), [availableModels, query]);
-  const grouped = useMemo(() => groupByProvider(filtered), [filtered]);
-
-  const openPanel = () => {
-    setQuery('');
-    setOpen(o => !o);
-  };
-
-  return (
-    <div className="model-dropdown" ref={wrapRef}>
-      <button
-        type="button"
-        className="model-dropdown-trigger"
-        onClick={openPanel}
-        disabled={sessionLocked}
-        title={t('modelSelector.switchModel')}
-      >
-        <span className="model-dropdown-main">
-          <ProviderPill provider={selected?.provider} />
-          <span className="model-dropdown-label">{selectedLabel}</span>
-        </span>
-        <ChevronDown size={14} />
-      </button>
-      {open && (
-        <div className="model-dropdown-panel">
-          <div className="model-dropdown-search">
-            <Search size={13} />
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder={t('modelSelector.searchPlaceholder')}
-              onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }}
-            />
-          </div>
-          <div className="model-dropdown-list">
-            {filtered.length === 0 && <div className="model-dropdown-empty">{t('modelSelector.noMatch')}</div>}
-            {grouped.map(group => (
-              <div key={group.provider} className="model-provider-group">
-                <div className="model-provider-heading">{group.provider}</div>
-                {group.models.map(item => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    className={`model-dropdown-option ${item.id === chatModel ? 'selected' : ''}`}
-                    onClick={() => { setChatModel(item.id); setOpen(false); }}
-                    title={item.id}
-                  >
-                    <span className="model-dropdown-option-label">{item.label}</span>
-                    {item.id === chatModel && <Check size={13} />}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// agent 模式：多选 + 优先级排序 + race/vote 策略。
-// 收进与 chat 同构的浮层：触发按钮显示已选数量，展开后在面板内搜索/多选/排序/切策略，
+// Agent 模式：多选 + 优先级排序 + race/vote 策略。
+// 触发按钮显示已选数量，展开后在面板内搜索/多选/排序/切策略，
 // 避免一排模型标签直接铺在输入卡工具栏里把版面撑乱。
 function AgentModelDropdown({
   availableModels,
@@ -288,36 +216,17 @@ function AgentModelDropdown({
   );
 }
 
-// 模型选择控件：
-// - chat 模式：可搜索下拉
-// - agent 模式：多选下拉（搜索 + 多选 + 优先级排序 + race/vote 策略）
-//
+// Agent 模型选择控件：多选下拉（搜索 + 多选 + 优先级排序 + race/vote 策略）。
 // 会话开始后仍保留选择器，用于切换后续轮次使用的模型；
 // 运行中由 sessionLocked 禁用，避免误改当前请求。
 export function ModelSelector({
-  mode,
   availableModels,
-  chatModel,
-  setChatModel,
   selectedAgentModels,
   setSelectedAgentModels,
   agentStrategy,
   setAgentStrategy,
   sessionLocked,
 }) {
-  if (mode !== 'agent') {
-    return (
-      <div className="model-select-row">
-        <ChatModelDropdown
-          availableModels={availableModels}
-          chatModel={chatModel}
-          setChatModel={setChatModel}
-          sessionLocked={sessionLocked}
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="model-select-row">
       <AgentModelDropdown

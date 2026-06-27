@@ -15,10 +15,9 @@ function readSuggestionsHidden() {
 
 // 首屏：输入卡 + 推荐列表。
 // 会话/设置入口由父组件渲染在 main-area 右上角(.hero-corner-actions),不在 hero 容器内。
-// 工具栏控件（ModeSwitch / ModelSelector / SendButton / AttachButton）
+// 工具栏控件（ModelSelector / SendButton / AttachButton）
 // 由父组件传 slot 进来——它们在 hero 和 layout header 两处会复用同一个实例。
 export function HeroScreen({
-  mode,
   input,
   setInput,
   onKeyDown,
@@ -34,7 +33,7 @@ export function HeroScreen({
   onPickSuggestion,
   onSubmitSuggestion,
 }) {
-  const { modeSwitch, modelSelect, sendButton, attachButton } = toolbarSlots;
+  const { modelSelect, sendButton, attachButton } = toolbarSlots;
   const t = useT();
   const [suggestionsHidden, setSuggestionsHidden] = useState(readSuggestionsHidden);
 
@@ -62,12 +61,11 @@ export function HeroScreen({
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={mode === 'agent' ? t('input.agentPlaceholder') : t('input.chatPlaceholder')}
+            placeholder={t('input.agentPlaceholder')}
             rows={2}
             disabled={sessionLocked}
           />
           <div className="hero-toolbar">
-            {modeSwitch}
             {modelSelect}
             {attachButton}
             {sendButton}
@@ -80,7 +78,7 @@ export function HeroScreen({
           </button>
         ) : (
           <SuggestionsList
-            mode={mode}
+            mode="agent"
             suggestions={suggestions}
             categories={categories}
             activeCategoryId={activeCategoryId}
