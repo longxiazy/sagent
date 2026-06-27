@@ -46,7 +46,7 @@ Edit `.env`:
 ```bash
 # API Keys (fill at least one)
 NVIDIA_API_KEY=nvapi-...  # MiniMax, Kimi, Qwen, GLM, DeepSeek, etc.
-# ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=...
 
 # Agent behavior (optional)
 AGENT_MAX_STEPS=128            # Max steps per task, default 8

@@ -46,7 +46,7 @@ Agent 等待审批时，sagent 会通过浏览器桌面通知提醒你，并提�
 ```bash
 # API Key（至少填一个）
 NVIDIA_API_KEY=nvapi-...              # MiniMax、Kimi、Qwen、GLM、DeepSeek 等
-# ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=...
 
 # Agent 行为（可选）
 AGENT_MAX_STEPS=128              # 单次任务最大步数，默认 8

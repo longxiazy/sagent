@@ -11,7 +11,6 @@
  * planner / routes / summarizer / server 这些核心调用点无需改动。
  */
 
-import { createAnthropicProvider } from './anthropic.ts';
 import { createOpenAICompatProvider } from './openai-compat.ts';
 import { createGeminiProvider } from './gemini.ts';
 import { log } from '../../../helpers/logger.ts';
@@ -25,21 +24,18 @@ export interface ProviderRegistry {
 
 export function createProviderRegistry({
   openai_client,
-  anthropic_client,
   gemini_client,
 }: {
   openai_client?: any;
-  anthropic_client?: any;
   gemini_client?: any;
 }): ProviderRegistry {
   const providers: LLMProvider[] = [];
   // 顺序即 resolve 的精确匹配优先级；openai-compat 作为兜底放最后。
-  if (anthropic_client) providers.push(createAnthropicProvider(anthropic_client));
   if (gemini_client) providers.push(createGeminiProvider(gemini_client));
   if (openai_client) providers.push(createOpenAICompatProvider(openai_client));
 
   if (providers.length === 0) {
-    throw new Error('至少需要配置 NVIDIA_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY 之一');
+    throw new Error('至少需要配置 NVIDIA_API_KEY / GEMINI_API_KEY 之一');
   }
 
   function resolve(model: string, modelConfig?: ModelInfo[] | null): LLMProvider {

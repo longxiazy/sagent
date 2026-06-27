@@ -15,7 +15,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
     "@google/genai": "^2.7.0",
     "chrome-devtools-mcp": "^1.0.1",
     "cors": "^2.8.5",

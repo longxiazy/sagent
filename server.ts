@@ -4,7 +4,7 @@
  *
  * 启动流程 / Startup:
  *   1. 加载 .env 配置
- *   2. 创建 LLM 客户端（NVIDIA / Anthropic）
+ *   2. 创建 LLM 客户端（NVIDIA / Gemini）
  *   3. 初始化 Agent 运行器、审批存储、记忆目录
  *   4. 挂载路由：agent、completions
  *   5. 检查断点（checkpoint），自动恢复上次未完成的任务
@@ -24,7 +24,7 @@
  *   AGENT_RESUME                    — 是否自动恢复断点
  *   MEMORY_DIR                      — 记忆和截图存储目录
  *   VISION_MODEL                    — image_analyze 工具使用的多模态视觉模型
- *   NVIDIA_API_KEY / ANTHROPIC_API_KEY — LLM API 密钥
+ *   NVIDIA_API_KEY / GEMINI_API_KEY — LLM API 密钥
  */
 
 import 'dotenv/config';
@@ -59,8 +59,8 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 
-const { openai_client, anthropic_client, gemini_client } = createClients();
-const registry = createProviderRegistry({ openai_client, anthropic_client, gemini_client });
+const { openai_client, gemini_client } = createClients();
+const registry = createProviderRegistry({ openai_client, gemini_client });
 // 启动时同步拉取模型列表；全部供应商失败则中止启动并打印原因，不再兜底默认模型。
 const modelConfig = await registry.loadModelConfig().catch((err: any) => {
   log.error(`[启动失败] ${err.message}`);
@@ -245,7 +245,6 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
   ${openai_client ? row('Provider', `${deriveProviderName(process.env.NVIDIA_BASE_URL)} @ ${process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1'}`) : ''}
   ${gemini_client ? row('Provider', 'gemini @ generativelanguage.googleapis.com') : ''}
   ${row('NVIDIA_API_KEY', process.env.NVIDIA_API_KEY ? '✓ configured' : '✗ not set')}
-  ${row('ANTHROPIC_API_KEY', process.env.ANTHROPIC_API_KEY ? '✓ configured' : '✗ not set')}
   ${row('GEMINI_API_KEY', process.env.GEMINI_API_KEY ? '✓ configured' : '✗ not set')}
   ╚${dLine.slice(2)}╝
   `);

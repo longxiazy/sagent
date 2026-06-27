@@ -111,8 +111,8 @@ async function main() {
   await runtimeConfig.init(memoryDir);
   initLlmLogger(memoryDir);
 
-  const { openai_client, anthropic_client, gemini_client } = createClients();
-  const registry = createProviderRegistry({ openai_client, anthropic_client, gemini_client });
+  const { openai_client, gemini_client } = createClients();
+  const registry = createProviderRegistry({ openai_client, gemini_client });
   const modelConfig = Array.isArray(payload.modelConfig) ? payload.modelConfig : [];
   const cfg = runtimeConfig.get();
   const runDesktopAgent = createDesktopAgentRunner({
