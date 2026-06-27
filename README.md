@@ -23,6 +23,25 @@ Open http://localhost:5173
 
 When the Agent needs your approval, sagent shows a browser desktop notification with **Allow / Reject** buttons (Chromium-based browsers). The first time the Agent requests approval you'll see a banner — click **Enable desktop notifications** and the browser will prompt for permission. On Safari/Firefox the notification still pops but without inline buttons — clicking it focuses sagent so you can decide in the side panel.
 
+## Docker
+
+The Docker image builds the frontend and runs the backend with Bun. It is useful for sharing the server/UI package. Agent features that depend on the macOS desktop, system WebView, or controlling a host browser are still best run natively with `npm run sandbox`.
+
+```bash
+cp .env.example .env
+# Fill NVIDIA_API_KEY or GEMINI_API_KEY in .env
+docker compose up --build
+```
+
+Open http://localhost:5173
+
+Manual build/run:
+
+```bash
+docker build -t sagent:local .
+docker run --env-file .env -p 5173:5173 -v "$(pwd)/data-docker:/app/data" sagent:local
+```
+
 ## Security: Sandbox Policy
 
 When started with `npm run sandbox`, the UI/API server stays outside the macOS sandbox and each Agent run starts a short-lived worker inside `sandbox-exec`, with permissions controlled by `sandbox.sb` and `PROJECT_DIR` set to that run's project root.

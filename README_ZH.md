@@ -23,6 +23,25 @@ npm run sandbox                         # 需要 Bun 1.3+
 
 Agent 等待审批时，sagent 会通过浏览器桌面通知提醒你，并提供「允许 / 拒绝」按钮（Chromium 内核浏览器支持）。首次出现审批请求时，页面上方会弹出小横条，点击「开启桌面通知」即可触发浏览器的权限请求。Safari / Firefox 桌面端不支持通知里的按钮，通知仍会弹出，点击通知会聚焦回 sagent 页面，在右侧审批面板上做决定即可。
 
+## Docker 运行
+
+Docker 镜像会构建前端并用 Bun 运行后端，适合打包 server/UI 给别人试用。依赖 macOS 桌面、系统 WebView 或本机浏览器控制的 Agent 能力，建议仍用原生 `npm run sandbox` 运行。
+
+```bash
+cp .env.example .env
+# 编辑 .env 填入 NVIDIA_API_KEY 或 GEMINI_API_KEY
+docker compose up --build
+```
+
+打开 http://localhost:5173
+
+也可以手动构建和运行：
+
+```bash
+docker build -t sagent:local .
+docker run --env-file .env -p 5173:5173 -v "$(pwd)/data-docker:/app/data" sagent:local
+```
+
 ## 安全：沙盒策略
 
 通过 `npm run sandbox` 启动时，UI/API server 常驻在沙盒外，每次 Agent run 会启动一个短生命周期 worker，并用 `sandbox-exec` 将该 worker 限制在当前 run 的项目根目录内；权限由 `sandbox.sb` 文件控制。

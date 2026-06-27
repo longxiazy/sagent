@@ -30,6 +30,7 @@
 import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAgentRunStore } from './helpers/run-store.ts';
@@ -68,6 +69,7 @@ const modelConfig = await registry.loadModelConfig().catch((err: any) => {
 });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CLIENT_DIST_DIR = path.resolve(__dirname, 'client/dist');
 const MEMORY_DIR = path.resolve(__dirname, process.env.MEMORY_DIR || 'data');
 const CHECKPOINT_DIR = MEMORY_DIR;
 const AGENT_RESUME = process.env.AGENT_RESUME !== 'false';
@@ -122,6 +124,16 @@ app.use('/screenshots', express.static(SCREENSHOT_DIR));
 app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, domainRules: runDesktopAgent.domainRules, modelConfig, registry, runtimeConfig, projectStore }));
 app.use(createCompletionsRouter({ registry, modelConfig }));
 app.use(createSuggestionsRouter({ store: createSuggestionStore(path.join(__dirname, 'data')) }));
+
+if (fs.existsSync(path.join(CLIENT_DIST_DIR, 'index.html'))) {
+  app.use(express.static(CLIENT_DIST_DIR));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/') || req.path.startsWith('/screenshots/')) return next();
+    res.sendFile(path.join(CLIENT_DIST_DIR, 'index.html'), err => {
+      if (err) next(err);
+    });
+  });
+}
 
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
