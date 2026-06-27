@@ -212,7 +212,6 @@ export function useChatSessions() {
     sessions,
     activeSession,
     messages: activeSession.messages,
-    chatModel: activeSession.model,
     updateSession,
   };
 }

@@ -44,6 +44,7 @@ export const en = {
   'agent.retryFromStep': 'from step {step}',
   'agent.approvalNeeded': 'Approval required',
   'agent.questionNeeded': 'The Agent has a question for you',
+  'agent.conversationTab': 'Chat',
   'agent.continueTask': 'Continue task',
   'agent.connectionLostShort': 'Connection lost',
   'rollback.failed': 'Rollback failed',
@@ -52,7 +53,6 @@ export const en = {
 
   // Input box
   'input.agentPlaceholder': 'Describe the task for the Agent…',
-  'input.chatPlaceholder': 'Type a message…',
 
   // Attachments (task text block + display)
   'attach.taskBlockHeader': '[Attachments]',
@@ -272,8 +272,6 @@ export const en = {
   'question.answer': 'Answer',
 
   // Hero / toolbar
-  'mode.ariaLabel': 'Mode switch',
-  'mode.chat': 'Chat',
   'mode.agent': 'Agent',
   'send.stop': 'Stop',
   'send.stopping': 'Stopping…',
@@ -321,9 +319,7 @@ export const en = {
   'modelSelector.voteTitle': 'Wait for all models, then vote for the best',
   'modelSelector.vote': 'Vote',
 
-  // Chat / session operations
-  'chat.stopped': '_Generation stopped_',
-  'chat.requestFailed': '⚠️ Request failed: {error}{detail}',
+  // Session operations
   'session.newChat': 'New chat',
   'sessionOps.confirmDelete': 'Delete this session? This cannot be undone.',
   'sessionOps.confirmClearAll': 'Clear all sessions? This cannot be undone.',

@@ -15,7 +15,6 @@ import path from 'node:path';
 import { log } from './logger.ts';
 import {
   getSuggestionDefaults,
-  type SuggestionItem,
   type SuggestionCategory,
   type SuggestionLocale,
 } from './suggestion-defaults.ts';
@@ -38,7 +37,6 @@ type HistoryFile = {
 };
 
 export type MergedSuggestions = {
-  chat: SuggestionItem[];
   agent: SuggestionCategory[];
 };
 
@@ -111,7 +109,6 @@ export function createSuggestionStore(dir: string) {
       const recent = buildRecent(data.history, locale);
       const agent = recent ? [recent, ...defaults.agent] : [...defaults.agent];
       return {
-        chat: defaults.chat,
         agent,
       };
     },

@@ -1,26 +1,17 @@
 import { Send, Square } from 'lucide-react';
 import { useT } from '../i18n/I18nProvider.jsx';
 
-// 发送/停止三态按钮：streaming → 停止 chat；agentRunning → 停止 agent；idle → 发送
+// 发送/停止按钮：Agent 运行中停止，空闲时发送。
 export function SendButton({
-  streaming,
   agentRunning,
   agentStopping,
   pendingApproval,
   inputValue,
   blockReason,
   onSend,
-  onStopGeneration,
   onStopAgent,
 }) {
   const t = useT();
-  if (streaming) {
-    return (
-      <button className="send-btn stop" onClick={onStopGeneration}>
-        <Square size={12} /> {t('send.stop')}
-      </button>
-    );
-  }
   if (agentRunning) {
     return (
       <button className="send-btn stop" onClick={onStopAgent} disabled={agentStopping}>

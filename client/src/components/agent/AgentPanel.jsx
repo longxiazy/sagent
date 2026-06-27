@@ -16,7 +16,7 @@ import { useT } from '../../i18n/I18nProvider.jsx';
 // - 负责展示 trace
 // - 负责显示暂停/审批/用时/token 等运行态指标
 // - 在移动端和桌面端之间复用同一套事件展示逻辑
-export function AgentPanel({ mode, running, trace, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onRollback, rollbackLoading }) {
+export function AgentPanel({ running, trace, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onRollback, rollbackLoading }) {
   const t = useT();
   const traceBottomRef = useRef(null);
   const traceStickyRef = useRef(true);
@@ -112,10 +112,6 @@ export function AgentPanel({ mode, running, trace, startedAt, modelList, collaps
     scroller.addEventListener('scroll', onScroll, { passive: true });
     return () => scroller.removeEventListener('scroll', onScroll);
   }, [traceHasContent]);
-
-  if (mode !== 'agent') {
-    return null;
-  }
 
   return (
     <>

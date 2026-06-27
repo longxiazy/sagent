@@ -17,7 +17,6 @@ import { SettingsDialog } from './components/dialogs/SettingsDialog.jsx';
 import { SessionList } from './components/session/SessionList.jsx';
 import { AgentPanel } from './components/agent/AgentPanel.jsx';
 import { ModelSelector } from './components/ModelSelector.jsx';
-import { ModeSwitch } from './components/ModeSwitch.jsx';
 import { SendButton } from './components/SendButton.jsx';
 import { AttachButton } from './components/AttachButton.jsx';
 import { AttachmentBar } from './components/AttachmentBar.jsx';
@@ -34,7 +33,6 @@ import { useTheme } from './theme/ThemeProvider.jsx';
 import { useT } from './i18n/I18nProvider.jsx';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.js';
 import { useSessionHandlers } from './hooks/useSessionHandlers.js';
-import { useChatTransport } from './hooks/useChatTransport.js';
 import { useAgentTransport } from './hooks/useAgentTransport.js';
 import { useQuestionSubmit } from './hooks/useQuestionSubmit.js';
 import { useAttachments } from './hooks/useAttachments.js';
@@ -106,7 +104,6 @@ export default function App() {
     sessions,
     activeSession,
     messages,
-    chatModel,
     updateSession,
   } = useChatSessions();
   const {
@@ -124,15 +121,13 @@ export default function App() {
   // 避免启动阶段误把用户已选的多模型裁成一个。
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [input, setInput] = useState('');
-  const [mode, setMode] = usePersistentState('nvidia_chat_last_mode', 'chat');
+  const mode = 'agent';
   const [suggestionSeed, setSuggestionSeed] = useState(0);
   const [suggestionData, setSuggestionData] = useState(EMPTY_SUGGESTIONS);
   const [activeCategoryId, setActiveCategoryId] = useState(null);
   // 卡片点击时把标题暂存,handleSubmit 时上报给后端;手动输入则降级到 text 前 12 字
   const pendingTitleRef = useRef(null);
   const {
-    streaming,
-    setStreaming,
     agentRunning,
     setAgentRunning,
     agentStopping,
@@ -174,7 +169,7 @@ export default function App() {
     panelSizeKey: PANEL_SIZE_KEY,
   });
   // Agent 的多模型选择与策略「按项目」存储:useProjectScopedState 内部按 activeProjectId 分桶,
-  // 切项目时派生值自动跟着变。chat 单模型走 session(本身已按项目过滤);memory 仍是应用级偏好。
+  // 切项目时派生值自动跟着变；memory 仍是应用级偏好。
   const [selectedAgentModels, setSelectedAgentModels] = useProjectScopedState('agent_models_by_project', activeProjectId, EMPTY_AGENT_MODELS);
   // Filter out models no longer available
   useEffect(() => {
@@ -223,7 +218,7 @@ export default function App() {
   // 恢复选择器状态。只对每个 active session 自动恢复一次，避免用户手动清空后被立刻填回。
   const seededAgentModelsSessionRef = useRef(null);
   useEffect(() => {
-    if (mode !== 'agent' || seededAgentModelsSessionRef.current === activeSession.id) {
+    if (seededAgentModelsSessionRef.current === activeSession.id) {
       return;
     }
     if (selectedAgentModels.length > 0) {
@@ -252,7 +247,6 @@ export default function App() {
     activeSession.model,
     activeSession.modelsUsed,
     availableModels,
-    mode,
     modelsLoaded,
     selectedAgentModels.length,
     setSelectedAgentModels,
@@ -269,7 +263,6 @@ export default function App() {
     setNotifyPerm(result);
   };
 
-  const abortRef = useRef(null);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -301,7 +294,7 @@ export default function App() {
       });
   }, [setChatState]);
 
-  const sessionLocked = streaming || agentRunning;
+  const sessionLocked = agentRunning;
 
   // 在移动端/窄屏时，会话侧栏和 Agent 面板会改变页面主色块区域。
   // 同步 <meta name="theme-color"> 是为了让浏览器地址栏颜色也跟着切换。
@@ -354,7 +347,6 @@ export default function App() {
         setAgentStartedAt(data.startedAt || null);
         setAgentRunId(data.runId);
         agentRunIdRef.current = data.runId;
-        setMode('agent');
         agentAbortRef.current = controller;
         restorePendingEvent(data.pendingApproval);
         restorePendingEvent(data.pendingQuestion);
@@ -679,24 +671,11 @@ export default function App() {
 
   useEffect(() => {
     return () => {
-      // 页面卸载时同时中止 chat / agent 的网络流，
-      // 也顺手拒绝掉所有等待中的审批 Promise，避免悬挂。
-      abortRef.current?.abort();
+      // 页面卸载时中止 Agent 网络流，也顺手拒绝掉所有等待中的审批 Promise，避免悬挂。
       agentAbortRef.current?.abort();
       approvalRequestRef.current?.resolve?.('reject');
     };
   }, [agentAbortRef, approvalRequestRef]);
-
-  const { sendChatMessage, stopGeneration } = useChatTransport({
-    activeSession,
-    messages,
-    chatModel,
-    updateSession,
-    setStreaming,
-    setInput,
-    abortRef,
-    textareaRef,
-  });
 
   const {
     handleCreateSession,
@@ -704,7 +683,6 @@ export default function App() {
     handleDeleteSession,
     handleClearAllSessions,
     handleReset,
-    setChatModel,
   } = useSessionHandlers({
     sessions,
     activeSession,
@@ -763,7 +741,6 @@ export default function App() {
     agentTrace,
     agentRunning,
     selectedAgentModels,
-    chatModel,
     agentStrategy,
     agentMemory,
     availableModels,
@@ -806,8 +783,8 @@ export default function App() {
     if (sessionLocked) {
       return;
     }
-    // agent 模式必须至少选一个模型,否则没有执行目标,直接拦截(UI 上发送按钮也已禁用)。
-    if (mode === 'agent' && selectedAgentModels.length === 0) {
+    // Agent 必须至少选一个模型,否则没有执行目标,直接拦截(UI 上发送按钮也已禁用)。
+    if (selectedAgentModels.length === 0) {
       return;
     }
     if (attachmentsUploading) {
@@ -824,26 +801,16 @@ export default function App() {
       return;
     }
 
-    // 把这次发送累计到后端使用记录,只对 agent 模式做(chat 模式建议少,不需要)
-    // 标题用原始用户输入(userText),避免被附件提示污染。
-    if (mode === 'agent') {
-      const titleSource = userText || readyAttachments[0]?.name || t('attach.taskFallback');
-      const title = pendingTitleRef.current
-        || (titleSource.length > 12 ? titleSource.slice(0, 12) + '…' : titleSource);
-      pendingTitleRef.current = null;
-      recordSuggestionUse({ title, text });
-      // 下次返回 hero 时能看到新的"最近使用"
-      setSuggestionSeed(v => v + 1);
-    }
+    // 把这次发送累计到后端使用记录；标题用原始用户输入(userText),避免被附件提示污染。
+    const titleSource = userText || readyAttachments[0]?.name || t('attach.taskFallback');
+    const title = pendingTitleRef.current
+      || (titleSource.length > 12 ? titleSource.slice(0, 12) + '…' : titleSource);
+    pendingTitleRef.current = null;
+    recordSuggestionUse({ title, text });
+    // 下次返回 hero 时能看到新的"最近使用"
+    setSuggestionSeed(v => v + 1);
 
-    // 同一输入框根据 mode 分流到两套完全不同的执行链路。
-    if (mode === 'agent') {
-      await sendAgentTask(text);
-      clearAttachments();
-      return;
-    }
-
-    await sendChatMessage(text);
+    await sendAgentTask(text);
     clearAttachments();
   };
 
@@ -855,37 +822,25 @@ export default function App() {
     }
   };
 
-  const sessionStarted = messages.length > 0;
-
   const agentCategories = suggestionData.agent;
 
   const suggestions = useMemo(() => {
     void activeSession.id;
     void suggestionSeed;
-    if (mode === 'agent') {
-      const cat = agentCategories.find(c => c.id === activeCategoryId) ?? agentCategories[0];
-      const pool = cat?.items ?? [];
-      // "最近使用"已按最近请求时间倒序,保持顺序;其它分类随机抽样
-      if (cat?.id === 'recent') {
-        return pool.slice(0, Math.min(8, pool.length));
-      }
-      return shuffled(pool).slice(0, Math.min(8, pool.length));
+    const cat = agentCategories.find(c => c.id === activeCategoryId) ?? agentCategories[0];
+    const pool = cat?.items ?? [];
+    // "最近使用"已按最近请求时间倒序,保持顺序;其它分类随机抽样
+    if (cat?.id === 'recent') {
+      return pool.slice(0, Math.min(8, pool.length));
     }
-    const pool = suggestionData.chat;
-    return shuffled(pool).slice(0, Math.min(4, pool.length));
-  }, [mode, activeSession.id, suggestionSeed, activeCategoryId, agentCategories, suggestionData.chat]);
+    return shuffled(pool).slice(0, Math.min(8, pool.length));
+  }, [activeSession.id, suggestionSeed, activeCategoryId, agentCategories]);
 
   // 工具栏控件实例化一次，在 hero 和 layout header 中复用——
   // 行为/状态完全一致，没必要在两处分别构造。
-  const modeSwitch = (
-    <ModeSwitch mode={mode} setMode={setMode} sessionLocked={sessionLocked} sessionStarted={sessionStarted} />
-  );
   const modelSelect = (
     <ModelSelector
-      mode={mode}
       availableModels={availableModels}
-      chatModel={chatModel}
-      setChatModel={setChatModel}
       selectedAgentModels={selectedAgentModels}
       setSelectedAgentModels={setSelectedAgentModels}
       agentStrategy={agentStrategy}
@@ -895,16 +850,14 @@ export default function App() {
   );
   const sendButton = (
     <SendButton
-      streaming={streaming}
       agentRunning={agentRunning}
       agentStopping={agentStopping}
       pendingApproval={pendingApproval}
       // 输入栏要有正文 *或* 已就绪附件才能发送;上传中按钮也置灰。
       inputValue={attachmentsUploading ? '' : (input || (hasReadyAttachments ? ' ' : ''))}
-      // agent 模式一个模型都没选时禁止发送,并给出原因提示。
-      blockReason={mode === 'agent' && selectedAgentModels.length === 0 ? t('send.needModel') : ''}
+      // 一个模型都没选时禁止发送,并给出原因提示。
+      blockReason={selectedAgentModels.length === 0 ? t('send.needModel') : ''}
       onSend={handleSubmit}
-      onStopGeneration={stopGeneration}
       onStopAgent={stopAgent}
     />
   );
@@ -978,16 +931,15 @@ export default function App() {
       )}
       {showHero ? (
         <HeroScreen
-          mode={mode}
           input={input}
           setInput={setInput}
           onKeyDown={handleKeyDown}
           textareaRef={textareaRef}
           sessionLocked={sessionLocked}
-          toolbarSlots={{ modeSwitch, modelSelect, sendButton, attachButton }}
+          toolbarSlots={{ modelSelect, sendButton, attachButton }}
           attachmentBar={attachmentBar}
           suggestions={suggestions}
-          categories={mode === 'agent' ? agentCategories : null}
+          categories={agentCategories}
           activeCategoryId={activeCategoryId}
           onSelectCategory={setActiveCategoryId}
           onShuffle={() => setSuggestionSeed(v => v + 1)}
@@ -1013,7 +965,6 @@ export default function App() {
             sessionTitle={getSessionTitle(messages)}
             sessionLocked={sessionLocked}
             messagesLength={messages.length}
-            modeSwitch={modeSwitch}
             modelSelect={modelSelect}
             onToggleSessions={() => setShowSessions(v => !v)}
             onCreateSession={handleCreateSession}
@@ -1021,8 +972,7 @@ export default function App() {
             onOpenSettings={() => setShowSettings(true)}
           />
 
-          <div className={`layout-body ${mode === 'agent' ? 'agent-layout' : 'chat-layout'}`}>
-          {mode === 'agent' && (
+          <div className="layout-body agent-layout">
             <AgentPane
               agentMobileTab={agentMobileTab}
               setAgentMobileTab={setAgentMobileTab}
@@ -1031,7 +981,6 @@ export default function App() {
               touchStartRef={touchStartRef}
               agentPanel={(
                 <AgentPanel
-                  mode={mode}
                   running={agentRunning}
                   trace={agentTrace}
                   startedAt={agentStartedAt}
@@ -1047,19 +996,18 @@ export default function App() {
               )}
               resizeDivider={<ResizeDivider side="agent" />}
             />
-          )}
 
           {messages.length > 0 && (
             <ChatPane
-              hidden={mode === 'agent' && agentMobileTab === 'agent'}
+              hidden={agentMobileTab === 'agent'}
               messages={messages}
-              streaming={streaming}
+              streaming={false}
               bottomRef={bottomRef}
               textareaRef={textareaRef}
               inputValue={input}
               setInput={setInput}
               handleKeyDown={handleKeyDown}
-              placeholder={mode === 'agent' ? t('input.agentPlaceholder') : t('input.chatPlaceholder')}
+              placeholder={t('input.agentPlaceholder')}
               disabled={sessionLocked}
               sendButton={sendButton}
               attachButton={attachButton}

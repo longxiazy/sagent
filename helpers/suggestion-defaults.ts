@@ -17,19 +17,12 @@ export type SuggestionCategory = {
 };
 
 export type SuggestionDefaults = {
-  chat: SuggestionItem[];
   agent: SuggestionCategory[];
 };
 
 export type SuggestionLocale = 'zh' | 'en';
 
 export const SUGGESTION_DEFAULTS: SuggestionDefaults = {
-  chat: [
-    { title: '解释概念', text: '解释一下量子计算的基本原理' },
-    { title: '写代码', text: '用 Python 写一个快速排序算法' },
-    { title: '写邮件', text: '帮我写一封请假邮件,事由是家中有急事' },
-    { title: '技术对比', text: '对比 React 和 Vue 的优缺点' },
-  ],
   agent: [
     {
       id: 'life',
@@ -145,12 +138,6 @@ export const SUGGESTION_DEFAULTS: SuggestionDefaults = {
 
 // 英文默认建议（与中文一一对应）；中国特有事项映射为对应的通用概念。
 export const SUGGESTION_DEFAULTS_EN: SuggestionDefaults = {
-  chat: [
-    { title: 'Explain a concept', text: 'Explain the basic principles of quantum computing' },
-    { title: 'Write code', text: 'Write a quicksort algorithm in Python' },
-    { title: 'Write an email', text: 'Help me write a leave-request email citing a family emergency' },
-    { title: 'Compare tech', text: 'Compare the pros and cons of React and Vue' },
-  ],
   agent: [
     {
       id: 'life',
