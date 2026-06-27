@@ -292,10 +292,9 @@ function AgentModelDropdown({
 // - chat 模式：可搜索下拉
 // - agent 模式：多选下拉（搜索 + 多选 + 优先级排序 + race/vote 策略）
 //
-// 只在 sessionStarted=false 时渲染。组件自己判断这个条件，让 App
-// 那边可以无条件 <ModelSelector .../> 写成一行。
+// 会话开始后仍保留选择器，用于切换后续轮次使用的模型；
+// 运行中由 sessionLocked 禁用，避免误改当前请求。
 export function ModelSelector({
-  sessionStarted,
   mode,
   availableModels,
   chatModel,
@@ -306,8 +305,6 @@ export function ModelSelector({
   setAgentStrategy,
   sessionLocked,
 }) {
-  if (sessionStarted) return null;
-
   if (mode !== 'agent') {
     return (
       <div className="model-select-row">

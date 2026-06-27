@@ -88,12 +88,15 @@ export function useAgentTransport({
     const runModels = selectedModels.length > 0 ? selectedModels : [chatModel];
     const primaryModel = runModels[0] || chatModel;
     lastAgentTaskRef.current = text;
-    const history = isRetry ? messages : [...messages, { role: 'user', content: text, ts: Date.now() }];
+    const now = Date.now();
+    const history = isRetry
+      ? messages
+      : [...messages, { role: 'user', content: text, ts: now, model: primaryModel, modelsUsed: runModels }];
 
     if (!isRetry) {
       updateSession(sessionId, session =>
         touchSession(session, {
-          messages: [...history, { role: 'assistant', content: t('agent.running'), pending: 'run', ts: Date.now() }],
+          messages: [...history, { role: 'assistant', content: t('agent.running'), pending: 'run', ts: now, model: primaryModel, modelsUsed: runModels }],
           model: primaryModel,
           modelsUsed: runModels,
           agentTrace: [],
@@ -110,7 +113,7 @@ export function useAgentTransport({
       updateSession(sessionId, session => {
         const msgs = [...session.messages];
         const stepInfo = cpStep ? t('agent.retryFromStep', { step: cpStep }) : '';
-        msgs.push({ role: 'assistant', content: t('agent.retrying', { step: stepInfo, task: text }), pending: 'run', ts: Date.now() });
+        msgs.push({ role: 'assistant', content: t('agent.retrying', { step: stepInfo, task: text }), pending: 'run', ts: Date.now(), model: primaryModel, modelsUsed: runModels });
         return touchSession(session, { messages: msgs, model: primaryModel, modelsUsed: runModels });
       });
     }
@@ -207,13 +210,15 @@ export function useAgentTransport({
             setAgentTrace(prev => {
               updateSession(sessionId, session => {
                 const nextMessages = [...session.messages];
+                const modelsUsed = getEventModels(event, runModels);
                 // 占位消息（pending:'run'）始终是最后一条助手消息，用结果替换它。
                 nextMessages[nextMessages.length - 1] = {
                   role: 'assistant',
                   content: event.answer || t('agent.done'),
                   ts: Date.now(),
+                  model: modelsUsed[0] || primaryModel,
+                  modelsUsed,
                 };
-                const modelsUsed = getEventModels(event, runModels);
                 return touchSession(session, {
                   messages: nextMessages,
                   model: modelsUsed[0] || primaryModel,
@@ -235,12 +240,14 @@ export function useAgentTransport({
             setAgentTrace(prev => {
               updateSession(sessionId, session => {
                 const nextMessages = [...session.messages];
+                const modelsUsed = getEventModels(event, runModels);
                 nextMessages[nextMessages.length - 1] = {
                   role: 'assistant',
                   content: t('agent.failed', { error: event.error || t('common.unknownError') }),
                   ts: Date.now(),
+                  model: modelsUsed[0] || primaryModel,
+                  modelsUsed,
                 };
-                const modelsUsed = getEventModels(event, runModels);
                 return touchSession(session, {
                   messages: nextMessages,
                   model: modelsUsed[0] || primaryModel,
@@ -267,6 +274,9 @@ export function useAgentTransport({
           nextMessages[nextMessages.length - 1] = {
             role: 'assistant',
             content: t('agent.requestFailed', { error: err.message, detail }),
+            ts: Date.now(),
+            model: primaryModel,
+            modelsUsed: runModels,
           };
 
           return touchSession(session, { messages: nextMessages });
@@ -283,13 +293,13 @@ export function useAgentTransport({
             const lastIdx = msgs.length - 1;
             if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].pending === 'run') {
               const next = [...msgs];
-              if (doneEvent) {
-                next[lastIdx] = { role: 'assistant', content: doneEvent.answer || t('agent.done'), ts: Date.now() };
-              } else {
-                next[lastIdx] = { role: 'assistant', content: t('agent.failed', { error: errorEvent.error || t('agent.connectionLostShort') }), ts: Date.now() };
-              }
               const terminalEvent = doneEvent || errorEvent;
               const modelsUsed = getEventModels(terminalEvent, runModels);
+              if (doneEvent) {
+                next[lastIdx] = { role: 'assistant', content: doneEvent.answer || t('agent.done'), ts: Date.now(), model: modelsUsed[0] || primaryModel, modelsUsed };
+              } else {
+                next[lastIdx] = { role: 'assistant', content: t('agent.failed', { error: errorEvent.error || t('agent.connectionLostShort') }), ts: Date.now(), model: modelsUsed[0] || primaryModel, modelsUsed };
+              }
               return touchSession(session, {
                 messages: next,
                 model: modelsUsed[0] || primaryModel,
@@ -314,7 +324,7 @@ export function useAgentTransport({
             const lastIdx = msgs.length - 1;
             if (lastIdx >= 0 && msgs[lastIdx].role === 'assistant' && msgs[lastIdx].pending === 'run') {
               const next = [...msgs];
-              next[lastIdx] = { role: 'assistant', content: t('agent.connectionLost'), ts: Date.now() };
+              next[lastIdx] = { role: 'assistant', content: t('agent.connectionLost'), ts: Date.now(), model: primaryModel, modelsUsed: runModels };
               return touchSession(session, {
                 messages: next,
                 model: primaryModel,

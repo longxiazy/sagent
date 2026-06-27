@@ -219,6 +219,45 @@ export default function App() {
     } catch { /* 忽略损坏的旧数据 */ }
   }, [projectsLoading, setSelectedAgentModels, setAgentStrategy]);
 
+  // 刷新或切回历史 Agent 会话时，如果项目级选择为空，就用该会话上次运行的模型
+  // 恢复选择器状态。只对每个 active session 自动恢复一次，避免用户手动清空后被立刻填回。
+  const seededAgentModelsSessionRef = useRef(null);
+  useEffect(() => {
+    if (mode !== 'agent' || seededAgentModelsSessionRef.current === activeSession.id) {
+      return;
+    }
+    if (selectedAgentModels.length > 0) {
+      seededAgentModelsSessionRef.current = activeSession.id;
+      return;
+    }
+    const sessionModels = uniqueModelIds(
+      activeSession.modelsUsed?.length > 0
+        ? activeSession.modelsUsed
+        : activeSession.model
+          ? [activeSession.model]
+          : []
+    );
+    if (sessionModels.length === 0) {
+      return;
+    }
+    const validModels = modelsLoaded && availableModels.length > 0
+      ? sessionModels.filter(model => availableModels.some(item => item.id === model))
+      : sessionModels;
+    if (validModels.length > 0) {
+      setSelectedAgentModels(validModels);
+      seededAgentModelsSessionRef.current = activeSession.id;
+    }
+  }, [
+    activeSession.id,
+    activeSession.model,
+    activeSession.modelsUsed,
+    availableModels,
+    mode,
+    modelsLoaded,
+    selectedAgentModels.length,
+    setSelectedAgentModels,
+  ]);
+
   // 桌面通知权限：default = 未询问，granted = 已开，denied = 用户拒绝过。
   // SW 在 App 挂载时静默注册，权限请求必须由用户点击触发。
   const [notifyPerm, setNotifyPerm] = useState(() => notificationPermission());
@@ -262,7 +301,6 @@ export default function App() {
       });
   }, [setChatState]);
 
-  const selectedChatModelLabel = availableModels.find(item => item.id === chatModel)?.label || chatModel;
   const sessionLocked = streaming || agentRunning;
 
   // 在移动端/窄屏时，会话侧栏和 Agent 面板会改变页面主色块区域。
@@ -332,7 +370,18 @@ export default function App() {
           if (firstUser && firstUser.content === task) {
             const sessions = prev.sessions.map(session => {
               if (session.id !== prev.activeSessionId) return session;
+              const messages = session.messages.map(message => {
+                const isRunUser = message.role === 'user' && message.content === task;
+                const isPendingAssistant = message.role === 'assistant' && message.pending === 'run';
+                if (!isRunUser && !isPendingAssistant) return message;
+                return {
+                  ...message,
+                  ...(activeRunPrimaryModel && !message.model ? { model: activeRunPrimaryModel } : {}),
+                  ...(activeRunModels.length > 0 && !message.modelsUsed ? { modelsUsed: activeRunModels } : {}),
+                };
+              });
               return touchSession(session, {
+                messages,
                 ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}),
                 ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}),
                 agentRunId: data.runId,
@@ -342,8 +391,8 @@ export default function App() {
           }
           const cleanSession = createSession({
             messages: [
-              { role: 'user', content: task, ts: data.startedAt || Date.now() },
-              { role: 'assistant', content: t('agent.running'), pending: 'run', ts: Date.now() },
+              { role: 'user', content: task, ts: data.startedAt || Date.now(), ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}), ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}) },
+              { role: 'assistant', content: t('agent.running'), pending: 'run', ts: Date.now(), ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}), ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}) },
             ],
             model: activeRunPrimaryModel,
             modelsUsed: activeRunModels,
@@ -432,14 +481,15 @@ export default function App() {
               if (event.type === 'done') {
                 setAgentRunning(false);
                 const modelsUsed = uniqueModelIds(event.meta?.models_used);
+                const primaryDoneModel = modelsUsed[0] || activeRunPrimaryModel;
                 updateActiveSession(session => {
                   const msgs = [...session.messages];
                   const idx = (() => { for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'assistant' && msgs[i].pending === 'run') return i; } return -1; })();
                   if (idx >= 0) {
-                    msgs[idx] = { role: 'assistant', content: event.answer || t('agent.done') };
+                    msgs[idx] = { role: 'assistant', content: event.answer || t('agent.done'), ts: Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) };
                   } else if (!msgs.some(m => m.role === 'assistant' && m.content === (event.answer || ''))) {
-                    msgs.push({ role: 'user', content: reconnectTaskRef.current || data.task || t('agent.taskFallback'), ts: data.startedAt || Date.now() });
-                    msgs.push({ role: 'assistant', content: event.answer || t('agent.done'), ts: Date.now() });
+                    msgs.push({ role: 'user', content: reconnectTaskRef.current || data.task || t('agent.taskFallback'), ts: data.startedAt || Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) });
+                    msgs.push({ role: 'assistant', content: event.answer || t('agent.done'), ts: Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) });
                   }
                   return touchSession(session, {
                     messages: msgs,
@@ -503,6 +553,7 @@ export default function App() {
         ? (terminal.answer || t('agent.done'))
         : t('agent.failed', { error: terminal.error || t('common.unknownError') });
       const modelsUsed = getTraceModels(events);
+      const primaryModel = modelsUsed[0] || null;
 
       setChatState(prev => {
         let changed = false;
@@ -517,9 +568,9 @@ export default function App() {
             }
           }
           if (idx >= 0) {
-            msgs[idx] = { role: 'assistant', content, ts: Date.now() };
+            msgs[idx] = { role: 'assistant', content, ts: Date.now(), ...(primaryModel ? { model: primaryModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) };
           } else if (!msgs.some(m => m.role === 'assistant' && m.content === content)) {
-            msgs.push({ role: 'assistant', content, ts: Date.now() });
+            msgs.push({ role: 'assistant', content, ts: Date.now(), ...(primaryModel ? { model: primaryModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) });
           } else {
             return session;
           }
@@ -831,7 +882,6 @@ export default function App() {
   );
   const modelSelect = (
     <ModelSelector
-      sessionStarted={sessionStarted}
       mode={mode}
       availableModels={availableModels}
       chatModel={chatModel}
@@ -963,9 +1013,6 @@ export default function App() {
             sessionTitle={getSessionTitle(messages)}
             sessionLocked={sessionLocked}
             messagesLength={messages.length}
-            sessionStarted={sessionStarted}
-            mode={mode}
-            selectedChatModelLabel={selectedChatModelLabel}
             modeSwitch={modeSwitch}
             modelSelect={modelSelect}
             onToggleSessions={() => setShowSessions(v => !v)}
@@ -1023,6 +1070,7 @@ export default function App() {
               renderMessageContent={props => <MessageContent {...props} />}
               renderCopyButton={props => <CopyButton {...props} />}
               hasThinkContent={hasThinkContent}
+              getModelLabel={modelId => availableModels.find(item => item.id === modelId)?.label || modelId}
               formatMsgTime={formatMsgTime}
             />
           )}
