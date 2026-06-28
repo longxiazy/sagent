@@ -36,7 +36,7 @@ import { useSessionHandlers } from './hooks/useSessionHandlers.js';
 import { useAgentTransport } from './hooks/useAgentTransport.js';
 import { useQuestionSubmit } from './hooks/useQuestionSubmit.js';
 import { useAttachments } from './hooks/useAttachments.js';
-import { DEFAULT_MODELS, EMPTY_SUGGESTIONS } from './data/suggestions.js';
+import { EMPTY_SUGGESTIONS } from './data/suggestions.js';
 import { fetchSuggestions, recordSuggestionUse } from './api/suggestions.js';
 import { apiFetch } from './api/http.js';
 import {
@@ -115,10 +115,9 @@ export default function App() {
     deleteProject,
     activateProject,
   } = useProjects();
-  const [availableModels, setAvailableModels] = useState(DEFAULT_MODELS);
-  // availableModels 在首屏渲染时先用 DEFAULT_MODELS 占位；
-  // modelsLoaded 用来区分“占位值”和“真实从后端拿到的列表”，
-  // 避免启动阶段误把用户已选的多模型裁成一个。
+  const [availableModels, setAvailableModels] = useState([]);
+  // modelsLoaded 用来区分“还没拿到后端列表”和“真实列表为空”，
+  // 避免启动阶段误清理用户已选的多模型。
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [input, setInput] = useState('');
   const mode = 'agent';
@@ -176,9 +175,7 @@ export default function App() {
     if (!modelsLoaded) {
       return;
     }
-    // 只有在真正拿到后端模型列表之后才做清理：
-    // 否则启动时会拿 DEFAULT_MODELS 这个占位值去过滤，
-    // 把本地保存的多模型选择错误地写回成单模型。
+    // 只有在真正拿到后端模型列表之后才做清理，避免启动阶段误清理本地保存的选择。
     if (selectedAgentModels.length > 0 && availableModels.length > 0) {
       const valid = selectedAgentModels.filter(m => availableModels.some(avail => avail.id === m));
       if (valid.length !== selectedAgentModels.length) {
@@ -214,44 +211,6 @@ export default function App() {
     } catch { /* 忽略损坏的旧数据 */ }
   }, [projectsLoading, setSelectedAgentModels, setAgentStrategy]);
 
-  // 刷新或切回历史 Agent 会话时，如果项目级选择为空，就用该会话上次运行的模型
-  // 恢复选择器状态。只对每个 active session 自动恢复一次，避免用户手动清空后被立刻填回。
-  const seededAgentModelsSessionRef = useRef(null);
-  useEffect(() => {
-    if (seededAgentModelsSessionRef.current === activeSession.id) {
-      return;
-    }
-    if (selectedAgentModels.length > 0) {
-      seededAgentModelsSessionRef.current = activeSession.id;
-      return;
-    }
-    const sessionModels = uniqueModelIds(
-      activeSession.modelsUsed?.length > 0
-        ? activeSession.modelsUsed
-        : activeSession.model
-          ? [activeSession.model]
-          : []
-    );
-    if (sessionModels.length === 0) {
-      return;
-    }
-    const validModels = modelsLoaded && availableModels.length > 0
-      ? sessionModels.filter(model => availableModels.some(item => item.id === model))
-      : sessionModels;
-    if (validModels.length > 0) {
-      setSelectedAgentModels(validModels);
-      seededAgentModelsSessionRef.current = activeSession.id;
-    }
-  }, [
-    activeSession.id,
-    activeSession.model,
-    activeSession.modelsUsed,
-    availableModels,
-    modelsLoaded,
-    selectedAgentModels.length,
-    setSelectedAgentModels,
-  ]);
-
   // 桌面通知权限：default = 未询问，granted = 已开，denied = 用户拒绝过。
   // SW 在 App 挂载时静默注册，权限请求必须由用户点击触发。
   const [notifyPerm, setNotifyPerm] = useState(() => notificationPermission());
@@ -274,17 +233,21 @@ export default function App() {
       .then(data => {
         if (Array.isArray(data.models) && data.models.length > 0) {
           setAvailableModels(data.models);
-          // Fix sessions with models not available on backend
+          const availableIds = new Set(data.models.map(model => model.id));
+          // 清理历史会话里已经下线的模型；不再替换成列表第一个模型，避免制造默认选择。
           setChatState(prev => {
-            const changed = prev.sessions.some(s => s.model && !data.models.some(m => m.id === s.model));
-            if (!changed) return prev;
-            const sessions = prev.sessions.map(s => {
-              if (s.model && !data.models.some(m => m.id === s.model)) {
-                return { ...s, model: data.models[0].id };
+            let changed = false;
+            const sessions = prev.sessions.map(session => {
+              const nextModel = session.model && availableIds.has(session.model) ? session.model : null;
+              const nextModelsUsed = uniqueModelIds(session.modelsUsed).filter(model => availableIds.has(model));
+              if (nextModel !== (session.model ?? null) || nextModelsUsed.length !== uniqueModelIds(session.modelsUsed).length) {
+                changed = true;
+                return { ...session, model: nextModel, modelsUsed: nextModelsUsed };
               }
-              return s;
+              return session;
             });
-            return { ...prev, sessions };
+            if (!changed) return prev;
+            return normalizeChatState({ ...prev, sessions });
           });
         }
       })

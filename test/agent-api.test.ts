@@ -153,6 +153,17 @@ describe('GET /api/agent/active', () => {
   });
 });
 
+describe('POST /api/agent', () => {
+  it('requires an explicit model selection', async () => {
+    const res = await request(app)
+      .post('/api/agent')
+      .send({ task: 'needs model', memory: false });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('模型');
+  });
+});
+
 describe('GET /api/agent/stream/:runId', () => {
   it('replays pending approval details for reconnect streams', async () => {
     const run = agentRunStore.createRun({

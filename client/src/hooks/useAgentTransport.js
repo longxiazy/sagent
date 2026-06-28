@@ -86,6 +86,10 @@ export function useAgentTransport({
       : selectedModelCandidates;
     const runModels = selectedModels;
     const primaryModel = runModels[0];
+    if (runModels.length === 0) {
+      window.alert?.(t('send.needModel'));
+      return;
+    }
     lastAgentTaskRef.current = text;
     const now = Date.now();
     const history = isRetry

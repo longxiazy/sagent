@@ -21,10 +21,9 @@ export function createAgentRunStartRouter({
   projectStore,
 }: AgentRouterContext) {
   const router = Router();
-  const defaultModel = modelConfig?.[0]?.id || 'minimaxai/minimax-m2.7';
 
   router.post('/api/agent', async (req, res) => {
-    const parsed = parseAgentRunRequest(req.body, defaultModel);
+    const parsed = parseAgentRunRequest(req.body);
     if ('error' in parsed) {
       return res.status(400).json({ error: tReq(req, parsed.error) });
     }

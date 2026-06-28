@@ -6,7 +6,6 @@ import type { ProviderRegistry } from '../agent/core/providers/registry.ts';
 
 export function createCompletionsRouter({ registry, modelConfig }: { registry: ProviderRegistry; modelConfig: any[] }) {
   const router = Router();
-  const defaultModel = modelConfig[0]?.id || 'minimaxai/minimax-m2.7';
 
   router.get('/api/models', (_req, res) => {
     res.json({ models: modelConfig });
@@ -26,7 +25,7 @@ export function createCompletionsRouter({ registry, modelConfig }: { registry: P
 
   router.post('/v1/chat/completions', async (req, res) => {
     const {
-      model = defaultModel,
+      model,
       messages,
       temperature = 1,
       top_p = 0.95,
@@ -36,6 +35,11 @@ export function createCompletionsRouter({ registry, modelConfig }: { registry: P
 
     if (!Array.isArray(messages)) {
       const error = buildOpenAiError('messages must be an array', 'invalid_request_error', 400);
+      return res.status(error.status).json(error.body);
+    }
+
+    if (typeof model !== 'string' || !model.trim()) {
+      const error = buildOpenAiError('model is required', 'invalid_request_error', 400);
       return res.status(error.status).json(error.body);
     }
 
