@@ -2955,6 +2955,93 @@ select,
   align-self: flex-start;
 }
 
+.terminal-process {
+  margin-top: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-hover);
+}
+
+.terminal-process-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.terminal-process-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--c-text-tertiary);
+}
+
+.terminal-process-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--c-text-muted);
+  white-space: nowrap;
+}
+
+.terminal-process-status.running { color: var(--c-agent-running); }
+.terminal-process-status.running svg { animation: spin 1s linear infinite; }
+.terminal-process-status.success { color: var(--c-badge-result); }
+.terminal-process-status.error { color: var(--c-badge-error); }
+
+.terminal-process-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.terminal-process-line {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+}
+
+.terminal-process-stream-label {
+  padding-top: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--c-success-text);
+}
+
+.terminal-process-line.stderr .terminal-process-stream-label {
+  color: var(--c-warning);
+}
+
+.terminal-process-line pre {
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--c-text);
+}
+
+.terminal-process-empty,
+.terminal-process-message {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--c-text-muted);
+}
+
+.terminal-process-message {
+  margin-top: 5px;
+  color: var(--c-badge-error);
+}
+
 /* 「展开/收起」纯文字小开关（理由/结果） */
 .step-card-toggle {
   display: inline-block;
@@ -4532,6 +4619,20 @@ textarea:disabled {
     font-size: 10px;
   }
 
+  .terminal-process {
+    padding: 6px;
+  }
+
+  .terminal-process-line {
+    grid-template-columns: 1fr;
+    gap: 1px;
+  }
+
+  .terminal-process-line pre {
+    max-height: 80px;
+    font-size: 10px;
+  }
+
   .screenshot-img {
     max-height: 140px;
     object-fit: contain;
@@ -4704,10 +4805,16 @@ textarea:disabled {
   .tool-request-row { grid-template-columns: 48px minmax(0, 1fr); }
   .tool-request-label,
   .tool-result-label,
-  .tool-request-param-key { font-size: 8px; }
+  .tool-request-param-key,
+  .terminal-process-label,
+  .terminal-process-stream-label { font-size: 8px; }
   .tool-request-tool code,
   .tool-request-param-value,
-  .tool-request-empty { font-size: 9px; }
+  .tool-request-empty,
+  .terminal-process-line pre,
+  .terminal-process-empty,
+  .terminal-process-message,
+  .terminal-process-status { font-size: 9px; }
 
   .model-card { padding: 4px 5px; }
   .model-card-json { max-height: 48px; font-size: 8px; }
