@@ -570,10 +570,7 @@ export default function App() {
       fetchAgentTrace(savedRunId, { signal: controller.signal, projectId: activeSession.projectId ?? null })
         .then(events => {
           if (events.length === 0 || controller.signal.aborted) return;
-          const deduped = events.filter((e, i) => {
-            const key = `${e.type}:${e.step ?? ''}:${e.stage ?? ''}:${e.model ?? ''}`;
-            return !events.slice(0, i).some(p => `${p.type}:${p.step ?? ''}:${p.stage ?? ''}:${p.model ?? ''}` === key);
-          });
+          const deduped = events.reduce((acc, event) => appendUniqueTraceEvent(acc, event), []);
           setAgentTrace(deduped);
           const modelsUsed = getTraceModels(deduped);
           // 重建 trace 只是恢复客户端镜像，不算用户活动：保留原 updatedAt，
