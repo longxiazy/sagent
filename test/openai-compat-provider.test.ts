@@ -53,7 +53,7 @@ describe('OpenAICompatProvider reasoning content preservation', () => {
       preserveReasoningContent: true,
     });
 
-    expect(response.choices[0].message.content).toBe('[推理过程]\n先分析问题\n\n最终回答');
+    expect(response.choices[0].message.content).toBe('[Thinking / 推理过程]\n先分析问题\n\n最终回答');
   });
 
   it('leaves structured internal completion content unchanged by default', async () => {
@@ -112,7 +112,7 @@ describe('OpenAICompatProvider reasoning content preservation', () => {
       .filter(Boolean)
       .join('');
 
-    expect(payloads).toBe('[推理过程]\n先想清楚\n\n最终回答');
+    expect(payloads).toBe('[Thinking / 推理过程]\n先想清楚\n\n最终回答');
     expect(res.writes.at(-1)).toBe('data: [DONE]\n\n');
     expect(res.ended).toBe(true);
   });

@@ -70,7 +70,9 @@ export function ModelPlanCard({ event, isWinner, modelList, step, onRollback, ro
         {event.reasoning && (
           <div className="model-card-reasoning">
             <button className="model-card-reasoning-toggle" onClick={toggle(setShowReasoning)}>
-              {t('modelCard.reasoning')} {effReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+              <span className="model-card-reasoning-badge">THINKING</span>
+              <span>{t('modelCard.reasoning')}</span>
+              {effReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
             </button>
             {effReasoning && <pre className="model-card-reasoning-text">{event.reasoning}</pre>}
           </div>

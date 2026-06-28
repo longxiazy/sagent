@@ -29,7 +29,7 @@ import type {
   SummarizeOpts,
 } from './types.ts';
 
-const REASONING_HEADER = '[推理过程]';
+const REASONING_HEADER = '[Thinking / 推理过程]';
 
 function getReasoningText(source: any, { trim = true } = {}) {
   for (const value of [source?.reasoning_content, source?.reasoning]) {

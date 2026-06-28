@@ -3316,6 +3316,19 @@ select,
   gap: 3px;
 }
 .model-card-reasoning-toggle:hover { color: var(--c-text-secondary); }
+.model-card-reasoning-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--c-warning-bg);
+  color: var(--c-warning-text);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+}
 .model-card-reasoning-text {
   margin: 3px 0 0;
   padding: 4px 6px;
