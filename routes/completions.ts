@@ -30,6 +30,7 @@ export function createCompletionsRouter({ registry, modelConfig }: { registry: P
       temperature = 1,
       top_p = 0.95,
       max_tokens = 8192,
+      chat_template_kwargs,
       stream = false,
     } = req.body ?? {};
 
@@ -50,9 +51,9 @@ export function createCompletionsRouter({ registry, modelConfig }: { registry: P
       const provider = registry.resolve(model, modelConfig);
 
       if (!stream) {
-        return res.json(await provider.completionJson({ model, messages, temperature, top_p, max_tokens, preserveReasoningContent: true }));
+        return res.json(await provider.completionJson({ model, messages, temperature, top_p, max_tokens, chat_template_kwargs, preserveReasoningContent: true }));
       }
-      return await provider.completionStream({ model, messages, temperature, top_p, max_tokens, preserveReasoningContent: true, res });
+      return await provider.completionStream({ model, messages, temperature, top_p, max_tokens, chat_template_kwargs, preserveReasoningContent: true, res });
     } catch (err: any) {
       log.error('API error:', err);
 

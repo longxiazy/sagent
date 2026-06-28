@@ -1,5 +1,5 @@
 import { memo, useState } from 'react';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import { getModelLabel } from './plan-stage.js';
 import { summarizeAction } from './action-summary.js';
 import { isFailureResult, resultScreenshot } from './result-status.js';
@@ -23,10 +23,12 @@ const CLAMP_THRESHOLD = 80; // 理由文本超过该长度才显示「展开/收
 export const StepCard = memo(function StepCard({ events, step, active, modelList, onRollback, rollbackLoading, openLightbox, forceExpanded, onManualToggle, t }) {
   const [jsonOpen, setJsonOpen] = useState(false);
   const [rationaleOpen, setRationaleOpen] = useState(false);
+  const [reasoningOpen, setReasoningOpen] = useState(false);
 
   // 展开态受面板「全部展开/折叠」接管（forceExpanded 非 null 时），否则用本地态。
   const effJson = forceExpanded != null ? forceExpanded : jsonOpen;
   const effRationale = forceExpanded != null ? forceExpanded : rationaleOpen;
+  const effReasoning = forceExpanded === true ? true : reasoningOpen;
 
   // 从本步事件切片里拆出各阶段。action 信息优先取 step/action 事件，
   // 缺失时（如授权被拒只有 result）回退到 model_plan 决策事件。
@@ -42,6 +44,7 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
 
   const action = actionEvent?.action || modelEvent?.action || null;
   const rationale = actionEvent?.rationale || modelEvent?.rationale || '';
+  const reasoning = modelEvent?.reasoning || '';
   const usage = actionEvent?.usage || modelEvent?.usage || null;
   const tokens = usage ? (usage.prompt_tokens || 0) + (usage.completion_tokens || 0) : 0;
   const summary = summarizeAction(action);
@@ -93,6 +96,17 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
         {/* 工具请求：固定拆出工具、请求内容；完整 JSON 仍可展开。 */}
         {action && (
           <ActionDetails action={action} jsonOpen={effJson} onToggleJson={toggle(setJsonOpen)} t={t} />
+        )}
+
+        {reasoning && (
+          <div className="model-card-reasoning">
+            <button className="model-card-reasoning-toggle" onClick={toggle(setReasoningOpen)}>
+              <span className="model-card-reasoning-badge">THINKING</span>
+              <span>{t('modelCard.reasoning')}</span>
+              {effReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+            </button>
+            {effReasoning && <pre className="model-card-reasoning-text">{reasoning}</pre>}
+          </div>
         )}
 
         <TerminalProcess events={terminalEvents} running={active && !result} t={t} />

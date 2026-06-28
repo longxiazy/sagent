@@ -177,7 +177,7 @@ export const en = {
   // Model plan cards
   'modelCard.startIn': 'starts in {n}s',
   'modelCard.queued': 'Queued',
-  'modelCard.reasoning': 'Reasoning',
+  'modelCard.reasoning': 'Reasoning trace',
   'modelCard.result': 'Result',
   'modelCard.collapse': 'Collapse',
   'modelCard.expandAll': 'Show all',
@@ -305,7 +305,7 @@ export const en = {
   'suggestions.shuffle': 'Shuffle',
   'suggestions.hide': 'Hide',
   'suggestions.show': 'Show suggestions',
-  'think.done': 'Thoughts',
+  'think.done': 'Thinking / Reasoning',
   'think.thinking': 'Thinking',
   'think.organizing': 'Organizing thoughts…',
   'think.expand': 'Expand',

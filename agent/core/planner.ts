@@ -14,8 +14,11 @@
 import { cleanText, safeJson } from './utils.ts';
 import { createModelResponseParser } from './nvidia-response-parsers.ts';
 import { logLlmError, logLlmRequest, logLlmResponse } from './llm-logger.ts';
-import { retryAsync } from '../../helpers/retry.ts';
 import { log } from '../../helpers/logger.ts';
+import {
+  buildChatCompletionRequest,
+  createChatCompletionWithTemplateFallback,
+} from './openai-compatible-request.ts';
 
 export function createJsonPlanner({
   client,
@@ -31,13 +34,13 @@ export function createJsonPlanner({
 
     logLlmRequest(model, messages);
 
-    const createOpts = {
+    const { request: createOpts, defaultedChatTemplateKwargs } = buildChatCompletionRequest({
       model,
       temperature,
       top_p: topP,
       max_tokens: maxTokens,
       messages,
-    };
+    }, { defaultThinking: true });
     const reqOpts = signal ? { signal } : undefined;
     const retryContext = {
       operation: 'desktop.plan',
@@ -51,7 +54,14 @@ export function createJsonPlanner({
 
     let response;
     try {
-      response = await retryAsync(() => client.chat.completions.create(createOpts, reqOpts), undefined, retryContext, { retryRateLimit: false });
+      response = await createChatCompletionWithTemplateFallback({
+        client,
+        request: createOpts,
+        reqOpts,
+        retryContext,
+        retryOptions: { retryRateLimit: false },
+        defaultedChatTemplateKwargs,
+      });
     } catch (err) {
       logLlmError(model, err, retryContext);
       throw err;
@@ -76,7 +86,8 @@ export function createJsonPlanner({
           content: parsed.rawContent,
           usage: parsed.usage,
           context,
-          createOpts: { temperature, top_p: topP, max_tokens: maxTokens },
+          createOpts: { temperature, top_p: topP, max_tokens: maxTokens, chat_template_kwargs: createOpts.chat_template_kwargs },
+          defaultedChatTemplateKwargs,
           reqOpts,
           normalizeDecision,
           hint: `你的上一次 JSON 动作无法执行：${normalizeErr.message}。请只使用系统提示中列出的工具和动作名，不要编造工具/动作名。输出一个新的有效 JSON 动作。`,
@@ -98,7 +109,8 @@ export function createJsonPlanner({
       content,
       usage: parsed.usage,
       context,
-      createOpts: { temperature, top_p: topP, max_tokens: maxTokens },
+      createOpts: { temperature, top_p: topP, max_tokens: maxTokens, chat_template_kwargs: createOpts.chat_template_kwargs },
+      defaultedChatTemplateKwargs,
       reqOpts,
       normalizeDecision,
       hint: '你的上一次输出不是有效的 JSON 动作。请只输出一个 JSON 对象，格式如 {"rationale":"...","action":{"tool":"...","type":"...",...}} 或 {"type":"finish","answer":"..."}。不要输出任何解释文字。',
@@ -122,6 +134,7 @@ async function retryWithHint({
   usage,
   context,
   createOpts,
+  defaultedChatTemplateKwargs,
   reqOpts,
   normalizeDecision,
   hint,
@@ -150,7 +163,14 @@ async function retryWithHint({
       message_count: retryMessages.length,
       max_tokens: createOpts.max_tokens,
     };
-    const retryResponse = await retryAsync(() => client.chat.completions.create(retryOpts, reqOpts), undefined, retryContext, { retryRateLimit: false });
+    const retryResponse = await createChatCompletionWithTemplateFallback({
+      client,
+      request: retryOpts,
+      reqOpts,
+      retryContext,
+      retryOptions: { retryRateLimit: false },
+      defaultedChatTemplateKwargs,
+    });
     const retryParsed = parser(retryResponse);
 
     if (!retryParsed.parseFailed) {

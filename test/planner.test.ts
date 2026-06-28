@@ -49,4 +49,37 @@ describe('createJsonPlanner', () => {
     });
     expect(create.mock.calls[1][0].messages.at(-1).content).toContain('不要编造工具/动作名');
   });
+
+  it('retries without default chat_template_kwargs when the provider rejects them', async () => {
+    const err: any = new Error('Unrecognized request argument supplied: chat_template_kwargs');
+    err.status = 400;
+    const create = vi.fn()
+      .mockRejectedValueOnce(err)
+      .mockResolvedValueOnce(completion({
+        rationale: '完成',
+        action: { type: 'finish', answer: 'ok' },
+      }));
+
+    const planner = createJsonPlanner({
+      client: { chat: { completions: { create } } },
+      buildMessages: () => [{ role: 'user', content: 'inspect file' }],
+      normalizeDecision: normalizeDesktopAgentDecision,
+    });
+
+    const result = await planner({
+      model: 'deepseek-ai/deepseek-v4-flash',
+      task: 'inspect file',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+
+    expect(result.action).toEqual({ tool: 'core', type: 'finish', answer: 'ok' });
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[0][0].chat_template_kwargs).toEqual({
+      thinking: true,
+      reasoning_effort: 'high',
+    });
+    expect(create.mock.calls[1][0]).not.toHaveProperty('chat_template_kwargs');
+  });
 });

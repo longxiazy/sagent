@@ -11,6 +11,12 @@ import { normalizeDesktopAgentDecision } from '../schemas.ts';
 import { buildNvidiaTaskMessages } from '../prompts.ts';
 import { deriveProviderName, isChatCapableModel } from '../ai-client.ts';
 import {
+  buildChatCompletionRequest,
+  createChatCompletionWithTemplateFallback,
+  isUnsupportedChatTemplateKwargsError,
+  withoutChatTemplateKwargs,
+} from '../openai-compatible-request.ts';
+import {
   createStreamingCompletionFactory,
   initSse,
   writeSse,
@@ -29,7 +35,7 @@ import type {
   SummarizeOpts,
 } from './types.ts';
 
-const REASONING_HEADER = '[推理过程]';
+const REASONING_HEADER = '[Thinking / 推理过程]';
 
 function getReasoningText(source: any, { trim = true } = {}) {
   for (const value of [source?.reasoning_content, source?.reasoning]) {
@@ -157,17 +163,33 @@ export function createOpenAICompatProvider(client: any): LLMProvider {
     },
 
     async completionJson(opts: CompletionOpts) {
-      const { model, messages, temperature, top_p, max_tokens, preserveReasoningContent: shouldPreserveReasoning } = opts;
-      const response = await client.chat.completions.create({ model, messages, temperature, top_p, max_tokens });
+      const { preserveReasoningContent: shouldPreserveReasoning } = opts;
+      const { request, defaultedChatTemplateKwargs } = buildChatCompletionRequest(opts, {
+        defaultThinking: shouldPreserveReasoning,
+      });
+      const response = await createChatCompletionWithTemplateFallback({
+        client,
+        request,
+        defaultedChatTemplateKwargs,
+      });
       return shouldPreserveReasoning ? preserveReasoningContent(response) : response;
     },
 
     async completionStream(opts: CompletionStreamOpts) {
-      const { model, messages, temperature, top_p, max_tokens, preserveReasoningContent: shouldPreserveReasoning, res } = opts;
-      const completion = await createStreamingCompletion(
-        { model, messages, temperature, top_p, max_tokens },
-        { includeUsage: true }
-      );
+      const { preserveReasoningContent: shouldPreserveReasoning, res } = opts;
+      const { request, defaultedChatTemplateKwargs } = buildChatCompletionRequest(opts, {
+        defaultThinking: shouldPreserveReasoning,
+      });
+      let completion;
+      try {
+        completion = await createStreamingCompletion(request, { includeUsage: true });
+      } catch (err) {
+        if (!defaultedChatTemplateKwargs || !request.chat_template_kwargs || !isUnsupportedChatTemplateKwargsError(err)) {
+          throw err;
+        }
+        log.warn('chat_template_kwargs 不受支持，改为关闭 thinking 参数重试:', err.message);
+        completion = await createStreamingCompletion(withoutChatTemplateKwargs(request), { includeUsage: true });
+      }
       initSse(res);
       const stream = shouldPreserveReasoning ? preserveReasoningContentStream(completion) : completion;
       for await (const chunk of stream) {

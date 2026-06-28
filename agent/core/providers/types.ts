@@ -49,6 +49,7 @@ export interface CompletionOpts {
   temperature: number;
   top_p: number;
   max_tokens: number;
+  chat_template_kwargs?: any;
   preserveReasoningContent?: boolean;
 }
 

@@ -26,4 +26,31 @@ describe('POST /v1/chat/completions', () => {
     });
     expect(registry.resolve).not.toHaveBeenCalled();
   });
+
+  it('passes chat_template_kwargs to the resolved provider', async () => {
+    const completionJson = vi.fn().mockResolvedValue({ choices: [{ message: { content: 'ok' } }] });
+    const registry: any = {
+      resolve: vi.fn().mockReturnValue({ completionJson }),
+    };
+    const app = express();
+    app.use(express.json());
+    app.use(createCompletionsRouter({
+      registry,
+      modelConfig: [{ id: 'deepseek-ai/deepseek-v4-flash', provider: 'nvidia' }],
+    }));
+
+    const res = await request(app)
+      .post('/v1/chat/completions')
+      .send({
+        model: 'deepseek-ai/deepseek-v4-flash',
+        messages: [{ role: 'user', content: 'hi' }],
+        chat_template_kwargs: { thinking: true, reasoning_effort: 'high' },
+      });
+
+    expect(res.status).toBe(200);
+    expect(completionJson).toHaveBeenCalledWith(expect.objectContaining({
+      chat_template_kwargs: { thinking: true, reasoning_effort: 'high' },
+      preserveReasoningContent: true,
+    }));
+  });
 });

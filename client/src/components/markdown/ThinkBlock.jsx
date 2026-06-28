@@ -8,7 +8,7 @@ export function ThinkBlock({ content, closed, showCursor }) {
   return (
     <details className={`think-block ${closed ? 'ready' : 'streaming'}`} open={!closed || showCursor}>
       <summary className="think-summary">
-        <span className="think-summary-badge">THINK</span>
+        <span className="think-summary-badge">THINKING</span>
         <span className="think-summary-copy">
           <strong>{closed ? t('think.done') : t('think.thinking')}</strong>
           <span>{preview ? (preview.length > 72 ? `${preview.slice(0, 72)}…` : preview) : t('think.organizing')}</span>
