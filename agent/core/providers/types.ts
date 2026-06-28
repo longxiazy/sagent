@@ -49,6 +49,7 @@ export interface CompletionOpts {
   temperature: number;
   top_p: number;
   max_tokens: number;
+  preserveReasoningContent?: boolean;
 }
 
 export interface CompletionStreamOpts extends CompletionOpts {
