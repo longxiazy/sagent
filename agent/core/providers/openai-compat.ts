@@ -29,6 +29,93 @@ import type {
   SummarizeOpts,
 } from './types.ts';
 
+const REASONING_HEADER = '[推理过程]';
+
+function getReasoningText(source: any, { trim = true } = {}) {
+  for (const value of [source?.reasoning_content, source?.reasoning]) {
+    if (typeof value === 'string' && value.trim()) {
+      return trim ? value.trim() : value;
+    }
+  }
+  return '';
+}
+
+function mergeReasoningIntoMessage(message: any) {
+  const reasoning = getReasoningText(message);
+  if (!reasoning || !message || typeof message !== 'object') return message;
+  if (message.content != null && typeof message.content !== 'string') return message;
+
+  const content = typeof message.content === 'string' ? message.content : '';
+  if (content.startsWith(REASONING_HEADER)) return message;
+
+  const mergedContent = content.trim()
+    ? `${REASONING_HEADER}\n${reasoning}\n\n${content}`
+    : `${REASONING_HEADER}\n${reasoning}`;
+
+  return { ...message, content: mergedContent };
+}
+
+function preserveReasoningContent(response: any) {
+  if (!Array.isArray(response?.choices)) return response;
+  return {
+    ...response,
+    choices: response.choices.map((choice: any) => (
+      choice?.message
+        ? { ...choice, message: mergeReasoningIntoMessage(choice.message) }
+        : choice
+    )),
+  };
+}
+
+type ReasoningStreamState = {
+  sawReasoning: boolean;
+  startedContent: boolean;
+};
+
+function mergeReasoningIntoStreamChunk(chunk: any, states: Map<number, ReasoningStreamState>) {
+  if (!Array.isArray(chunk?.choices)) return chunk;
+
+  let changed = false;
+  const choices = chunk.choices.map((choice: any, offset: number) => {
+    const delta = choice?.delta;
+    if (!delta || typeof delta !== 'object') return choice;
+
+    const reasoning = getReasoningText(delta, { trim: false });
+    const content = typeof delta.content === 'string' ? delta.content : '';
+    const index = typeof choice.index === 'number' ? choice.index : offset;
+    const state = states.get(index) || { sawReasoning: false, startedContent: false };
+    let nextContent: string | null = null;
+
+    if (reasoning) {
+      nextContent = `${state.sawReasoning ? '' : `${REASONING_HEADER}\n`}${reasoning}`;
+      state.sawReasoning = true;
+      if (content) {
+        nextContent += `${state.startedContent ? '' : '\n\n'}${content}`;
+        state.startedContent = true;
+      }
+    } else if (content) {
+      if (state.sawReasoning && !state.startedContent) {
+        nextContent = `\n\n${content}`;
+      }
+      state.startedContent = true;
+    }
+
+    states.set(index, state);
+    if (nextContent === null) return choice;
+    changed = true;
+    return { ...choice, delta: { ...delta, content: nextContent } };
+  });
+
+  return changed ? { ...chunk, choices } : chunk;
+}
+
+async function* preserveReasoningContentStream(stream: AsyncIterable<any>) {
+  const states = new Map<number, ReasoningStreamState>();
+  for await (const chunk of stream) {
+    yield mergeReasoningIntoStreamChunk(chunk, states);
+  }
+}
+
 export function createOpenAICompatProvider(client: any): LLMProvider {
   const createStreamingCompletion = createStreamingCompletionFactory(client);
 
@@ -70,18 +157,20 @@ export function createOpenAICompatProvider(client: any): LLMProvider {
     },
 
     async completionJson(opts: CompletionOpts) {
-      const { model, messages, temperature, top_p, max_tokens } = opts;
-      return client.chat.completions.create({ model, messages, temperature, top_p, max_tokens });
+      const { model, messages, temperature, top_p, max_tokens, preserveReasoningContent: shouldPreserveReasoning } = opts;
+      const response = await client.chat.completions.create({ model, messages, temperature, top_p, max_tokens });
+      return shouldPreserveReasoning ? preserveReasoningContent(response) : response;
     },
 
     async completionStream(opts: CompletionStreamOpts) {
-      const { model, messages, temperature, top_p, max_tokens, res } = opts;
+      const { model, messages, temperature, top_p, max_tokens, preserveReasoningContent: shouldPreserveReasoning, res } = opts;
       const completion = await createStreamingCompletion(
         { model, messages, temperature, top_p, max_tokens },
         { includeUsage: true }
       );
       initSse(res);
-      for await (const chunk of completion) {
+      const stream = shouldPreserveReasoning ? preserveReasoningContentStream(completion) : completion;
+      for await (const chunk of stream) {
         writeSse(res, chunk);
       }
       writeSseDone(res);

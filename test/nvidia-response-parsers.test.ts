@@ -8,6 +8,13 @@ function wrap(content: string) {
   };
 }
 
+function wrapWithReasoning(content: string, reasoningContent: string) {
+  return {
+    choices: [{ message: { content, reasoning_content: reasoningContent } }],
+    usage: null,
+  };
+}
+
 describe('nvidia response parsers: tryTextFinish guard', () => {
   it('rejects broken-JSON action wrapped in ```json fences instead of treating it as finish', () => {
     const parse = createModelResponseParser('z-ai/glm-5.1');
@@ -41,5 +48,16 @@ describe('nvidia response parsers: tryTextFinish guard', () => {
     const result = parse(wrap(content));
     expect(result?.action?.type).toBe('finish');
     expect(result?.action?.answer).toContain('杭州');
+  });
+
+  it('preserves reasoning_content for default parser models', () => {
+    const parse = createModelResponseParser('deepseek-reasoner');
+    const result = parse(wrapWithReasoning(
+      JSON.stringify({ rationale: '继续执行', action: { type: 'finish', answer: '完成' } }),
+      '先判断下一步'
+    ));
+
+    expect(result?.reasoning).toBe('先判断下一步');
+    expect(result?.action?.type).toBe('finish');
   });
 });

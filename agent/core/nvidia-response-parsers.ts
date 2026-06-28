@@ -5,7 +5,7 @@
  *   - 有些用标准 tool_calls（理论上支持，实际很少触发）
  *   - 有些把 JSON 放在 content 字段里（Nemotron, Kimi, Qwen, MiniMax）
  *   - MiniMax 有时用自定义 [TOOL_CALL] 块或 XML 格式
- *   - Nemotron/Kimi 有 reasoning 字段记录思维链
+ *   - 部分推理模型有 reasoning/reasoning_content 字段记录推理过程
  *
  * 工厂 createModelResponseParser(model) 根据模型 ID 返回对应的解析器，
  * 每个解析器按配置的策略链依次尝试解析，第一个命中即返回。
@@ -33,6 +33,13 @@ function tryParseJsonObject(value) {
   } catch {
     return null;
   }
+}
+
+function getReasoningText(message) {
+  for (const value of [message?.reasoning_content, message?.reasoning]) {
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return null;
 }
 
 function extractFirstJsonObject(source) {
@@ -316,7 +323,6 @@ const DEFAULT_CONFIG = {
 export function createModelResponseParser(model) {
   const config = MODEL_CONFIGS[model] || DEFAULT_CONFIG;
   const chain = config.chain.map(name => STRATEGIES[name]);
-  const extractReasoning = config.extractReasoning || false;
 
   return function parseResponse(response) {
     // 个别 OpenAI 兼容供应商的部分模型返回的响应体
@@ -333,9 +339,7 @@ export function createModelResponseParser(model) {
     const message = response?.choices?.[0]?.message;
     const content = getMessageText(message?.content);
     const usage = response?.usage || null;
-    const reasoning = extractReasoning
-      ? (message?.reasoning || message?.reasoning_content || null)
-      : null;
+    const reasoning = getReasoningText(message);
 
     for (const strategy of chain) {
       const result = strategy(message, content);
