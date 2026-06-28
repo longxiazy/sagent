@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { tStatic } from '../i18n/locale.js';
 
-const DEFAULT_MODEL_ID = 'minimaxai/minimax-m2.7';
-
 const LEGACY_MESSAGES_KEY = 'nvidia_chat_messages';
 const LEGACY_MODEL_KEY = 'nvidia_chat_model';
 const SESSIONS_KEY = 'nvidia_chat_sessions';
@@ -37,6 +35,10 @@ function normalizeModelIds(value) {
   return [...new Set(value.filter(item => typeof item === 'string' && item.trim()))];
 }
 
+function normalizeModelId(value) {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
 export function createSession({
   id = generateSessionId(),
   messages = [],
@@ -51,7 +53,7 @@ export function createSession({
   return {
     id,
     messages: normalizeMessages(messages),
-    model: model || DEFAULT_MODEL_ID,
+    model: normalizeModelId(model),
     modelsUsed: normalizeModelIds(modelsUsed),
     agentTrace: Array.isArray(agentTrace) ? agentTrace : [],
     agentRunId: typeof agentRunId === 'string' ? agentRunId : null,
@@ -115,7 +117,7 @@ function loadChatState() {
 
   const migratedSession = createSession({
     messages: legacyMessages,
-    model: localStorage.getItem(LEGACY_MODEL_KEY) || DEFAULT_MODEL_ID,
+    model: localStorage.getItem(LEGACY_MODEL_KEY),
   });
 
   return normalizeChatState({

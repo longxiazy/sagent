@@ -1,9 +1,20 @@
 import { loadLatestHealthySnapshot } from '../agent/core/checkpoint.ts';
 
-export function parseAgentRunRequest(reqBody: any, defaultModel: string) {
+function uniqueModelIds(value: any) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(value
+    .filter(item => typeof item === 'string')
+    .map(item => item.trim())
+    .filter(Boolean))];
+}
+
+export function parseAgentRunRequest(reqBody: any) {
   const {
     task,
-    model = defaultModel,
+    model,
     models: reqModels,
     strategy = 'race',
     headless,
@@ -18,10 +29,22 @@ export function parseAgentRunRequest(reqBody: any, defaultModel: string) {
     return { error: 'run.taskEmpty' };
   }
 
+  const requestedModel = typeof model === 'string' && model.trim() ? model.trim() : null;
+  const requestedModels = uniqueModelIds(reqModels);
+  const agentModels = requestedModels.length > 0
+    ? requestedModels
+    : requestedModel
+      ? [requestedModel]
+      : [];
+
+  if (agentModels.length === 0) {
+    return { error: 'run.modelRequired' };
+  }
+
   return {
     task,
-    model,
-    agentModels: Array.isArray(reqModels) && reqModels.length > 0 ? reqModels : [model],
+    model: agentModels[0],
+    agentModels,
     strategy,
     headless,
     useMemory,
