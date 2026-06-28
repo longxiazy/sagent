@@ -105,6 +105,78 @@ function sanitizeStateForSnapshot(state) {
   return safe;
 }
 
+const LOOP_REPEAT_THRESHOLD = 2;
+
+function stableStringify(value) {
+  if (value == null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`;
+  }
+  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+}
+
+function actionLoopKey(action) {
+  if (!action || typeof action !== 'object') return '';
+  if (action.type === 'finish' || action.type === 'ask_user' || action.type === 'notify_user') return '';
+  const tool = action.tool || 'core';
+  const type = action.type || '';
+  const readonlyActions = new Set([
+    'fs.list_dir',
+    'fs.get_file_info',
+    'fs.read_file',
+    'fs.search_files',
+    'terminal.run_safe',
+    'terminal.run_confirmed',
+    'terminal.run_review',
+    'search.web_search',
+    'codegraph.codegraph_query',
+    'browser.get_page_content',
+    'browser.http_fetch',
+    'browser.parallel_fetch',
+    'chrome.chrome_call_tool',
+    'ide.ide_call_tool',
+  ]);
+  if (!readonlyActions.has(`${tool}.${type}`)) return '';
+  return stableStringify(action);
+}
+
+function resultFingerprint(result) {
+  return String(result ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000);
+}
+
+function detectRepeatedActionLoop(history, action) {
+  const key = actionLoopKey(action);
+  if (!key || !Array.isArray(history) || history.length === 0) return null;
+
+  let count = 0;
+  let fingerprint = null;
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const entry = history[i];
+    if (actionLoopKey(entry?.action) !== key) break;
+
+    const current = resultFingerprint(entry?.result);
+    if (!current) break;
+    if (fingerprint == null) {
+      fingerprint = current;
+    } else if (fingerprint !== current) {
+      break;
+    }
+    count += 1;
+  }
+
+  if (count < LOOP_REPEAT_THRESHOLD) return null;
+  return { count, key, result: fingerprint || '' };
+}
+
+function summarizeActionForLoop(action) {
+  const tool = action?.tool || 'core';
+  const type = action?.type || '?';
+  const target = action?.path || action?.command || action?.url || action?.query || action?.text || action?.id || '';
+  return target ? `${tool}.${type} ${String(target).slice(0, 120)}` : `${tool}.${type}`;
+}
+
 export async function runAgentRuntime({
   task,
   maxSteps = 8,
@@ -209,6 +281,19 @@ export async function runAgentRuntime({
 
       if (cancelled()) {
         throw new Error("Agent 已取消");
+      }
+
+      const repeatedLoop = detectRepeatedActionLoop(history, decision.action);
+      if (repeatedLoop) {
+        const actionSummary = summarizeActionForLoop(decision.action);
+        finalAnswer = `检测到 Agent 连续 ${repeatedLoop.count + 1} 次准备重复执行同一动作（${actionSummary}），且前 ${repeatedLoop.count} 次返回结果相同。为避免继续无意义重复，已自动停止。\n\n请补充更具体的期望、差异点或允许我换一种方式继续。`;
+        onEvent?.({
+          type: "notification",
+          level: "warning",
+          step,
+          message: finalAnswer,
+        });
+        break;
       }
 
       // ---- 授权 ----

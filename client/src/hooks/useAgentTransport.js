@@ -4,6 +4,7 @@ import { showAgentNotification } from '../notifications.js';
 import { touchSession } from './useChatSessions.js';
 import { PHONE_BREAKPOINT } from '../utils/constants.js';
 import { useT } from '../i18n/I18nProvider.jsx';
+import { agentTraceEventKey, appendUniqueTraceEvent } from '../utils/agent-trace.js';
 
 function uniqueModelIds(value) {
   if (!Array.isArray(value)) {
@@ -144,13 +145,12 @@ export function useAgentTransport({
         async onEvent(event) {
           console.log(`[AgentUI] event type=${event.type} step=${event.step ?? '-'} stage=${event.stage ?? '-'} model=${event.model || '-'}`);
           setAgentTrace(prev => {
-            // Deduplicate: same type+step+stage+model already exists
-            const key = `${event.type}:${event.step ?? ''}:${event.stage ?? ''}:${event.model ?? ''}`;
-            if (prev.some(e => `${e.type}:${e.step ?? ''}:${e.stage ?? ''}:${e.model ?? ''}` === key)) {
+            const key = agentTraceEventKey(event);
+            const next = appendUniqueTraceEvent(prev, event);
+            if (next === prev) {
               console.log(`[AgentUI] DEDUP skipped: ${key}`);
-              return prev;
             }
-            return [...prev, event];
+            return next;
           });
 
           if (event.runId && event.runId !== agentRunIdRef.current) {

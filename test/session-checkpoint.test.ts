@@ -161,6 +161,36 @@ describe('runtime: session checkpoint integration', () => {
     expect(result.steps[0].url).toBe('https://target.example/page');
   });
 
+  it('stops before repeatedly executing the same action with the same result', async () => {
+    const cancelSignal = new AbortController().signal;
+    const { log: evtLog, onEvent } = events();
+    let executeCalls = 0;
+
+    const result = await runAgentRuntime({
+      task: 'inspect a file',
+      maxSteps: 6,
+      onEvent,
+      cancelSignal,
+      initialize: noop,
+      observe: noop,
+      decide: () => ({
+        action: { tool: 'fs', type: 'read_file', path: 'word/document.xml', maxBytes: 12000 },
+        rationale: 'read template',
+      }),
+      authorize: () => ({ status: 'approved' }),
+      execute: () => {
+        executeCalls += 1;
+        return 'same file content';
+      },
+      cleanup: noop,
+    });
+
+    expect(executeCalls).toBe(2);
+    expect(result.steps).toHaveLength(2);
+    expect(result.answer).toContain('重复执行同一动作');
+    expect(evtLog.some(e => e.type === 'notification' && e.level === 'warning')).toBe(true);
+  });
+
   it('saves snapshots at interval steps', async () => {
     const runId = 'run_rt2';
     const runRecord = { runId, pendingRollback: null };
