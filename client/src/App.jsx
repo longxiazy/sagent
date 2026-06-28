@@ -49,6 +49,7 @@ import {
 import { formatMsgTime } from './utils/format.js';
 import { shuffled } from './utils/random.js';
 import { hasThinkContent } from './utils/markdown.js';
+import { appendUniqueTraceEvent } from './utils/agent-trace.js';
 
 // 稳定的空数组:作为 useProjectScopedState 的 initialValue,scope 缺省时返回同一引用,避免无谓重渲染。
 const EMPTY_AGENT_MODELS = [];
@@ -398,10 +399,7 @@ export default function App() {
               // SSE 重连时同一批事件可能会回放两次；这里按关键字段去重，
               // 否则 trace 面板会出现重复步骤。
               setAgentTrace(prev => {
-                if (prev.some(e => e.type === event.type && e.step === event.step && e.stage === event.stage && e.model === event.model)) {
-                  return prev;
-                }
-                return [...prev, event];
+                return appendUniqueTraceEvent(prev, event);
               });
 
               if (event.type === 'approval_required') {

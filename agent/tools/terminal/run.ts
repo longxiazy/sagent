@@ -6,6 +6,7 @@ type TerminalOutputEvent = {
   phase: 'start' | 'stdout' | 'stderr' | 'exit' | 'error' | 'timeout';
   command: string;
   cwd: string;
+  sequence?: number;
   timestamp?: number;
   chunk?: string;
   exitCode?: number | null;
@@ -60,10 +61,19 @@ function emitTerminalEvent(onOutput: TerminalActionOptions['onOutput'], event: T
 async function runShellCommand(command, { cwd, timeoutMs, onOutput }) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
-    emitTerminalEvent(onOutput, {
+    let sequence = 0;
+    const emitProgress = (event: Omit<TerminalOutputEvent, 'command' | 'cwd' | 'sequence'>) => {
+      sequence += 1;
+      emitTerminalEvent(onOutput, {
+        command,
+        cwd,
+        sequence,
+        ...event,
+      });
+    };
+
+    emitProgress({
       phase: 'start',
-      command,
-      cwd,
       timestamp: startedAt,
     });
 
@@ -86,10 +96,8 @@ async function runShellCommand(command, { cwd, timeoutMs, onOutput }) {
       const hint = isBackgroundCmd
         ? '。该命令为后台/长驻进程，不会自行退出。建议使用 notify_user 告知用户手动执行，或改用不需要服务器的方案。'
         : '';
-      emitTerminalEvent(onOutput, {
+      emitProgress({
         phase: 'timeout',
-        command,
-        cwd,
         elapsedMs: Date.now() - startedAt,
         message: `命令执行超时 (${timeoutMs} ms)${hint}`,
       });
@@ -99,10 +107,8 @@ async function runShellCommand(command, { cwd, timeoutMs, onOutput }) {
     child.stdout.on('data', chunk => {
       const text = chunk.toString();
       stdout += text;
-      emitTerminalEvent(onOutput, {
+      emitProgress({
         phase: 'stdout',
-        command,
-        cwd,
         chunk: text.slice(0, 4000),
       });
     });
@@ -110,10 +116,8 @@ async function runShellCommand(command, { cwd, timeoutMs, onOutput }) {
     child.stderr.on('data', chunk => {
       const text = chunk.toString();
       stderr += text;
-      emitTerminalEvent(onOutput, {
+      emitProgress({
         phase: 'stderr',
-        command,
-        cwd,
         chunk: text.slice(0, 4000),
       });
     });
@@ -124,10 +128,8 @@ async function runShellCommand(command, { cwd, timeoutMs, onOutput }) {
       }
       settled = true;
       clearTimeout(timeout);
-      emitTerminalEvent(onOutput, {
+      emitProgress({
         phase: 'error',
-        command,
-        cwd,
         elapsedMs: Date.now() - startedAt,
         message: err.message || String(err),
       });
@@ -140,10 +142,8 @@ async function runShellCommand(command, { cwd, timeoutMs, onOutput }) {
       }
       settled = true;
       clearTimeout(timeout);
-      emitTerminalEvent(onOutput, {
+      emitProgress({
         phase: 'exit',
-        command,
-        cwd,
         exitCode: code,
         elapsedMs: Date.now() - startedAt,
       });
