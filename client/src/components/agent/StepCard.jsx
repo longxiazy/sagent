@@ -1,11 +1,13 @@
 import { memo, useState } from 'react';
-import { RotateCcw, ChevronRight, ChevronDown } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { getModelLabel } from './plan-stage.js';
 import { summarizeAction } from './action-summary.js';
 import { isFailureResult, resultScreenshot } from './result-status.js';
 import { ToolIcon } from './tool-icon.jsx';
 import { ObserveSummary } from './ObserveSummary.jsx';
 import { ResultSummary } from './ResultSummary.jsx';
+import { ActionDetails } from './ActionDetails.jsx';
+import { TerminalProcess } from './TerminalProcess.jsx';
 
 // StepCard：把单模型一步的 observe + action + result 合并成一张卡。
 // 原先单模型一步会渲染 4 块（observe / 折叠的 model_plan 废卡 / action / result），
@@ -29,11 +31,13 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
   // 从本步事件切片里拆出各阶段。action 信息优先取 step/action 事件，
   // 缺失时（如授权被拒只有 result）回退到 model_plan 决策事件。
   let observation = null, actionEvent = null, result = null, modelEvent = null;
+  const terminalEvents = [];
   for (const e of events) {
     if (e.type === 'step' && e.stage === 'observe') observation = e.observation;
     else if (e.type === 'step' && e.stage === 'action') actionEvent = e;
     else if (e.type === 'step' && e.stage === 'result') result = e.result;
     else if (e.type === 'model_plan' && (e.stage === 'success' || e.stage === 'winner')) modelEvent = e;
+    else if (e.type === 'terminal_output') terminalEvents.push(e);
   }
 
   const action = actionEvent?.action || modelEvent?.action || null;
@@ -86,15 +90,12 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
           </>
         )}
 
-        {/* 动作 JSON：默认折叠成一颗 chip，点开看完整 JSON */}
+        {/* 工具请求：固定拆出工具、请求内容；完整 JSON 仍可展开。 */}
         {action && (
-          <div className="step-card-json">
-            <button className="step-card-json-toggle" onClick={toggle(setJsonOpen)}>
-              {effJson ? <ChevronDown size={11} /> : <ChevronRight size={11} />} JSON
-            </button>
-            {effJson && <pre className="agent-json">{JSON.stringify(action, null, 2)}</pre>}
-          </div>
+          <ActionDetails action={action} jsonOpen={effJson} onToggleJson={toggle(setJsonOpen)} t={t} />
         )}
+
+        <TerminalProcess events={terminalEvents} running={active && !result} t={t} />
 
         {/* 执行结果（与多模型卡组共用同一组件，口径一致） */}
         <ResultSummary result={result} openLightbox={openLightbox} forceExpanded={forceExpanded} onManualToggle={onManualToggle} t={t} />

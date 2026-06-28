@@ -236,6 +236,10 @@ export function AgentPanel({ running, trace, startedAt, modelList, collapsed, on
               }
             }
 
+            if (event.type === 'terminal_output' && (singleModelSteps.has(event.step) || multiModelSteps.has(event.step))) {
+              return null;
+            }
+
             // consensus + 其余事件（status/notification/approval/done/error/...）
             return (
               <TraceItem

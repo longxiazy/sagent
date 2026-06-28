@@ -216,7 +216,14 @@ export function createDesktopAgentRunner({
       vision: async (_state, action) => executeVisionAction(action, { openai_client, visionModel }),
       ide: async (_state, action) => executeIdeAction(action),
       chrome: async (_state, action) => executeChromeAction(action),
-      terminal: async (state, action) => executeTerminalAction(action, { cwd: state.projectRoot }),
+      terminal: async (state, action, context) => executeTerminalAction(action, {
+        cwd: state.projectRoot,
+        onOutput: event => state.onEvent?.({
+          type: 'terminal_output',
+          step: context?.step,
+          ...event,
+        }),
+      }),
       macos: async (state, action) =>
         executeMacOSAction(action, {
           runId: state.runId,
