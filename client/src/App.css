@@ -2840,18 +2840,120 @@ select,
 .step-card-observe { color: var(--c-text-secondary); }
 
 /* 结果：↳ 图标锚点 + 文本，区别于上方的决策理由 */
-.step-card-result {
-  display: flex;
-  gap: 5px;
-  margin-top: 4px;
+.step-card-result,
+.tool-result-details {
+  margin-top: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-hover);
 }
 .step-card-result-icon {
   flex-shrink: 0;
   margin-top: 2px;
   color: var(--c-badge-result);
 }
-.step-card-result-body { min-width: 0; flex: 1; }
+.step-card-result-body {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  column-gap: 5px;
+  min-width: 0;
+}
 .step-card-result-body > p { color: var(--c-text); }
+.step-card-result-body .step-card-toggle { grid-column: 2; justify-self: start; }
+.tool-result-label {
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--c-badge-result);
+}
+
+.tool-request-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-hover);
+}
+
+.tool-request-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.tool-request-row.align-start { align-items: start; }
+
+.tool-request-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--c-text-tertiary);
+  white-space: nowrap;
+}
+
+.tool-request-tool {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  color: var(--tool-c, var(--c-text-secondary));
+}
+
+.tool-request-tool code {
+  min-width: 0;
+  color: var(--c-text);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.tool-request-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-request-param {
+  display: grid;
+  grid-template-columns: minmax(48px, max-content) minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+}
+
+.tool-request-param-key {
+  max-width: 92px;
+  padding-top: 1px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: var(--c-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-request-param-value {
+  margin: 0;
+  max-height: 96px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--c-text);
+}
+
+.tool-request-empty {
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+
+.tool-request-json-toggle {
+  align-self: flex-start;
+}
 
 /* 「展开/收起」纯文字小开关（理由/结果） */
 .step-card-toggle {
@@ -4405,6 +4507,31 @@ textarea:disabled {
     overflow-y: auto;
   }
 
+  .tool-request-details,
+  .step-card-result,
+  .tool-result-details {
+    padding: 6px;
+  }
+
+  .tool-request-row {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .tool-request-param {
+    grid-template-columns: 1fr;
+    gap: 1px;
+  }
+
+  .tool-request-param-key {
+    max-width: none;
+  }
+
+  .tool-request-param-value {
+    max-height: 72px;
+    font-size: 10px;
+  }
+
   .screenshot-img {
     max-height: 140px;
     object-fit: contain;
@@ -4573,6 +4700,14 @@ textarea:disabled {
     padding: 3px 4px;
     max-height: 48px;
   }
+
+  .tool-request-row { grid-template-columns: 48px minmax(0, 1fr); }
+  .tool-request-label,
+  .tool-result-label,
+  .tool-request-param-key { font-size: 8px; }
+  .tool-request-tool code,
+  .tool-request-param-value,
+  .tool-request-empty { font-size: 9px; }
 
   .model-card { padding: 4px 5px; }
   .model-card-json { max-height: 48px; font-size: 8px; }

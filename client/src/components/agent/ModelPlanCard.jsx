@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { RotateCcw, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
+import { RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import { getModelLabel, PLAN_STAGE_LABELS, PLAN_STAGE_ICON } from './plan-stage.js';
 import { summarizeAction } from './action-summary.js';
 import { ToolIcon } from './tool-icon.jsx';
 import { useT } from '../../i18n/I18nProvider.jsx';
+import { ActionDetails } from './ActionDetails.jsx';
 
 // 单个模型在某一步的「决策行」。扁平结构（无整卡展开/折叠、无复制按钮、无左色条），
 // 与单模型 StepCard 行同构：winner 行直接带 step 号(前) + 回滚(尾)，理由直接显示，
@@ -62,13 +63,8 @@ export function ModelPlanCard({ event, isWinner, modelList, step, onRollback, ro
           </>
         )}
 
-        {/* 动作 JSON：始终可见的同款 chip，点开看完整 JSON（与单模型一致） */}
-        <div className="step-card-json">
-          <button className="step-card-json-toggle" onClick={toggle(setShowJson)}>
-            {effJson ? <ChevronDown size={11} /> : <ChevronRight size={11} />} JSON
-          </button>
-          {effJson && <pre className="agent-json">{JSON.stringify(event.action, null, 2)}</pre>}
-        </div>
+        {/* 工具请求：与单模型一致，直接展示工具和请求内容。 */}
+        <ActionDetails action={event.action} jsonOpen={effJson} onToggleJson={toggle(setShowJson)} t={t} />
 
         {/* 深度思考（reasoning_content）：次要，小开关折叠 */}
         {event.reasoning && (

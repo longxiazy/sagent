@@ -1,11 +1,12 @@
 import { memo, useState } from 'react';
-import { RotateCcw, ChevronRight, ChevronDown } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { getModelLabel } from './plan-stage.js';
 import { summarizeAction } from './action-summary.js';
 import { isFailureResult, resultScreenshot } from './result-status.js';
 import { ToolIcon } from './tool-icon.jsx';
 import { ObserveSummary } from './ObserveSummary.jsx';
 import { ResultSummary } from './ResultSummary.jsx';
+import { ActionDetails } from './ActionDetails.jsx';
 
 // StepCard：把单模型一步的 observe + action + result 合并成一张卡。
 // 原先单模型一步会渲染 4 块（observe / 折叠的 model_plan 废卡 / action / result），
@@ -86,14 +87,9 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
           </>
         )}
 
-        {/* 动作 JSON：默认折叠成一颗 chip，点开看完整 JSON */}
+        {/* 工具请求：固定拆出工具、请求内容；完整 JSON 仍可展开。 */}
         {action && (
-          <div className="step-card-json">
-            <button className="step-card-json-toggle" onClick={toggle(setJsonOpen)}>
-              {effJson ? <ChevronDown size={11} /> : <ChevronRight size={11} />} JSON
-            </button>
-            {effJson && <pre className="agent-json">{JSON.stringify(action, null, 2)}</pre>}
-          </div>
+          <ActionDetails action={action} jsonOpen={effJson} onToggleJson={toggle(setJsonOpen)} t={t} />
         )}
 
         {/* 执行结果（与多模型卡组共用同一组件，口径一致） */}

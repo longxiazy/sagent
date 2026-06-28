@@ -17,7 +17,12 @@ export function ResultSummary({ result, openLightbox, forceExpanded, onManualTog
 
   const shot = resultScreenshot(result);
   if (shot) {
-    return <img className="screenshot-thumb clickable" src={shot} alt="screenshot" onClick={() => openLightbox(shot)} />;
+    return (
+      <div className="tool-result-details">
+        <div className="tool-result-label">{t('agentPanel.requestResult')}</div>
+        <img className="screenshot-thumb clickable" src={shot} alt="screenshot" onClick={() => openLightbox(shot)} />
+      </div>
+    );
   }
 
   // 切换本地展开态；受面板「全部展开/折叠」接管时先解除接管再翻转。
@@ -25,8 +30,9 @@ export function ResultSummary({ result, openLightbox, forceExpanded, onManualTog
 
   return (
     <div className="step-card-result">
-      <CornerDownRight size={12} className="step-card-result-icon" />
+      <div className="tool-result-label">{t('agentPanel.requestResult')}</div>
       <div className="step-card-result-body">
+        <CornerDownRight size={12} className="step-card-result-icon" />
         <p className={eff ? '' : 'clamp-2'}>
           {splitFailureHighlights(result).map((seg, i) => (
             seg.hit ? <span key={i} className="result-keyword">{seg.text}</span> : seg.text

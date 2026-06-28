@@ -1,11 +1,15 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { getModelLabel } from './plan-stage.js';
+import { ActionDetails } from './ActionDetails.jsx';
 
 // 单条 trace 渲染。从 AgentPanel 平移而来并用 memo 包裹：trace 是 append-only 的，
 // 旧 event 对象引用不变，新事件到达时已渲染过的 item 不会重跑（尤其是 action 里的
 // JSON.stringify）。回调(onRollback/openLightbox)与 t 在上层均已稳定化，memo 才有效。
 export const TraceItem = memo(function TraceItem({ event, modelList, onRollback, rollbackLoading, openLightbox, t }) {
+  const [jsonOpen, setJsonOpen] = useState(false);
+  const toggleJson = e => { e?.stopPropagation?.(); setJsonOpen(v => !v); };
+
   // 投票模式的 consensus 作为独立 trace 项展示。
   if (event.type === 'model_plan' && event.stage === 'consensus') {
     return (
@@ -111,10 +115,7 @@ export const TraceItem = memo(function TraceItem({ event, modelList, onRollback,
               </button>
             </div>
             {event.rationale && <p>{event.rationale}</p>}
-            <details className="agent-json-details">
-              <summary>{t('agentPanel.showJson')}</summary>
-              <pre className="agent-json">{JSON.stringify(event.action, null, 2)}</pre>
-            </details>
+            <ActionDetails action={event.action} jsonOpen={jsonOpen} onToggleJson={toggleJson} t={t} />
           </div>
         </>
       )}
@@ -199,7 +200,7 @@ export const TraceItem = memo(function TraceItem({ event, modelList, onRollback,
           <div className="agent-trace-content">
             <strong>{t('agentPanel.awaitingApproval', { step: event.step })}</strong>
             <p>{event.message}</p>
-            <pre className="agent-json">{JSON.stringify(event.action, null, 2)}</pre>
+            <ActionDetails action={event.action} jsonOpen={jsonOpen} onToggleJson={toggleJson} t={t} />
           </div>
         </>
       )}
