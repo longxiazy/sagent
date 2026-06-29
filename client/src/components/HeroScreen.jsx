@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Lightbulb } from 'lucide-react';
+import { AgentComposer } from './AgentComposer.jsx';
 import { SuggestionsList } from './SuggestionsList.jsx';
 import { useT } from '../i18n/I18nProvider.jsx';
 
@@ -25,6 +26,7 @@ export function HeroScreen({
   sessionLocked,
   toolbarSlots,
   attachmentBar,
+  contextMeter,
   suggestions,
   categories,
   activeCategoryId,
@@ -54,23 +56,21 @@ export function HeroScreen({
           <span className="hero-brand-name">sagent</span>
         </div>
 
-        <div className="hero-input-card">
-          {attachmentBar}
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={t('input.agentPlaceholder')}
-            rows={2}
-            disabled={sessionLocked}
-          />
-          <div className="hero-toolbar">
-            {modelSelect}
-            {attachButton}
-            {sendButton}
-          </div>
-        </div>
+        <AgentComposer
+          variant="hero"
+          value={input}
+          setValue={setInput}
+          textareaRef={textareaRef}
+          onKeyDown={onKeyDown}
+          placeholder={t('input.agentPlaceholder')}
+          rows={2}
+          disabled={sessionLocked}
+          modelSelect={modelSelect}
+          attachButton={attachButton}
+          sendButton={sendButton}
+          attachmentBar={attachmentBar}
+          contextMeter={contextMeter}
+        />
 
         {suggestionsHidden ? (
           <button className="suggestions-show" onClick={showSuggestions} title={t('suggestions.show')}>

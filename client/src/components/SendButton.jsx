@@ -8,10 +8,13 @@ export function SendButton({
   pendingApproval,
   inputValue,
   blockReason,
+  contextEstimate,
   onSend,
   onStopAgent,
 }) {
   const t = useT();
+  const contextPercent = Math.max(0, Math.min(100, contextEstimate?.percent || 0));
+  const contextRisk = contextEstimate?.risk || 'ok';
   if (agentRunning) {
     return (
       <button className="send-btn stop" onClick={onStopAgent} disabled={agentStopping}>
@@ -22,12 +25,16 @@ export function SendButton({
   // blockReason 非空时(例如 agent 模式一个模型都没选)禁用并把原因作为 tooltip。
   return (
     <button
-      className="send-btn idle"
+      className={`send-btn idle context-${contextRisk}`}
       onClick={onSend}
       disabled={!inputValue.trim() || !!blockReason}
       title={blockReason || undefined}
+      style={{ '--send-context-progress': `${contextPercent}%` }}
     >
-      <Send size={14} /> {t('send.send')}
+      <span className="send-progress-ring" aria-hidden="true">
+        <Send size={13} />
+      </span>
+      {t('send.send')}
     </button>
   );
 }

@@ -164,6 +164,29 @@ describe('POST /api/agent', () => {
   });
 });
 
+describe('POST /api/agent/context', () => {
+  it('returns context usage based on the server-built agent prompt', async () => {
+    const res = await request(app)
+      .post('/api/agent/context')
+      .send({
+        task: 'inspect the repo',
+        model: 'test-model',
+        models: ['test-model'],
+        memory: false,
+        messages: [{ role: 'user', content: 'previous message' }],
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.source).toBe('server_actual_prompt');
+    expect(res.body.usedTokens).toBeGreaterThan(0);
+    expect(res.body.max.modelId).toBe('test-model');
+    expect(res.body.usedLabel).toBeTruthy();
+    expect(res.body.promptPreview.modelId).toBe('test-model');
+    expect(res.body.promptPreview.text).toContain('inspect the repo');
+    expect(res.body.promptPreview.text).toContain('previous message');
+  });
+});
+
 describe('GET /api/agent/stream/:runId', () => {
   it('replays pending approval details for reconnect streams', async () => {
     const run = agentRunStore.createRun({

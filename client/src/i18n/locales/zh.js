@@ -54,6 +54,17 @@ export const zh = {
 
   // 输入框
   'input.agentPlaceholder': '描述要让 Agent 完成的任务…',
+  'context.label': 'Context 预估',
+  'context.actualLabel': 'Context 实际',
+  'context.summary': '首轮 {used}/{limit} tok · {percent}%',
+  'context.actualSummary': '实际 {used}/{limit} tok · {percent}%',
+  'context.max': '最大首轮预估 {percent}%',
+  'context.avg': '平均首轮预估 {percent}%',
+  'context.actualMax': '最大实际 {percent}%',
+  'context.actualAvg': '平均实际 {percent}%',
+  'context.promptToggle': '首轮提示词',
+  'context.promptMeta': '{model} · {used} tok',
+  'context.promptTruncated': '提示词过长，已截断；完整长度 {chars} 字符。',
 
   // 附件（任务文本块 + 展示）
   'attach.taskBlockHeader': '[附件]',

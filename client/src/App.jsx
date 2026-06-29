@@ -20,6 +20,7 @@ import { ModelSelector } from './components/ModelSelector.jsx';
 import { SendButton } from './components/SendButton.jsx';
 import { AttachButton } from './components/AttachButton.jsx';
 import { AttachmentBar } from './components/AttachmentBar.jsx';
+import { ContextMeter } from './components/ContextMeter.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
 import { AppHeader } from './components/AppHeader.jsx';
 import { HeroScreen } from './components/HeroScreen.jsx';
@@ -50,6 +51,7 @@ import { formatMsgTime } from './utils/format.js';
 import { shuffled } from './utils/random.js';
 import { hasThinkContent } from './utils/markdown.js';
 import { appendUniqueTraceEvent } from './utils/agent-trace.js';
+import { buildActualContextEstimate } from './utils/context-usage.js';
 
 // 稳定的空数组:作为 useProjectScopedState 的 initialValue,scope 缺省时返回同一引用,避免无谓重渲染。
 const EMPTY_AGENT_MODELS = [];
@@ -121,6 +123,7 @@ export default function App() {
   // 避免启动阶段误清理用户已选的多模型。
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [input, setInput] = useState('');
+  const [contextEstimate, setContextEstimate] = useState(null);
   const mode = 'agent';
   const [suggestionSeed, setSuggestionSeed] = useState(0);
   const [suggestionData, setSuggestionData] = useState(EMPTY_SUGGESTIONS);
@@ -806,6 +809,56 @@ export default function App() {
       sessionLocked={sessionLocked}
     />
   );
+  const contextInputText = useMemo(
+    () => buildTaskWithAttachments(input, attachments.filter(item => item.status === 'ready'), t),
+    [attachments, input, t]
+  );
+
+  useEffect(() => {
+    if (selectedAgentModels.length === 0) {
+      setContextEstimate(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      apiFetch('/api/agent/context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          task: contextInputText,
+          model: selectedAgentModels[0],
+          models: selectedAgentModels,
+          strategy: selectedAgentModels.length > 1 ? agentStrategy : 'race',
+          memory: agentMemory,
+          projectId: activeProjectId ?? null,
+          messages: messages.slice(-10).map(message => ({ role: message.role, content: message.content })),
+        }),
+      })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (!controller.signal.aborted) setContextEstimate(data);
+        })
+        .catch(err => {
+          if (err?.name !== 'AbortError') setContextEstimate(null);
+        });
+    }, 250);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [activeProjectId, agentMemory, agentStrategy, contextInputText, messages, selectedAgentModels]);
+
+  const actualContextEstimate = useMemo(
+    () => buildActualContextEstimate(agentTrace, contextEstimate),
+    [agentTrace, contextEstimate]
+  );
+  const visibleContextEstimate = agentRunning && actualContextEstimate
+    ? actualContextEstimate
+    : contextEstimate;
+  const contextMeter = <ContextMeter estimate={visibleContextEstimate} />;
   const sendButton = (
     <SendButton
       agentRunning={agentRunning}
@@ -815,6 +868,7 @@ export default function App() {
       inputValue={attachmentsUploading ? '' : (input || (hasReadyAttachments ? ' ' : ''))}
       // 一个模型都没选时禁止发送,并给出原因提示。
       blockReason={selectedAgentModels.length === 0 ? t('send.needModel') : ''}
+      contextEstimate={visibleContextEstimate}
       onSend={handleSubmit}
       onStopAgent={stopAgent}
     />
@@ -896,6 +950,7 @@ export default function App() {
           sessionLocked={sessionLocked}
           toolbarSlots={{ modelSelect, sendButton, attachButton }}
           attachmentBar={attachmentBar}
+          contextMeter={contextMeter}
           suggestions={suggestions}
           categories={agentCategories}
           activeCategoryId={activeCategoryId}
@@ -970,6 +1025,7 @@ export default function App() {
               sendButton={sendButton}
               attachButton={attachButton}
               attachmentBar={attachmentBar}
+              contextMeter={contextMeter}
               touchStartRef={touchStartRef}
               agentMobileTab={agentMobileTab}
               setAgentMobileTab={setAgentMobileTab}

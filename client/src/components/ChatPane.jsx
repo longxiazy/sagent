@@ -1,3 +1,5 @@
+import { AgentComposer } from './AgentComposer.jsx';
+
 function formatMessageModels(message, getModelLabel) {
   const ids = Array.isArray(message.modelsUsed) && message.modelsUsed.length > 0
     ? message.modelsUsed
@@ -25,6 +27,7 @@ export function ChatPane({
   sendButton,
   attachButton,
   attachmentBar,
+  contextMeter,
   touchStartRef,
   agentMobileTab,
   setAgentMobileTab,
@@ -78,22 +81,20 @@ export function ChatPane({
         })}
         <div ref={bottomRef} />
         <div className="input-area">
-          <div className="input-card">
-            {attachmentBar}
-            <textarea
-              ref={textareaRef}
-              value={inputValue}
-              onChange={event => setInput(event.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={placeholder}
-              rows={1}
-              disabled={disabled}
-            />
-            <div className="input-toolbar">
-              {attachButton}
-              {sendButton}
-            </div>
-          </div>
+          <AgentComposer
+            variant="dock"
+            value={inputValue}
+            setValue={setInput}
+            textareaRef={textareaRef}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            rows={1}
+            disabled={disabled}
+            attachButton={attachButton}
+            sendButton={sendButton}
+            attachmentBar={attachmentBar}
+            contextMeter={contextMeter}
+          />
         </div>
       </div>
     </div>
