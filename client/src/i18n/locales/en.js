@@ -53,6 +53,17 @@ export const en = {
 
   // Input box
   'input.agentPlaceholder': 'Describe the task for the Agent…',
+  'context.label': 'Context estimate',
+  'context.actualLabel': 'Actual context',
+  'context.summary': 'First {used}/{limit} tok · {percent}%',
+  'context.actualSummary': 'Actual {used}/{limit} tok · {percent}%',
+  'context.max': 'Max first-request estimate {percent}%',
+  'context.avg': 'Average first-request estimate {percent}%',
+  'context.actualMax': 'Max actual {percent}%',
+  'context.actualAvg': 'Average actual {percent}%',
+  'context.promptToggle': 'First prompt',
+  'context.promptMeta': '{model} · {used} tok',
+  'context.promptTruncated': 'Prompt is long and was truncated; full length {chars} chars.',
 
   // Attachments (task text block + display)
   'attach.taskBlockHeader': '[Attachments]',
