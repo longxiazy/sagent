@@ -1,148 +1,126 @@
 <div align="center">
   <img src="client/public/favicon.svg" width="64" height="64" alt="sagent logo">
   <h1>sagent</h1>
-  <p>Multi-model AI chat + desktop Agent with browser automation, file operations, terminal commands, macOS control, and JetBrains IDE MCP support.</p>
+  <p>A local AI workspace for multi-model chat and desktop Agent runs.</p>
 </div>
 
-> **macOS only.** The Agent needs to control the local browser and system, currently tested on Mac only.
+> sagent is built around macOS desktop automation. The web UI and API can be packaged with Docker, but the full Agent experience depends on macOS, Bun 1.3+ `Bun.WebView`, and local system permissions.
 >
-> Browser automation uses Bun 1.3+ `Bun.WebView`, which runs on the system WebKit backend on macOS.
+> Chinese documentation: [README_ZH.md](README_ZH.md)
 >
-> 🌐 **中文版**: [README_ZH.md](README_ZH.md)
+> Environment variables and runtime settings: [CONFIGURATION.md](CONFIGURATION.md)
+
+## Overview
+
+sagent combines a React web UI, a Bun/Express backend, and a tool-using Agent runtime. It can chat with multiple model providers, run desktop automation, operate files and terminals, inspect browser pages, call JetBrains IDE MCP tools, and preserve project memory between sessions.
+
+The project is designed for local use: you choose a project workspace, start an Agent task, approve sensitive operations, and watch each step stream back into the UI.
+
+## Highlights
+
+- Multi-model chat and Agent mode with race or vote strategies.
+- macOS desktop control, screenshots, browser automation, and optional Chrome DevTools MCP integration.
+- File, terminal, search, vision, IDE MCP, and browser tools behind an approval-aware runtime.
+- Sandboxed Agent workers when launched with `npm run sandbox`.
+- Project-scoped memory, traces, uploads, checkpoints, and run recovery.
+- Mobile-friendly progress view for devices on the same LAN.
+- Smoke tests and trace files for validating Agent behavior after changes.
+
+## Requirements
+
+- macOS for full desktop Agent capabilities.
+- Bun 1.3+.
+- Node.js and npm for installing dependencies and building the React client.
+- At least one model provider API key. See [CONFIGURATION.md](CONFIGURATION.md).
+- A Chromium-based browser is recommended for approval notifications with inline buttons.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/longxiazy/sagent && cd sagent
-cp .env.example .env  # Fill in your API Key
-npm install && cd client && npm install && cd ..
-npm run sandbox       # Requires Bun 1.3+
+git clone https://github.com/longxiazy/sagent
+cd sagent
+cp .env.example .env
+npm install
+cd client && npm install && cd ..
+npm run sandbox
 ```
 
-Open http://localhost:5173
+Edit `.env` before starting if you have not added an API key yet. Open http://localhost:5173 when the dev server is ready.
 
-When the Agent needs your approval, sagent shows a browser desktop notification with **Allow / Reject** buttons (Chromium-based browsers). The first time the Agent requests approval you'll see a banner — click **Enable desktop notifications** and the browser will prompt for permission. On Safari/Firefox the notification still pops but without inline buttons — clicking it focuses sagent so you can decide in the side panel.
+`npm run sandbox` starts the UI/API server normally and runs each Agent task in a short-lived macOS sandboxed worker. Use `npm run dev` only when you intentionally want the non-sandboxed development mode.
 
 ## Docker
 
-The Docker image builds the frontend and runs the backend with Bun. It is useful for sharing the server/UI package. Agent features that depend on the macOS desktop, system WebView, or controlling a host browser are still best run natively with `npm run sandbox`.
+Docker builds the frontend and serves the UI/API from one Bun process. It is useful for sharing the server/UI package, but desktop automation, system WebView access, and host browser control are still best run natively on macOS.
 
 ```bash
 cp .env.example .env
-# Fill NVIDIA_API_KEY or GEMINI_API_KEY in .env
 docker compose up --build
 ```
 
-Open http://localhost:5173
+Open http://localhost:5173.
 
-Manual build/run:
+Manual build and run:
 
 ```bash
 docker build -t sagent:local .
 docker run --env-file .env -p 5173:5173 -v "$(pwd)/data-docker:/app/data" sagent:local
 ```
 
-## Security: Sandbox Policy
+## Agent Safety
 
-When started with `npm run sandbox`, the UI/API server stays outside the macOS sandbox and each Agent run starts a short-lived worker inside `sandbox-exec`, with permissions controlled by `sandbox.sb` and `PROJECT_DIR` set to that run's project root.
+When the Agent needs approval, sagent shows an in-app approval panel and a browser desktop notification. Chromium-based browsers support inline Allow/Reject buttons; Safari and Firefox still show the notification, and clicking it returns focus to sagent.
 
-You can customize `sandbox.sb` to adjust the Agent's permission boundary. Modifying the file may cause some Agent functions to lose permission (e.g., unable to access the network, unable to open the browser, etc.).
-
-Dangerous operations (deleting files, installing packages, executing terminal commands) will pop up a confirmation dialog — the Agent cannot proceed without your approval.
+Dangerous operations such as deleting files, installing packages, or executing terminal commands require explicit approval. The sandbox boundary is controlled by [sandbox.sb](sandbox.sb) when running with `npm run sandbox`.
 
 ## Multi-Device View
 
-Other devices on the LAN (phone, iPad) can open `http://<Mac-IP>:5173` to view the Agent's execution progress in real time.
+Devices on the same LAN can open `http://<Mac-IP>:5173` to watch the active Agent run in real time.
 
-- **Agent running**: Other devices can only watch the agent execution flow; the chat area is empty until the agent completes
-- **Chat history**: Each device is independent; history is not shared
-- **Only one Agent at a time**: New requests will receive a 409 error
+- While an Agent run is active, secondary devices show the execution flow and receive the final result when it completes.
+- Chat history is local to each browser/device.
+- Only one Agent run can execute at a time; additional requests receive a 409 response.
 
-## Configuration
+## Core Workflows
 
-Edit `.env`:
+### Multi-Model Agent
 
-```bash
-# API Keys (fill at least one)
-NVIDIA_API_KEY=nvapi-...  # MiniMax, Kimi, Qwen, GLM, DeepSeek, etc.
-GEMINI_API_KEY=...
+Agent mode can call multiple models for each step. In race mode, the first valid result wins and the remaining requests are cancelled. In vote mode, all selected models run and the result is aggregated. The UI lets you select models, reorder priority, and switch strategies per run.
 
-# Agent behavior (optional)
-AGENT_MAX_STEPS=128            # Max steps per task, default 8
-AGENT_MODEL_TIMEOUT=30         # Per-model timeout in seconds
-AGENT_MAX_HISTORY_STEPS=20     # Max history steps sent to LLM (prevents context overflow)
-AGENT_MAX_RESULT_CHARS=1000    # Max chars per step result in history
-AGENT_MEMORY_MAX_ENTRIES=20    # Memory compaction threshold
-AGENT_RESUME=true              # Auto-resume interrupted tasks after backend restart
+### Checkpoint Recovery
 
-# Multi-model race (optional)
-AGENT_STAGGER_DELAY=3          # Delay between batches in seconds
-AGENT_BATCH_SIZE=2             # Models launched per batch
-# AGENT_MULTI_MODELS=moonshotai/kimi-k2.5,qwen/qwen3.5-397b-a17b
+Each completed Agent step is written to `data/checkpoints/`. If the backend restarts and recovery is enabled, sagent restores the last run state and continues from the next step. Completed runs clean up their checkpoints automatically.
 
-# JetBrains IDE MCP (optional)
-IDE_MCP_ENABLED=true
-IDE_MCP_TRANSPORT=sse
-IDE_MCP_URL=http://127.0.0.1:6365/sse
-IDE_PROJECT_PATH=/path/to/your/project
-# Or use stdio copied from the IDE:
-# IDE_MCP_TRANSPORT=stdio
-# IDE_MCP_COMMAND=npx
-# IDE_MCP_ARGS=["-y","@jetbrains/mcp-proxy"]
-```
+### Cross-Session Memory
 
-When `IDE_MCP_ENABLED=true`, the Agent exposes two extra tools:
+sagent stores project experience under the configured data directory. Memory includes recent task summaries, compacted historical context, and project knowledge. The memory panel in the sidebar lets you inspect, compact, or clear that state.
 
-- `ide_list_tools`: discover the MCP tools currently exposed by JetBrains IDE
-- `ide_call_tool`: call a specific IDE MCP tool with its argument object
+### IDE And Browser Integrations
 
-Tip: in JetBrains IDE, open `Settings | Tools | MCP Server`, enable it, then use `Copy SSE Config` or `Copy Stdio Config` and mirror the connection details into `.env`. If your IDE shows a different URL or port than `127.0.0.1:6365/sse`, prefer the IDE-provided value.
-
-## Recovery After Backend Restart
-
-Each completed step is written to `data/checkpoints/` (atomic writes, crash-safe).
-
-When the backend restarts:
-
-- **`AGENT_RESUME=true` (default)**: Automatically detects unfinished checkpoints, restores the last runId and step history, and resumes from the breakpoint. The frontend can also reconnect via SSE after refresh.
-- **`AGENT_RESUME=false`**: Clears all checkpoints on startup; does not resume any interrupted tasks.
-
-Successfully completed tasks automatically clean up their checkpoints.
+JetBrains IDE MCP adds `ide_list_tools` and `ide_call_tool` to the Agent. Chrome DevTools MCP adds browser inspection and control through `chrome_list_tools` and `chrome_call_tool`. Both integrations are optional and documented in [CONFIGURATION.md](CONFIGURATION.md).
 
 ## Common Commands
 
 ```bash
-npm run build    # Type-check backend and build frontend
-npm run sandbox  # Start with sandbox (recommended)
-npm run dev      # Start without sandbox
-npm run stop     # Stop frontend and backend
+npm run sandbox      # Start server and client with sandboxed Agent workers
+npm run dev          # Start server and client without sandboxed workers
+npm run build        # Type-check backend and build frontend
+npm run lint         # Run ESLint
+npm test             # Run Vitest tests
+npm run smoke        # Run Agent smoke scenarios against a running server
+npm run stop         # Stop frontend and backend processes
+npm run chrome:mcp   # Start the Chrome DevTools MCP SSE bridge
 ```
 
-## Multi-Model Agent
+For smoke tests, start sagent first, then run `npm run smoke` in another terminal. Reports are written to `data/smoke-reports/`, and failed cases point to their trace files under `data/traces/`.
 
-The Agent can invoke multiple models concurrently for each step, picking the fastest result.
+## Project Layout
 
-- **Race mode**: Models launch in priority order. First valid result wins; remaining are cancelled.
-- **Vote mode**: All models run concurrently, results are aggregated by majority vote.
-- **Batch race**: `AGENT_BATCH_SIZE` controls models per batch. If the entire batch fails, next batch starts immediately.
-
-Frontend: select multiple models in Agent mode, reorder with arrows to set priority, toggle between race/vote strategies.
-
-## Cross-Session Memory
-
-The Agent accumulates project experience across sessions, persisted in local storage.
-
-- **Conversation records**: Summaries of recent tasks (task, result, models, timestamp)
-- **Compacted summary**: LLM-distilled historical summary (deduplicated, up to 2000 chars)
-- **Project knowledge**: Directory structure, common paths, user preferences, learnings
-
-Auto-compaction triggers when records exceed `AGENT_MEMORY_MAX_ENTRIES` (default 20).
-
-### Memory Panel
-
-Click the brain icon in the left sidebar to open the memory panel — it's global, not tied to any specific task. You can view conversation history, project knowledge, manually trigger compaction, or clear memory.
-
-```bash
-AGENT_MEMORY_MAX_ENTRIES=20  # Compaction threshold
-MEMORY_DIR=data              # Memory file storage directory
+```text
+agent/      Agent runtime, providers, tools, policy, workers
+routes/     Express API routes
+helpers/    Shared server helpers and stores
+client/     React/Vite frontend
+scripts/    Smoke tests, stop script, Chrome MCP bridge
+test/       Vitest and integration tests
 ```

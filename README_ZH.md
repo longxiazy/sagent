@@ -1,158 +1,126 @@
 <div align="center">
   <img src="client/public/favicon.svg" width="64" height="64" alt="sagent logo">
   <h1>sagent</h1>
-  <p>多模型 AI 聊天 + 桌面 Agent，支持浏览器自动化、文件操作、终端命令、macOS 控制，以及 JetBrains IDE MCP 接入。</p>
+  <p>本地多模型 AI 聊天与桌面 Agent 工作台。</p>
 </div>
 
-> **仅支持 macOS**。Agent 需要操控本地浏览器和系统，目前只在 Mac 上测试通过。
+> sagent 以 macOS 桌面自动化为核心。Web UI 和 API 可以用 Docker 打包运行，但完整 Agent 能力依赖 macOS、Bun 1.3+ `Bun.WebView` 和本机系统权限。
 >
-> 浏览器自动化基于 Bun 1.3+ 内置 `Bun.WebView`，macOS 会直接使用系统 WebKit。
+> 英文版：[README.md](README.md)
 >
-> 前端适配移动端 — 手机、平板、电脑浏览器都能用，随时随地查看 Agent 进度、继续对话。
+> 环境变量和运行时配置：[CONFIGURATION.md](CONFIGURATION.md)
+
+## 项目简介
+
+sagent 把 React Web UI、Bun/Express 后端和可调用工具的 Agent runtime 组合在一起。它可以接入多个模型供应商，执行桌面自动化，读写文件，运行终端命令，查看浏览器页面，调用 JetBrains IDE MCP 工具，并在不同会话之间保留项目记忆。
+
+它更像一个本地 AI 工作台：选择项目目录，输入任务，审批敏感操作，然后在界面里实时查看每一步执行过程和最终结果。
+
+## 核心特性
+
+- 多模型聊天和 Agent 模式，支持竞速与汇总策略。
+- macOS 桌面控制、截图、浏览器自动化，以及可选的 Chrome DevTools MCP 集成。
+- 文件、终端、搜索、视觉、IDE MCP、浏览器等工具统一接入 Agent runtime。
+- 使用 `npm run sandbox` 时，每次 Agent 任务都会进入短生命周期沙盒 worker。
+- 项目级记忆、trace、上传文件、checkpoint 和中断恢复。
+- 局域网内手机、平板、电脑都能实时查看 Agent 进度。
+- 内置 smoke 测试和 trace 文件，方便功能开发后回归验证。
+
+## 运行要求
+
+- macOS，用于完整桌面 Agent 能力。
+- Bun 1.3+。
+- Node.js 和 npm，用于安装依赖、构建前端。
+- 至少配置一个模型供应商 API Key，见 [CONFIGURATION.md](CONFIGURATION.md)。
+- 推荐使用 Chromium 内核浏览器，以获得带「允许 / 拒绝」按钮的桌面通知。
 
 ## 快速开始
 
 ```bash
-git clone https://github.com/longxiazy/sagent && cd sagent
-cp .env.example .env                    # 编辑填入 API Key
-npm install && cd client && npm install && cd ..
-npm run sandbox                         # 需要 Bun 1.3+
+git clone https://github.com/longxiazy/sagent
+cd sagent
+cp .env.example .env
+npm install
+cd client && npm install && cd ..
+npm run sandbox
 ```
 
-打开 http://localhost:5173
+如果还没填 API Key，请先编辑 `.env`。开发服务启动后打开 http://localhost:5173。
 
-Agent 等待审批时，sagent 会通过浏览器桌面通知提醒你，并提供「允许 / 拒绝」按钮（Chromium 内核浏览器支持）。首次出现审批请求时，页面上方会弹出小横条，点击「开启桌面通知」即可触发浏览器的权限请求。Safari / Firefox 桌面端不支持通知里的按钮，通知仍会弹出，点击通知会聚焦回 sagent 页面，在右侧审批面板上做决定即可。
+`npm run sandbox` 会正常启动 UI/API server，并让每次 Agent 任务在 macOS 沙盒 worker 中执行。只有明确需要无沙盒调试时，才使用 `npm run dev`。
 
 ## Docker 运行
 
-Docker 镜像会构建前端并用 Bun 运行后端，适合打包 server/UI 给别人试用。依赖 macOS 桌面、系统 WebView 或本机浏览器控制的 Agent 能力，建议仍用原生 `npm run sandbox` 运行。
+Docker 会构建前端，并用一个 Bun 进程提供 UI/API 服务。它适合分发 server/UI 包；依赖桌面、系统 WebView 或宿主浏览器控制的 Agent 能力，仍建议在 macOS 上原生运行。
 
 ```bash
 cp .env.example .env
-# 编辑 .env 填入 NVIDIA_API_KEY 或 GEMINI_API_KEY
 docker compose up --build
 ```
 
-打开 http://localhost:5173
+打开 http://localhost:5173。
 
-也可以手动构建和运行：
+手动构建和运行：
 
 ```bash
 docker build -t sagent:local .
 docker run --env-file .env -p 5173:5173 -v "$(pwd)/data-docker:/app/data" sagent:local
 ```
 
-## 安全：沙盒策略
+## Agent 安全机制
 
-通过 `npm run sandbox` 启动时，UI/API server 常驻在沙盒外，每次 Agent run 会启动一个短生命周期 worker，并用 `sandbox-exec` 将该 worker 限制在当前 run 的项目根目录内；权限由 `sandbox.sb` 文件控制。
+Agent 等待审批时，sagent 会显示页面内审批面板，并发送浏览器桌面通知。Chromium 内核浏览器支持通知里的「允许 / 拒绝」按钮；Safari 和 Firefox 仍会弹出通知，点击后回到 sagent 页面处理审批。
 
-你可以自定义 `sandbox.sb` 来调整 Agent 的权限边界。修改该文件可能导致 Agent 部分功能无权限执行（如无法访问网络、无法打开浏览器等）。
-
-危险操作（删文件、装包、执行终端命令）会弹窗确认，你不点同意 Agent 就没法继续。
+删除文件、安装依赖、执行终端命令等危险操作都需要显式确认。通过 `npm run sandbox` 启动时，沙盒权限边界由 [sandbox.sb](sandbox.sb) 控制。
 
 ## 多设备查看
 
-局域网内其他设备（手机、iPad）打开 `http://<Mac的IP>:5173` 可以实时查看 Agent 的执行进度。
+局域网内其他设备可以打开 `http://<Mac-IP>:5173` 实时查看当前 Agent 运行。
 
-- **Agent 运行中**：其他设备进入后只能看 agent 执行流程，聊天区为空，等待 agent 完成后显示最终结果
-- **聊天记录**：各设备独立，不共享历史会话
-- **同时只能跑一个 Agent**：新请求会收到 409 提示
+- Agent 运行中，其他设备展示执行流程，并在完成后收到最终结果。
+- 聊天历史保存在各自浏览器里，不跨设备共享。
+- 同一时间只能运行一个 Agent，新的任务请求会收到 409。
 
-## 配置
+## 核心工作流
 
-编辑 `.env`：
+### 多模型 Agent
 
-```bash
-# API Key（至少填一个）
-NVIDIA_API_KEY=nvapi-...              # MiniMax、Kimi、Qwen、GLM、DeepSeek 等
-GEMINI_API_KEY=...
+Agent 模式下，每一步都可以同时调用多个模型。竞速模式采用第一个有效结果并取消其余请求；汇总模式会等待所有选中模型并聚合结果。前端支持选择模型、调整优先级、切换策略。
 
-# Agent 行为（可选）
-AGENT_MAX_STEPS=128              # 单次任务最大步数，默认 8
-AGENT_MODEL_TIMEOUT=30           # 单模型超时秒数
-AGENT_MAX_HISTORY_STEPS=20       # 发送给 LLM 的最大历史步数（防止上下文溢出）
-AGENT_MAX_RESULT_CHARS=1000      # 每步结果保留的最大字符数
-AGENT_MEMORY_MAX_ENTRIES=20      # 记忆压缩阈值
-AGENT_RESUME=true                # 后端重启后自动恢复未完成的 Agent 任务
+### Checkpoint 恢复
 
-# 多模型竞速（可选）
-AGENT_STAGGER_DELAY=3            # 批次间隔秒数
-AGENT_BATCH_SIZE=2               # 每批启动模型数
-# AGENT_MULTI_MODELS=moonshotai/kimi-k2.5,qwen/qwen3.5-397b-a17b
+Agent 每完成一步都会写入 `data/checkpoints/`。如果后端重启且恢复已启用，sagent 会还原上次运行状态，并从下一步继续执行。正常完成的任务会自动清理 checkpoint。
 
-# JetBrains IDE MCP（可选）
-IDE_MCP_ENABLED=true
-IDE_MCP_TRANSPORT=sse
-IDE_MCP_URL=http://127.0.0.1:6365/sse
-IDE_PROJECT_PATH=/path/to/your/project
-# 或者使用 IDE 里复制出来的 stdio 配置：
-# IDE_MCP_TRANSPORT=stdio
-# IDE_MCP_COMMAND=npx
-# IDE_MCP_ARGS=["-y","@jetbrains/mcp-proxy"]
-```
+### 跨会话记忆
 
-当 `IDE_MCP_ENABLED=true` 时，Agent 会额外暴露两个工具：
+sagent 会在配置的数据目录下保存项目经验，包括近期任务摘要、压缩后的历史上下文和项目知识。侧边栏记忆面板可以查看、手动压缩或清空这些状态。
 
-- `ide_list_tools`：查看当前 JetBrains IDE 暴露出来的 MCP 工具列表
-- `ide_call_tool`：按工具名调用具体 IDE MCP 工具，并传入对应参数对象
+### IDE 与浏览器集成
 
-建议先在 JetBrains IDE 的 `Settings | Tools | MCP Server` 中启用 MCP Server，再用 `Copy SSE Config` 或 `Copy Stdio Config` 把连接信息同步到 `.env`。如果 IDE 里显示的地址或端口不是 `127.0.0.1:6365/sse`，以 IDE 提供的配置为准。
-
-## 后端重启恢复
-
-Agent 每完成一步都会将状态写入 `data/checkpoints/` 目录（原子写入，防崩溃损坏）。
-
-当后端进程重启时：
-
-- **`AGENT_RESUME=true`（默认）**：自动检测未完成的 checkpoint，从断点继续执行。前端刷新后也能通过 SSE 重连接上。
-- **`AGENT_RESUME=false`**：启动时清除所有 checkpoint，不恢复任何中断的任务。
-
-正常运行完成的任务会自动清理 checkpoint，无需手动维护。
+JetBrains IDE MCP 会给 Agent 增加 `ide_list_tools` 和 `ide_call_tool`。Chrome DevTools MCP 会增加 `chrome_list_tools` 和 `chrome_call_tool`。两者都是可选能力，配置方式见 [CONFIGURATION.md](CONFIGURATION.md)。
 
 ## 常用命令
 
 ```bash
-npm run build        # 后端类型检查 + 构建前端
-npm run sandbox      # 沙盒模式启动（推荐）
-npm run dev          # 无沙盒启动
-npm run stop         # 停止前后端
-npm run smoke        # 冒烟测试：跑一组预设问题验证 /api/agent 主流程
+npm run sandbox      # 沙盒 worker 模式启动 server 和 client
+npm run dev          # 无沙盒 worker 模式启动 server 和 client
+npm run build        # 后端类型检查 + 前端构建
+npm run lint         # 运行 ESLint
+npm test             # 运行 Vitest 测试
+npm run smoke        # 对运行中的服务执行 Agent 冒烟场景
+npm run stop         # 停止前后端进程
+npm run chrome:mcp   # 启动 Chrome DevTools MCP SSE bridge
 ```
 
-### 冒烟测试 (`npm run smoke`)
+运行 smoke 测试时，先启动 sagent，再在另一个终端执行 `npm run smoke`。报告会写入 `data/smoke-reports/`，失败用例会打印对应的 `data/traces/` 文件路径。
 
-每次功能开发完，先 `npm run dev` 起服务，然后另开终端 `npm run smoke`，会顺序跑 `scripts/smoke-queries.json` 里的预设问题，用 `quality.status` / `quality.reasons` / 工具使用情况做断言，输出控制台表格并把详情写到 `data/smoke-reports/smoke-<时间戳>.json`。
+## 目录结构
 
-- 退出码：`0` 全过 / `1` 有降级警告 / `2` 有失败，便于接 CI
-- 失败时打印对应 `data/traces/<runId>.jsonl` 路径，方便复盘
-- 常用选项：`--only <id1,id2>`、`--category <typical-search|quality-classification|tool-coverage>`、`--model <id>`、`--timeout <ms>`
-
-
-## 多模型 Agent
-
-Agent 每步可并发调用多个模型，取最快结果。
-
-- **竞速模式**：模型按优先级顺序启动。第一个有效结果直接采用，其余取消。
-- **汇总模式**：所有模型同时并发，结果按多数投票聚合。
-- **分批竞速**：`AGENT_BATCH_SIZE` 控制每批启动几个模型。整批全部失败后，下一批跳过延迟立即启动。
-
-前端：Agent 模式下选择多个模型，用箭头调整优先级顺序，切换竞速/汇总策略。
-
-## 跨会话记忆
-
-Agent 自动积累项目经验和对话历史，跨会话持久化。
-
-- **对话记录**：最近 N 次任务的摘要（任务、结果、模型、时间戳）
-- **压缩摘要**：LLM 提炼的历史摘要（去重合并，上限 2000 字）
-- **项目知识**：目录结构、常用路径、用户偏好、经验积累
-
-当对话记录超过 `AGENT_MEMORY_MAX_ENTRIES`（默认 20）时自动触发压缩。
-
-### 记忆面板
-
-点击左侧会话列表顶部的 brain 图标可打开记忆面板 — 它是全局的，不属于任何任务。可以查看对话历史、项目知识、手动触发压缩或清空记忆。
-
-```bash
-AGENT_MEMORY_MAX_ENTRIES=20    # 对话记录压缩阈值
-MEMORY_DIR=data                # 记忆文件存储目录
+```text
+agent/      Agent runtime、供应商、工具、策略、worker
+routes/     Express API 路由
+helpers/    后端共享 helper 和 store
+client/     React/Vite 前端
+scripts/    冒烟测试、停止脚本、Chrome MCP bridge
+test/       Vitest 和集成测试
 ```
