@@ -88,7 +88,9 @@ describe('context estimate', () => {
 
     expect(estimate.modelCount).toBe(2);
     expect(estimate.max.modelId).toBe('small-model');
+    expect(estimate.max.promptPreview).toBeUndefined();
     expect(estimate.promptPreview.modelId).toBe('small-model');
+    expect(estimate.modelEstimates.every(item => item.promptPreview == null)).toBe(true);
     expect(estimate.percent).toBeGreaterThan(estimate.average.percent);
     expect(['warning', 'danger']).toContain(estimate.risk);
   });

@@ -262,11 +262,16 @@ export function summarizeContextEstimates(modelEstimates: any[]) {
   const max = estimates.reduce((acc, item) => item.ratio > acc.ratio ? item : acc, estimates[0]);
   const averageRatio = estimates.reduce((sum, item) => sum + item.ratio, 0) / estimates.length;
   const averageWindowTokens = Math.round(estimates.reduce((sum, item) => sum + item.windowTokens, 0) / estimates.length);
+  const stripPromptPreview = (estimate: any) => {
+    if (!estimate || typeof estimate !== 'object') return estimate;
+    const { promptPreview, ...rest } = estimate;
+    return rest;
+  };
 
   return {
     source: 'server_actual_prompt',
     usedTokens: max.usedTokens,
-    max,
+    max: stripPromptPreview(max),
     average: {
       windowTokens: averageWindowTokens,
       ratio: averageRatio,
@@ -274,7 +279,7 @@ export function summarizeContextEstimates(modelEstimates: any[]) {
       risk: riskForRatio(averageRatio),
     },
     modelCount: estimates.length,
-    modelEstimates: estimates,
+    modelEstimates: estimates.map(stripPromptPreview),
     promptPreview: max.promptPreview || null,
     risk: max.risk,
     percent: max.percent,
