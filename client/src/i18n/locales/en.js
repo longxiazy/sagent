@@ -184,6 +184,14 @@ export const en = {
   'agentPanel.rolledBackTo': 'Rolled back to Step {step}',
   'agentPanel.badgeSnapshot': 'Snapshot',
   'agentPanel.snapshotSaved': 'Step {step} health snapshot saved',
+  'agentPanel.traceDebug': 'Trace debug',
+  'agentPanel.traceDebugMeta': '{llm} LLM calls · {tools} tools',
+  'agentPanel.metricLlmCalls': 'LLM calls',
+  'agentPanel.metricTokens': 'Tokens',
+  'agentPanel.metricToolSuccess': 'Tool success',
+  'agentPanel.metricAvgStep': 'Avg step',
+  'agentPanel.metricSlowestStep': 'Slowest',
+  'agentPanel.stepLatency': 'Step latency',
 
   // Model plan cards
   'modelCard.startIn': 'starts in {n}s',

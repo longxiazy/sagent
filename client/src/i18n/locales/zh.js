@@ -185,6 +185,14 @@ export const zh = {
   'agentPanel.rolledBackTo': '已回滚到 Step {step}',
   'agentPanel.badgeSnapshot': '快照',
   'agentPanel.snapshotSaved': 'Step {step} 健康快照已保存',
+  'agentPanel.traceDebug': 'Trace 调试',
+  'agentPanel.traceDebugMeta': '{llm} 次 LLM · {tools} 次工具',
+  'agentPanel.metricLlmCalls': 'LLM 调用',
+  'agentPanel.metricTokens': 'Tokens',
+  'agentPanel.metricToolSuccess': '工具成功率',
+  'agentPanel.metricAvgStep': '平均步骤',
+  'agentPanel.metricSlowestStep': '最慢步骤',
+  'agentPanel.stepLatency': '步骤耗时',
 
   // 模型计划卡片
   'modelCard.startIn': '{n}s 后启动',

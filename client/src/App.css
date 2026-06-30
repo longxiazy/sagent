@@ -2448,6 +2448,159 @@ select,
 
 .agent-token-detail { font-weight: 400; color: var(--c-agent-tokens); }
 
+/* ── Trace Debug Panel ── */
+
+.trace-debug-panel {
+  margin: 8px 0 4px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface-inline);
+  overflow: hidden;
+}
+
+.trace-debug-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  list-style: none;
+  min-height: 34px;
+}
+
+.trace-debug-summary::-webkit-details-marker { display: none; }
+
+.trace-debug-title,
+.trace-debug-summary-meta,
+.trace-debug-bars-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.trace-debug-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-text);
+}
+
+.trace-debug-summary-meta {
+  font-size: 11px;
+  color: var(--c-text-secondary);
+  white-space: nowrap;
+}
+
+.trace-debug-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-border);
+}
+
+.trace-debug-metric {
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--c-surface);
+}
+
+.trace-debug-label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 10px;
+  color: var(--c-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trace-debug-metric strong {
+  display: block;
+  font-size: 13px;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trace-debug-metric.ok strong { color: var(--c-badge-done); }
+.trace-debug-metric.warn strong { color: var(--c-badge-error); }
+.trace-debug-metric.tokens strong { color: var(--c-agent-tokens); }
+
+.trace-debug-bars {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-surface);
+}
+
+.trace-debug-bars-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--c-text-secondary);
+}
+
+.trace-debug-bar-row {
+  display: grid;
+  grid-template-columns: 28px minmax(80px, 1fr) 44px minmax(42px, auto);
+  align-items: center;
+  gap: 7px;
+  min-height: 20px;
+}
+
+.trace-debug-step,
+.trace-debug-duration,
+.trace-debug-tokens {
+  font-size: 10px;
+  color: var(--c-text-secondary);
+  white-space: nowrap;
+}
+
+.trace-debug-step { font-weight: 700; color: var(--c-text); }
+.trace-debug-duration { text-align: right; }
+.trace-debug-tokens { color: var(--c-agent-tokens); }
+
+.trace-debug-bar-track {
+  height: 7px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-inline);
+  overflow: hidden;
+}
+
+.trace-debug-bar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--c-badge-done);
+}
+
+.trace-debug-bar.normal { background: var(--c-badge-approval); }
+.trace-debug-bar.slow,
+.trace-debug-bar.failed { background: var(--c-badge-error); }
+.trace-debug-bar.running { background: var(--c-agent-timer); }
+
+@media (max-width: 720px) {
+  .trace-debug-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .trace-debug-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .trace-debug-bar-row {
+    grid-template-columns: 26px minmax(60px, 1fr) 42px;
+  }
+
+  .trace-debug-tokens { display: none; }
+}
+
 /* ── Agent Trace ── */
 
 .agent-trace {
