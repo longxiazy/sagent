@@ -9,6 +9,7 @@ import { ElapsedTimer } from './ElapsedTimer.jsx';
 import { TraceItem } from './TraceItem.jsx';
 import { StepCard } from './StepCard.jsx';
 import { computeTraceMetrics } from './trace-metrics.js';
+import { TraceDebugPanel } from './TraceDebugPanel.jsx';
 import { useIsMobile } from '../../hooks/useIsMobile.js';
 import { useT } from '../../i18n/I18nProvider.jsx';
 
@@ -166,6 +167,8 @@ export function AgentPanel({ running, trace, startedAt, modelList, collapsed, on
           <p className="agent-panel-note">
             {t('agentPanel.note')}
           </p>
+
+          {trace.length > 0 && <TraceDebugPanel metrics={metrics} t={t} />}
 
               {trace.length === 0 && running ? (
                 <div className="agent-skeleton">

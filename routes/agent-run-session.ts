@@ -74,9 +74,9 @@ export function createAgentRunSession({
       modelsUsed.add(payload.model);
     }
     logAgentEvent(payload);
-    baseSendEvent(payload);
+    const event = baseSendEvent(payload);
     if (!sseClosed && !res.writableEnded) {
-      try { rawSendEvent(payload); } catch { sseClosed = true; }
+      try { rawSendEvent(event); } catch { sseClosed = true; }
     }
   };
 
