@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { BarChart3, Brain, ChevronDown, Search, Trash2, X } from 'lucide-react';
 import { getSessionTitle } from '../../hooks/useChatSessions.js';
 import { usePersistentState, jsonStorage } from '../../hooks/usePersistentState.js';
@@ -116,12 +116,7 @@ export function SessionList({
 
   const groups = useMemo(() => buildGroups(visibleSessions, query), [visibleSessions, query]);
   const searching = query.trim().length > 0;
-
-  useEffect(() => {
-    if (showMemoryPanel) {
-      setShowStatsPanel(false);
-    }
-  }, [showMemoryPanel]);
+  const statsPanelOpen = showStatsPanel && !showMemoryPanel;
 
   // 搜索时强制展开所有命中分组，避免折叠把结果藏起来。
   const isCollapsed = key => !searching && Array.isArray(collapsedGroups) && collapsedGroups.includes(key);
@@ -137,9 +132,9 @@ export function SessionList({
         <h2 className="session-panel-title">{t('session.title')}</h2>
         <div className="session-panel-actions">
           <button
-            className={`session-icon-btn ${showStatsPanel ? 'active' : ''}`}
+            className={`session-icon-btn ${statsPanelOpen ? 'active' : ''}`}
             onClick={() => {
-              if (!showStatsPanel && showMemoryPanel) onToggleMemory();
+              if (!statsPanelOpen && showMemoryPanel) onToggleMemory();
               setShowStatsPanel(v => !v);
             }}
             title={t('session.viewAgentStats')}
@@ -161,7 +156,7 @@ export function SessionList({
 
       {showMemoryPanel ? (
         <MemoryPanel onClose={onToggleMemory} activeProjectId={activeProjectId} modelList={modelList} />
-      ) : showStatsPanel ? (
+      ) : statsPanelOpen ? (
         <AgentStatsPanel
           sessions={visibleSessions}
           modelList={modelList}
