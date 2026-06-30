@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { tStatic } from '../i18n/locale.js';
+import { normalizeAgentMeta } from '../utils/agent-stats.js';
 
 const LEGACY_MESSAGES_KEY = 'nvidia_chat_messages';
 const LEGACY_MODEL_KEY = 'nvidia_chat_model';
@@ -46,6 +47,7 @@ export function createSession({
   modelsUsed = [],
   agentTrace = [],
   agentRunId = null,
+  agentMeta = null,
   projectId = null,
   createdAt = Date.now(),
   updatedAt = Date.now(),
@@ -57,6 +59,7 @@ export function createSession({
     modelsUsed: normalizeModelIds(modelsUsed),
     agentTrace: Array.isArray(agentTrace) ? agentTrace : [],
     agentRunId: typeof agentRunId === 'string' ? agentRunId : null,
+    agentMeta: normalizeAgentMeta(agentMeta),
     // 会话归属的项目；null = 无项目（全局态，向后兼容旧会话）。
     projectId: typeof projectId === 'string' && projectId ? projectId : null,
     createdAt,
@@ -79,6 +82,7 @@ export function normalizeChatState(rawState) {
             modelsUsed: session.modelsUsed,
             agentTrace: session.agentTrace,
             agentRunId: session.agentRunId,
+            agentMeta: session.agentMeta,
             projectId: session.projectId,
             createdAt: Number.isFinite(session.createdAt) ? session.createdAt : Date.now(),
             updatedAt: Number.isFinite(session.updatedAt) ? session.updatedAt : Date.now(),

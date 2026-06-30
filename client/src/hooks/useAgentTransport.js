@@ -5,6 +5,7 @@ import { touchSession } from './useChatSessions.js';
 import { PHONE_BREAKPOINT } from '../utils/constants.js';
 import { useT } from '../i18n/I18nProvider.jsx';
 import { agentTraceEventKey, appendUniqueTraceEvent } from '../utils/agent-trace.js';
+import { buildAgentMetaFromSession } from '../utils/agent-stats.js';
 
 function uniqueModelIds(value) {
   if (!Array.isArray(value)) {
@@ -87,6 +88,7 @@ export function useAgentTransport({
       : selectedModelCandidates;
     const runModels = selectedModels;
     const primaryModel = runModels[0];
+    const runStrategy = runModels.length > 1 ? agentStrategy : 'race';
     if (runModels.length === 0) {
       window.alert?.(t('send.needModel'));
       return;
@@ -105,6 +107,7 @@ export function useAgentTransport({
           modelsUsed: runModels,
           agentTrace: [],
           agentRunId: null,
+          agentMeta: null,
         })
       );
       setInput('');
@@ -118,7 +121,7 @@ export function useAgentTransport({
         const msgs = [...session.messages];
         const stepInfo = cpStep ? t('agent.retryFromStep', { step: cpStep }) : '';
         msgs.push({ role: 'assistant', content: t('agent.retrying', { step: stepInfo, task: text }), pending: 'run', ts: Date.now(), model: primaryModel, modelsUsed: runModels });
-        return touchSession(session, { messages: msgs, model: primaryModel, modelsUsed: runModels });
+        return touchSession(session, { messages: msgs, model: primaryModel, modelsUsed: runModels, agentMeta: null });
       });
     }
     setAgentStartedAt(Date.now());
@@ -135,7 +138,7 @@ export function useAgentTransport({
         // 完整模型集合再通过 models 传给后端做并发规划。
         model: primaryModel,
         models: runModels,
-        strategy: runModels.length > 1 ? agentStrategy : 'race',
+        strategy: runStrategy,
         memory: agentMemory,
         // 当前会话归属的项目，后端据此隔离记忆/文件根/trace/checkpoint。
         projectId: activeSession.projectId ?? null,
@@ -211,6 +214,7 @@ export function useAgentTransport({
               kind: 'success',
             });
             setAgentTrace(prev => {
+              const nextTrace = appendUniqueTraceEvent(prev, event);
               updateSession(sessionId, session => {
                 const nextMessages = [...session.messages];
                 const modelsUsed = getEventModels(event, runModels);
@@ -226,11 +230,25 @@ export function useAgentTransport({
                   messages: nextMessages,
                   model: modelsUsed[0] || primaryModel,
                   modelsUsed,
-                  agentTrace: prev,
+                  agentTrace: nextTrace,
                   agentRunId: agentRunIdRef.current,
+                  agentMeta: buildAgentMetaFromSession({
+                    ...session,
+                    messages: nextMessages,
+                    model: modelsUsed[0] || primaryModel,
+                    modelsUsed,
+                    agentRunId: agentRunIdRef.current,
+                  }, nextTrace, {
+                    task: text,
+                    startedAt: now,
+                    models: modelsUsed,
+                    strategy: runStrategy,
+                    status: event.quality?.status || event.meta?.status || 'done',
+                    runId: agentRunIdRef.current,
+                  }),
                 });
               });
-              return prev;
+              return nextTrace;
             });
           }
 
@@ -241,6 +259,7 @@ export function useAgentTransport({
               kind: 'failure',
             });
             setAgentTrace(prev => {
+              const nextTrace = appendUniqueTraceEvent(prev, event);
               updateSession(sessionId, session => {
                 const nextMessages = [...session.messages];
                 const modelsUsed = getEventModels(event, runModels);
@@ -255,11 +274,25 @@ export function useAgentTransport({
                   messages: nextMessages,
                   model: modelsUsed[0] || primaryModel,
                   modelsUsed,
-                  agentTrace: prev,
+                  agentTrace: nextTrace,
                   agentRunId: agentRunIdRef.current,
+                  agentMeta: buildAgentMetaFromSession({
+                    ...session,
+                    messages: nextMessages,
+                    model: modelsUsed[0] || primaryModel,
+                    modelsUsed,
+                    agentRunId: agentRunIdRef.current,
+                  }, nextTrace, {
+                    task: text,
+                    startedAt: now,
+                    models: modelsUsed,
+                    strategy: runStrategy,
+                    status: event.error === 'Agent 已取消' ? 'cancelled' : 'error',
+                    runId: agentRunIdRef.current,
+                  }),
                 });
               });
-              return prev;
+              return nextTrace;
             });
           }
         },
@@ -309,6 +342,20 @@ export function useAgentTransport({
                 modelsUsed,
                 agentTrace: prev,
                 agentRunId: agentRunIdRef.current,
+                agentMeta: buildAgentMetaFromSession({
+                  ...session,
+                  messages: next,
+                  model: modelsUsed[0] || primaryModel,
+                  modelsUsed,
+                  agentRunId: agentRunIdRef.current,
+                }, prev, {
+                  task: text,
+                  startedAt: now,
+                  models: modelsUsed,
+                  strategy: runStrategy,
+                  status: doneEvent ? (doneEvent.quality?.status || doneEvent.meta?.status || 'done') : (errorEvent.error === 'Agent 已取消' ? 'cancelled' : 'error'),
+                  runId: agentRunIdRef.current,
+                }),
               });
             }
             const terminalEvent = doneEvent || errorEvent;
@@ -318,6 +365,19 @@ export function useAgentTransport({
               modelsUsed,
               agentTrace: prev,
               agentRunId: agentRunIdRef.current,
+              agentMeta: buildAgentMetaFromSession({
+                ...session,
+                model: modelsUsed[0] || primaryModel,
+                modelsUsed,
+                agentRunId: agentRunIdRef.current,
+              }, prev, {
+                task: text,
+                startedAt: now,
+                models: modelsUsed,
+                strategy: runStrategy,
+                status: doneEvent ? (doneEvent.quality?.status || doneEvent.meta?.status || 'done') : (errorEvent.error === 'Agent 已取消' ? 'cancelled' : 'error'),
+                runId: agentRunIdRef.current,
+              }),
             });
           });
         } else if (prev.length === 0 || !prev.some(e => e.type === 'done' || e.type === 'error')) {
@@ -334,6 +394,7 @@ export function useAgentTransport({
                 modelsUsed: runModels,
                 agentTrace: prev,
                 agentRunId: agentRunIdRef.current,
+                agentMeta: null,
               });
             }
             return touchSession(session, {
@@ -341,6 +402,7 @@ export function useAgentTransport({
               modelsUsed: runModels,
               agentTrace: prev,
               agentRunId: agentRunIdRef.current,
+              agentMeta: null,
             });
           });
         }
