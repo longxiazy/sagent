@@ -61,7 +61,8 @@ export const en = {
   'context.avg': 'Average first-request estimate {percent}%',
   'context.actualMax': 'Max actual {percent}%',
   'context.actualAvg': 'Average actual {percent}%',
-  'context.promptToggle': 'First prompt',
+  'context.promptToggle': 'prompt',
+  'context.promptTitle': 'View first prompt',
   'context.promptMeta': '{model} · {used} tok',
   'context.promptTruncated': 'Prompt is long and was truncated; full length {chars} chars.',
 

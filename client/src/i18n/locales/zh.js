@@ -62,7 +62,8 @@ export const zh = {
   'context.avg': '平均首轮预估 {percent}%',
   'context.actualMax': '最大实际 {percent}%',
   'context.actualAvg': '平均实际 {percent}%',
-  'context.promptToggle': '首轮提示词',
+  'context.promptToggle': 'prompt',
+  'context.promptTitle': '查看首轮提示词',
   'context.promptMeta': '{model} · {used} tok',
   'context.promptTruncated': '提示词过长，已截断；完整长度 {chars} 字符。',
 
