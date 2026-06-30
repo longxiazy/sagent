@@ -184,6 +184,8 @@ describe('POST /api/agent/context', () => {
     expect(res.body.promptPreview.modelId).toBe('test-model');
     expect(res.body.promptPreview.text).toContain('inspect the repo');
     expect(res.body.promptPreview.text).toContain('previous message');
+    expect(res.body.max.promptPreview).toBeUndefined();
+    expect(res.body.modelEstimates.every((item: any) => item.promptPreview == null)).toBe(true);
   });
 });
 

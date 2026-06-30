@@ -6,9 +6,10 @@ describe('context usage', () => {
     const estimate = {
       source: 'server_actual_prompt',
       max: { modelId: 'model-a', windowTokens: 10_000 },
+      promptPreview: { modelId: 'model-a', text: 'prompt a' },
       modelEstimates: [
-        { modelId: 'model-a', windowTokens: 10_000, promptPreview: { modelId: 'model-a', text: 'prompt a' } },
-        { modelId: 'model-b', windowTokens: 20_000, promptPreview: { modelId: 'model-b', text: 'prompt b' } },
+        { modelId: 'model-a', windowTokens: 10_000 },
+        { modelId: 'model-b', windowTokens: 20_000 },
       ],
     };
     const actual = buildActualContextEstimate([
