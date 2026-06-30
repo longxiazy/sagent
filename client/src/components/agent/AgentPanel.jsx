@@ -1,23 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Square, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp,
-  Monitor, Loader2,
+  Monitor, Loader2, Bot, Clock3, Coins, ListChecks, Trophy,
 } from 'lucide-react';
 import { PHONE_BREAKPOINT } from '../../utils/constants.js';
 import { ModelPlanGroup } from './ModelPlanGroup.jsx';
 import { ElapsedTimer } from './ElapsedTimer.jsx';
 import { TraceItem } from './TraceItem.jsx';
 import { StepCard } from './StepCard.jsx';
-import { computeTraceMetrics } from './trace-metrics.js';
+import { computeTraceMetrics, formatDurationMs, formatTokenCount } from './trace-metrics.js';
 import { TraceDebugPanel } from './TraceDebugPanel.jsx';
 import { useIsMobile } from '../../hooks/useIsMobile.js';
 import { useT } from '../../i18n/I18nProvider.jsx';
+import { formatFullTime, formatRelativeTime } from '../../utils/format.js';
 
 // AgentPanel 既是执行面板，也是运行时仪表盘：
 // - 负责展示 trace
 // - 负责显示暂停/审批/用时/token 等运行态指标
 // - 在移动端和桌面端之间复用同一套事件展示逻辑
-export function AgentPanel({ running, trace, startedAt, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onRollback, rollbackLoading }) {
+function strategyLabel(strategy, t) {
+  if (strategy === 'vote') return t('agentStats.strategyVote');
+  return t('agentStats.strategyRace');
+}
+
+function statusLabel(status, t) {
+  if (status === 'done_degraded') return t('agentStats.statusDegraded');
+  if (status === 'done_unverified') return t('agentStats.statusUnverified');
+  if (status === 'error') return t('agentStats.statusError');
+  if (status === 'cancelled') return t('agentStats.statusCancelled');
+  return t('agentStats.statusDone');
+}
+
+export function AgentPanel({ running, trace, startedAt, lastRun, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onRollback, rollbackLoading }) {
   const t = useT();
   const traceBottomRef = useRef(null);
   const traceStickyRef = useRef(true);
@@ -84,6 +98,10 @@ export function AgentPanel({ running, trace, startedAt, modelList, collapsed, on
     : doneStatus === 'done_degraded'
       ? t('agentPanel.statusDegraded')
       : t('agentPanel.statusDone');
+  const lastRunModels = useMemo(
+    () => (lastRun?.models || []).map(model => modelList.find(item => item.id === model)?.label || model),
+    [lastRun, modelList],
+  );
 
   // ESC closes lightbox
   useEffect(() => {
@@ -167,6 +185,27 @@ export function AgentPanel({ running, trace, startedAt, modelList, collapsed, on
           <p className="agent-panel-note">
             {t('agentPanel.note')}
           </p>
+
+          {!running && lastRun && (
+            <div className={`agent-last-run ${lastRun.status === 'error' ? 'error' : ''}`}>
+              <div className="agent-last-run-head">
+                <div>
+                  <span className="agent-last-run-kicker">{t('agentPanel.recentRun')}</span>
+                  <strong title={lastRun.task}>{lastRun.task || t('agent.taskFallback')}</strong>
+                </div>
+                <span className="agent-last-run-status" title={lastRun.endedAt ? formatFullTime(lastRun.endedAt) : ''}>
+                  {lastRun.endedAt ? formatRelativeTime(lastRun.endedAt) : statusLabel(lastRun.status, t)}
+                </span>
+              </div>
+              <div className="agent-last-run-grid">
+                <span><Clock3 size={13} />{formatDurationMs(lastRun.elapsedMs)}</span>
+                <span><ListChecks size={13} />{t('agentPanel.stepCount', { n: lastRun.stepCount })}</span>
+                <span><Coins size={13} />{formatTokenCount(lastRun.totalTokens)} tok</span>
+                <span><Bot size={13} />{lastRunModels.slice(0, 2).join(' + ') || t('session.unknownModel')}</span>
+                <span><Trophy size={13} />{strategyLabel(lastRun.strategy, t)}</span>
+              </div>
+            </div>
+          )}
 
           {trace.length > 0 && <TraceDebugPanel metrics={metrics} t={t} />}
 

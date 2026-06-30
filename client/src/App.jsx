@@ -52,6 +52,7 @@ import { shuffled } from './utils/random.js';
 import { hasThinkContent } from './utils/markdown.js';
 import { appendUniqueTraceEvent } from './utils/agent-trace.js';
 import { buildActualContextEstimate } from './utils/context-usage.js';
+import { buildAgentMetaFromSession } from './utils/agent-stats.js';
 
 // 稳定的空数组:作为 useProjectScopedState 的 initialValue,scope 缺省时返回同一引用,避免无谓重渲染。
 const EMPTY_AGENT_MODELS = [];
@@ -344,6 +345,7 @@ export default function App() {
                 ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}),
                 ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}),
                 agentRunId: data.runId,
+                agentMeta: null,
               });
             });
             return normalizeChatState({ ...prev, sessions });
@@ -438,25 +440,76 @@ export default function App() {
                 setAgentRunning(false);
                 const modelsUsed = uniqueModelIds(event.meta?.models_used);
                 const primaryDoneModel = modelsUsed[0] || activeRunPrimaryModel;
-                updateActiveSession(session => {
-                  const msgs = [...session.messages];
-                  const idx = (() => { for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'assistant' && msgs[i].pending === 'run') return i; } return -1; })();
-                  if (idx >= 0) {
-                    msgs[idx] = { role: 'assistant', content: event.answer || t('agent.done'), ts: Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) };
-                  } else if (!msgs.some(m => m.role === 'assistant' && m.content === (event.answer || ''))) {
-                    msgs.push({ role: 'user', content: reconnectTaskRef.current || data.task || t('agent.taskFallback'), ts: data.startedAt || Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) });
-                    msgs.push({ role: 'assistant', content: event.answer || t('agent.done'), ts: Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) });
-                  }
-                  return touchSession(session, {
-                    messages: msgs,
-                    ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
-                    agentRunId: data.runId,
+                setAgentTrace(prevTrace => {
+                  const nextTrace = appendUniqueTraceEvent(prevTrace, event);
+                  updateActiveSession(session => {
+                    const msgs = [...session.messages];
+                    const idx = (() => { for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'assistant' && msgs[i].pending === 'run') return i; } return -1; })();
+                    if (idx >= 0) {
+                      msgs[idx] = { role: 'assistant', content: event.answer || t('agent.done'), ts: Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) };
+                    } else if (!msgs.some(m => m.role === 'assistant' && m.content === (event.answer || ''))) {
+                      msgs.push({ role: 'user', content: reconnectTaskRef.current || data.task || t('agent.taskFallback'), ts: data.startedAt || Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) });
+                      msgs.push({ role: 'assistant', content: event.answer || t('agent.done'), ts: Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) });
+                    }
+                    return touchSession(session, {
+                      messages: msgs,
+                      ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
+                      agentRunId: data.runId,
+                      agentTrace: nextTrace,
+                      agentMeta: buildAgentMetaFromSession({
+                        ...session,
+                        messages: msgs,
+                        ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
+                        agentRunId: data.runId,
+                      }, nextTrace, {
+                        task: reconnectTaskRef.current || data.task || t('agent.taskFallback'),
+                        startedAt: data.startedAt,
+                        models: modelsUsed,
+                        status: event.quality?.status || event.meta?.status || 'done',
+                        runId: data.runId,
+                      }),
+                    });
                   });
+                  return nextTrace;
                 });
               }
 
               if (event.type === 'error') {
                 setAgentRunning(false);
+                setAgentTrace(prevTrace => {
+                  const nextTrace = appendUniqueTraceEvent(prevTrace, event);
+                  updateActiveSession(session => {
+                    const msgs = [...session.messages];
+                    const idx = (() => { for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'assistant' && msgs[i].pending === 'run') return i; } return -1; })();
+                    const content = t('agent.failed', { error: event.error || t('common.unknownError') });
+                    if (idx >= 0) {
+                      msgs[idx] = { role: 'assistant', content, ts: Date.now(), ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}), ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}) };
+                    } else if (!msgs.some(m => m.role === 'assistant' && m.content === content)) {
+                      msgs.push({ role: 'assistant', content, ts: Date.now(), ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}), ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}) });
+                    }
+                    return touchSession(session, {
+                      messages: msgs,
+                      ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}),
+                      ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}),
+                      agentRunId: data.runId,
+                      agentTrace: nextTrace,
+                      agentMeta: buildAgentMetaFromSession({
+                        ...session,
+                        messages: msgs,
+                        ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}),
+                        ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}),
+                        agentRunId: data.runId,
+                      }, nextTrace, {
+                        task: reconnectTaskRef.current || data.task || t('agent.taskFallback'),
+                        startedAt: data.startedAt,
+                        models: activeRunModels,
+                        status: event.error === 'Agent 已取消' ? 'cancelled' : 'error',
+                        runId: data.runId,
+                      }),
+                    });
+                  });
+                  return nextTrace;
+                });
               }
             } catch { /* skip malformed SSE lines */ }
           }
@@ -527,14 +580,24 @@ export default function App() {
             msgs[idx] = { role: 'assistant', content, ts: Date.now(), ...(primaryModel ? { model: primaryModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) };
           } else if (!msgs.some(m => m.role === 'assistant' && m.content === content)) {
             msgs.push({ role: 'assistant', content, ts: Date.now(), ...(primaryModel ? { model: primaryModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) });
-          } else {
-            return session;
           }
           changed = true;
           return touchSession(session, {
             messages: msgs,
             ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
             agentRunId: rid,
+            agentTrace: events,
+            agentMeta: buildAgentMetaFromSession({
+              ...session,
+              messages: msgs,
+              ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
+              agentRunId: rid,
+            }, events, {
+              task: lastAgentTaskRef.current || undefined,
+              models: modelsUsed,
+              status: terminal.type === 'done' ? (terminal.quality?.status || terminal.meta?.status || 'done') : (terminal.error === 'Agent 已取消' ? 'cancelled' : 'error'),
+              runId: rid,
+            }),
           });
         });
         if (!changed) return prev;
@@ -583,6 +646,11 @@ export default function App() {
             agentRunId: savedRunId,
             agentTrace: deduped,
             ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
+            agentMeta: buildAgentMetaFromSession({
+              ...session,
+              agentRunId: savedRunId,
+              ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
+            }, deduped),
           }));
         })
         .catch(() => {});
@@ -888,6 +956,10 @@ export default function App() {
   );
 
   const showHero = messages.length === 0 && !agentRunning;
+  const activeAgentMeta = useMemo(
+    () => buildAgentMetaFromSession(activeSession, agentTrace),
+    [activeSession, agentTrace]
+  );
 
   const { submitting: questionSubmitting, handleSubmit: handleQuestionSubmit, handleSkip: handleQuestionSkip } = useQuestionSubmit({
     pendingQuestion,
@@ -997,6 +1069,7 @@ export default function App() {
                   running={agentRunning}
                   trace={agentTrace}
                   startedAt={agentStartedAt}
+                  lastRun={activeAgentMeta}
                   modelList={availableModels}
                   collapsed={agentCollapsed}
                   onToggleCollapse={() => setAgentCollapsed(c => !c)}
