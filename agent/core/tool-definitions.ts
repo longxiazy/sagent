@@ -159,7 +159,7 @@ export function createModelTools() {
     },
     {
       name: 'image_analyze',
-      description: '让多模态模型分析一张图片并回答问题。用于解读浏览器/桌面截图、查看报错图、识别图表或界面布局。image 可以是本地文件路径或 http(s) URL，question 用简体中文描述需要从图里得到的信息。',
+      description: '让多模态模型分析一张图片并回答问题。用于解读浏览器/桌面截图、查看报错图、识别图表或界面布局。image 可以是本地文件路径或 http(s) URL，question 用简体中文描述需要从图里得到的信息。识别具体来源/游戏/人物/品牌时要区分可见事实与低置信猜测；证据不足就明确说无法仅凭图片确认，不要编造 UI、文字、角色名、怪物、道具或数值。',
       input_schema: {
         type: 'object',
         properties: {

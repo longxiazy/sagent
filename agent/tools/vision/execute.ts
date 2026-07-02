@@ -21,6 +21,13 @@ const REQUEST_TIMEOUT_MS = 60000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 export const DEFAULT_VISION_MODEL = 'meta/llama-3.2-90b-vision-instruct';
 
+const VISION_ANALYSIS_GUIDE = [
+  '请严格基于图片可见内容回答。',
+  '把可见事实和低置信猜测分开；如果无法可靠确认具体作品、游戏、地点、人物或品牌名称，请明确说“无法仅凭这张图确认”。',
+  '不要编造图片里没有的 UI、文字、按钮、角色名、怪物、道具或数值。',
+  '识别具体来源时，只有在图片中存在清晰文字、标志、独特角色/场景或其它强证据时才给出确定结论；否则给出可能类别和不确定性。',
+].join('\n');
+
 function mimeFromExt(target: string): string {
   const cleaned = String(target).toLowerCase().split('?')[0].split('#')[0];
   const ext = cleaned.split('.').pop();
@@ -92,7 +99,7 @@ export async function executeVisionAction(action, context = {}) {
         {
           role: 'user',
           content: [
-            { type: 'text', text: question },
+            { type: 'text', text: `${VISION_ANALYSIS_GUIDE}\n\n用户问题：${question}` },
             { type: 'image_url', image_url: { url: imageUrl } },
           ],
         },
