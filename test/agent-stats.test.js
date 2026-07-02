@@ -119,4 +119,67 @@ describe('buildAgentStats', () => {
     expect(stats.recentRuns.map(item => item.sessionId)).toEqual(['today', 'yesterday']);
     expect(stats.dailyData.at(-1)).toMatchObject({ date: '2026-06-30', tokens: 1500, runs: 1 });
   });
+
+  it('统计同一会话内的多次 agentRuns，并按 runId 去重当前 run', () => {
+    const now = at(2026, 5, 30, 12, 0);
+    const first = at(2026, 5, 30, 9, 0);
+    const second = at(2026, 5, 30, 10, 0);
+    const sessions = [
+      {
+        id: 'multi-run-session',
+        agentRunId: 'run_second',
+        agentMeta: {
+          task: '第二次问题',
+          startedAt: second,
+          endedAt: second + 2000,
+          elapsedMs: 2000,
+          totalTokens: 700,
+          stepCount: 2,
+          models: ['m2'],
+          strategy: 'race',
+          status: 'done',
+          runId: 'run_second',
+        },
+        agentRuns: [
+          {
+            runId: 'run_second',
+            meta: {
+              task: '第二次问题',
+              startedAt: second,
+              endedAt: second + 2000,
+              elapsedMs: 2000,
+              totalTokens: 700,
+              stepCount: 2,
+              models: ['m2'],
+              strategy: 'race',
+              status: 'done',
+              runId: 'run_second',
+            },
+          },
+          {
+            runId: 'run_first',
+            meta: {
+              task: '第一次问题',
+              startedAt: first,
+              endedAt: first + 1000,
+              elapsedMs: 1000,
+              totalTokens: 300,
+              stepCount: 1,
+              models: ['m1'],
+              strategy: 'race',
+              status: 'done',
+              runId: 'run_first',
+            },
+          },
+        ],
+      },
+    ];
+
+    const stats = buildAgentStats(sessions, { now });
+
+    expect(stats.totalRuns).toBe(2);
+    expect(stats.todayRuns).toBe(2);
+    expect(stats.todayTokens).toBe(1000);
+    expect(stats.recentRuns.map(item => item.runId)).toEqual(['run_second', 'run_first']);
+  });
 });

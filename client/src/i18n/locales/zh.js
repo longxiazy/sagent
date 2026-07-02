@@ -195,6 +195,9 @@ export const zh = {
   'agentPanel.metricSlowestStep': '最慢步骤',
   'agentPanel.stepLatency': '步骤耗时',
   'agentPanel.recentRun': '最近执行',
+  'agentPanel.previousRuns': '历史执行',
+  'agentPanel.historyLoading': '正在加载历史步骤…',
+  'agentPanel.historyTraceUnavailable': '未找到这次执行的历史步骤',
 
   // Agent 统计
   'agentStats.eyebrow': '当前项目',

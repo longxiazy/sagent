@@ -1,7 +1,7 @@
 import { streamAgentRun, submitAgentApproval } from '../api/streams.js';
 import { apiFetch } from '../api/http.js';
 import { showAgentNotification } from '../notifications.js';
-import { touchSession } from './useChatSessions.js';
+import { touchSession, upsertAgentRun } from './useChatSessions.js';
 import { PHONE_BREAKPOINT } from '../utils/constants.js';
 import { useT } from '../i18n/I18nProvider.jsx';
 import { agentTraceEventKey, appendUniqueTraceEvent } from '../utils/agent-trace.js';
@@ -100,16 +100,21 @@ export function useAgentTransport({
       : [...messages, { role: 'user', content: text, ts: now, model: primaryModel, modelsUsed: runModels }];
 
     if (!isRetry) {
-      updateSession(sessionId, session =>
-        touchSession(session, {
+      updateSession(sessionId, session => {
+        const archivedSession = upsertAgentRun(session, {
+          runId: session.agentRunId,
+          trace: session.agentTrace,
+          meta: buildAgentMetaFromSession(session, session.agentTrace),
+        });
+        return touchSession(archivedSession, {
           messages: [...history, { role: 'assistant', content: t('agent.running'), pending: 'run', ts: now, model: primaryModel, modelsUsed: runModels }],
           model: primaryModel,
           modelsUsed: runModels,
           agentTrace: [],
           agentRunId: null,
           agentMeta: null,
-        })
-      );
+        });
+      });
       setInput('');
       setAgentTrace([]);
       agentRunIdRef.current = null;
@@ -226,27 +231,30 @@ export function useAgentTransport({
                   model: modelsUsed[0] || primaryModel,
                   modelsUsed,
                 };
-                return touchSession(session, {
+                const nextSession = {
+                  ...session,
                   messages: nextMessages,
                   model: modelsUsed[0] || primaryModel,
                   modelsUsed,
                   agentTrace: nextTrace,
                   agentRunId: agentRunIdRef.current,
-                  agentMeta: buildAgentMetaFromSession({
-                    ...session,
-                    messages: nextMessages,
-                    model: modelsUsed[0] || primaryModel,
-                    modelsUsed,
-                    agentRunId: agentRunIdRef.current,
-                  }, nextTrace, {
-                    task: text,
-                    startedAt: now,
-                    models: modelsUsed,
-                    strategy: runStrategy,
-                    status: event.quality?.status || event.meta?.status || 'done',
-                    runId: agentRunIdRef.current,
-                  }),
+                };
+                const agentMeta = buildAgentMetaFromSession(nextSession, nextTrace, {
+                  task: text,
+                  startedAt: now,
+                  models: modelsUsed,
+                  strategy: runStrategy,
+                  status: event.quality?.status || event.meta?.status || 'done',
+                  runId: agentRunIdRef.current,
                 });
+                return touchSession(upsertAgentRun({
+                  ...nextSession,
+                  agentMeta,
+                }, {
+                  runId: agentRunIdRef.current,
+                  trace: nextTrace,
+                  meta: agentMeta,
+                }));
               });
               return nextTrace;
             });
@@ -270,27 +278,30 @@ export function useAgentTransport({
                   model: modelsUsed[0] || primaryModel,
                   modelsUsed,
                 };
-                return touchSession(session, {
+                const nextSession = {
+                  ...session,
                   messages: nextMessages,
                   model: modelsUsed[0] || primaryModel,
                   modelsUsed,
                   agentTrace: nextTrace,
                   agentRunId: agentRunIdRef.current,
-                  agentMeta: buildAgentMetaFromSession({
-                    ...session,
-                    messages: nextMessages,
-                    model: modelsUsed[0] || primaryModel,
-                    modelsUsed,
-                    agentRunId: agentRunIdRef.current,
-                  }, nextTrace, {
-                    task: text,
-                    startedAt: now,
-                    models: modelsUsed,
-                    strategy: runStrategy,
-                    status: event.error === 'Agent 已取消' ? 'cancelled' : 'error',
-                    runId: agentRunIdRef.current,
-                  }),
+                };
+                const agentMeta = buildAgentMetaFromSession(nextSession, nextTrace, {
+                  task: text,
+                  startedAt: now,
+                  models: modelsUsed,
+                  strategy: runStrategy,
+                  status: event.error === 'Agent 已取消' ? 'cancelled' : 'error',
+                  runId: agentRunIdRef.current,
                 });
+                return touchSession(upsertAgentRun({
+                  ...nextSession,
+                  agentMeta,
+                }, {
+                  runId: agentRunIdRef.current,
+                  trace: nextTrace,
+                  meta: agentMeta,
+                }));
               });
               return nextTrace;
             });
@@ -336,49 +347,56 @@ export function useAgentTransport({
               } else {
                 next[lastIdx] = { role: 'assistant', content: t('agent.failed', { error: errorEvent.error || t('agent.connectionLostShort') }), ts: Date.now(), model: modelsUsed[0] || primaryModel, modelsUsed };
               }
-              return touchSession(session, {
+              const nextSession = {
+                ...session,
                 messages: next,
                 model: modelsUsed[0] || primaryModel,
                 modelsUsed,
                 agentTrace: prev,
                 agentRunId: agentRunIdRef.current,
-                agentMeta: buildAgentMetaFromSession({
-                  ...session,
-                  messages: next,
-                  model: modelsUsed[0] || primaryModel,
-                  modelsUsed,
-                  agentRunId: agentRunIdRef.current,
-                }, prev, {
-                  task: text,
-                  startedAt: now,
-                  models: modelsUsed,
-                  strategy: runStrategy,
-                  status: doneEvent ? (doneEvent.quality?.status || doneEvent.meta?.status || 'done') : (errorEvent.error === 'Agent 已取消' ? 'cancelled' : 'error'),
-                  runId: agentRunIdRef.current,
-                }),
-              });
-            }
-            const terminalEvent = doneEvent || errorEvent;
-            const modelsUsed = getEventModels(terminalEvent, runModels);
-            return touchSession(session, {
-              model: modelsUsed[0] || primaryModel,
-              modelsUsed,
-              agentTrace: prev,
-              agentRunId: agentRunIdRef.current,
-              agentMeta: buildAgentMetaFromSession({
-                ...session,
-                model: modelsUsed[0] || primaryModel,
-                modelsUsed,
-                agentRunId: agentRunIdRef.current,
-              }, prev, {
+              };
+              const agentMeta = buildAgentMetaFromSession(nextSession, prev, {
                 task: text,
                 startedAt: now,
                 models: modelsUsed,
                 strategy: runStrategy,
                 status: doneEvent ? (doneEvent.quality?.status || doneEvent.meta?.status || 'done') : (errorEvent.error === 'Agent 已取消' ? 'cancelled' : 'error'),
                 runId: agentRunIdRef.current,
-              }),
+              });
+              return touchSession(upsertAgentRun({
+                ...nextSession,
+                agentMeta,
+              }, {
+                runId: agentRunIdRef.current,
+                trace: prev,
+                meta: agentMeta,
+              }));
+            }
+            const terminalEvent = doneEvent || errorEvent;
+            const modelsUsed = getEventModels(terminalEvent, runModels);
+            const nextSession = {
+              ...session,
+              model: modelsUsed[0] || primaryModel,
+              modelsUsed,
+              agentTrace: prev,
+              agentRunId: agentRunIdRef.current,
+            };
+            const agentMeta = buildAgentMetaFromSession(nextSession, prev, {
+              task: text,
+              startedAt: now,
+              models: modelsUsed,
+              strategy: runStrategy,
+              status: doneEvent ? (doneEvent.quality?.status || doneEvent.meta?.status || 'done') : (errorEvent.error === 'Agent 已取消' ? 'cancelled' : 'error'),
+              runId: agentRunIdRef.current,
             });
+            return touchSession(upsertAgentRun({
+              ...nextSession,
+              agentMeta,
+            }, {
+              runId: agentRunIdRef.current,
+              trace: prev,
+              meta: agentMeta,
+            }));
           });
         } else if (prev.length === 0 || !prev.some(e => e.type === 'done' || e.type === 'error')) {
           // No events received at all or SSE disconnected without done/error
