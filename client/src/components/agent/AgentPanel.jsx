@@ -331,37 +331,6 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
             {t('agentPanel.note')}
           </p>
 
-          {!running && lastRun && (
-            <LastRunFrame
-              className={lastRunClassName}
-              {...(canToggleRecentRun ? {
-                type: 'button',
-                onClick: () => setRecentRunExpanded(v => !v),
-                'aria-expanded': recentRunExpanded,
-              } : {})}
-            >
-              <div className="agent-last-run-head">
-                <div>
-                  <span className="agent-last-run-kicker">{t('agentPanel.recentRun')}</span>
-                  <strong title={lastRun.task}>{lastRun.task || t('agent.taskFallback')}</strong>
-                </div>
-                <span className="agent-last-run-status-wrap">
-                  <span className="agent-last-run-status" title={lastRun.endedAt ? formatFullTime(lastRun.endedAt) : ''}>
-                    {lastRun.endedAt ? formatRelativeTime(lastRun.endedAt) : statusLabel(lastRun.status, t)}
-                  </span>
-                  {canToggleRecentRun && (recentRunExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
-                </span>
-              </div>
-              <div className="agent-last-run-grid">
-                <span><Clock3 size={13} />{formatDurationMs(lastRun.elapsedMs)}</span>
-                <span><ListChecks size={13} />{t('agentPanel.stepCount', { n: lastRun.stepCount })}</span>
-                <span><Coins size={13} />{formatTokenCount(lastRun.totalTokens)} tok</span>
-                <span><Bot size={13} />{lastRunModels.slice(0, 2).join(' + ') || t('session.unknownModel')}</span>
-                <span><Trophy size={13} />{strategyLabel(lastRun.strategy, t)}</span>
-              </div>
-            </LastRunFrame>
-          )}
-
           {historyRuns.length > 0 && (
             <div className="agent-run-history">
               <div className="agent-run-history-head">
@@ -420,6 +389,37 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
                 );
               })}
             </div>
+          )}
+
+          {!running && lastRun && (
+            <LastRunFrame
+              className={lastRunClassName}
+              {...(canToggleRecentRun ? {
+                type: 'button',
+                onClick: () => setRecentRunExpanded(v => !v),
+                'aria-expanded': recentRunExpanded,
+              } : {})}
+            >
+              <div className="agent-last-run-head">
+                <div>
+                  <span className="agent-last-run-kicker">{t('agentPanel.recentRun')}</span>
+                  <strong title={lastRun.task}>{lastRun.task || t('agent.taskFallback')}</strong>
+                </div>
+                <span className="agent-last-run-status-wrap">
+                  <span className="agent-last-run-status" title={lastRun.endedAt ? formatFullTime(lastRun.endedAt) : ''}>
+                    {lastRun.endedAt ? formatRelativeTime(lastRun.endedAt) : statusLabel(lastRun.status, t)}
+                  </span>
+                  {canToggleRecentRun && (recentRunExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
+                </span>
+              </div>
+              <div className="agent-last-run-grid">
+                <span><Clock3 size={13} />{formatDurationMs(lastRun.elapsedMs)}</span>
+                <span><ListChecks size={13} />{t('agentPanel.stepCount', { n: lastRun.stepCount })}</span>
+                <span><Coins size={13} />{formatTokenCount(lastRun.totalTokens)} tok</span>
+                <span><Bot size={13} />{lastRunModels.slice(0, 2).join(' + ') || t('session.unknownModel')}</span>
+                <span><Trophy size={13} />{strategyLabel(lastRun.strategy, t)}</span>
+              </div>
+            </LastRunFrame>
           )}
 
           {trace.length > 0 && showCurrentTrace && <TraceDebugPanel metrics={metrics} t={t} />}
