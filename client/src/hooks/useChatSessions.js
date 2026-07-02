@@ -6,6 +6,7 @@ const LEGACY_MESSAGES_KEY = 'nvidia_chat_messages';
 const LEGACY_MODEL_KEY = 'nvidia_chat_model';
 const SESSIONS_KEY = 'nvidia_chat_sessions';
 const ACTIVE_SESSION_KEY = 'nvidia_chat_active_session';
+const MAX_AGENT_RUN_HISTORY = 30;
 
 function generateSessionId() {
   return `session_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -40,6 +41,60 @@ function normalizeModelId(value) {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
+function traceRunId(trace) {
+  if (!Array.isArray(trace)) {
+    return null;
+  }
+
+  for (let i = trace.length - 1; i >= 0; i -= 1) {
+    const runId = normalizeModelId(trace[i]?.runId);
+    if (runId) return runId;
+  }
+  return null;
+}
+
+function agentRunKey(run) {
+  return run?.runId || `${run?.meta?.startedAt || ''}:${run?.meta?.endedAt || ''}:${run?.meta?.task || ''}`;
+}
+
+function normalizeAgentRun(value) {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const trace = Array.isArray(value.trace) ? value.trace : [];
+  const meta = normalizeAgentMeta(value.meta);
+  const runId = normalizeModelId(value.runId) || meta?.runId || traceRunId(trace);
+
+  if (!runId && !meta && trace.length === 0) {
+    return null;
+  }
+
+  return {
+    runId,
+    trace,
+    meta,
+  };
+}
+
+function normalizeAgentRuns(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const runs = [];
+  for (const item of value) {
+    const run = normalizeAgentRun(item);
+    if (!run) continue;
+    const key = agentRunKey(run);
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    runs.push(run);
+  }
+  return runs.slice(0, MAX_AGENT_RUN_HISTORY);
+}
+
 export function createSession({
   id = generateSessionId(),
   messages = [],
@@ -48,6 +103,7 @@ export function createSession({
   agentTrace = [],
   agentRunId = null,
   agentMeta = null,
+  agentRuns = [],
   projectId = null,
   createdAt = Date.now(),
   updatedAt = Date.now(),
@@ -60,10 +116,30 @@ export function createSession({
     agentTrace: Array.isArray(agentTrace) ? agentTrace : [],
     agentRunId: typeof agentRunId === 'string' ? agentRunId : null,
     agentMeta: normalizeAgentMeta(agentMeta),
+    agentRuns: normalizeAgentRuns(agentRuns),
     // 会话归属的项目；null = 无项目（全局态，向后兼容旧会话）。
     projectId: typeof projectId === 'string' && projectId ? projectId : null,
     createdAt,
     updatedAt,
+  };
+}
+
+export function upsertAgentRun(session, runInput = {}) {
+  const run = normalizeAgentRun(runInput);
+  if (!session || !run) {
+    return session;
+  }
+
+  const key = agentRunKey(run);
+  const existingRuns = normalizeAgentRuns(session.agentRuns);
+  const nextRuns = [
+    run,
+    ...existingRuns.filter(item => agentRunKey(item) !== key),
+  ];
+
+  return {
+    ...session,
+    agentRuns: normalizeAgentRuns(nextRuns),
   };
 }
 
@@ -83,6 +159,7 @@ export function normalizeChatState(rawState) {
             agentTrace: session.agentTrace,
             agentRunId: session.agentRunId,
             agentMeta: session.agentMeta,
+            agentRuns: session.agentRuns,
             projectId: session.projectId,
             createdAt: Number.isFinite(session.createdAt) ? session.createdAt : Date.now(),
             updatedAt: Number.isFinite(session.updatedAt) ? session.updatedAt : Date.now(),
@@ -157,15 +234,25 @@ function isQuotaError(err) {
     || err.code === 1014;
 }
 
+function stripAgentRunTraces(agentRuns) {
+  return normalizeAgentRuns(agentRuns).map(run => (
+    run.trace && run.trace.length > 0
+      ? { ...run, trace: [] }
+      : run
+  ));
+}
+
 function stripAgentTrace(sessions) {
   // agentTrace 是 SSE 事件流的客户端镜像，单个 run 可达几 MB。
   // 服务端已经在 data/traces/<runId>.jsonl 全量落盘，并通过 /api/agent/traces/:runId 提供按需拉取，
   // localStorage 只需要保存 agentRunId，刷新后由 App.jsx 的 useEffect 触发拉取重建。
-  return sessions.map(session => (
-    session.agentTrace && session.agentTrace.length
-      ? { ...session, agentTrace: [] }
-      : session
-  ));
+  return sessions.map(session => {
+    const agentRuns = stripAgentRunTraces(session.agentRuns);
+    if ((session.agentTrace && session.agentTrace.length) || agentRuns !== session.agentRuns) {
+      return { ...session, agentTrace: [], agentRuns };
+    }
+    return session;
+  });
 }
 
 function persistSessions(sessions) {

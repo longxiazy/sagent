@@ -13,6 +13,8 @@ import { TraceDebugPanel } from './TraceDebugPanel.jsx';
 import { useIsMobile } from '../../hooks/useIsMobile.js';
 import { useT } from '../../i18n/I18nProvider.jsx';
 import { formatFullTime, formatRelativeTime } from '../../utils/format.js';
+import { fetchAgentTrace } from '../../api/streams.js';
+import { appendUniqueTraceEvent } from '../../utils/agent-trace.js';
 
 // AgentPanel 既是执行面板，也是运行时仪表盘：
 // - 负责展示 trace
@@ -31,19 +33,41 @@ function statusLabel(status, t) {
   return t('agentStats.statusDone');
 }
 
-export function AgentPanel({ running, trace, startedAt, lastRun, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onRollback, rollbackLoading }) {
+function traceRunId(trace) {
+  if (!Array.isArray(trace)) return null;
+  for (let i = trace.length - 1; i >= 0; i -= 1) {
+    const runId = trace[i]?.runId;
+    if (typeof runId === 'string' && runId) return runId;
+  }
+  return null;
+}
+
+function runKey(run, index = 0) {
+  return run?.runId || run?.meta?.runId || `${run?.meta?.startedAt || ''}:${run?.meta?.task || ''}:${index}`;
+}
+
+function shouldHideTimelineEvent(event) {
+  if (event.type === 'session_checkpoint') return true;
+  return event.type === 'status' && (event.status === 'starting' || event.status === 'browser_ready');
+}
+
+export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = [], projectId = null, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onRollback, rollbackLoading }) {
   const t = useT();
   const traceBottomRef = useRef(null);
   const traceStickyRef = useRef(true);
   const isMobile = useIsMobile(PHONE_BREAKPOINT);
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [cardsExpanded, setCardsExpanded] = useState(null); // null=auto, true=all open, false=all closed
+  const [expandedHistoryRun, setExpandedHistoryRun] = useState(null);
+  const [historyTraceCache, setHistoryTraceCache] = useState({});
+  const [historyTraceLoading, setHistoryTraceLoading] = useState(null);
 
   // onRollback 来自上层且每次 render 是新引用；用 ref 包出稳定回调，
   // 这样 memo 化的 TraceItem 不会因为回调引用变化而整片重渲。
   const rollbackRef = useRef(onRollback);
   useEffect(() => { rollbackRef.current = onRollback; }, [onRollback]);
   const stableRollback = useCallback(step => rollbackRef.current?.(step), []);
+  const disabledRollback = useCallback(() => {}, []);
 
   // 以下派生值原先每次 render（含每秒计时 tick）都对整条 trace 做 some/reduce/find，
   // 现在统一 memo 化，只在 trace/running 变化时重算。
@@ -102,6 +126,29 @@ export function AgentPanel({ running, trace, startedAt, lastRun, modelList, coll
     () => (lastRun?.models || []).map(model => modelList.find(item => item.id === model)?.label || model),
     [lastRun, modelList],
   );
+  const currentRunId = lastRun?.runId || traceRunId(trace);
+  const historyRuns = useMemo(
+    () => previousRuns.filter((run, index) => runKey(run, index) !== currentRunId).slice(0, 8),
+    [currentRunId, previousRuns],
+  );
+
+  const toggleHistoryRun = useCallback(async (run, index) => {
+    const key = runKey(run, index);
+    const nextExpanded = expandedHistoryRun === key ? null : key;
+    setExpandedHistoryRun(nextExpanded);
+    if (!nextExpanded || historyTraceCache[key] || run.trace?.length > 0 || !run.runId) return;
+
+    setHistoryTraceLoading(key);
+    try {
+      const events = await fetchAgentTrace(run.runId, { projectId });
+      const deduped = events.reduce((acc, event) => appendUniqueTraceEvent(acc, event), []);
+      setHistoryTraceCache(prev => ({ ...prev, [key]: deduped }));
+    } catch {
+      setHistoryTraceCache(prev => ({ ...prev, [key]: [] }));
+    } finally {
+      setHistoryTraceLoading(prev => (prev === key ? null : prev));
+    }
+  }, [expandedHistoryRun, historyTraceCache, projectId]);
 
   // ESC closes lightbox
   useEffect(() => {
@@ -207,6 +254,70 @@ export function AgentPanel({ running, trace, startedAt, lastRun, modelList, coll
             </div>
           )}
 
+          {historyRuns.length > 0 && (
+            <div className="agent-run-history">
+              <div className="agent-run-history-head">
+                <span>{t('agentPanel.previousRuns')}</span>
+                <span>{historyRuns.length}</span>
+              </div>
+              {historyRuns.map((run, index) => {
+                const key = runKey(run, index);
+                const meta = run.meta || {};
+                const title = meta.task || t('agent.taskFallback');
+                const expanded = expandedHistoryRun === key;
+                const cachedTrace = historyTraceCache[key];
+                const historyTrace = Array.isArray(run.trace) && run.trace.length > 0 ? run.trace : (cachedTrace || []);
+                const loading = historyTraceLoading === key;
+                const models = (meta.models || []).map(model => modelList.find(item => item.id === model)?.label || model);
+                return (
+                  <div className="agent-history-run" key={key}>
+                    <button className="agent-history-run-toggle" onClick={() => toggleHistoryRun(run, index)}>
+                      <span className="agent-history-run-main">
+                        <strong title={title}>{title}</strong>
+                        <span>
+                          {formatDurationMs(meta.elapsedMs || 0)} · {formatTokenCount(meta.totalTokens || 0)} tok · {t('agentPanel.stepCount', { n: meta.stepCount || 0 })}
+                        </span>
+                      </span>
+                      <span className="agent-history-run-side">
+                        <span>{models.slice(0, 2).join(' + ') || t('session.unknownModel')}</span>
+                        <span title={meta.endedAt ? formatFullTime(meta.endedAt) : ''}>
+                          {meta.endedAt ? formatRelativeTime(meta.endedAt) : statusLabel(meta.status, t)}
+                        </span>
+                        {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </span>
+                    </button>
+                    {expanded && (
+                      <div className="agent-history-trace">
+                        {loading ? (
+                          <div className="agent-history-empty">{t('agentPanel.historyLoading')}</div>
+                        ) : historyTrace.length === 0 ? (
+                          <div className="agent-history-empty">{t('agentPanel.historyTraceUnavailable')}</div>
+                        ) : (
+                          <div className="agent-trace agent-trace--history">
+                            {historyTrace.map((event, eventIndex) => {
+                              if (shouldHideTimelineEvent(event)) return null;
+                              return (
+                                <TraceItem
+                                  key={`${key}-${event.type}-${event.step ?? eventIndex}-${event.stage ?? eventIndex}-${eventIndex}`}
+                                  event={event}
+                                  modelList={modelList}
+                                  onRollback={disabledRollback}
+                                  rollbackLoading
+                                  openLightbox={setLightboxSrc}
+                                  t={t}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {trace.length > 0 && <TraceDebugPanel metrics={metrics} t={t} />}
 
               {trace.length === 0 && running ? (
@@ -226,8 +337,7 @@ export function AgentPanel({ running, trace, startedAt, lastRun, modelList, coll
           {trace.map((event, index) => {
             // 系统级提示不进时间线：启动提示 / 浏览器就绪 / 后台健康快照都是噪音，
             // 不是 agent 的实质步骤；断点恢复 status='resuming' 有信息量，保留。
-            if (event.type === 'session_checkpoint') return null;
-            if (event.type === 'status' && (event.status === 'starting' || event.status === 'browser_ready')) return null;
+            if (shouldHideTimelineEvent(event)) return null;
             // ── model_plan ──
             if (event.type === 'model_plan') {
               // start：多模型渲染对比卡组；单模型并入 StepCard，不单独渲染

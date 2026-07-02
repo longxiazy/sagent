@@ -244,12 +244,35 @@ export function buildAgentMetaFromSession(session, traceInput, overrides = {}) {
 }
 
 export function buildAgentStats(sessions, { now = Date.now(), days = 7 } = {}) {
+  const seen = new Set();
   const records = (Array.isArray(sessions) ? sessions : [])
-    .map(session => {
-      const meta = buildAgentMetaFromSession(session);
-      return meta ? { ...meta, sessionId: session.id } : null;
+    .flatMap(session => {
+      const runs = Array.isArray(session.agentRuns) ? session.agentRuns : [];
+      const metas = runs
+        .map(run => buildAgentMetaFromSession({
+          ...session,
+          agentRunId: run.runId || session.agentRunId,
+          agentTrace: Array.isArray(run.trace) ? run.trace : [],
+          agentMeta: run.meta || null,
+        }, Array.isArray(run.trace) ? run.trace : [], {
+          runId: run.runId || run.meta?.runId,
+        }))
+        .filter(Boolean);
+
+      const currentMeta = buildAgentMetaFromSession(session);
+      if (currentMeta) {
+        metas.push(currentMeta);
+      }
+
+      return metas
+        .map(meta => {
+          const key = meta.runId || `${meta.startedAt || ''}:${meta.endedAt || ''}:${meta.task || ''}`;
+          if (key && seen.has(key)) return null;
+          if (key) seen.add(key);
+          return { ...meta, sessionId: session.id };
+        })
+        .filter(Boolean);
     })
-    .filter(Boolean)
     .sort((a, b) => (b.endedAt || b.startedAt || 0) - (a.endedAt || a.startedAt || 0));
 
   const todayStart = startOfDay(now);

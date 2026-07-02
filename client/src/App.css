@@ -2645,6 +2645,110 @@ select,
   color: var(--c-primary);
 }
 
+.agent-run-history {
+  margin: 8px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-run-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--c-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.agent-history-run {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  overflow: hidden;
+}
+
+.agent-history-run-toggle {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-history-run-toggle:hover {
+  background: var(--c-surface-hover);
+}
+
+.agent-history-run-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.agent-history-run-main strong {
+  color: var(--c-text);
+  font-size: var(--f-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-history-run-main span,
+.agent-history-run-side {
+  color: var(--c-text-secondary);
+  font-size: 11px;
+}
+
+.agent-history-run-side {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.agent-history-run-side svg {
+  color: var(--c-text-muted);
+}
+
+.agent-history-trace {
+  padding: 0 10px 10px;
+  border-top: 1px solid var(--c-border);
+}
+
+.agent-trace.agent-trace--history {
+  max-height: 360px;
+  margin-top: 8px;
+  padding-top: 2px;
+  flex: initial;
+  overflow-y: auto;
+}
+
+.agent-trace.agent-trace--history > :nth-last-child(2)::before {
+  bottom: -8px;
+}
+
+.agent-trace.agent-trace--history > :last-child::before {
+  bottom: 0;
+}
+
+.agent-history-empty {
+  padding: 10px 0 0;
+  color: var(--c-text-muted);
+  font-size: var(--f-xs);
+}
+
 .agent-empty {
   margin-top: 8px;
   padding: 16px 12px;

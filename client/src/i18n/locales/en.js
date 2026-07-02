@@ -194,6 +194,9 @@ export const en = {
   'agentPanel.metricSlowestStep': 'Slowest',
   'agentPanel.stepLatency': 'Step latency',
   'agentPanel.recentRun': 'Recent run',
+  'agentPanel.previousRuns': 'Previous runs',
+  'agentPanel.historyLoading': 'Loading previous steps…',
+  'agentPanel.historyTraceUnavailable': 'No saved steps were found for this run',
 
   // Agent stats
   'agentStats.eyebrow': 'Current project',

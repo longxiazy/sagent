@@ -25,7 +25,7 @@ import { NotificationBanner } from './components/NotificationBanner.jsx';
 import { AppHeader } from './components/AppHeader.jsx';
 import { HeroScreen } from './components/HeroScreen.jsx';
 import { useAgentRun } from './hooks/useAgentRun.js';
-import { createSession, getSessionTitle, normalizeChatState, touchSession, useChatSessions } from './hooks/useChatSessions.js';
+import { createSession, getSessionTitle, normalizeChatState, touchSession, upsertAgentRun, useChatSessions } from './hooks/useChatSessions.js';
 import { useProjects } from './hooks/useProjects.js';
 import { booleanStorage, usePersistentState, useProjectScopedState } from './hooks/usePersistentState.js';
 import { useResponsiveLayout } from './hooks/useResponsiveLayout.js';
@@ -451,24 +451,28 @@ export default function App() {
                       msgs.push({ role: 'user', content: reconnectTaskRef.current || data.task || t('agent.taskFallback'), ts: data.startedAt || Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) });
                       msgs.push({ role: 'assistant', content: event.answer || t('agent.done'), ts: Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) });
                     }
-                    return touchSession(session, {
+                    const nextSession = {
+                      ...session,
                       messages: msgs,
                       ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
                       agentRunId: data.runId,
                       agentTrace: nextTrace,
-                      agentMeta: buildAgentMetaFromSession({
-                        ...session,
-                        messages: msgs,
-                        ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
-                        agentRunId: data.runId,
-                      }, nextTrace, {
-                        task: reconnectTaskRef.current || data.task || t('agent.taskFallback'),
-                        startedAt: data.startedAt,
-                        models: modelsUsed,
-                        status: event.quality?.status || event.meta?.status || 'done',
-                        runId: data.runId,
-                      }),
+                    };
+                    const agentMeta = buildAgentMetaFromSession(nextSession, nextTrace, {
+                      task: reconnectTaskRef.current || data.task || t('agent.taskFallback'),
+                      startedAt: data.startedAt,
+                      models: modelsUsed,
+                      status: event.quality?.status || event.meta?.status || 'done',
+                      runId: data.runId,
                     });
+                    return touchSession(upsertAgentRun({
+                      ...nextSession,
+                      agentMeta,
+                    }, {
+                      runId: data.runId,
+                      trace: nextTrace,
+                      meta: agentMeta,
+                    }));
                   });
                   return nextTrace;
                 });
@@ -487,26 +491,29 @@ export default function App() {
                     } else if (!msgs.some(m => m.role === 'assistant' && m.content === content)) {
                       msgs.push({ role: 'assistant', content, ts: Date.now(), ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}), ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}) });
                     }
-                    return touchSession(session, {
+                    const nextSession = {
+                      ...session,
                       messages: msgs,
                       ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}),
                       ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}),
                       agentRunId: data.runId,
                       agentTrace: nextTrace,
-                      agentMeta: buildAgentMetaFromSession({
-                        ...session,
-                        messages: msgs,
-                        ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}),
-                        ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}),
-                        agentRunId: data.runId,
-                      }, nextTrace, {
-                        task: reconnectTaskRef.current || data.task || t('agent.taskFallback'),
-                        startedAt: data.startedAt,
-                        models: activeRunModels,
-                        status: event.error === 'Agent 已取消' ? 'cancelled' : 'error',
-                        runId: data.runId,
-                      }),
+                    };
+                    const agentMeta = buildAgentMetaFromSession(nextSession, nextTrace, {
+                      task: reconnectTaskRef.current || data.task || t('agent.taskFallback'),
+                      startedAt: data.startedAt,
+                      models: activeRunModels,
+                      status: event.error === 'Agent 已取消' ? 'cancelled' : 'error',
+                      runId: data.runId,
                     });
+                    return touchSession(upsertAgentRun({
+                      ...nextSession,
+                      agentMeta,
+                    }, {
+                      runId: data.runId,
+                      trace: nextTrace,
+                      meta: agentMeta,
+                    }));
                   });
                   return nextTrace;
                 });
@@ -582,23 +589,27 @@ export default function App() {
             msgs.push({ role: 'assistant', content, ts: Date.now(), ...(primaryModel ? { model: primaryModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) });
           }
           changed = true;
-          return touchSession(session, {
+          const nextSession = {
+            ...session,
             messages: msgs,
             ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
             agentRunId: rid,
             agentTrace: events,
-            agentMeta: buildAgentMetaFromSession({
-              ...session,
-              messages: msgs,
-              ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
-              agentRunId: rid,
-            }, events, {
-              task: lastAgentTaskRef.current || undefined,
-              models: modelsUsed,
-              status: terminal.type === 'done' ? (terminal.quality?.status || terminal.meta?.status || 'done') : (terminal.error === 'Agent 已取消' ? 'cancelled' : 'error'),
-              runId: rid,
-            }),
+          };
+          const agentMeta = buildAgentMetaFromSession(nextSession, events, {
+            task: lastAgentTaskRef.current || undefined,
+            models: modelsUsed,
+            status: terminal.type === 'done' ? (terminal.quality?.status || terminal.meta?.status || 'done') : (terminal.error === 'Agent 已取消' ? 'cancelled' : 'error'),
+            runId: rid,
           });
+          return touchSession(upsertAgentRun({
+            ...nextSession,
+            agentMeta,
+          }, {
+            runId: rid,
+            trace: events,
+            meta: agentMeta,
+          }));
         });
         if (!changed) return prev;
         return normalizeChatState({ ...prev, sessions });
@@ -641,17 +652,23 @@ export default function App() {
           const modelsUsed = getTraceModels(deduped);
           // 重建 trace 只是恢复客户端镜像，不算用户活动：保留原 updatedAt，
           // 否则每次切到/刷新一个 agent 会话都会把它的最近活动时间刷成当前时间。
-          updateSession(activeSession.id, session => ({
-            ...session,
-            agentRunId: savedRunId,
-            agentTrace: deduped,
-            ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
-            agentMeta: buildAgentMetaFromSession({
+          updateSession(activeSession.id, session => {
+            const nextSession = {
               ...session,
               agentRunId: savedRunId,
+              agentTrace: deduped,
               ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
-            }, deduped),
-          }));
+            };
+            const agentMeta = buildAgentMetaFromSession(nextSession, deduped);
+            return upsertAgentRun({
+              ...nextSession,
+              agentMeta,
+            }, {
+              runId: savedRunId,
+              trace: deduped,
+              meta: agentMeta,
+            });
+          });
         })
         .catch(() => {});
     } else {
@@ -1071,6 +1088,8 @@ export default function App() {
                   trace={agentTrace}
                   startedAt={agentStartedAt}
                   lastRun={activeAgentMeta}
+                  previousRuns={activeSession.agentRuns || []}
+                  projectId={activeSession.projectId ?? null}
                   modelList={availableModels}
                   collapsed={agentCollapsed}
                   onToggleCollapse={() => setAgentCollapsed(c => !c)}
