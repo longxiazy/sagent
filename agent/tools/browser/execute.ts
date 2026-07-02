@@ -61,6 +61,14 @@ function blockedSearchEngineResult(url) {
   ].join('\n');
 }
 
+function failedResult(result, error = result) {
+  return {
+    result,
+    resultStatus: 'failed',
+    resultError: String(error || result),
+  };
+}
+
 // 浏览器冷启动期的偶发超时往往一次重试就成功（trace 中 fabiaoqing 连续两次超时第三次成功）
 // 仅对超时错误重试 1 次，证书/DNS/HTTP 错误不重试
 async function navigateWithRetry(view, url, firstTimeoutMs, retryTimeoutMs, errMessage) {
@@ -157,6 +165,14 @@ function checkBlocked(title, url, body) {
   return false;
 }
 
+function checkUnavailablePage(title, body) {
+  const shortBody = String(body || '').replace(/\s+/g, ' ').trim();
+  const titleText = String(title || '').trim();
+  if (/^页面没有找到$|^404\b|not found/i.test(titleText) && shortBody.length < 500) return true;
+  if (/^页面没有找到\b|^404\b|not found/i.test(shortBody) && shortBody.length < 500) return true;
+  return false;
+}
+
 function blockedHint() {
   if (!isChromeMcpEnabled()) return '';
   return '\n\n⚠️ 页面可能被反爬拦截，建议改用 Chrome MCP 工具（chrome_call_tool → navigate_page / take_snapshot）操作真实 Chrome 浏览器访问。';
@@ -211,10 +227,10 @@ export async function executeBrowserAction(view, action) {
   } catch (err) {
     const msg = err.message || String(err);
     if (/timeout|waiting for|not found|selector|元素不存在/i.test(msg)) {
-      return `浏览器操作失败: ${msg.slice(0, 200)}。可能原因: 元素不存在或页面未加载完成，请重新观察页面后使用 observation 中存在的 elementId。`;
+      return failedResult(`浏览器操作失败: ${msg.slice(0, 200)}。可能原因: 元素不存在或页面未加载完成，请重新观察页面后使用 observation 中存在的 elementId。`, msg);
     }
     if (/execution context was destroyed|net::err_|connection.*closed|navigation/i.test(msg)) {
-      return `浏览器操作失败: ${msg.slice(0, 200)}。可能原因: 页面导航失败或连接中断，请尝试重新打开页面或使用其他网站。`;
+      return failedResult(`浏览器操作失败: ${msg.slice(0, 200)}。可能原因: 页面导航失败或连接中断，请尝试重新打开页面或使用其他网站。`, msg);
     }
     throw err;
   }
@@ -228,7 +244,7 @@ async function _executeBrowserAction(view, action) {
       return `内置浏览器不支持打开本地文件。请使用 notify_user 告知用户文件路径（${localPath}），或使用 terminal run_confirmed 执行 open "${localPath}" 让系统默认浏览器打开。`;
     }
     if (isBlockedSearchEngineUrl(action.url)) {
-      return blockedSearchEngineResult(action.url);
+      return failedResult(blockedSearchEngineResult(action.url), '已阻止访问搜索引擎搜索页');
     }
     try {
       await withTimeout(safeNavigate(view, action.url), FETCH_TIMEOUT_MS, `导航超时: ${action.url}`);
@@ -241,7 +257,7 @@ async function _executeBrowserAction(view, action) {
       } catch { /* ignore detection failure */ }
       return `已打开 ${action.url}`;
     } catch (err) {
-      return `无法打开 ${action.url}: ${err.message?.slice(0, 150) || '连接失败'}。请尝试其他网址或使用 fetch 工具。`;
+      return failedResult(`无法打开 ${action.url}: ${err.message?.slice(0, 150) || '连接失败'}。请尝试其他网址或使用 fetch 工具。`, err.message || '连接失败');
     }
   }
 
@@ -336,32 +352,43 @@ async function _executeBrowserAction(view, action) {
     if (!action.url) throw new Error('http_fetch 缺少 url');
     const url = normalizeHttpUrl(action.url);
     if (isBlockedSearchEngineUrl(url)) {
-      return blockedSearchEngineResult(url);
+      return failedResult(blockedSearchEngineResult(url), '已阻止访问搜索引擎搜索页');
     }
     try {
       await navigateWithRetry(view, url, FETCH_TIMEOUT_MS, FETCH_TIMEOUT_RETRY_MS, `访问超时: ${url}`);
       await delay(1000);
     } catch (err) {
-      return `http_fetch ${url}: 浏览器访问失败 (${(err.message || '').slice(0, 120)})。`;
+      const error = (err.message || '').slice(0, 120);
+      return failedResult(`http_fetch ${url}: 浏览器访问失败 (${error})。`, error);
     }
     try {
       const pageInfo = await detectBlockedPage(view);
       if (checkBlocked(pageInfo.title, pageInfo.url, pageInfo.body)) {
-        return `http_fetch ${url} 被反爬拦截（标题: ${pageInfo.title.slice(0, 80)}）。${blockedHint()}`;
+        const message = `http_fetch ${url} 被反爬拦截（标题: ${pageInfo.title.slice(0, 80)}）。${blockedHint()}`;
+        return failedResult(message, '页面被反爬拦截');
+      }
+      if (checkUnavailablePage(pageInfo.title, pageInfo.body)) {
+        const body = String(pageInfo.body || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+        return failedResult(`http_fetch ${url}: 页面不可用（标题: ${pageInfo.title.slice(0, 80)}）。${body}`, '页面不可用');
       }
     } catch { /* ignore detection failure */ }
     const content = await extractPageTextOrLinks(view, url, action.extractLinks);
-    return content || `http_fetch ${url}: 页面内容为空。`;
+    if (!content) {
+      return failedResult(`http_fetch ${url}: 页面内容为空。`, '页面内容为空');
+    }
+    return content;
   }
 
   if (action.type === 'parallel_fetch') {
     const urls = Array.isArray(action.urls) ? action.urls : [];
     if (urls.length === 0) throw new Error('parallel_fetch 缺少 urls');
     const results = [];
+    let failures = 0;
     for (const u of urls.slice(0, 5)) {
       const url = normalizeHttpUrl(u);
       if (isBlockedSearchEngineUrl(url)) {
         results.push(blockedSearchEngineResult(url));
+        failures += 1;
         continue;
       }
       try {
@@ -370,15 +397,32 @@ async function _executeBrowserAction(view, action) {
         const pageInfo = await detectBlockedPage(view);
         if (checkBlocked(pageInfo.title, pageInfo.url, pageInfo.body)) {
           results.push(`http_fetch ${url} 被反爬拦截（标题: ${pageInfo.title.slice(0, 80)}）。${blockedHint()}`);
+          failures += 1;
+          continue;
+        }
+        if (checkUnavailablePage(pageInfo.title, pageInfo.body)) {
+          const body = String(pageInfo.body || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+          results.push(`http_fetch ${url}: 页面不可用（标题: ${pageInfo.title.slice(0, 80)}）。${body}`);
+          failures += 1;
           continue;
         }
         const content = await extractPageTextOrLinks(view, url, action.extractLinks);
-        results.push(`http_fetch ${url}:\n${content || '页面内容为空'}`);
+        if (content) {
+          results.push(`http_fetch ${url}:\n${content}`);
+        } else {
+          results.push(`http_fetch ${url}: 页面内容为空`);
+          failures += 1;
+        }
       } catch (err) {
         results.push(`http_fetch ${url}: 失败 (${(err.message || '').slice(0, 100)})`);
+        failures += 1;
       }
     }
-    return results.join('\n\n---\n\n');
+    const result = results.join('\n\n---\n\n');
+    if (results.length > 0 && failures === results.length) {
+      return failedResult(result, 'parallel_fetch 所有 URL 均失败');
+    }
+    return result;
   }
 
   throw new Error(`不支持的动作类型: ${action.type}`);

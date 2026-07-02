@@ -413,11 +413,11 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
                 </span>
               </div>
               <div className="agent-last-run-grid">
-                <span><Clock3 size={13} />{formatDurationMs(lastRun.elapsedMs)}</span>
-                <span><ListChecks size={13} />{t('agentPanel.stepCount', { n: lastRun.stepCount })}</span>
-                <span><Coins size={13} />{formatTokenCount(lastRun.totalTokens)} tok</span>
-                <span><Bot size={13} />{lastRunModels.slice(0, 2).join(' + ') || t('session.unknownModel')}</span>
-                <span><Trophy size={13} />{strategyLabel(lastRun.strategy, t)}</span>
+                <span><Clock3 size={11} />{formatDurationMs(lastRun.elapsedMs)}</span>
+                <span><ListChecks size={11} />{t('agentPanel.stepCount', { n: lastRun.stepCount })}</span>
+                <span><Coins size={11} />{formatTokenCount(lastRun.totalTokens)} tok</span>
+                <span><Bot size={11} />{lastRunModels.slice(0, 2).join(' + ') || t('session.unknownModel')}</span>
+                <span><Trophy size={11} />{strategyLabel(lastRun.strategy, t)}</span>
               </div>
             </LastRunFrame>
           )}

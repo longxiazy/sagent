@@ -153,10 +153,15 @@ function normalizeResultStatus(status) {
   return '';
 }
 
+function historyEntryFailed(entry) {
+  return normalizeResultStatus(entry?.resultStatus || entry?.status) === 'failed';
+}
+
 function normalizeActionResult(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     const isStructuredResult = Object.prototype.hasOwnProperty.call(value, 'resultStatus')
       || Object.prototype.hasOwnProperty.call(value, 'result')
+      || Object.prototype.hasOwnProperty.call(value, 'resultError')
       || Object.prototype.hasOwnProperty.call(value, 'ok')
       || Object.prototype.hasOwnProperty.call(value, 'error')
       || Object.prototype.hasOwnProperty.call(value, 'message');
@@ -165,7 +170,9 @@ function normalizeActionResult(value) {
     }
     const resultStatus = normalizeResultStatus(value.resultStatus || value.status)
       || (value.ok === false ? 'failed' : 'success');
-    const resultError = value.error == null ? null : String(value.error);
+    const resultError = value.resultError != null
+      ? String(value.resultError)
+      : (value.error == null ? null : String(value.error));
     const result = value.result ?? value.message ?? resultError ?? '';
     return { result, resultStatus, resultError };
   }
@@ -187,6 +194,7 @@ function detectRepeatedActionLoop(history, action) {
 
   let count = 0;
   let fingerprint = null;
+  let allFailed = true;
   for (let i = history.length - 1; i >= 0; i -= 1) {
     const entry = history[i];
     if (actionLoopKey(entry?.action) !== key) break;
@@ -198,11 +206,13 @@ function detectRepeatedActionLoop(history, action) {
     } else if (fingerprint !== current) {
       break;
     }
+    if (!historyEntryFailed(entry)) allFailed = false;
     count += 1;
   }
 
+  if (count >= 1 && allFailed) return { count, key, result: fingerprint || '', failed: true };
   if (count < LOOP_REPEAT_THRESHOLD) return null;
-  return { count, key, result: fingerprint || '' };
+  return { count, key, result: fingerprint || '', failed: false };
 }
 
 function detectRepeatedVisionLoop(history, action) {
@@ -356,7 +366,9 @@ export async function runAgentRuntime({
       const repeatedLoop = detectRepeatedActionLoop(history, decision.action);
       if (repeatedLoop) {
         const actionSummary = summarizeActionForLoop(decision.action);
-        finalAnswer = `检测到 Agent 连续 ${repeatedLoop.count + 1} 次准备重复执行同一动作（${actionSummary}），且前 ${repeatedLoop.count} 次返回结果相同。为避免继续无意义重复，已自动停止。\n\n请补充更具体的期望、差异点或允许我换一种方式继续。`;
+        finalAnswer = repeatedLoop.failed
+          ? `检测到 Agent 准备重复执行刚失败的同一动作（${actionSummary}）。为避免继续无意义重复，已自动停止。\n\n请补充更具体的期望、差异点或允许我换一种方式继续。`
+          : `检测到 Agent 连续 ${repeatedLoop.count + 1} 次准备重复执行同一动作（${actionSummary}），且前 ${repeatedLoop.count} 次返回结果相同。为避免继续无意义重复，已自动停止。\n\n请补充更具体的期望、差异点或允许我换一种方式继续。`;
         onEvent?.({
           type: "notification",
           level: "warning",

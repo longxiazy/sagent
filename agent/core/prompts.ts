@@ -28,6 +28,48 @@ function buildRecentUrlsHint(history: any[], lookback = 5): string | null {
   return `最近访问过的 URL（避免重复访问相同页面，除非有明确新目的）：\n${lines.join('\n')}`;
 }
 
+function searchResultFailed(entry: any) {
+  const status = typeof entry?.resultStatus === 'string'
+    ? entry.resultStatus.trim().toLowerCase()
+    : '';
+  const result = String(entry?.result ?? '').trim();
+  return status === 'failed' || /^web_search\s+失败/.test(result);
+}
+
+function buildRecentSearchesHint(history: any[], lookback = 6): string | null {
+  if (!Array.isArray(history) || history.length === 0) return null;
+  const recent = history.slice(-lookback);
+  const counts = new Map<string, { count: number; failed: number }>();
+  const order: string[] = [];
+
+  for (const entry of recent) {
+    const action = entry?.action || {};
+    if (action.tool !== 'search' || action.type !== 'web_search') continue;
+    const query = typeof action.query === 'string' ? action.query.trim() : '';
+    if (!query) continue;
+    if (!counts.has(query)) {
+      order.push(query);
+      counts.set(query, { count: 0, failed: 0 });
+    }
+    const item = counts.get(query)!;
+    item.count += 1;
+    if (searchResultFailed(entry)) item.failed += 1;
+  }
+
+  const lines = order
+    .map(query => ({ query, stats: counts.get(query)! }))
+    .filter(({ stats }) => stats.count >= 2 || stats.failed > 0)
+    .map(({ query, stats }) => {
+      const markers = [];
+      if (stats.count >= 2) markers.push(`已搜索 ${stats.count} 次`);
+      if (stats.failed > 0) markers.push(`失败 ${stats.failed} 次`);
+      return `- "${query}" ${markers.join('，')}【不要原样重复，换关键词、换来源或停止说明限制】`;
+    });
+
+  if (lines.length === 0) return null;
+  return `最近搜索过的 query（避免在失败或重复后原样重试）：\n${lines.join('\n')}`;
+}
+
 export function buildDesktopAgentSystemPrompt(systemPrompt: string | null) {
   const ideLines = buildIdePromptLines();
   const chromeLines = buildChromePromptLines();
@@ -82,9 +124,10 @@ export function buildClaudeTaskMessages({
     }
   }
   const recentUrlsHint = buildRecentUrlsHint(history);
+  const recentSearchesHint = buildRecentSearchesHint(history);
   messages.push({
     role: 'user',
-    content: JSON.stringify({ task, step, history, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}) }),
+    content: JSON.stringify({ task, step, history, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }),
   });
   return messages;
 }
@@ -111,9 +154,10 @@ export function buildGeminiTaskMessages({
     }
   }
   const recentUrlsHint = buildRecentUrlsHint(history);
+  const recentSearchesHint = buildRecentSearchesHint(history);
   contents.push({
     role: 'user',
-    parts: [{ text: JSON.stringify({ task, step, history, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}) }) }],
+    parts: [{ text: JSON.stringify({ task, step, history, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }) }],
   });
   return { contents };
 }
@@ -144,6 +188,7 @@ export function buildNvidiaTaskMessages({
     : '';
 
   const recentUrlsHint = buildRecentUrlsHint(history);
+  const recentSearchesHint = buildRecentSearchesHint(history);
 
   return [
     {
@@ -225,7 +270,7 @@ export function buildNvidiaTaskMessages({
     },
     {
       role: 'user',
-      content: JSON.stringify({ task, step, history, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}) }),
+      content: JSON.stringify({ task, step, history, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }),
     },
   ];
 }
