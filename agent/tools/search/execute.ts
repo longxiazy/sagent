@@ -5,7 +5,7 @@
  * 解析其中 .result-link / .result-snippet 节点，
  * 返回 title + url + snippet 的纯文本列表给 LLM。
  *
- * 不需要 API key、无明显限流。失败时返回错误说明，由上层 router 转换为 observation。
+ * 不需要 API key、无明显限流。失败时返回结构化状态，避免上层把错误文本误判为成功。
  */
 
 const ENDPOINT = 'https://lite.duckduckgo.com/lite/';
@@ -103,6 +103,14 @@ function formatResults(query, results) {
   return `web_search 结果（query="${query}", count=${results.length}）:\n${lines.join('\n\n')}`;
 }
 
+function failedResult(result, error = result) {
+  return {
+    result,
+    resultStatus: 'failed',
+    resultError: String(error || result),
+  };
+}
+
 async function fetchHtml(query) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -129,7 +137,7 @@ async function fetchHtml(query) {
 export async function executeSearchAction(action) {
   const query = typeof action?.query === 'string' ? action.query.trim() : '';
   if (!query) {
-    return 'web_search 失败：query 为空';
+    return failedResult('web_search 失败：query 为空');
   }
   const maxResults = Number.isFinite(Number(action?.maxResults))
     ? Math.min(Math.max(Number(action.maxResults), 1), 10)
@@ -138,12 +146,12 @@ export async function executeSearchAction(action) {
   try {
     const html = await fetchHtml(query);
     if (html.includes('anomaly-modal') || html.includes('challenge-form')) {
-      return 'web_search 失败：DuckDuckGo 触发反爬验证。请稍后重试或改用 http_fetch 直接抓取目标站点。';
+      return failedResult('web_search 失败：DuckDuckGo 触发反爬验证。请稍后重试或改用 http_fetch 直接抓取目标站点。', 'DuckDuckGo 触发反爬验证');
     }
     const results = parseResults(html, maxResults);
     return formatResults(query, results);
   } catch (err: any) {
     const msg = err?.message || String(err);
-    return `web_search 失败：${msg}。建议改用 http_fetch 直接抓取目标站点，或检查网络。`;
+    return failedResult(`web_search 失败：${msg}。建议改用 http_fetch 直接抓取目标站点，或检查网络。`, msg);
   }
 }

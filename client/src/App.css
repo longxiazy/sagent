@@ -1314,13 +1314,13 @@ select,
 .agent-stats-runs {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .agent-stats-run {
   width: 100%;
   min-width: 0;
-  padding: 9px 10px;
+  padding: 7px 8px;
   border: 1px solid var(--c-border);
   border-radius: var(--r-sm);
   background: var(--c-surface);
@@ -1328,7 +1328,7 @@ select,
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   text-align: left;
   transition: all var(--ease);
 }
@@ -1353,22 +1353,22 @@ select,
 }
 
 .agent-stats-run-title {
-  font-size: var(--f-sm);
+  font-size: var(--f-xs);
   font-weight: 600;
 }
 
 .agent-stats-run-meta {
   color: var(--c-text-muted);
-  font-size: var(--f-xs);
+  font-size: 10px;
 }
 
 .agent-stats-run-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   color: var(--c-text-hint);
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .agent-token-chart {
@@ -2564,14 +2564,14 @@ select,
 }
 
 .agent-last-run {
-  margin: 8px 0 4px;
-  padding: 10px;
+  margin: 6px 0 3px;
+  padding: 7px 8px;
   border: 1px solid var(--c-border);
   border-radius: var(--r-sm);
   background: var(--c-surface-hover);
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 6px;
 }
 
 .agent-last-run-toggle {
@@ -2598,9 +2598,9 @@ select,
 
 .agent-last-run-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 
 .agent-last-run-head > div {
@@ -2609,19 +2609,19 @@ select,
 
 .agent-last-run-kicker {
   display: block;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
   color: var(--c-text-muted);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .agent-last-run-head strong {
   display: block;
   color: var(--c-text);
-  font-size: var(--f-sm);
-  line-height: 1.35;
+  font-size: var(--f-xs);
+  line-height: 1.25;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2630,7 +2630,7 @@ select,
 .agent-last-run-status {
   flex-shrink: 0;
   color: var(--c-text-muted);
-  font-size: var(--f-xs);
+  font-size: 10px;
   white-space: nowrap;
 }
 
@@ -2638,7 +2638,7 @@ select,
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .agent-last-run-status-wrap svg {
@@ -2646,26 +2646,31 @@ select,
 }
 
 .agent-last-run-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .agent-last-run-grid span {
   min-width: 0;
-  height: 26px;
-  padding: 0 8px;
+  height: 20px;
+  padding: 0 6px;
   border: 1px solid var(--c-border);
   border-radius: var(--r-sm);
   background: var(--c-surface);
   color: var(--c-text-secondary);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: var(--f-xs);
+  gap: 4px;
+  font-size: 10px;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.agent-last-run-grid span:nth-child(4) {
+  flex: 1 1 88px;
 }
 
 .agent-last-run-grid svg {

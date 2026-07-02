@@ -224,6 +224,40 @@ describe('runtime: session checkpoint integration', () => {
     expect(evtLog.some(e => e.type === 'notification' && e.level === 'warning')).toBe(true);
   });
 
+  it('stops before retrying the same readonly action after a structured failure', async () => {
+    const cancelSignal = new AbortController().signal;
+    const { log: evtLog, onEvent } = events();
+    let executeCalls = 0;
+
+    const result = await runAgentRuntime({
+      task: 'search market data',
+      maxSteps: 4,
+      onEvent,
+      cancelSignal,
+      initialize: noop,
+      observe: noop,
+      decide: () => ({
+        action: { tool: 'search', type: 'web_search', query: '2026年7月3日 A股收盘行情' },
+        rationale: 'search',
+      }),
+      authorize: () => ({ status: 'approved' }),
+      execute: () => {
+        executeCalls += 1;
+        return {
+          result: 'web_search 失败：DuckDuckGo 触发反爬验证。',
+          resultStatus: 'failed',
+          resultError: 'DuckDuckGo 触发反爬验证',
+        };
+      },
+      cleanup: noop,
+    });
+
+    expect(executeCalls).toBe(1);
+    expect(result.steps).toHaveLength(1);
+    expect(result.answer).toContain('刚失败的同一动作');
+    expect(evtLog.some(e => e.type === 'notification' && e.level === 'warning')).toBe(true);
+  });
+
   it('saves snapshots at interval steps', async () => {
     const runId = 'run_rt2';
     const runRecord = { runId, pendingRollback: null };

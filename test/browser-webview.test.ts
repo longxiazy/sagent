@@ -28,7 +28,7 @@ class FakeWebView {
     this.url = url;
   }
 
-  async evaluate(script) {
+  async evaluate(script): Promise<any> {
     this.calls.push(['evaluate', script]);
     if (script.includes('querySelectorAll')) {
       return {
@@ -62,6 +62,23 @@ class FakeWebView {
   async close() {
     this.closed = true;
     this.calls.push(['close']);
+  }
+}
+
+class NotFoundWebView extends FakeWebView {
+  async evaluate(script): Promise<any> {
+    this.calls.push(['evaluate', script]);
+    if (script.includes('document.title')) {
+      return {
+        title: '页面没有找到',
+        url: 'https://example.com/missing',
+        body: '页面没有找到 5秒钟之后将会带您进入首页!',
+      };
+    }
+    if (script.includes('document.body?.innerText')) {
+      return '页面没有找到 5秒钟之后将会带您进入首页!';
+    }
+    return super.evaluate(script);
   }
 }
 
@@ -135,5 +152,17 @@ describe('Bun.WebView browser actions', () => {
     expect(view.calls).toContainEqual(['click', '[data-agent-node-id="2"]', { timeout: 10000 }]);
     expect(view.calls).toContainEqual(['type', '[data-agent-node-id="3"]', 'hello']);
     expect(view.calls).toContainEqual(['press', 'Enter']);
+  });
+
+  it('marks unavailable http_fetch pages as structured failures', async () => {
+    const view = new NotFoundWebView();
+
+    const result = await executeBrowserAction(view, { type: 'http_fetch', url: 'https://example.com/missing' });
+
+    expect(result).toMatchObject({
+      resultStatus: 'failed',
+      resultError: '页面不可用',
+    });
+    expect(result.result).toContain('页面不可用');
   });
 });
