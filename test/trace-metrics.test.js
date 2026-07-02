@@ -45,4 +45,23 @@ describe('trace metrics', () => {
     expect(metrics.slowestStep).toMatchObject({ step: 1, status: 'failed' });
     expect(formatDurationMs(metrics.slowestStep.durationMs)).toBe('13s');
   });
+
+  it('prefers structured resultStatus over legacy keyword matching', () => {
+    const trace = [
+      { type: 'step', step: 1, stage: 'observe', timestamp: 0 },
+      { type: 'step', step: 1, stage: 'action', action: { tool: 'fs', type: 'search_files' }, timestamp: 100 },
+      { type: 'step', step: 1, stage: 'result', result: '未找到明显问题', resultStatus: 'success', timestamp: 200 },
+      { type: 'step', step: 2, stage: 'observe', timestamp: 300 },
+      { type: 'step', step: 2, stage: 'action', action: { tool: 'terminal', type: 'run_safe' }, timestamp: 400 },
+      { type: 'step', step: 2, stage: 'result', result: 'process exited', resultStatus: 'failed', timestamp: 500 },
+    ];
+
+    const metrics = computeTraceMetrics(trace);
+
+    expect(metrics.toolFailures).toBe(1);
+    expect(metrics.stepDurations.map(step => [step.step, step.status])).toEqual([
+      [1, 'fast'],
+      [2, 'failed'],
+    ]);
+  });
 });

@@ -24,6 +24,31 @@ describe('result quality assessment', () => {
     expect(quality.failure_steps).toEqual([1, 2]);
   });
 
+  it('prefers structured resultStatus over failure keywords for new traces', () => {
+    const quality = assessResultQuality({
+      task: '检查代码问题',
+      steps: [
+        {
+          step: 1,
+          action: { tool: 'fs', type: 'search_files' },
+          result: '未找到明显问题',
+          resultStatus: 'success',
+        },
+        {
+          step: 2,
+          action: { tool: 'terminal', type: 'run_safe' },
+          result: 'command exited without details',
+          resultStatus: 'failed',
+          resultError: 'exit code 1',
+        },
+      ],
+      answer: '完成',
+    });
+
+    expect(quality.status).toBe('done_degraded');
+    expect(quality.failure_steps).toEqual([2]);
+  });
+
   it('uses nested action arguments URL when checking official sources', () => {
     const quality = assessResultQuality({
       task: '查询医保政策',

@@ -33,6 +33,25 @@ function textOf(value: any) {
   return value == null ? '' : String(value);
 }
 
+function normalizeResultStatus(step: any) {
+  const value = typeof step?.resultStatus === 'string'
+    ? step.resultStatus
+    : (typeof step?.status === 'string' ? step.status : '');
+  const status = value.trim().toLowerCase();
+  if (status === 'success' || status === 'failed' || status === 'rejected') return status;
+  return '';
+}
+
+function legacyResultMatchesFailure(result: string) {
+  return FAILURE_PATTERNS.some(pattern => pattern.test(result));
+}
+
+function stepFailed(step: any) {
+  const status = normalizeResultStatus(step);
+  if (status) return status === 'failed';
+  return legacyResultMatchesFailure(textOf(step?.result));
+}
+
 function urlsFromText(text: string) {
   return Array.from(text.matchAll(/https?:\/\/[^\s)\]"'<>，。]+/g)).map(match => match[0]);
 }
@@ -60,7 +79,7 @@ function resultHasUsableOfficialContent(step: any) {
   if (!hasOfficialUrl(url) && !hasOfficialUrl(result)) {
     return false;
   }
-  if (FAILURE_PATTERNS.some(pattern => pattern.test(result))) {
+  if (stepFailed(step) || legacyResultMatchesFailure(result)) {
     return false;
   }
   return result.trim().length >= 80;
@@ -84,7 +103,7 @@ function browseStepProducedContent(step: any) {
   // 浏览类工具的"成功观测"判定：result 非空、不命中失败模式、且包含 url 或 ≥200 字正文。
   const result = textOf(step?.result);
   if (!result.trim()) return false;
-  if (FAILURE_PATTERNS.some(pattern => pattern.test(result))) return false;
+  if (stepFailed(step) || legacyResultMatchesFailure(result)) return false;
   if (/https?:\/\//.test(result) && result.length >= 200) return true;
   return result.length >= 400;
 }
@@ -98,7 +117,7 @@ export function assessResultQuality({ task, steps = [], answer = '' }: { task: s
     // 不应被当作失败步骤。
     const actionType = step?.action?.type;
     if (actionType === 'chrome_list_tools' || actionType === 'ide_list_tools') return false;
-    return FAILURE_PATTERNS.some(pattern => pattern.test(textOf(step?.result)));
+    return stepFailed(step);
   });
   const officialSourceSteps = steps.filter(resultHasUsableOfficialContent);
   const browseSteps = steps.filter(isBrowseStep);

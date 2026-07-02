@@ -147,6 +147,32 @@ function resultFingerprint(result) {
   return String(result ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000);
 }
 
+function normalizeResultStatus(status) {
+  const value = typeof status === 'string' ? status.trim().toLowerCase() : '';
+  if (value === 'success' || value === 'failed' || value === 'rejected') return value;
+  return '';
+}
+
+function normalizeActionResult(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const isStructuredResult = Object.prototype.hasOwnProperty.call(value, 'resultStatus')
+      || Object.prototype.hasOwnProperty.call(value, 'result')
+      || Object.prototype.hasOwnProperty.call(value, 'ok')
+      || Object.prototype.hasOwnProperty.call(value, 'error')
+      || Object.prototype.hasOwnProperty.call(value, 'message');
+    if (!isStructuredResult) {
+      return { result: value, resultStatus: 'success', resultError: null };
+    }
+    const resultStatus = normalizeResultStatus(value.resultStatus || value.status)
+      || (value.ok === false ? 'failed' : 'success');
+    const resultError = value.error == null ? null : String(value.error);
+    const result = value.result ?? value.message ?? resultError ?? '';
+    return { result, resultStatus, resultError };
+  }
+
+  return { result: value, resultStatus: 'success', resultError: null };
+}
+
 function isVisionImageAnalyze(action) {
   return action?.tool === 'vision' && action?.type === 'image_analyze' && typeof action?.image === 'string';
 }
@@ -363,12 +389,16 @@ export async function runAgentRuntime({
 
       if (authorization?.status === "rejected") {
         const result = authorization.message || "操作未获批准";
+        const resultStatus = "rejected";
+        const resultError = result;
         const url = actionTargetUrl(decision.action) || observation?.url;
         history.push({
           step,
           rationale: decision.rationale,
           action: decision.action,
           result,
+          resultStatus,
+          resultError,
           url,
           title: observation?.title,
         });
@@ -378,6 +408,8 @@ export async function runAgentRuntime({
           step,
           stage: "result",
           result,
+          resultStatus,
+          resultError,
         });
         continue;
       }
@@ -393,15 +425,20 @@ export async function runAgentRuntime({
 
       // ---- 执行 ----
       let result;
+      let resultStatus = "success";
+      let resultError = null;
       try {
-        result = await execute(state, decision.action, {
+        const rawResult = await execute(state, decision.action, {
           task,
           step,
           history,
           observation,
           authorization,
         });
+        ({ result, resultStatus, resultError } = normalizeActionResult(rawResult));
       } catch (execErr) {
+        resultStatus = "failed";
+        resultError = execErr.message;
         result = `执行失败: ${execErr.message}`;
         log.error(`[Runtime] step ${step} execute error: ${execErr.message}`);
       }
@@ -415,6 +452,8 @@ export async function runAgentRuntime({
         rationale: decision.rationale,
         action: decision.action,
         result,
+        resultStatus,
+        resultError,
         url: actionTargetUrl(decision.action) || observation?.url,
         title: observation?.title,
       });
@@ -425,6 +464,8 @@ export async function runAgentRuntime({
           step,
           stage: "result",
           result,
+          resultStatus,
+          resultError,
         });
       }
 
@@ -441,6 +482,8 @@ export async function runAgentRuntime({
           history: history.map(h => ({ ...h })),
           state: saveSessionSnapshot ? sanitizeStateForSnapshot(state) : { ...state },
           result,
+          resultStatus,
+          resultError,
           usage: decision.usage,
         };
         const saveSnapshot = saveSessionSnapshot || saveHealthySnapshot;

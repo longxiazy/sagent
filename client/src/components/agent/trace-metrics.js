@@ -108,7 +108,7 @@ export function computeTraceMetrics(trace) {
     if (event.type === 'step' && event.step != null && event.stage === 'result') {
       const step = getStep(event.step);
       step.hasResult = true;
-      step.failed = isFailureResult(event.result);
+      step.failed = isFailureResult(event.result, event.resultStatus || event.status);
     }
     if (event.type === 'done' && Number.isFinite(event.meta?.elapsed_ms)) {
       doneElapsedMs = event.meta.elapsed_ms;

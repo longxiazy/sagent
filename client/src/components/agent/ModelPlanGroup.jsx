@@ -15,6 +15,7 @@ export function ModelPlanGroup({ events, step, models, modelList, agentFinished,
   let consensusEvent = null;
   const modelEvents = {};
   let stepResult = null;
+  let stepResultEvent = null;
   let observation = null;
   const terminalEvents = [];
 
@@ -30,6 +31,7 @@ export function ModelPlanGroup({ events, step, models, modelList, agentFinished,
       }
       modelEvents[e.model] = e;
     } else if (e.type === 'step' && e.stage === 'result') {
+      stepResultEvent = e;
       stepResult = e.result;
     } else if (e.type === 'step' && e.stage === 'observe') {
       observation = e.observation;
@@ -51,7 +53,8 @@ export function ModelPlanGroup({ events, step, models, modelList, agentFinished,
   const collapsedModels = models.filter(m => { const s = getEvent(m).stage; return s === 'cancelled' || s === 'failed' || s === 'rate_limited'; });
 
   // 这步执行结果命中失败模式时整节点标红（与单模型 StepCard 一致；截图结果不判失败）
-  const failed = !!stepResult && !resultScreenshot(stepResult) && isFailureResult(stepResult);
+  const stepResultStatus = stepResultEvent?.resultStatus || stepResultEvent?.status;
+  const failed = !resultScreenshot(stepResult) && isFailureResult(stepResult, stepResultStatus);
 
   // winner 排第一行——它带 step 号与回滚，等价于单模型那一行。
   const orderedVisible = winnerModel && visibleModels.includes(winnerModel)
@@ -97,7 +100,7 @@ export function ModelPlanGroup({ events, step, models, modelList, agentFinished,
         <ObserveSummary observation={observation} openLightbox={openLightbox} t={t} />
         <TerminalProcess events={terminalEvents} running={!agentFinished && !stepResult} t={t} />
         {/* 执行结果：节点底部统一展示（winner 的结果），与单模型 StepCard 口径一致 */}
-        <ResultSummary result={stepResult} openLightbox={openLightbox} forceExpanded={cardsExpanded} onManualToggle={onManualToggle} t={t} />
+        <ResultSummary result={stepResult} resultStatus={stepResultStatus} openLightbox={openLightbox} forceExpanded={cardsExpanded} onManualToggle={onManualToggle} t={t} />
       </div>
     </div>
   );
