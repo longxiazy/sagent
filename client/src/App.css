@@ -2574,6 +2574,23 @@ select,
   gap: 9px;
 }
 
+.agent-last-run-toggle {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-last-run-toggle:hover {
+  background: var(--c-surface-inline);
+}
+
+.agent-last-run-toggle:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
 .agent-last-run.error {
   border-color: var(--c-agent-stop-border);
   background: var(--c-agent-stop-bg);
@@ -2615,6 +2632,17 @@ select,
   color: var(--c-text-muted);
   font-size: var(--f-xs);
   white-space: nowrap;
+}
+
+.agent-last-run-status-wrap {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-last-run-status-wrap svg {
+  color: var(--c-text-muted);
 }
 
 .agent-last-run-grid {
