@@ -112,8 +112,11 @@ function failedPath(dir: string, runId: string, step: number) {
   return join(sessionDir(dir, runId), `session-failed-${step}.json`);
 }
 
-function assessHealth(result: any) {
+function assessHealth(result: any, resultStatus?: any) {
+  if (resultStatus === 'failed') return 'unhealthy';
+  if (resultStatus === 'rejected') return 'degraded';
   if (!result || typeof result !== 'string') return 'unknown';
+  // Legacy snapshots from before resultStatus existed.
   if (result.startsWith('执行失败')) return 'unhealthy';
   if (result.startsWith('操作未获批准')) return 'degraded';
   return 'healthy';
@@ -154,7 +157,7 @@ async function pruneSnapshots(dir: string, runId: string, type: string, keepCoun
   } catch { /* ignore */ }
 }
 
-export async function saveHealthySnapshot({ dir, runId, step, history, state, result, usage = {} }: { dir: any; runId: any; step: any; history: any; state: any; result: any; usage?: any }) {
+export async function saveHealthySnapshot({ dir, runId, step, history, state, result, resultStatus, resultError, usage = {} }: { dir: any; runId: any; step: any; history: any; state: any; result: any; resultStatus?: any; resultError?: any; usage?: any }) {
   const cpDir = sessionDir(dir, runId);
   await mkdir(cpDir, { recursive: true });
 
@@ -167,13 +170,17 @@ export async function saveHealthySnapshot({ dir, runId, step, history, state, re
       rationale: h.rationale,
       action: h.action,
       result: typeof h.result === 'string' ? h.result.slice(0, 2000) : '',
+      resultStatus: h.resultStatus,
+      resultError: h.resultError,
       url: h.url,
       title: h.title,
       observation: h.observation ? { url: h.observation.url, title: h.observation.title, text: typeof h.observation.text === 'string' ? h.observation.text.slice(0, 500) : undefined } : undefined,
     })),
     state: sanitizeState(state),
     usage: usage || {},
-    health: assessHealth(result),
+    health: assessHealth(result, resultStatus),
+    resultStatus,
+    resultError,
     timestamp: Date.now(),
   };
 

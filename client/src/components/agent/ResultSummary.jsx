@@ -10,7 +10,7 @@ import { resultScreenshot, splitFailureHighlights } from './result-status.js';
 
 const CLAMP_THRESHOLD = 80; // 超过该长度才显示「展开/收起」
 
-export function ResultSummary({ result, openLightbox, forceExpanded, onManualToggle, t }) {
+export function ResultSummary({ result, resultStatus, openLightbox, forceExpanded, onManualToggle, t }) {
   const [open, setOpen] = useState(false);
   const eff = forceExpanded != null ? forceExpanded : open;
   if (!result) return null;
@@ -34,7 +34,7 @@ export function ResultSummary({ result, openLightbox, forceExpanded, onManualTog
       <div className="step-card-result-body">
         <CornerDownRight size={12} className="step-card-result-icon" />
         <p className={eff ? '' : 'clamp-2'}>
-          {splitFailureHighlights(result).map((seg, i) => (
+          {splitFailureHighlights(result, resultStatus).map((seg, i) => (
             seg.hit ? <span key={i} className="result-keyword">{seg.text}</span> : seg.text
           ))}
         </p>

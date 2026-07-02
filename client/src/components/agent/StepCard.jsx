@@ -32,12 +32,12 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
 
   // 从本步事件切片里拆出各阶段。action 信息优先取 step/action 事件，
   // 缺失时（如授权被拒只有 result）回退到 model_plan 决策事件。
-  let observation = null, actionEvent = null, result = null, modelEvent = null;
+  let observation = null, actionEvent = null, resultEvent = null, result = null, modelEvent = null;
   const terminalEvents = [];
   for (const e of events) {
     if (e.type === 'step' && e.stage === 'observe') observation = e.observation;
     else if (e.type === 'step' && e.stage === 'action') actionEvent = e;
-    else if (e.type === 'step' && e.stage === 'result') result = e.result;
+    else if (e.type === 'step' && e.stage === 'result') { resultEvent = e; result = e.result; }
     else if (e.type === 'model_plan' && (e.stage === 'success' || e.stage === 'winner')) modelEvent = e;
     else if (e.type === 'terminal_output') terminalEvents.push(e);
   }
@@ -51,7 +51,8 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
   const modelLabel = modelEvent ? getModelLabel(modelEvent.model, modelList) : null;
 
   // 文本结果命中失败模式时整卡标红（截图结果不参与判定）
-  const failed = !!result && !resultScreenshot(result) && isFailureResult(result);
+  const resultStatus = resultEvent?.resultStatus || resultEvent?.status;
+  const failed = !resultScreenshot(result) && isFailureResult(result, resultStatus);
 
   // 切换本地展开态；若当前受 forceExpanded 接管，先通知父组件解除接管再翻转本地态。
   const toggle = setter => () => { if (forceExpanded != null) onManualToggle?.(); setter(v => !v); };
@@ -112,7 +113,7 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
         <TerminalProcess events={terminalEvents} running={active && !result} t={t} />
 
         {/* 执行结果（与多模型卡组共用同一组件，口径一致） */}
-        <ResultSummary result={result} openLightbox={openLightbox} forceExpanded={forceExpanded} onManualToggle={onManualToggle} t={t} />
+        <ResultSummary result={result} resultStatus={resultStatus} openLightbox={openLightbox} forceExpanded={forceExpanded} onManualToggle={onManualToggle} t={t} />
       </div>
     </div>
   );

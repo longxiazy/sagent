@@ -161,6 +161,39 @@ describe('runtime: session checkpoint integration', () => {
     expect(result.steps[0].url).toBe('https://target.example/page');
   });
 
+  it('emits structured result status for execution failures', async () => {
+    const cancelSignal = new AbortController().signal;
+    const { log: evtLog, onEvent } = events();
+
+    const result = await runAgentRuntime({
+      task: 'run command',
+      maxSteps: 2,
+      onEvent,
+      cancelSignal,
+      initialize: noop,
+      observe: noop,
+      decide: ({ step }) => step === 1
+        ? { action: { tool: 'terminal', type: 'run_safe', command: 'bad' }, rationale: 'run' }
+        : { action: { type: 'finish', answer: 'done' }, rationale: 'finish' },
+      authorize: noop,
+      execute: (_state, action) => {
+        if (action.type === 'finish') return action.answer;
+        throw new Error('exit code 1');
+      },
+      cleanup: noop,
+    });
+
+    const resultEvent = evtLog.find(e => e.type === 'step' && e.stage === 'result');
+    expect(resultEvent).toMatchObject({
+      resultStatus: 'failed',
+      resultError: 'exit code 1',
+    });
+    expect(result.steps[0]).toMatchObject({
+      resultStatus: 'failed',
+      resultError: 'exit code 1',
+    });
+  });
+
   it('stops before repeatedly executing the same action with the same result', async () => {
     const cancelSignal = new AbortController().signal;
     const { log: evtLog, onEvent } = events();
