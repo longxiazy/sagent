@@ -106,6 +106,7 @@ function sanitizeStateForSnapshot(state) {
 }
 
 const LOOP_REPEAT_THRESHOLD = 2;
+const VISION_REPEAT_THRESHOLD = 2;
 
 function stableStringify(value) {
   if (value == null || typeof value !== 'object') {
@@ -146,6 +147,14 @@ function resultFingerprint(result) {
   return String(result ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000);
 }
 
+function isVisionImageAnalyze(action) {
+  return action?.tool === 'vision' && action?.type === 'image_analyze' && typeof action?.image === 'string';
+}
+
+function visionImageKey(action) {
+  return isVisionImageAnalyze(action) ? String(action.image).trim() : '';
+}
+
 function detectRepeatedActionLoop(history, action) {
   const key = actionLoopKey(action);
   if (!key || !Array.isArray(history) || history.length === 0) return null;
@@ -168,6 +177,41 @@ function detectRepeatedActionLoop(history, action) {
 
   if (count < LOOP_REPEAT_THRESHOLD) return null;
   return { count, key, result: fingerprint || '' };
+}
+
+function detectRepeatedVisionLoop(history, action) {
+  const image = visionImageKey(action);
+  if (!image || !Array.isArray(history) || history.length === 0) return null;
+
+  const entries: any[] = [];
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const entry = history[i];
+    if (visionImageKey(entry?.action) !== image) break;
+    entries.unshift(entry);
+  }
+
+  if (entries.length < VISION_REPEAT_THRESHOLD) return null;
+  return { count: entries.length, image, entries };
+}
+
+function summarizeVisionResult(result) {
+  const text = String(result ?? '')
+    .replace(/^image_analyze 结果（model=[^)]+）:\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > 220 ? `${text.slice(0, 220)}...` : text || '无可用结果';
+}
+
+function buildVisionLoopStopAnswer(loop) {
+  const summaries = loop.entries
+    .map(entry => `- 第 ${entry.step} 步：${summarizeVisionResult(entry.result)}`)
+    .join('\n');
+  return [
+    `已连续 ${loop.count} 次对同一张图片调用 image_analyze，当前又准备再次调用。为避免继续重复消耗并放大视觉模型误判，已自动停止。`,
+    '',
+    '保守结论：当前证据不足以可靠确认图片的具体来源或名称；已有识图结果只能作为低置信线索。若需要精确识别，请提供原始链接、更多上下文，或允许改用网络检索/反向搜图验证。',
+    summaries ? `\n最近识图结果摘要：\n${summaries}` : '',
+  ].filter(Boolean).join('\n');
 }
 
 function summarizeActionForLoop(action) {
@@ -287,6 +331,18 @@ export async function runAgentRuntime({
       if (repeatedLoop) {
         const actionSummary = summarizeActionForLoop(decision.action);
         finalAnswer = `检测到 Agent 连续 ${repeatedLoop.count + 1} 次准备重复执行同一动作（${actionSummary}），且前 ${repeatedLoop.count} 次返回结果相同。为避免继续无意义重复，已自动停止。\n\n请补充更具体的期望、差异点或允许我换一种方式继续。`;
+        onEvent?.({
+          type: "notification",
+          level: "warning",
+          step,
+          message: finalAnswer,
+        });
+        break;
+      }
+
+      const repeatedVisionLoop = detectRepeatedVisionLoop(history, decision.action);
+      if (repeatedVisionLoop) {
+        finalAnswer = buildVisionLoopStopAnswer(repeatedVisionLoop);
         onEvent?.({
           type: "notification",
           level: "warning",
