@@ -7,7 +7,7 @@ export function QuestionDialog({ question, submitting, onSubmit, onSkip }) {
   if (!question) return null;
 
   const handleKeyDown = e => {
-    if (e.key === 'Enter' && e.metaKey) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       if (!submitting) onSubmit(response);
     }
