@@ -14,6 +14,7 @@ import { normalizeDesktopAgentDecision } from '../schemas.ts';
 import { logLlmRequest, logLlmResponse } from '../llm-logger.ts';
 import { initSse, writeSse, writeSseDone } from '../../../helpers/streaming.ts';
 import { retryAsync } from '../../../helpers/retry.ts';
+import { extractModelMetadata } from './model-metadata.ts';
 import type {
   LLMProvider,
   ModelInfo,
@@ -81,7 +82,14 @@ export function createAnthropicProvider(client: any): LLMProvider {
       // 失败直接抛错，由 registry 聚合原因；全部供应商失败时中止启动。
       const list = await client.models.list();
       for (const m of list.data || []) {
-        if (m?.id) models.push({ id: m.id, label: m.display_name || m.id, provider: 'anthropic' });
+        if (m?.id) {
+          models.push({
+            id: m.id,
+            label: m.display_name || m.id,
+            provider: 'anthropic',
+            ...extractModelMetadata(m),
+          });
+        }
       }
       return models;
     },

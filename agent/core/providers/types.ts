@@ -19,6 +19,19 @@ export interface ModelInfo {
   id: string;
   label: string;
   provider: string;
+  description?: string;
+  catalogUrl?: string;
+  publisher?: string;
+  contextWindow?: number;
+  inputTokenLimit?: number;
+  outputTokenLimit?: number;
+  maxOutputTokens?: number;
+  inputModalities?: string[];
+  outputModalities?: string[];
+  supportedGenerationMethods?: string[];
+  supportedMessageRoles?: string[];
+  supportedMessageTypes?: string[];
+  supportedParameters?: string[];
 }
 
 // agent 决策上下文（task/step/history/observation/conversationHistory/systemPrompt 等），

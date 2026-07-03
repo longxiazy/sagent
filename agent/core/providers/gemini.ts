@@ -20,6 +20,7 @@ import { logLlmRequest, logLlmResponse } from '../llm-logger.ts';
 import { initSse, writeSse, writeSseDone } from '../../../helpers/streaming.ts';
 import { retryAsync } from '../../../helpers/retry.ts';
 import { buildSummaryPrompt } from './anthropic.ts';
+import { extractModelMetadata } from './model-metadata.ts';
 import type {
   LLMProvider,
   ModelInfo,
@@ -84,7 +85,12 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
         if (!supportsGenerate) continue;
         if (!isChatCapableModel(id)) continue;
         if (/imagen|veo|embedding|aqa|tts|-image|image-|gemma-(?:2|3n)/i.test(id)) continue;
-        models.push({ id, label: (m as any).displayName || id, provider: 'gemini' });
+        models.push({
+          id,
+          label: (m as any).displayName || id,
+          provider: 'gemini',
+          ...extractModelMetadata(m),
+        });
       }
       return models;
     },

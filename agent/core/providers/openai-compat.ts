@@ -25,6 +25,8 @@ import {
 import { retryAsync } from '../../../helpers/retry.ts';
 import { log } from '../../../helpers/logger.ts';
 import { buildSummaryPrompt } from './anthropic.ts';
+import { extractModelMetadata } from './model-metadata.ts';
+import { getNvidiaCatalogModelMetadata } from './nvidia-catalog.ts';
 import type {
   LLMProvider,
   ModelInfo,
@@ -151,7 +153,15 @@ export function createOpenAICompatProvider(client: any): LLMProvider {
       const list = await client.models.list();
       for (const m of list.data || []) {
         if (m?.id && isChatCapableModel(m.id)) {
-          models.push({ id: m.id, label: m.id, provider: providerName });
+          const catalogMetadata = providerName === 'nvidia' ? getNvidiaCatalogModelMetadata(m.id) : {};
+          const providerMetadata = extractModelMetadata(m);
+          models.push({
+            ...catalogMetadata,
+            id: m.id,
+            label: catalogMetadata.label || m.id,
+            provider: providerName,
+            ...providerMetadata,
+          });
         }
       }
       return models;
