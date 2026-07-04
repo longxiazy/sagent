@@ -36,6 +36,8 @@ function timeStr() {
 }
 
 const writeQueue = new Map();
+const flushTimers = new Map();
+const activeFlushes = new Set<Promise<void>>();
 
 async function flushLog(filePath, lines) {
   try {
@@ -49,13 +51,37 @@ async function flushLog(filePath, lines) {
 function enqueueLog(filePath, line) {
   if (!writeQueue.has(filePath)) {
     writeQueue.set(filePath, []);
-    setTimeout(() => {
-      const pending = writeQueue.get(filePath);
-      writeQueue.delete(filePath);
-      flushLog(filePath, pending);
-    }, 100);
+    flushTimers.set(filePath, setTimeout(() => {
+      flushQueuedFile(filePath);
+    }, 100));
   }
   writeQueue.get(filePath).push(line);
+}
+
+function trackFlush(promise: Promise<void>) {
+  activeFlushes.add(promise);
+  promise.finally(() => activeFlushes.delete(promise));
+  return promise;
+}
+
+function flushQueuedFile(filePath) {
+  const timer = flushTimers.get(filePath);
+  if (timer) clearTimeout(timer);
+  flushTimers.delete(filePath);
+
+  const pending = writeQueue.get(filePath);
+  writeQueue.delete(filePath);
+  if (!pending?.length) return Promise.resolve();
+  return trackFlush(flushLog(filePath, pending));
+}
+
+export async function flushLlmLogs() {
+  do {
+    await Promise.all([...writeQueue.keys()].map(flushQueuedFile));
+    if (activeFlushes.size > 0) {
+      await Promise.allSettled([...activeFlushes]);
+    }
+  } while (writeQueue.size > 0 || activeFlushes.size > 0);
 }
 
 export function logLlmRequest(model, messages) {

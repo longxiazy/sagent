@@ -22,11 +22,17 @@ function asList(value) {
     : [];
 }
 
-function formatList(value, limit = 3) {
+function formatList(value) {
   const items = asList(value);
   if (!items.length) return null;
-  const visible = items.slice(0, limit).join('+');
-  return items.length > limit ? `${visible}+${items.length - limit}` : visible;
+  return items.join(', ');
+}
+
+function formatSummaryList(values, limit = 2) {
+  const items = Array.isArray(values) ? values.filter(Boolean) : asList(values);
+  if (!items.length) return null;
+  const visible = items.slice(0, limit).join(', ');
+  return items.length > limit ? `${visible} +${items.length - limit}` : visible;
 }
 
 function modelFacts(model) {
@@ -48,6 +54,26 @@ function modelFacts(model) {
   if (messageRoles) facts.push({ label: 'ROLE', value: messageRoles });
   if (methods) facts.push({ label: 'GEN', value: methods });
   if (parameters) facts.push({ label: 'CAP', value: parameters });
+  return facts;
+}
+
+function modelDisplayFacts(model) {
+  const facts = [];
+  const context = formatTokenLimit(model?.contextWindow || model?.context_length || model?.inputTokenLimit);
+  const output = formatTokenLimit(model?.maxOutputTokens || model?.outputTokenLimit);
+  const modalities = uniqueSorted([
+    ...asList(model?.inputModalities || model?.input_modalities),
+    ...asList(model?.outputModalities || model?.output_modalities),
+  ]);
+  const capabilities = uniqueSorted([
+    ...asList(model?.supportedParameters || model?.supported_parameters),
+    ...asList(model?.supportedGenerationMethods || model?.supported_generation_methods),
+  ]);
+
+  if (context) facts.push({ label: 'CTX', value: context });
+  if (output) facts.push({ label: 'MAX', value: output });
+  if (modalities.length) facts.push({ label: 'MOD', value: formatSummaryList(modalities, 3) });
+  if (capabilities.length) facts.push({ label: 'CAP', value: formatSummaryList(capabilities, 2) });
   return facts;
 }
 
@@ -153,7 +179,11 @@ function useModelPickerDialog() {
 
   useEffect(() => {
     if (!open) return undefined;
-    inputRef.current?.focus();
+    const coarsePointer = typeof window !== 'undefined'
+      && window.matchMedia?.('(hover: none) and (pointer: coarse)').matches;
+    if (!coarsePointer) {
+      inputRef.current?.focus();
+    }
     const onKeyDown = e => {
       if (e.key === 'Escape') setOpen(false);
     };
@@ -260,7 +290,7 @@ function AgentModelDropdown({
   const renderTag = item => {
     const isSelected = selectedSet.has(item.id);
     const orderIdx = selectedAgentModels.indexOf(item.id);
-    const facts = modelFacts(item);
+    const facts = isSelected ? [] : modelDisplayFacts(item);
     const factTitle = facts.map(fact => `${fact.label} ${fact.value}`).join(' · ');
     return (
       <span key={item.id} className={`model-tag-wrapper ${isSelected ? 'selected' : ''}`}>
@@ -325,8 +355,8 @@ function AgentModelDropdown({
         <ChevronDown size={14} />
       </button>
       {open && (
-        <div className="model-picker-mask" onMouseDown={() => setOpen(false)}>
-          <div className="model-picker-dialog" role="dialog" aria-modal="true" onMouseDown={e => e.stopPropagation()}>
+        <div className="model-picker-mask" onPointerDown={() => setOpen(false)}>
+          <div className="model-picker-dialog" role="dialog" aria-modal="true" onPointerDown={e => e.stopPropagation()}>
             <div className="model-picker-header">
               <div className="model-picker-title">
                 <span>{t('modelSelector.selectModels')}</span>
