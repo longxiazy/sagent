@@ -4,11 +4,19 @@ import { buildOpenAiError } from '../helpers/streaming.ts';
 import { log } from '../helpers/logger.ts';
 import type { ProviderRegistry } from '../agent/core/providers/registry.ts';
 
-export function createCompletionsRouter({ registry, modelConfig }: { registry: ProviderRegistry; modelConfig: any[] }) {
+export function createCompletionsRouter({
+  registry,
+  modelConfig,
+  modelConfigError = null,
+}: {
+  registry: ProviderRegistry;
+  modelConfig: any[];
+  modelConfigError?: string | null;
+}) {
   const router = Router();
 
   router.get('/api/models', (_req, res) => {
-    res.json({ models: modelConfig });
+    res.json({ models: modelConfig, error: modelConfigError });
   });
 
   router.get('/v1/models', (_req, res) => {
@@ -70,6 +78,8 @@ export function createCompletionsRouter({ registry, modelConfig }: { registry: P
     res.json({
       status: 'ok',
       browser_agent: 'enabled',
+      models_available: modelConfig.length > 0,
+      models_error: modelConfigError,
     })
   );
 

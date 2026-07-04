@@ -62,10 +62,12 @@ app.use(express.json({ limit: '25mb' }));
 
 const { openai_client, gemini_client } = createClients();
 const registry = createProviderRegistry({ openai_client, gemini_client });
-// 启动时同步拉取模型列表；全部供应商失败则中止启动并打印原因，不再兜底默认模型。
+// 启动时同步拉取模型列表；失败时仍启动后端，让设置页可打开以修复 API Key / BASE_URL。
+let modelConfigError: string | null = null;
 const modelConfig = await registry.loadModelConfig().catch((err: any) => {
-  log.error(`[启动失败] ${err.message}`);
-  process.exit(1);
+  modelConfigError = err?.message || String(err);
+  log.error(`[Models] 模型列表获取失败，后端将以空模型列表继续启动:\n${modelConfigError}`);
+  return [];
 });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -122,7 +124,7 @@ const SCREENSHOT_DIR = path.join(MEMORY_DIR, 'screenshots');
 app.use('/screenshots', express.static(SCREENSHOT_DIR));
 
 app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, domainRules: runDesktopAgent.domainRules, modelConfig, registry, runtimeConfig, projectStore }));
-app.use(createCompletionsRouter({ registry, modelConfig }));
+app.use(createCompletionsRouter({ registry, modelConfig, modelConfigError }));
 app.use(createSuggestionsRouter({ store: createSuggestionStore(path.join(__dirname, 'data')) }));
 
 if (fs.existsSync(path.join(CLIENT_DIST_DIR, 'index.html'))) {
@@ -235,7 +237,8 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
   ╔${dLine.slice(2)}╗
   ${row('🚀 Sagent Server', `http://${HOST}:${PORT}`)}
   ╠${dLine.slice(2)}╣
-  ${row('Models', modelConfig.map(m => m.id).join(', '))}
+  ${row('Models', modelConfig.length > 0 ? modelConfig.map(m => m.id).join(', ') : 'unavailable')}
+  ${modelConfigError ? row('Models Error', modelConfigError.replace(/\s+/g, ' ').slice(0, 160)) : ''}
   ${multiModels.length > 0 ? row('MultiModel', multiModels.join(', ')) : ''}
   ${row('VISION_MODEL', VISION_MODEL)}
   ${hLine}

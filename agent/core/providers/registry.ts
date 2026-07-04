@@ -3,7 +3,7 @@
  *
  * 装配所有已配置的 LLMProvider，对外提供：
  *   - resolve(model, modelConfig): 把模型路由到认领它的 provider（兜底 openai-compat）
- *   - loadModelConfig(): 合并所有 provider 的模型列表；全部获取失败则抛错中止启动
+ *   - loadModelConfig(): 合并所有 provider 的模型列表；全部获取失败则抛错交给 server 降级启动
  *   - providers: provider 列表（server resume / banner 等处遍历用）
  *
  * 加第四家供应商：写 createXxxProvider() 实现 LLMProvider 接口，在下方
@@ -34,10 +34,6 @@ export function createProviderRegistry({
   if (gemini_client) providers.push(createGeminiProvider(gemini_client));
   if (openai_client) providers.push(createOpenAICompatProvider(openai_client));
 
-  if (providers.length === 0) {
-    throw new Error('至少需要配置 NVIDIA_API_KEY / GEMINI_API_KEY 之一');
-  }
-
   function resolve(model: string, modelConfig?: ModelInfo[] | null): LLMProvider {
     const owner = providers.find(p => p.ownsModel(model, modelConfig));
     if (owner) return owner;
@@ -47,6 +43,10 @@ export function createProviderRegistry({
   }
 
   async function loadModelConfig(): Promise<ModelInfo[]> {
+    if (providers.length === 0) {
+      throw new Error('未配置任何供应商，请设置 NVIDIA_API_KEY 或 GEMINI_API_KEY');
+    }
+
     const results = await Promise.allSettled(providers.map(p => p.listModels()));
     const merged: ModelInfo[] = [];
     const failures: string[] = [];

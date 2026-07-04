@@ -2,6 +2,35 @@ import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createCompletionsRouter } from '../routes/completions.ts';
+import { createProviderRegistry } from '../agent/core/providers/registry.ts';
+
+describe('GET /api/models', () => {
+  it('returns model loading errors without failing the settings API surface', async () => {
+    const registry: any = {
+      resolve: vi.fn(),
+    };
+    const app = express();
+    app.use(express.json());
+    app.use(createCompletionsRouter({
+      registry,
+      modelConfig: [],
+      modelConfigError: 'catalog unavailable',
+    }));
+
+    const res = await request(app).get('/api/models');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ models: [], error: 'catalog unavailable' });
+  });
+});
+
+describe('provider registry startup behavior', () => {
+  it('allows construction without configured providers so config routes can still start', async () => {
+    const registry = createProviderRegistry({});
+
+    await expect(registry.loadModelConfig()).rejects.toThrow('未配置任何供应商');
+  });
+});
 
 describe('POST /v1/chat/completions', () => {
   it('requires an explicit model', async () => {

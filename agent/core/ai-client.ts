@@ -59,9 +59,5 @@ export function createClients() {
     ? new GoogleGenAI({ apiKey: geminiKey })
     : null;
 
-  if (!openai_client && !gemini_client) {
-    throw new Error('至少需要配置 NVIDIA_API_KEY / GEMINI_API_KEY 之一');
-  }
-
   return { openai_client, gemini_client };
 }
