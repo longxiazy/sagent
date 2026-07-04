@@ -16,6 +16,8 @@ function createApprovalId() {
   return `worker_approval_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+let flushLlmLogsBeforeExit = async () => {};
+
 function createWorkerApprovalStore() {
   const pending = new Map<string, (decision: string) => void>();
   return {
@@ -103,9 +105,10 @@ async function main() {
   const { createClients } = await import('../core/ai-client.ts');
   const { createProviderRegistry } = await import('../core/providers/registry.ts');
   const { createDesktopAgentRunner } = await import('../desktop/agent.ts');
-  const { initLlmLogger } = await import('../core/llm-logger.ts');
+  const { initLlmLogger, flushLlmLogs } = await import('../core/llm-logger.ts');
   const { runtimeConfig } = await import('../core/runtime-config.ts');
   const { DEFAULT_VISION_MODEL } = await import('../tools/vision/execute.ts');
+  flushLlmLogsBeforeExit = flushLlmLogs;
 
   const memoryDir = payload.memoryDir || process.env.MEMORY_DIR || 'data';
   await runtimeConfig.init(memoryDir);
@@ -161,12 +164,14 @@ async function main() {
     checkpointWriter,
   });
 
+  await flushLlmLogsBeforeExit();
   await writeProtocolAndWait({ type: 'result', result });
 }
 
 main()
   .then(() => process.exit(0))
   .catch(async err => {
+    await flushLlmLogsBeforeExit().catch(() => {});
     await writeProtocolAndWait(serializeError(err)).catch(() => {});
     process.exit(1);
   });
