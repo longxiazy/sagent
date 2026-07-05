@@ -88,9 +88,9 @@ function modelAliases(id, frontmatter, item) {
 
 function parseTokenCount(value) {
   const text = String(value || '').toLowerCase();
-  const match = text.match(/(\d+(?:\.\d+)?)\s*(m|million|k|thousand)?(?:[- ]?token| tokens)?/i);
+  const match = text.match(/(\d[\d,]*(?:\.\d+)?)\s*(m|million|k|thousand)?(?:[- ]?token| tokens)?/i);
   if (!match) return null;
-  const n = Number(match[1]);
+  const n = Number(match[1].replace(/,/g, ''));
   if (!Number.isFinite(n) || n <= 0) return null;
   const unit = match[2] || '';
   if (unit === 'm' || unit === 'million') return Math.round(n * 1_000_000);
