@@ -50,7 +50,7 @@ async function singleModelPlan({ model, registry, modelConfig, cancelSignal, rac
 
   try {
     const provider = registry.resolve(model, modelConfig);
-    const result = await provider.agentPlan({ model, signal: ac.signal, ...context });
+    const result = await provider.agentPlan({ model, signal: ac.signal, modelConfig, ...context });
     return { ...result, model };
   } finally {
     if (cancelSignal) cancelSignal.removeEventListener('abort', onUserCancel);

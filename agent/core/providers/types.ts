@@ -1,7 +1,7 @@
 /**
  * LLMProvider — 可插拔的 LLM 供应商统一接口
  *
- * 每家供应商（Anthropic / Gemini / OpenAI 兼容）把自身的 API 差异
+ * 每家供应商（Gemini / OpenAI 兼容）把自身的 API 差异
  * （client 构造、模型列表、模型归属判断、agent 决策、chat/completion、记忆摘要、
  *  usage 归一化）全部封装在各自的 createXxxProvider() 工厂里。
  *
@@ -13,7 +13,7 @@
 
 import type { Response } from 'express';
 
-// 归一化后的模型信息。provider 是「展示名」（anthropic / gemini / nvidia 等，
+// 归一化后的模型信息。provider 是「展示名」（gemini / nvidia 等，
 // 由 baseURL 推断），前端徽标依赖它；与下面 LLMProvider.name 这个「内部路由标识」区分开。
 export interface ModelInfo {
   id: string;
@@ -77,7 +77,7 @@ export interface SummarizeOpts {
 
 export interface LLMProvider {
   // 内部路由标识，registry.resolve 用；与 ModelInfo.provider（展示名）不同。
-  readonly name: 'anthropic' | 'gemini' | 'openai-compat';
+  readonly name: 'gemini' | 'openai-compat';
   // 底层 SDK client，server resume 等处需要判断其是否存在。
   readonly client: any;
 

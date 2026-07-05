@@ -7,7 +7,7 @@ import os from 'node:os';
 
 // We test the agent router in isolation by mocking the heavy deps
 vi.mock('../agent/core/ai-client.js', () => ({
-  createClients: () => ({ openai_client: null, anthropic_client: null, gemini_client: null }),
+  createClients: () => ({ openai_client: null, gemini_client: null }),
   loadAgentMultiModels: () => [],
   deriveProviderName: () => 'test',
   isChatCapableModel: () => true,
@@ -161,6 +161,36 @@ describe('POST /api/agent', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('模型');
+  });
+
+  it('returns JSON errors for startup failures before the SSE stream opens', async () => {
+    const { createAgentRouter } = await import('../routes/agent.js');
+    const failingApp = express();
+    failingApp.use(express.json());
+    failingApp.use(createAgentRouter({
+      runDesktopAgent: async () => ({ answer: 'done', steps: [] }),
+      agentRunStore,
+      approvalStore,
+      memoryDir: tmpDir,
+      checkpointDir: tmpDir,
+      domainRules: null,
+      modelConfig: [{ id: 'test-model', provider: 'test' }],
+      registry: mockRegistry,
+      runtimeConfig: {},
+      projectStore: {
+        get() {
+          throw new Error('project lookup failed');
+        },
+      },
+    } as any));
+
+    const res = await request(failingApp)
+      .post('/api/agent')
+      .send({ task: 'startup failure', model: 'test-model', memory: false, projectId: 'broken-project' });
+
+    expect(res.status).toBe(500);
+    expect(res.headers['content-type']).toContain('application/json');
+    expect(res.body.error).toBe('project lookup failed');
   });
 });
 

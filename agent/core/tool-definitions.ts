@@ -2,7 +2,6 @@
  * Tool Definitions — Agent 可用的所有工具 schema 定义
  *
  * 定义了 DesktopAgent 能调用的全部工具（浏览器、文件系统、终端、macOS 桌面、HTTP 抓取、核心动作）。
- * 同时提供 Claude SDK 格式转换。
  *
  * 调用场景：
  *   - 各 provider 的 agentPlan() 将工具列表传给对应模型 API
@@ -411,14 +410,6 @@ export function createModelTools() {
   }
 
   return tools;
-}
-
-export function toolToClaudeTool(tool) {
-  return {
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.input_schema,
-  };
 }
 
 // Gemini FunctionDeclaration：name/description + parametersJsonSchema（标准 JSON Schema，

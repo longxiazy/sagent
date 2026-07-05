@@ -74,6 +74,7 @@ async function streamSseJson({ url, body, signal, onEvent }) {
 export async function streamAgentRun({ task, model, models, strategy, memory, signal, onEvent, messages, ...extra }) {
   let runId = null;
   let gotDone = false;
+  let initialError = null;
 
   const wrappedEvent = event => {
     if (event.runId) runId = event.runId;
@@ -88,7 +89,8 @@ export async function streamAgentRun({ task, model, models, strategy, memory, si
       signal,
       onEvent: wrappedEvent,
     });
-  } catch {
+  } catch (err) {
+    initialError = err;
     // initial POST may fail/disconnect, fall through to reconnect
   }
 
@@ -117,6 +119,10 @@ export async function streamAgentRun({ task, model, models, strategy, memory, si
     } catch {
       // reconnect also failed
     }
+  }
+
+  if (!gotDone && initialError) {
+    throw initialError;
   }
 }
 

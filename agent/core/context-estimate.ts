@@ -1,5 +1,4 @@
 import {
-  buildClaudeTaskMessages,
   buildDesktopAgentSystemPrompt,
   buildGeminiTaskMessages,
   buildNvidiaTaskMessages,
@@ -33,7 +32,6 @@ export function inferContextWindow(modelId = '', modelInfo: any = null) {
 
   const id = String(modelId || '').toLowerCase();
   if (/gemini.*(1\.5|2\.0|2\.5|pro|flash)/.test(id)) return 1_000_000;
-  if (/claude|anthropic/.test(id)) return 200_000;
   if (/kimi/.test(id)) return 200_000;
   if (/qwen.*(235|256|480|coder|long)/.test(id)) return 256_000;
   if (/deepseek/.test(id)) return 128_000;
@@ -184,14 +182,6 @@ function buildPlanningPayload({
     observation: buildInitialPlanningObservation(projectRoot),
     conversationHistory,
   };
-
-  if (providerName === 'anthropic') {
-    return {
-      system: buildDesktopAgentSystemPrompt(systemPrompt || ''),
-      messages: buildClaudeTaskMessages(baseContext),
-      tools: createModelTools(),
-    };
-  }
 
   if (providerName === 'gemini') {
     const { contents } = buildGeminiTaskMessages(baseContext);

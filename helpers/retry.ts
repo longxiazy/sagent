@@ -72,8 +72,7 @@ function isRateLimitError(err) {
 }
 
 function extractRetryDelayMs(err) {
-  // Anthropic SDK: err.headers is a Headers or plain object
-  // OpenAI SDK: err.headers is a plain object
+  // SDK errors may expose headers as a Headers instance or as a plain object.
   const headers = err?.headers || err?.error?.headers;
   if (headers) {
     const retryAfter = headers.get ? headers.get('retry-after') : headers['retry-after'];

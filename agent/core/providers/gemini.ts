@@ -16,10 +16,11 @@ import {
 import { createModelTools, toolToGeminiTool } from '../tool-definitions.ts';
 import { normalizeDesktopAgentDecision } from '../schemas.ts';
 import { isChatCapableModel } from '../ai-client.ts';
+import { resolveAgentMaxTokens } from '../planner.ts';
 import { logLlmRequest, logLlmResponse } from '../llm-logger.ts';
 import { initSse, writeSse, writeSseDone } from '../../../helpers/streaming.ts';
 import { retryAsync } from '../../../helpers/retry.ts';
-import { buildSummaryPrompt } from './anthropic.ts';
+import { buildSummaryPrompt } from './summary-prompt.ts';
 import { extractModelMetadata } from './model-metadata.ts';
 import type {
   LLMProvider,
@@ -96,17 +97,23 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
     },
 
     async agentPlan(opts: AgentPlanOpts): Promise<AgentPlanResult> {
-      const { model, signal, systemPrompt } = opts;
+      const { model, signal, systemPrompt, modelConfig } = opts;
       const system = buildDesktopAgentSystemPrompt(systemPrompt);
       const { contents } = buildGeminiTaskMessages(opts as any);
       const tools = [{ functionDeclarations: createModelTools().map(toolToGeminiTool) }];
+      const toolConfig = { functionCallingConfig: { mode: 'ANY' } };
+      const maxOutputTokens = resolveAgentMaxTokens({
+        model,
+        modelConfig,
+        promptPayload: { systemInstruction: system, contents, tools, toolConfig },
+      });
 
       const config: Record<string, any> = {
         systemInstruction: system,
-        maxOutputTokens: 16000,
+        maxOutputTokens,
         temperature: 0.1,
         tools,
-        toolConfig: { functionCallingConfig: { mode: 'ANY' } },
+        toolConfig,
       };
       if (signal) config.abortSignal = signal;
 

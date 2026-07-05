@@ -320,8 +320,7 @@ function buildBatchMessages(batch: FileSkeleton[]): any[] {
     return `- ${parts.join(' | ')}`;
   }).join('\n');
 
-  // 指令并入单条 user message:Anthropic 的 messages 不接受 system 角色(system 须作顶层参数,
-  // 见 providers/anthropic.ts agentPlan),单条 user message 对 anthropic/gemini/openai-compat 都安全。
+  // 指令并入单条 user message，对 gemini/openai-compat 都安全。
   const instruction = [
     '你是代码库分析助手。根据每个文件的路径、头注释、导出符号、依赖,',
     '为每个文件生成一句话中文职责描述(description,≤30字)和一个模块分组(group,简短英文短横线命名,如 agent-core / routes / client-ui)。',

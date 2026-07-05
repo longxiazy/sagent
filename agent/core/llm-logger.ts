@@ -6,7 +6,7 @@
  *
  * 调用场景：
  *   - planner.js 发送 NVIDIA API 请求前后
- *   - ai-client.js 发送 Claude API 请求前后
+ *   - provider 调用模型 API 前后
  */
 
 import { mkdir, appendFile } from 'node:fs/promises';

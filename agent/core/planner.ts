@@ -8,40 +8,151 @@
  *   - agent/desktop/agent.js 的 singleModelPlan() 中通过 createJsonPlanner() 创建
  *   - 每次 runtime 循环的 decide 步骤调用 planner({ model, task, step, history, observation })
  *
- * 注意：Claude 模型不走这里，走 ai-client.js 的 claudeAgentPlan()
  */
 
 import { cleanText, safeJson } from './utils.ts';
 import { createModelResponseParser } from './nvidia-response-parsers.ts';
 import { logLlmError, logLlmRequest, logLlmResponse } from './llm-logger.ts';
 import { log } from '../../helpers/logger.ts';
+import { estimatePayloadTokens, inferContextWindow } from './context-estimate.ts';
 import {
   buildChatCompletionRequest,
   createChatCompletionWithTemplateFallback,
 } from './openai-compatible-request.ts';
 
+const DEFAULT_AGENT_MAX_TOKENS = 16_000;
+const MIN_AGENT_MAX_TOKENS = 1;
+const MIN_USEFUL_AGENT_MAX_TOKENS = 128;
+const CONTEXT_RETRY_RESERVE_TOKENS = 128;
+
+function findModelInfo(model: string, modelConfig: any[] | null | undefined) {
+  if (!Array.isArray(modelConfig)) return null;
+  return modelConfig.find(item => item?.id === model) || null;
+}
+
+function firstPositiveNumber(values: any[]) {
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+export function resolveAgentMaxTokens({
+  model,
+  modelConfig,
+  requestedMaxTokens = DEFAULT_AGENT_MAX_TOKENS,
+  promptPayload,
+  contextWindowOverride,
+}: {
+  model: string;
+  modelConfig?: any[] | null;
+  requestedMaxTokens?: number;
+  promptPayload: any;
+  contextWindowOverride?: number | null;
+}) {
+  const modelInfo = findModelInfo(model, modelConfig);
+  const contextWindow = Number.isFinite(Number(contextWindowOverride)) && Number(contextWindowOverride) > 0
+    ? Number(contextWindowOverride)
+    : inferContextWindow(model, modelInfo);
+  const outputLimit = firstPositiveNumber([
+    modelInfo?.maxOutputTokens,
+    modelInfo?.outputTokenLimit,
+    modelInfo?.max_completion_tokens,
+    modelInfo?.output_token_limit,
+  ]);
+  const promptTokens = estimatePayloadTokens(promptPayload);
+  const promptEstimate = Math.ceil(promptTokens * 1.25);
+  const contextReserve = Math.max(128, Math.ceil(contextWindow * 0.05));
+  const contextAvailable = Math.max(
+    MIN_AGENT_MAX_TOKENS,
+    contextWindow - promptEstimate - contextReserve,
+  );
+
+  return Math.max(
+    MIN_AGENT_MAX_TOKENS,
+    Math.min(requestedMaxTokens, outputLimit || requestedMaxTokens, contextAvailable),
+  );
+}
+
+export function maxTokensFromContextLengthError(err: any) {
+  return contextLengthDetailsFromError(err)?.retryMaxTokens ?? null;
+}
+
+function contextLengthDetailsFromError(err: any) {
+  const message = String(err?.message || err?.error?.message || '');
+  const match = message.match(/maximum context length is\s+(\d+)\s+tokens[\s\S]*?\((\d+)\s+in the messages,\s*(\d+)\s+in the completion\)/i);
+  if (!match) return null;
+
+  const contextWindow = Number(match[1]);
+  const promptTokens = Number(match[2]);
+  const completionTokens = Number(match[3]);
+  if (![contextWindow, promptTokens, completionTokens].every(n => Number.isFinite(n) && n > 0)) {
+    return null;
+  }
+
+  const retryMaxTokens = Math.max(
+    MIN_AGENT_MAX_TOKENS,
+    contextWindow - promptTokens - CONTEXT_RETRY_RESERVE_TOKENS,
+  );
+
+  return {
+    contextWindow,
+    promptTokens,
+    completionTokens,
+    retryMaxTokens: retryMaxTokens < completionTokens ? retryMaxTokens : null,
+  };
+}
+
 export function createJsonPlanner({
   client,
   temperature = 0.1,
   topP = 1,
-  maxTokens = 16000,
+  maxTokens = DEFAULT_AGENT_MAX_TOKENS,
   buildMessages,
+  buildCompactMessages = null,
   normalizeDecision,
   buildParserError = null,
 }) {
   return async ({ model, signal = null, ...context }) => {
-    const messages = buildMessages(context);
+    let messages = buildMessages(context);
+    let requestMaxTokens = resolveAgentMaxTokens({
+      model,
+      modelConfig: context.modelConfig,
+      requestedMaxTokens: maxTokens,
+      promptPayload: messages,
+    });
+    let usedCompactPrompt = false;
+
+    if (requestMaxTokens < MIN_USEFUL_AGENT_MAX_TOKENS && typeof buildCompactMessages === 'function') {
+      const compactMessages = buildCompactMessages(context);
+      const compactMaxTokens = resolveAgentMaxTokens({
+        model,
+        modelConfig: context.modelConfig,
+        requestedMaxTokens: maxTokens,
+        promptPayload: compactMessages,
+      });
+      if (compactMaxTokens > requestMaxTokens) {
+        messages = compactMessages;
+        requestMaxTokens = compactMaxTokens;
+        usedCompactPrompt = true;
+        log.warn(`[Planner] 模型上下文偏小，使用 compact prompt: max_tokens ${requestMaxTokens}`);
+      }
+    }
 
     logLlmRequest(model, messages);
 
-    const { request: createOpts, defaultedChatTemplateKwargs } = buildChatCompletionRequest({
+    const builtRequest = buildChatCompletionRequest({
       model,
       temperature,
       top_p: topP,
-      max_tokens: maxTokens,
+      max_tokens: requestMaxTokens,
       messages,
     }, { defaultThinking: true });
+    const createOpts = builtRequest.request;
+    let defaultedChatTemplateKwargs = builtRequest.defaultedChatTemplateKwargs;
     const reqOpts = signal ? { signal } : undefined;
+    let responseMaxTokens = requestMaxTokens;
     const retryContext = {
       operation: 'desktop.plan',
       phase: 'initial',
@@ -49,7 +160,8 @@ export function createJsonPlanner({
       model,
       step: context.step,
       message_count: messages.length,
-      max_tokens: maxTokens,
+      max_tokens: requestMaxTokens,
+      compact_prompt: usedCompactPrompt || undefined,
     };
 
     let response;
@@ -63,8 +175,80 @@ export function createJsonPlanner({
         defaultedChatTemplateKwargs,
       });
     } catch (err) {
-      logLlmError(model, err, retryContext);
-      throw err;
+      const contextLengthDetails = contextLengthDetailsFromError(err);
+      const retryMaxTokens = contextLengthDetails?.retryMaxTokens;
+      if (!retryMaxTokens || retryMaxTokens >= createOpts.max_tokens) {
+        logLlmError(model, err, retryContext);
+        throw err;
+      }
+
+      if (retryMaxTokens < MIN_USEFUL_AGENT_MAX_TOKENS && typeof buildCompactMessages === 'function' && !usedCompactPrompt) {
+        const compactMessages = buildCompactMessages(context);
+        const compactMaxTokens = resolveAgentMaxTokens({
+          model,
+          modelConfig: context.modelConfig,
+          requestedMaxTokens: maxTokens,
+          promptPayload: compactMessages,
+          contextWindowOverride: contextLengthDetails.contextWindow,
+        });
+        if (compactMaxTokens >= MIN_USEFUL_AGENT_MAX_TOKENS) {
+          log.warn(`[Planner] 模型上下文不足，切换 compact prompt 后重试: ${createOpts.max_tokens} -> ${compactMaxTokens}`);
+          messages = compactMessages;
+          usedCompactPrompt = true;
+          const { request: compactOpts, defaultedChatTemplateKwargs: compactDefaultedChatTemplateKwargs } = buildChatCompletionRequest({
+            model,
+            temperature,
+            top_p: topP,
+            max_tokens: compactMaxTokens,
+            messages,
+          }, { defaultThinking: true });
+          try {
+            response = await createChatCompletionWithTemplateFallback({
+              client,
+              request: compactOpts,
+              reqOpts,
+              retryContext: { ...retryContext, phase: 'initial-compact-retry', max_tokens: compactMaxTokens, compact_prompt: true },
+              retryOptions: { retryRateLimit: false },
+              defaultedChatTemplateKwargs: compactDefaultedChatTemplateKwargs,
+            });
+            responseMaxTokens = compactMaxTokens;
+            createOpts.chat_template_kwargs = compactOpts.chat_template_kwargs;
+            defaultedChatTemplateKwargs = compactDefaultedChatTemplateKwargs;
+          } catch (compactErr) {
+            logLlmError(model, compactErr, { ...retryContext, phase: 'initial-compact-retry', max_tokens: compactMaxTokens, compact_prompt: true });
+            throw compactErr;
+          }
+        }
+      }
+
+      if (response) {
+        // compact retry succeeded
+      } else {
+        if (retryMaxTokens < MIN_USEFUL_AGENT_MAX_TOKENS) {
+          const tooSmallErr = new Error(
+            `模型上下文太小，无法承载 Desktop Agent 提示。请换用上下文更大的模型，或减少历史对话后重试。（context=${contextLengthDetails.contextWindow}, prompt=${contextLengthDetails.promptTokens}, available=${retryMaxTokens}）`
+          );
+          (tooSmallErr as any).status = 400;
+          logLlmError(model, tooSmallErr, { ...retryContext, phase: 'context-too-small', max_tokens: retryMaxTokens });
+          throw tooSmallErr;
+        }
+
+        log.warn(`[Planner] 模型上下文不足，降低 max_tokens 后重试: ${createOpts.max_tokens} -> ${retryMaxTokens}`);
+        try {
+          response = await createChatCompletionWithTemplateFallback({
+            client,
+            request: { ...createOpts, max_tokens: retryMaxTokens },
+            reqOpts,
+            retryContext: { ...retryContext, phase: 'initial-context-retry', max_tokens: retryMaxTokens },
+            retryOptions: { retryRateLimit: false },
+            defaultedChatTemplateKwargs,
+          });
+          responseMaxTokens = retryMaxTokens;
+        } catch (retryErr) {
+          logLlmError(model, retryErr, { ...retryContext, phase: 'initial-context-retry', max_tokens: retryMaxTokens });
+          throw retryErr;
+        }
+      }
     }
 
     logLlmResponse(model, response);
@@ -86,7 +270,7 @@ export function createJsonPlanner({
           content: parsed.rawContent,
           usage: parsed.usage,
           context,
-          createOpts: { temperature, top_p: topP, max_tokens: maxTokens, chat_template_kwargs: createOpts.chat_template_kwargs },
+          createOpts: { temperature, top_p: topP, max_tokens: responseMaxTokens, chat_template_kwargs: createOpts.chat_template_kwargs },
           defaultedChatTemplateKwargs,
           reqOpts,
           normalizeDecision,
@@ -109,7 +293,7 @@ export function createJsonPlanner({
       content,
       usage: parsed.usage,
       context,
-      createOpts: { temperature, top_p: topP, max_tokens: maxTokens, chat_template_kwargs: createOpts.chat_template_kwargs },
+      createOpts: { temperature, top_p: topP, max_tokens: responseMaxTokens, chat_template_kwargs: createOpts.chat_template_kwargs },
       defaultedChatTemplateKwargs,
       reqOpts,
       normalizeDecision,

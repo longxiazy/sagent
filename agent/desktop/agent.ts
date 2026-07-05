@@ -23,7 +23,7 @@
  *
  * TODO / 拆分建议 Refactor suggestions:
  *   - 将 multi-model 竞速逻辑（buildDesktopPlanner / aggregateResults）拆到 agent/core/multi-model.js
- *   - 将 message 构建（buildClaudeTaskMessages / buildNvidiaTaskMessages）拆到 agent/core/prompts.js
+ *   - 将 message 构建（buildGeminiTaskMessages / buildNvidiaTaskMessages）拆到 agent/core/prompts.js
  *   - 将 observation 采集逻辑拆到 agent/desktop/observer.js
  */
 

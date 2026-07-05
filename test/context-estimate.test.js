@@ -10,7 +10,6 @@ import {
 describe('context estimate', () => {
   it('infers common context windows from model ids', () => {
     expect(inferContextWindow('deepseek-ai/deepseek-v4-flash')).toBe(128_000);
-    expect(inferContextWindow('anthropic/claude-sonnet-4')).toBe(200_000);
     expect(inferContextWindow('google/gemini-2.5-pro')).toBe(1_000_000);
   });
 

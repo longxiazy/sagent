@@ -7,7 +7,7 @@
  * 循环流程：
  *   1. initialize()  — 初始化状态（创建浏览器会话等）
  *   2. observe()     — 观察当前环境（桌面/浏览器/文件系统）
- *   3. decide()      — LLM 决定下一步动作（调用 planner 或 claudeAgentPlan）
+ *   3. decide()      — LLM 决定下一步动作（调用 planner/provider）
  *   4. authorize()   — 策略审批（safe 直接通过，confirm 需用户批准，blocked 直接拒绝）
  *   5. execute()     — 执行动作（路由到 browser/fs/terminal/macos 工具）
  *   6. 回到步骤 2，直到 decide 返回 finish 或达到 maxSteps
