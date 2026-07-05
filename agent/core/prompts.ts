@@ -104,36 +104,8 @@ export function buildDesktopAgentSystemPrompt(systemPrompt: string | null) {
     .join('\n');
 }
 
-export function buildClaudeTaskMessages({
-  task,
-  step,
-  history,
-  observation,
-  conversationHistory,
-}: {
-  task: string;
-  step: number;
-  history: any[];
-  observation: any;
-  conversationHistory?: Array<{ role: string; content: string }>;
-}) {
-  const messages = [];
-  if (conversationHistory?.length) {
-    for (const msg of conversationHistory) {
-      messages.push({ role: msg.role, content: msg.content });
-    }
-  }
-  const recentUrlsHint = buildRecentUrlsHint(history);
-  const recentSearchesHint = buildRecentSearchesHint(history);
-  messages.push({
-    role: 'user',
-    content: JSON.stringify({ task, step, history, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }),
-  });
-  return messages;
-}
-
-// Gemini 决策消息：复用 Claude 那套「把 task/step/history/observation 这坨 JSON 塞进一个
-// user part」的思路，但产出 Gemini 的 contents 格式（assistant→model）。system 由 provider 单独传。
+// Gemini 决策消息：把 task/step/history/observation 这坨 JSON 塞进一个
+// user part，system 由 provider 单独传。
 export function buildGeminiTaskMessages({
   task,
   step,
@@ -169,6 +141,7 @@ export function buildNvidiaTaskMessages({
   history,
   observation,
   conversationHistory,
+  compact = false,
 }: {
   task: string;
   systemPrompt?: string | null;
@@ -176,6 +149,7 @@ export function buildNvidiaTaskMessages({
   history: any[];
   observation: any;
   conversationHistory?: Array<{ role: string; content: string }>;
+  compact?: boolean;
 }) {
   const ideEnabled = isIdeMcpEnabled();
   const ideLines = buildIdePromptLines();
@@ -189,6 +163,26 @@ export function buildNvidiaTaskMessages({
 
   const recentUrlsHint = buildRecentUrlsHint(history);
   const recentSearchesHint = buildRecentSearchesHint(history);
+
+  if (compact) {
+    return [
+      {
+        role: 'system',
+        content: [
+          '你是 DesktopAgent。只能输出一个 JSON 对象。',
+          '若可直接回答，必须输出 {"rationale":"...","action":{"type":"finish","answer":"..."}}，不要使用 type:"answer"。',
+          '若需工具，action.tool/type 只能使用：browser navigate/click/get_page_content/http_fetch；fs list_dir/read_file/search_files；terminal run_safe；search web_search；vision image_analyze；core ask_user/notify_user。',
+          '常识问答、闲聊、解释类任务必须直接 finish，不要调用工具。',
+          'answer 用简体中文，简洁直接。',
+          systemPrompt ? `附加约束：${systemPrompt}` : '',
+        ].filter(Boolean).join(' '),
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({ task, step, history: history?.slice?.(-2) || [], observation }),
+      },
+    ];
+  }
 
   return [
     {

@@ -16,8 +16,7 @@
  *      - normalizeFetchAction   — 校验 URL、修复 extractLinks 参数错位等
  *
  * 调用场景：
- *   - planner.js 的 createJsonPlanner() 作为 normalizeDecision 参数传入
- *   - agent/desktop/agent.js 的 toolUseToNormalizedDecision() 用于 Claude 模型
+ *   - planner/provider 的 agentPlan() 作为 normalizeDecision 使用
  */
 
 import { cleanText } from './utils.ts';
@@ -356,11 +355,18 @@ function normalizeSpawnAction(type, action) {
 }
 
 function normalizeCoreAction(type, action) {
-  if (type === 'finish') {
+  if (type === 'finish' || type === 'answer' || type === 'final' || type === 'final_answer' || type === 'done') {
+    const answer = typeof action.answer === 'string'
+      ? action.answer.trim()
+      : typeof action.content === 'string'
+        ? action.content.trim()
+        : typeof action.text === 'string'
+          ? action.text.trim()
+          : '';
     return {
       tool: 'core',
-      type,
-      answer: typeof action.answer === 'string' ? action.answer.trim() : '',
+      type: 'finish',
+      answer,
     };
   }
   if (type === 'ask_user') {

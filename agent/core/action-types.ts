@@ -57,6 +57,10 @@ export const ACTION_TYPE_TO_TOOL = {
   spawn: 'spawn',
   // core
   finish: 'core',
+  answer: 'core',
+  final: 'core',
+  final_answer: 'core',
+  done: 'core',
   ask_user: 'core',
   notify_user: 'core',
 };

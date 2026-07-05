@@ -24,7 +24,7 @@ import {
 } from '../../../helpers/streaming.ts';
 import { retryAsync } from '../../../helpers/retry.ts';
 import { log } from '../../../helpers/logger.ts';
-import { buildSummaryPrompt } from './anthropic.ts';
+import { buildSummaryPrompt } from './summary-prompt.ts';
 import { extractModelMetadata } from './model-metadata.ts';
 import { getNvidiaCatalogModelMetadata } from './nvidia-catalog.ts';
 import type {
@@ -131,6 +131,7 @@ export function createOpenAICompatProvider(client: any): LLMProvider {
   const planner = createJsonPlanner({
     client,
     buildMessages: (ctx: any) => buildNvidiaTaskMessages(ctx),
+    buildCompactMessages: (ctx: any) => buildNvidiaTaskMessages({ ...ctx, compact: true }),
     normalizeDecision: normalizeDesktopAgentDecision,
     buildParserError(err: Error) {
       return `模型动作解析失败: ${err.message}`;
