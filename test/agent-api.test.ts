@@ -79,7 +79,9 @@ describe('POST /api/agent/compact', () => {
     }
     await saveMemory(tmpDir, mem);
 
-    const res = await request(app).post('/api/agent/compact');
+    const res = await request(app)
+      .post('/api/agent/compact')
+      .send({ model: 'test-model' });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.message).toMatch(/保留 \d+ 条/);
@@ -87,10 +89,19 @@ describe('POST /api/agent/compact', () => {
 
   it('returns ok:false when no memory', async () => {
     // loadMemory returns empty memory which is truthy, so this tests the compact of empty data
-    const res = await request(app).post('/api/agent/compact');
+    const res = await request(app)
+      .post('/api/agent/compact')
+      .send({ model: 'test-model' });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.message).toContain('0');
+  });
+
+  it('requires an explicit compact model', async () => {
+    const res = await request(app).post('/api/agent/compact');
+    expect(res.status).toBe(400);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toContain('model');
   });
 });
 
