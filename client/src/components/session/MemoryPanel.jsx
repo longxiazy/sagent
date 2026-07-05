@@ -3,12 +3,14 @@ import { ChevronUp, RefreshCw } from 'lucide-react';
 import { useT } from '../../i18n/I18nProvider.jsx';
 import { apiFetch } from '../../api/http.js';
 import { fetchCodegraph, reindexCodegraph } from '../../api/codegraph.js';
+import { SingleModelSelector } from '../ModelSelector.jsx';
 
 export function MemoryPanel({ onClose, activeProjectId = null, modelList = [] }) {
   const t = useT();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [compacting, setCompacting] = useState(false);
+  const [compactModel, setCompactModel] = useState('');
   const [tab, setTab] = useState('conversation');
 
   // 记忆按项目隔离：所有请求带上当前项目 id（无项目则查全局）。
@@ -22,10 +24,21 @@ export function MemoryPanel({ onClose, activeProjectId = null, modelList = [] })
       .catch(() => setLoading(false));
   }, [qs]);
 
+  useEffect(() => {
+    if (compactModel && !modelList.some(item => item.id === compactModel)) {
+      setCompactModel('');
+    }
+  }, [compactModel, modelList]);
+
   const handleCompact = async () => {
+    if (!compactModel) return;
     setCompacting(true);
     try {
-      const r = await apiFetch(`/api/agent/compact${qs}`, { method: 'POST' });
+      const r = await apiFetch(`/api/agent/compact${qs}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: compactModel }),
+      });
       const result = await r.json();
       if (result.ok) {
         const r2 = await apiFetch(`/api/agent/memory${qs}`);
@@ -134,9 +147,21 @@ export function MemoryPanel({ onClose, activeProjectId = null, modelList = [] })
       </div>
       {tab !== 'codegraph' && (
         <div className="memory-panel-footer">
-          <button className="memory-compact-btn" onClick={handleCompact} disabled={compacting}>
-            {compacting ? t('memory.compacting') : t('memory.compactHistory')}
-          </button>
+          <div className="memory-compact-group">
+            <SingleModelSelector
+              className="memory-compact-model"
+              availableModels={modelList}
+              value={compactModel}
+              onChange={setCompactModel}
+              disabled={compacting || modelList.length === 0}
+              title={t('memory.compactModelTitle')}
+              placeholder={modelList.length === 0 ? t('codegraph.noModel') : t('modelSelector.selectModel')}
+              dialogTitle={t('memory.compactModelTitle')}
+            />
+            <button className="memory-compact-btn" onClick={handleCompact} disabled={compacting || !compactModel}>
+              {compacting ? t('memory.compacting') : t('memory.compactHistory')}
+            </button>
+          </div>
           <div className="memory-clear-group">
             <button className="memory-clear-btn" onClick={() => handleClear('/api/agent/memory/knowledge')} title={t('memory.clearKnowledgeTitle')}>
               {t('memory.clearKnowledge')}
@@ -160,9 +185,11 @@ function CodeGraphTab({ activeProjectId, modelList }) {
   const [reindexing, setReindexing] = useState(false);
   const [search, setSearch] = useState('');
 
-  // 默认选用模型列表第一个。
+  // 模型配置变更时只清理失效选择，不自动挑默认模型。
   useEffect(() => {
-    if (!model && modelList.length > 0) setModel(modelList[0].id);
+    if (model && !modelList.some(item => item.id === model)) {
+      setModel('');
+    }
   }, [modelList, model]);
 
   // 切到该 tab / 切项目时拉一次。
@@ -251,16 +278,16 @@ function CodeGraphTab({ activeProjectId, modelList }) {
         )}
 
         <div className="codegraph-actions">
-          <select
-            className="codegraph-model-select"
+          <SingleModelSelector
+            className="codegraph-model-picker"
+            availableModels={modelList}
             value={model}
-            onChange={e => setModel(e.target.value)}
-            disabled={indexing || reindexing}
+            onChange={setModel}
+            disabled={indexing || reindexing || modelList.length === 0}
             title={t('codegraph.modelTitle')}
-          >
-            {modelList.length === 0 && <option value="">{t('codegraph.noModel')}</option>}
-            {modelList.map(m => <option key={m.id} value={m.id}>{m.label || m.id}</option>)}
-          </select>
+            placeholder={modelList.length === 0 ? t('codegraph.noModel') : t('modelSelector.selectModel')}
+            dialogTitle={t('codegraph.modelTitle')}
+          />
           <button
             className="codegraph-reindex-btn"
             onClick={handleReindex}

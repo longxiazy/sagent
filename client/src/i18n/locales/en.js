@@ -295,6 +295,7 @@ export const en = {
   'memory.preferences': 'Preferences',
   'memory.learnings': 'Learnings',
   'memory.noKnowledge': 'No project knowledge',
+  'memory.compactModelTitle': 'Select compaction model',
   'memory.compacting': 'Compacting…',
   'memory.compactHistory': 'Compact history',
   'memory.clearKnowledgeTitle': 'Clear project knowledge, keep chats',
@@ -364,6 +365,7 @@ export const en = {
   // Model selector
   'modelSelector.selectModel': 'Select model',
   'modelSelector.selectModels': 'Select models',
+  'modelSelector.currentModel': 'Current model',
   'modelSelector.selectedCount': '{count} models selected',
   'modelSelector.clearAll': 'Clear all',
   'modelSelector.resetFilters': 'Reset filters',

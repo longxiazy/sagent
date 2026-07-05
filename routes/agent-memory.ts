@@ -47,7 +47,14 @@ export function createAgentMemoryRouter({
       const dir = resolveDir(req);
       const memory = await loadMemory(dir);
       if (memory) {
-        const summaryModel = modelConfig?.[0]?.id;
+        const requestedModel = typeof req.body?.model === 'string' ? req.body.model.trim() : '';
+        if (!requestedModel) {
+          return res.status(400).json({ ok: false, error: 'model is required' });
+        }
+        if (!modelConfig?.some(model => model.id === requestedModel)) {
+          return res.status(400).json({ ok: false, error: 'Unknown model' });
+        }
+        const summaryModel = requestedModel;
         log.info(`[Memory] 手动压缩 ${memory.conversation.length} 条, 摘要模型: ${summaryModel || '无'}`);
         const memStart = Date.now();
         await compactConversationMemory(memory, {
