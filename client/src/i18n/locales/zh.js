@@ -296,6 +296,7 @@ export const zh = {
   'memory.preferences': '偏好',
   'memory.learnings': '经验',
   'memory.noKnowledge': '暂无项目知识',
+  'memory.compactModelTitle': '选择压缩模型',
   'memory.compacting': '压缩中…',
   'memory.compactHistory': '压缩历史',
   'memory.clearKnowledgeTitle': '清空项目知识，保留对话',
@@ -365,6 +366,7 @@ export const zh = {
   // 模型选择器
   'modelSelector.selectModel': '选择模型',
   'modelSelector.selectModels': '选择模型',
+  'modelSelector.currentModel': '当前模型',
   'modelSelector.selectedCount': '已选 {count} 个模型',
   'modelSelector.clearAll': '清空',
   'modelSelector.resetFilters': '重置筛选',

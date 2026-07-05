@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, ChevronUp, Search, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Search, X } from 'lucide-react';
 import { useT } from '../i18n/I18nProvider.jsx';
 
 function formatTokenLimit(value) {
@@ -28,13 +28,6 @@ function formatList(value) {
   return items.join(', ');
 }
 
-function formatSummaryList(values, limit = 2) {
-  const items = Array.isArray(values) ? values.filter(Boolean) : asList(values);
-  if (!items.length) return null;
-  const visible = items.slice(0, limit).join(', ');
-  return items.length > limit ? `${visible} +${items.length - limit}` : visible;
-}
-
 function modelFacts(model) {
   const facts = [];
   const context = formatTokenLimit(model?.contextWindow || model?.context_length || model?.inputTokenLimit);
@@ -54,26 +47,6 @@ function modelFacts(model) {
   if (messageRoles) facts.push({ label: 'ROLE', value: messageRoles });
   if (methods) facts.push({ label: 'GEN', value: methods });
   if (parameters) facts.push({ label: 'CAP', value: parameters });
-  return facts;
-}
-
-function modelDisplayFacts(model) {
-  const facts = [];
-  const context = formatTokenLimit(model?.contextWindow || model?.context_length || model?.inputTokenLimit);
-  const output = formatTokenLimit(model?.maxOutputTokens || model?.outputTokenLimit);
-  const modalities = uniqueSorted([
-    ...asList(model?.inputModalities || model?.input_modalities),
-    ...asList(model?.outputModalities || model?.output_modalities),
-  ]);
-  const capabilities = uniqueSorted([
-    ...asList(model?.supportedParameters || model?.supported_parameters),
-    ...asList(model?.supportedGenerationMethods || model?.supported_generation_methods),
-  ]);
-
-  if (context) facts.push({ label: 'CTX', value: context });
-  if (output) facts.push({ label: 'MAX', value: output });
-  if (modalities.length) facts.push({ label: 'MOD', value: formatSummaryList(modalities, 3) });
-  if (capabilities.length) facts.push({ label: 'CAP', value: formatSummaryList(capabilities, 2) });
   return facts;
 }
 
@@ -163,15 +136,6 @@ function matchesComplexFilters(model, filters) {
   return true;
 }
 
-function ProviderPill({ provider }) {
-  if (!provider) return null;
-  return (
-    <span className="model-dropdown-provider" title={provider}>
-      {provider}
-    </span>
-  );
-}
-
 // 模型选择弹框的通用交互：打开后聚焦搜索、ESC 关闭。
 function useModelPickerDialog() {
   const [open, setOpen] = useState(false);
@@ -194,16 +158,19 @@ function useModelPickerDialog() {
   return { open, setOpen, inputRef };
 }
 
-// Agent 模式：多选 + 优先级排序 + race/vote 策略。
-// 触发按钮显示已选数量，展开后在面板内搜索/多选/排序/切策略，
-// 避免一排模型标签直接铺在输入卡工具栏里把版面撑乱。
-function AgentModelDropdown({
+// 通用模型选择弹框：Agent 使用多选 + 排序 + 策略；压缩/索引使用同款单选。
+function ModelPickerDropdown({
   availableModels,
-  selectedAgentModels,
-  setSelectedAgentModels,
+  value,
+  onChange,
+  multiple = false,
   agentStrategy,
   setAgentStrategy,
-  sessionLocked,
+  disabled = false,
+  title,
+  placeholder,
+  dialogTitle,
+  clearable = true,
 }) {
   const t = useT();
   const { open, setOpen, inputRef } = useModelPickerDialog();
@@ -226,25 +193,42 @@ function AgentModelDropdown({
     setContextFilter('all');
   };
 
-  const toggleAgentModel = id => {
-    setSelectedAgentModels(prev => (prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]));
+  const selectedModelIds = multiple
+    ? (Array.isArray(value) ? value : [])
+    : (value ? [value] : []);
+
+  const setSelectedModelIds = next => {
+    if (multiple) {
+      onChange?.(next);
+      return;
+    }
+    onChange?.(next[0] || '');
   };
 
-  const moveAgentModel = (id, dir) => {
-    setSelectedAgentModels(prev => {
-      const idx = prev.indexOf(id);
-      if (idx < 0) return prev;
-      const next = [...prev];
-      const swap = idx + dir;
-      if (swap < 0 || swap >= next.length) return prev;
-      [next[idx], next[swap]] = [next[swap], next[idx]];
-      return next;
-    });
+  const toggleModel = id => {
+    if (!multiple) {
+      setSelectedModelIds([id]);
+      setOpen(false);
+      return;
+    }
+    setSelectedModelIds(selectedModelIds.includes(id)
+      ? selectedModelIds.filter(m => m !== id)
+      : [...selectedModelIds, id]);
+  };
+
+  const moveModel = (id, dir) => {
+    const idx = selectedModelIds.indexOf(id);
+    if (idx < 0) return;
+    const next = [...selectedModelIds];
+    const swap = idx + dir;
+    if (swap < 0 || swap >= next.length) return;
+    [next[idx], next[swap]] = [next[swap], next[idx]];
+    setSelectedModelIds(next);
   };
 
   // 已选模型始终置顶且不受搜索影响，避免选中后被过滤掉看不到。
-  const selectedSet = new Set(selectedAgentModels);
-  const selectedItems = selectedAgentModels
+  const selectedSet = new Set(selectedModelIds);
+  const selectedItems = selectedModelIds
     .map(id => availableModels.find(m => m.id === id))
     .filter(Boolean);
   const unselectedItems = availableModels.filter(m => !selectedSet.has(m.id));
@@ -274,52 +258,38 @@ function AgentModelDropdown({
     Boolean(query.trim()),
   ].filter(Boolean).length;
 
-  const count = selectedAgentModels.length;
-  const selectedProviders = [...new Set(selectedItems.map(providerOf))];
-  const triggerProvider = count === 0
-    ? null
-    : selectedProviders.length === 1
-      ? selectedProviders[0]
-      : t('modelSelector.providerCount', { count: selectedProviders.length });
+  const count = selectedModelIds.length;
   const triggerLabel = count === 1
-    ? (selectedItems[0]?.label || selectedAgentModels[0])
+    ? (selectedItems[0]?.label || selectedModelIds[0])
     : count > 1
       ? t('modelSelector.selectedCount', { count })
-      : t('modelSelector.selectModels');
+      : (placeholder || t(multiple ? 'modelSelector.selectModels' : 'modelSelector.selectModel'));
 
-  const renderTag = item => {
+  const renderOption = item => {
     const isSelected = selectedSet.has(item.id);
-    const orderIdx = selectedAgentModels.indexOf(item.id);
-    const facts = isSelected ? [] : modelDisplayFacts(item);
-    const factTitle = facts.map(fact => `${fact.label} ${fact.value}`).join(' · ');
+    const orderIdx = selectedModelIds.indexOf(item.id);
+    const secondary = item.description || (item.label && item.label !== item.id ? item.id : '');
     return (
-      <span key={item.id} className={`model-tag-wrapper ${isSelected ? 'selected' : ''}`}>
+      <span key={item.id} className={`model-option-wrapper ${isSelected ? 'selected' : ''}`}>
         <button
-          className={`model-tag ${isSelected ? 'selected' : ''}`}
-          onClick={() => toggleAgentModel(item.id)}
-          disabled={sessionLocked}
-          title={[isSelected ? t('modelSelector.deselect') : t('modelSelector.selectConcurrent'), factTitle].filter(Boolean).join('\n')}
+          className={`model-option ${isSelected ? 'selected' : ''}`}
+          onClick={() => toggleModel(item.id)}
+          disabled={disabled}
+          title={[isSelected ? t('modelSelector.deselect') : t(multiple ? 'modelSelector.selectConcurrent' : 'modelSelector.selectModel'), item.id].filter(Boolean).join('\n')}
         >
-          <span className="model-tag-label">{item.label}</span>
-          {item.description && (
-            <span className="model-tag-description">{item.description}</span>
-          )}
-          {facts.length > 0 && (
-            <span className="model-tag-facts">
-              {facts.map(fact => (
-                <span key={`${fact.label}:${fact.value}`} className="model-tag-fact">
-                  <span className="model-tag-fact-label">{fact.label}</span>
-                  <span className="model-tag-fact-value">{fact.value}</span>
-                </span>
-              ))}
-            </span>
-          )}
+          <span className="model-option-check" aria-hidden="true">
+            {isSelected && <Check size={14} />}
+          </span>
+          <span className="model-option-text">
+            <span className="model-option-name">{item.label || item.id}</span>
+            {secondary && <span className="model-option-description">{secondary}</span>}
+          </span>
         </button>
-        {isSelected && selectedAgentModels.length > 1 && (
-          <span className="model-tag-order">
-            <button className="order-arrow" onClick={() => moveAgentModel(item.id, -1)} disabled={orderIdx <= 0 || sessionLocked} title={t('modelSelector.raisePriority')}><ChevronUp size={10} /></button>
+        {multiple && isSelected && selectedModelIds.length > 1 && (
+          <span className="model-option-order">
+            <button className="order-arrow" onClick={() => moveModel(item.id, -1)} disabled={orderIdx <= 0 || disabled} title={t('modelSelector.raisePriority')}><ChevronUp size={10} /></button>
             <span className="order-number">{orderIdx + 1}</span>
-            <button className="order-arrow" onClick={() => moveAgentModel(item.id, 1)} disabled={orderIdx >= selectedAgentModels.length - 1 || sessionLocked} title={t('modelSelector.lowerPriority')}><ChevronDown size={10} /></button>
+            <button className="order-arrow" onClick={() => moveModel(item.id, 1)} disabled={orderIdx >= selectedModelIds.length - 1 || disabled} title={t('modelSelector.lowerPriority')}><ChevronDown size={10} /></button>
           </span>
         )}
       </span>
@@ -340,16 +310,15 @@ function AgentModelDropdown({
   );
 
   return (
-    <div className="model-dropdown">
+    <div className={`model-dropdown ${multiple ? 'multi' : 'single'}`}>
       <button
         type="button"
         className={`model-dropdown-trigger ${count > 0 ? 'has-selection' : ''}`}
         onClick={openPanel}
-        disabled={sessionLocked}
-        title={t('modelSelector.switchModel')}
+        disabled={disabled}
+        title={title || t('modelSelector.switchModel')}
       >
         <span className="model-dropdown-main">
-          <ProviderPill provider={triggerProvider} />
           <span className="model-dropdown-label">{triggerLabel}</span>
         </span>
         <ChevronDown size={14} />
@@ -359,7 +328,7 @@ function AgentModelDropdown({
           <div className="model-picker-dialog" role="dialog" aria-modal="true" onPointerDown={e => e.stopPropagation()}>
             <div className="model-picker-header">
               <div className="model-picker-title">
-                <span>{t('modelSelector.selectModels')}</span>
+                <span>{dialogTitle || t(multiple ? 'modelSelector.selectModels' : 'modelSelector.selectModel')}</span>
                 <span className="model-picker-subtitle">
                   {t('modelSelector.resultCount', { count: visibleCount, total: availableModels.length })}
                 </span>
@@ -383,16 +352,16 @@ function AgentModelDropdown({
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   placeholder={t('modelSelector.searchPlaceholder')}
-                  disabled={sessionLocked}
+                  disabled={disabled}
                 />
               </div>
               <div className="model-picker-actions">
-                {count > 0 && (
+                {multiple && clearable && count > 0 && (
                   <button
                     type="button"
                     className="model-clear-btn"
-                    onClick={() => setSelectedAgentModels([])}
-                    disabled={sessionLocked}
+                    onClick={() => setSelectedModelIds([])}
+                    disabled={disabled}
                   >{t('modelSelector.clearAll')}</button>
                 )}
                 <button
@@ -445,18 +414,18 @@ function AgentModelDropdown({
               )}
             </div>
 
-            {selectedAgentModels.length > 1 && (
+            {multiple && selectedModelIds.length > 1 && (
               <div className="strategy-toggle model-picker-strategy">
                 <button
                   className={`strategy-btn ${agentStrategy === 'race' ? 'active' : ''}`}
                   onClick={() => setAgentStrategy('race')}
-                  disabled={sessionLocked}
+                  disabled={disabled}
                   title={t('modelSelector.raceTitle')}
                 >{t('modelSelector.race')}</button>
                 <button
                   className={`strategy-btn ${agentStrategy === 'vote' ? 'active' : ''}`}
                   onClick={() => setAgentStrategy('vote')}
-                  disabled={sessionLocked}
+                  disabled={disabled}
                   title={t('modelSelector.voteTitle')}
                 >{t('modelSelector.vote')}</button>
               </div>
@@ -466,20 +435,20 @@ function AgentModelDropdown({
               {selectedItems.length > 0 && (
                 <div className="model-provider-group model-selected-group">
                   <div className="model-provider-heading">
-                    {t('modelSelector.selectedCount', { count: selectedItems.length })}
+                    {multiple ? t('modelSelector.selectedCount', { count: selectedItems.length }) : t('modelSelector.currentModel')}
                   </div>
-                  <div className="model-provider-tags">
-                    {selectedItems.map(renderTag)}
+                  <div className="model-provider-options">
+                    {selectedItems.map(renderOption)}
                   </div>
                 </div>
               )}
-              <div className="model-tags model-picker-results">
-                {filteredUnselected.length === 0 && <span className="model-tags-empty">{t('modelSelector.noMatch')}</span>}
+              <div className="model-options model-picker-results">
+                {filteredUnselected.length === 0 && <span className="model-options-empty">{t('modelSelector.noMatch')}</span>}
                 {grouped.map(group => (
                   <div key={group.provider} className="model-provider-group">
                     <div className="model-provider-heading">{group.provider}</div>
-                    <div className="model-provider-tags">
-                      {group.models.map(renderTag)}
+                    <div className="model-provider-options">
+                      {group.models.map(renderOption)}
                     </div>
                   </div>
                 ))}
@@ -505,13 +474,40 @@ export function ModelSelector({
 }) {
   return (
     <div className="model-select-row">
-      <AgentModelDropdown
+      <ModelPickerDropdown
         availableModels={availableModels}
-        selectedAgentModels={selectedAgentModels}
-        setSelectedAgentModels={setSelectedAgentModels}
+        value={selectedAgentModels}
+        onChange={setSelectedAgentModels}
+        multiple
         agentStrategy={agentStrategy}
         setAgentStrategy={setAgentStrategy}
-        sessionLocked={sessionLocked}
+        disabled={sessionLocked}
+      />
+    </div>
+  );
+}
+
+export function SingleModelSelector({
+  availableModels,
+  value,
+  onChange,
+  disabled = false,
+  title,
+  placeholder,
+  dialogTitle,
+  className = '',
+}) {
+  return (
+    <div className={`model-select-row single-model-select-row ${className}`}>
+      <ModelPickerDropdown
+        availableModels={availableModels}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        title={title}
+        placeholder={placeholder}
+        dialogTitle={dialogTitle}
+        clearable={false}
       />
     </div>
   );

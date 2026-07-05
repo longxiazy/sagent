@@ -17,7 +17,6 @@ export async function persistAgentRunMemory({
   agentResult,
   model,
   stepModels,
-  modelConfig,
   registry,
 }: {
   memory: any;
@@ -28,7 +27,6 @@ export async function persistAgentRunMemory({
   agentResult: any;
   model: string;
   stepModels: Record<number, string>;
-  modelConfig: any[];
   registry: ProviderRegistry;
 }) {
   const answer = finalAnswer || (agentError ? `失败: ${agentError.message.slice(0, 60)}` : '无结果');
@@ -42,7 +40,7 @@ export async function persistAgentRunMemory({
     modelCounts[selectedModel as string] = (modelCounts[selectedModel as string] || 0) + 1;
   }
 
-  const summaryModel = Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || modelConfig?.[0]?.id;
+  const summaryModel = Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
   const modelStats = Object.entries(modelCounts).map(([m, c]) => `${m.split('/').pop()}×${c}`).join(', ');
   log.info(`[Memory] 开始压缩记忆 ${memory.conversation.length} 条, 摘要模型: ${summaryModel?.split('/').pop() || '无'} (本轮 ${modelStats || '无竞速'})`);
 

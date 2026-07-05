@@ -129,7 +129,6 @@ export function createAgentRunStartRouter({
               agentResult,
               model,
               stepModels,
-              modelConfig,
               registry,
             });
           } catch (err: any) {
