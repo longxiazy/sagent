@@ -19,9 +19,11 @@ export interface ModelInfo {
   id: string;
   label: string;
   provider: string;
+  aliases?: string[];
   description?: string;
   catalogUrl?: string;
   publisher?: string;
+  updated?: string;
   contextWindow?: number;
   inputTokenLimit?: number;
   outputTokenLimit?: number;

@@ -14,10 +14,12 @@ function normalizeAlias(value: string) {
 
 function sanitizeCatalogModel(model: any): Partial<ModelInfo> {
   const out: Partial<ModelInfo> = {};
+  if (Array.isArray(model?.aliases)) out.aliases = model.aliases.filter((item: any) => typeof item === 'string' && item.trim());
   if (typeof model?.label === 'string' && model.label.trim()) out.label = model.label.trim();
   if (typeof model?.description === 'string' && model.description.trim()) out.description = model.description.trim();
   if (typeof model?.catalogUrl === 'string' && model.catalogUrl.trim()) out.catalogUrl = model.catalogUrl.trim();
   if (typeof model?.publisher === 'string' && model.publisher.trim()) out.publisher = model.publisher.trim();
+  if (typeof model?.updated === 'string' && model.updated.trim()) out.updated = model.updated.trim();
   if (Number.isFinite(Number(model?.contextWindow)) && Number(model.contextWindow) > 0) out.contextWindow = Number(model.contextWindow);
   if (Array.isArray(model?.inputModalities)) out.inputModalities = model.inputModalities;
   if (Array.isArray(model?.outputModalities)) out.outputModalities = model.outputModalities;
