@@ -1,6 +1,36 @@
 import { useState, useRef, useEffect } from 'react';
-import { Check, ChevronDown, ChevronUp, Search, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, ChevronUp, ExternalLink, HelpCircle, Search, X } from 'lucide-react';
 import { useT } from '../i18n/I18nProvider.jsx';
+
+const MODEL_CATEGORY_DEFS = [
+  { id: 'text-chat', labelKey: 'modelSelector.categoryTextChat', descKey: 'modelSelector.categoryTextChatDesc' },
+  { id: 'multimodal-understanding', labelKey: 'modelSelector.categoryMultimodal', descKey: 'modelSelector.categoryMultimodalDesc' },
+  { id: 'image-generation', labelKey: 'modelSelector.categoryImageGeneration', descKey: 'modelSelector.categoryImageGenerationDesc' },
+  { id: 'embedding-retrieval', labelKey: 'modelSelector.categoryEmbedding', descKey: 'modelSelector.categoryEmbeddingDesc' },
+  { id: 'rerank-scoring', labelKey: 'modelSelector.categoryRerank', descKey: 'modelSelector.categoryRerankDesc' },
+  { id: 'safety-guardrail', labelKey: 'modelSelector.categorySafety', descKey: 'modelSelector.categorySafetyDesc' },
+  { id: 'speech-audio', labelKey: 'modelSelector.categorySpeech', descKey: 'modelSelector.categorySpeechDesc' },
+  { id: 'bio-chem', labelKey: 'modelSelector.categoryBioChem', descKey: 'modelSelector.categoryBioChemDesc' },
+  { id: 'simulation-engineering', labelKey: 'modelSelector.categorySimulation', descKey: 'modelSelector.categorySimulationDesc' },
+  { id: 'autonomous-driving', labelKey: 'modelSelector.categoryAutonomous', descKey: 'modelSelector.categoryAutonomousDesc' },
+];
+
+const ENCYCLOPEDIA_FIELD_DEFS = [
+  { key: 'id', getValue: model => model?.id },
+  { key: 'aliases', getValue: model => model?.aliases },
+  { key: 'label', getValue: model => model?.label },
+  { key: 'publisher', getValue: model => model?.publisher },
+  { key: 'description', getValue: model => model?.description },
+  { key: 'catalogUrl', getValue: model => model?.catalogUrl, link: true },
+  { key: 'supportedGenerationMethods', getValue: model => model?.supportedGenerationMethods || model?.supported_generation_methods },
+  { key: 'supportedMessageRoles', getValue: model => model?.supportedMessageRoles || model?.supported_message_roles },
+  { key: 'supportedParameters', getValue: model => model?.supportedParameters || model?.supported_parameters },
+  { key: 'inputModalities', getValue: model => model?.inputModalities || model?.input_modalities },
+  { key: 'outputModalities', getValue: model => model?.outputModalities || model?.output_modalities },
+  { key: 'supportedMessageTypes', getValue: model => model?.supportedMessageTypes || model?.supported_message_types },
+  { key: 'updated', getValue: model => model?.updated },
+  { key: 'contextWindow', getValue: model => model?.contextWindow || model?.context_length || model?.inputTokenLimit, token: true },
+];
 
 function formatTokenLimit(value) {
   const n = Number(value);
@@ -22,10 +52,21 @@ function asList(value) {
     : [];
 }
 
+function lowerList(value) {
+  return asList(value).map(item => item.toLowerCase());
+}
+
 function formatList(value) {
   const items = asList(value);
   if (!items.length) return null;
   return items.join(', ');
+}
+
+function formatEncyclopediaValue(value, { token = false } = {}) {
+  if (token) return formatTokenLimit(value);
+  if (Array.isArray(value)) return formatList(value);
+  if (value == null || value === '') return null;
+  return String(value);
 }
 
 function modelFacts(model) {
@@ -53,11 +94,25 @@ function modelFacts(model) {
 function modelSearchText(model) {
   return [
     model?.id,
+    ...asList(model?.aliases),
     model?.label,
     model?.provider,
+    model?.publisher,
     model?.description,
     model?.catalogUrl,
+    model?.updated,
     ...modelFacts(model).flatMap(fact => [fact.label, fact.value]),
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function modelKeywordText(model) {
+  return [
+    model?.id,
+    model?.label,
+    model?.provider,
+    model?.publisher,
+    model?.description,
+    model?.catalogUrl,
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
@@ -69,6 +124,10 @@ function filterModels(models, query) {
 
 function providerOf(model) {
   return model?.provider || 'unknown';
+}
+
+function publisherOf(model) {
+  return model?.publisher || model?.provider || 'unknown';
 }
 
 function groupByProvider(models) {
@@ -84,6 +143,23 @@ function groupByProvider(models) {
     byName.get(provider).models.push(model);
   }
   return groups;
+}
+
+function groupByPublisher(models) {
+  const byName = new Map();
+  for (const model of models) {
+    const publisher = publisherOf(model);
+    if (!byName.has(publisher)) {
+      byName.set(publisher, { publisher, models: [] });
+    }
+    byName.get(publisher).models.push(model);
+  }
+  return [...byName.values()]
+    .sort((a, b) => a.publisher.localeCompare(b.publisher))
+    .map(group => ({
+      ...group,
+      models: group.models.slice().sort((a, b) => (a.label || a.id).localeCompare(b.label || b.id)),
+    }));
 }
 
 function uniqueSorted(values) {
@@ -110,6 +186,85 @@ function modelCapabilities(model) {
   ]);
 }
 
+function modelCategoryIds(model) {
+  const text = modelKeywordText(model);
+  const input = lowerList(model?.inputModalities || model?.input_modalities);
+  const output = lowerList(model?.outputModalities || model?.output_modalities);
+  const methods = lowerList(model?.supportedGenerationMethods || model?.supported_generation_methods);
+  const params = lowerList(model?.supportedParameters || model?.supported_parameters);
+  const messageTypes = lowerList(model?.supportedMessageTypes || model?.supported_message_types);
+  const combined = uniqueSorted([...input, ...output, ...methods, ...params, ...messageTypes]);
+  const has = needle => combined.includes(needle);
+  const hasMediaInput = input.some(v => ['image', 'video', 'audio'].includes(v));
+  const hasTextInput = input.includes('text') || input.length === 0;
+  const hasTextOutput = output.includes('text') || output.length === 0;
+  const categories = new Set();
+
+  if (
+    (hasTextInput && hasTextOutput && methods.includes('chat.completions'))
+    || /\b(chat|conversation|instruct|reasoning|text generation|language model|llm|gpt|llama|gemma|qwen|deepseek|kimi|mistral|nemotron|phi-4)\b/.test(text)
+  ) {
+    categories.add('text-chat');
+  }
+  if (
+    (hasMediaInput && output.includes('text'))
+    || methods.some(v => ['image', 'video', 'audio'].includes(v))
+    || /vision[-\s]?language|multimodal|understands? (text\/img|images?|videos?)|image understanding|video understanding/.test(text)
+  ) {
+    categories.add('multimodal-understanding');
+  }
+  if (
+    output.includes('image')
+    || /image (generation|editing)|generat(?:e|es|ion).*images?|flux|kontext|qwen-image-edit/.test(text)
+  ) {
+    categories.add('image-generation');
+  }
+  if (
+    output.some(v => /float|embedding/.test(v))
+    || /embedding|retrieval|dense vector|sparse retrieval|embedqa|embedcode/.test(text)
+  ) {
+    categories.add('embedding-retrieval');
+  }
+  if (/rerank|re-rank|ranking|logits|scores?/.test(text) || output.some(v => /logits|scores?/.test(v))) {
+    categories.add('rerank-scoring');
+  }
+  if (/guard|safety|jailbreak|pii|content[-\s]?safety|topic control|nemoguard/.test(text)) {
+    categories.add('safety-guardrail');
+  }
+  if (has('audio') || /speech|audio|asr|tts|voice|noise removal|lipsync|lip sync|canary|conformer/.test(text)) {
+    categories.add('speech-audio');
+  }
+  if (/alphafold|boltz|diffdock|esm|evo2|genmol|protein|molecule|genomic|biology|chemical|chemistry/.test(text)) {
+    categories.add('bio-chem');
+  }
+  if (/cfd|fluid dynamics|weather|climate|route optimization|simulation|physics-aware|fourcast|cuopt|fluent|fidelity/.test(text)) {
+    categories.add('simulation-engineering');
+  }
+  if (
+    combined.some(v => /vehicle|camera|extrinsics|intrinsics|ego|trajectory|bounding-box/.test(v))
+    || /autonomous driving|bird'?s-eye-view|bevformer|streampetr|3d perception|trajectory/.test(text)
+  ) {
+    categories.add('autonomous-driving');
+  }
+
+  if (categories.has('image-generation')) {
+    categories.delete('multimodal-understanding');
+    categories.delete('text-chat');
+  }
+  if (
+    categories.has('embedding-retrieval')
+    || categories.has('rerank-scoring')
+    || categories.has('safety-guardrail')
+    || categories.has('speech-audio')
+    || categories.has('bio-chem')
+    || categories.has('simulation-engineering')
+    || categories.has('autonomous-driving')
+  ) {
+    categories.delete('text-chat');
+  }
+  return [...categories];
+}
+
 function countOptions(models, getter) {
   const counts = new Map();
   for (const model of models) {
@@ -126,6 +281,10 @@ function matchesComplexFilters(model, filters) {
   if (filters.provider !== 'all' && providerOf(model) !== filters.provider) return false;
   if (filters.modality !== 'all' && !modelModalities(model).includes(filters.modality)) return false;
   if (filters.capability !== 'all' && !modelCapabilities(model).includes(filters.capability)) return false;
+  if (filters.categories.length > 0) {
+    const categoryIds = modelCategoryIds(model);
+    if (!filters.categories.some(category => categoryIds.includes(category))) return false;
+  }
 
   const context = modelContextTokens(model);
   if (filters.context === 'known' && !context) return false;
@@ -134,6 +293,11 @@ function matchesComplexFilters(model, filters) {
   if (filters.context === '200k' && (!context || context < 200_000)) return false;
   if (filters.context === '1m' && (!context || context < 1_000_000)) return false;
   return true;
+}
+
+function shouldExpandFiltersByDefault() {
+  if (typeof window === 'undefined') return true;
+  return !window.matchMedia?.('(max-width: 899px)').matches;
 }
 
 // 模型选择弹框的通用交互：打开后聚焦搜索、ESC 关闭。
@@ -179,9 +343,15 @@ function ModelPickerDropdown({
   const [modalityFilter, setModalityFilter] = useState('all');
   const [capabilityFilter, setCapabilityFilter] = useState('all');
   const [contextFilter, setContextFilter] = useState('all');
+  const [categoryFilters, setCategoryFilters] = useState([]);
+  const [encyclopediaOpen, setEncyclopediaOpen] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(shouldExpandFiltersByDefault);
+  const [expandedEncyclopediaModels, setExpandedEncyclopediaModels] = useState([]);
 
   const openPanel = () => {
     setQuery('');
+    setEncyclopediaOpen(false);
+    setFiltersExpanded(shouldExpandFiltersByDefault());
     setOpen(o => !o);
   };
 
@@ -191,6 +361,8 @@ function ModelPickerDropdown({
     setModalityFilter('all');
     setCapabilityFilter('all');
     setContextFilter('all');
+    setCategoryFilters([]);
+    setExpandedEncyclopediaModels([]);
   };
 
   const selectedModelIds = multiple
@@ -237,8 +409,11 @@ function ModelPickerDropdown({
     modality: modalityFilter,
     capability: capabilityFilter,
     context: contextFilter,
+    categories: categoryFilters,
   };
   const filteredUnselected = filterModels(unselectedItems, query)
+    .filter(model => matchesComplexFilters(model, filters));
+  const filteredCatalogModels = filterModels(availableModels, query)
     .filter(model => matchesComplexFilters(model, filters));
   // 筛选结果每次渲染都是新数组,手动 useMemo 反而被 React Compiler 拒绝优化;
   // 这里直接调用,交给编译器自动 memo。
@@ -249,12 +424,16 @@ function ModelPickerDropdown({
   }));
   const modalityOptions = countOptions(availableModels, modelModalities).slice(0, 10);
   const capabilityOptions = countOptions(availableModels, modelCapabilities).slice(0, 12);
+  const categoryCounts = countOptions(availableModels, modelCategoryIds)
+    .reduce((acc, option) => ({ ...acc, [option.value]: option.count }), {});
+  const encyclopediaPublisherGroups = groupByPublisher(filteredCatalogModels);
   const visibleCount = selectedItems.length + filteredUnselected.length;
   const activeFilterCount = [
     providerFilter !== 'all',
     modalityFilter !== 'all',
     capabilityFilter !== 'all',
     contextFilter !== 'all',
+    categoryFilters.length > 0,
     Boolean(query.trim()),
   ].filter(Boolean).length;
 
@@ -301,12 +480,163 @@ function ModelPickerDropdown({
       key={value}
       type="button"
       className={`model-filter-chip ${current === value ? 'active' : ''}`}
-      onClick={() => onChange(value)}
+      onClick={() => {
+        onChange(value);
+        if (current !== value) {
+          setExpandedEncyclopediaModels([]);
+        }
+      }}
       aria-pressed={current === value}
     >
       <span>{label || value}</span>
       {typeof optionCount === 'number' && <span className="model-filter-chip-count">{optionCount}</span>}
     </button>
+  );
+
+  const toggleCategoryFilter = id => {
+    setExpandedEncyclopediaModels([]);
+    setCategoryFilters(current => current.includes(id)
+      ? current.filter(item => item !== id)
+      : [...current, id]);
+  };
+
+  const categoryLabel = id => {
+    const def = MODEL_CATEGORY_DEFS.find(item => item.id === id);
+    return def ? t(def.labelKey) : id;
+  };
+
+  const renderCategoryCheckbox = category => (
+    <label key={category.id} className={`model-category-checkbox ${categoryFilters.includes(category.id) ? 'checked' : ''}`} title={t(category.descKey)}>
+      <input
+        type="checkbox"
+        checked={categoryFilters.includes(category.id)}
+        onChange={() => toggleCategoryFilter(category.id)}
+      />
+      <span className="model-category-checkbox-box" aria-hidden="true">
+        {categoryFilters.includes(category.id) && <Check size={12} />}
+      </span>
+      <span className="model-category-checkbox-text">{t(category.labelKey)}</span>
+      <span className="model-category-checkbox-count">{categoryCounts[category.id] || 0}</span>
+    </label>
+  );
+
+  const renderModelBadges = model => {
+    const categories = modelCategoryIds(model);
+    return (
+      <span className="model-encyclopedia-badges">
+        {categories.slice(0, 3).map(category => (
+          <span key={category} className="model-encyclopedia-badge">{categoryLabel(category)}</span>
+        ))}
+      </span>
+    );
+  };
+
+  const renderEncyclopediaField = (model, field) => {
+    const rawValue = field.getValue(model);
+    const value = formatEncyclopediaValue(rawValue, field);
+    if (!value) return null;
+    return (
+      <div key={field.key} className="model-encyclopedia-field">
+        <span className="model-encyclopedia-field-label">{field.key}</span>
+        {field.link && value ? (
+          <a className="model-encyclopedia-field-value" href={value} target="_blank" rel="noreferrer">{value}</a>
+        ) : (
+          <span className="model-encyclopedia-field-value">{value}</span>
+        )}
+      </div>
+    );
+  };
+
+  const toggleEncyclopediaModel = id => {
+    setExpandedEncyclopediaModels(current => current.includes(id)
+      ? current.filter(item => item !== id)
+      : [...current, id]);
+  };
+
+  const renderEncyclopediaSummaryFacts = model => {
+    const facts = [
+      model?.publisher,
+      formatTokenLimit(model?.contextWindow || model?.context_length || model?.inputTokenLimit),
+      formatList(model?.inputModalities || model?.input_modalities),
+      formatList(model?.supportedGenerationMethods || model?.supported_generation_methods),
+    ].filter(Boolean);
+    if (!facts.length) return null;
+    return (
+      <span className="model-encyclopedia-summary-facts">
+        {facts.slice(0, 4).map(fact => <span key={fact}>{fact}</span>)}
+      </span>
+    );
+  };
+
+  const renderEncyclopediaItem = model => {
+    const expanded = expandedEncyclopediaModels.includes(model.id);
+    const hasFields = ENCYCLOPEDIA_FIELD_DEFS.some(field => formatEncyclopediaValue(field.getValue(model), field));
+    return (
+      <article key={model.id} className={`model-encyclopedia-item ${expanded ? 'expanded' : ''}`}>
+        <div className="model-encyclopedia-row">
+          <button
+            type="button"
+            className="model-encyclopedia-summary"
+            onClick={() => toggleEncyclopediaModel(model.id)}
+            aria-expanded={expanded}
+          >
+            <span className="model-encyclopedia-chevron" aria-hidden="true">
+              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </span>
+            <span className="model-encyclopedia-item-main">
+              <span className="model-encyclopedia-name">{model.label || model.id}</span>
+              <span className="model-encyclopedia-description">{model.description || model.id}</span>
+              <span className="model-encyclopedia-meta">
+                {renderModelBadges(model)}
+                {renderEncyclopediaSummaryFacts(model)}
+              </span>
+            </span>
+          </button>
+          <div className="model-encyclopedia-item-side">
+            <code>{model.id}</code>
+            {model.catalogUrl && (
+              <a href={model.catalogUrl} target="_blank" rel="noreferrer" title={t('modelSelector.catalogLink')}>
+                <ExternalLink size={14} />
+              </a>
+            )}
+          </div>
+        </div>
+        {expanded && hasFields && (
+          <div className="model-encyclopedia-fields">
+            {ENCYCLOPEDIA_FIELD_DEFS.map(field => renderEncyclopediaField(model, field))}
+          </div>
+        )}
+      </article>
+    );
+  };
+
+  const renderEncyclopediaPublisherGroup = group => (
+    <section key={group.publisher} className="model-encyclopedia-tree-group">
+      <div className="model-encyclopedia-tree-heading">
+        <span className="model-encyclopedia-tree-dot" aria-hidden="true" />
+        <span className="model-encyclopedia-tree-provider">{group.publisher}</span>
+        <span className="model-encyclopedia-tree-count">{group.models.length}</span>
+      </div>
+      <div className="model-encyclopedia-tree-children">
+        {group.models.map(renderEncyclopediaItem)}
+      </div>
+    </section>
+  );
+
+  const renderSearchSelectedChip = item => (
+    <span key={item.id} className="model-search-selected-chip">
+      <span>{item.label || item.id}</span>
+      {multiple && clearable && (
+        <button
+          type="button"
+          onClick={() => setSelectedModelIds(selectedModelIds.filter(id => id !== item.id))}
+          disabled={disabled}
+          title={t('modelSelector.deselect')}
+        >
+          <X size={12} />
+        </button>
+      )}
+    </span>
   );
 
   return (
@@ -333,87 +663,160 @@ function ModelPickerDropdown({
                   {t('modelSelector.resultCount', { count: visibleCount, total: availableModels.length })}
                 </span>
               </div>
-              <button
-                type="button"
-                className="model-picker-close"
-                onClick={() => setOpen(false)}
-                title={t('common.close')}
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="model-picker-toolbar">
-              <div className="model-dropdown-search model-picker-search">
-                <Search size={15} />
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                  placeholder={t('modelSelector.searchPlaceholder')}
-                  disabled={disabled}
-                />
-              </div>
-              <div className="model-picker-actions">
-                {multiple && clearable && count > 0 && (
-                  <button
-                    type="button"
-                    className="model-clear-btn"
-                    onClick={() => setSelectedModelIds([])}
-                    disabled={disabled}
-                  >{t('modelSelector.clearAll')}</button>
-                )}
+              <div className="model-picker-header-actions">
                 <button
                   type="button"
-                  className="model-clear-btn"
-                  onClick={resetFilters}
-                  disabled={activeFilterCount === 0}
-                >{t('modelSelector.resetFilters')}</button>
+                  className={`model-picker-help ${encyclopediaOpen ? 'active' : ''}`}
+                  onClick={() => {
+                    setEncyclopediaOpen(current => {
+                      const next = !current;
+                      setFiltersExpanded(next ? false : shouldExpandFiltersByDefault());
+                      if (next) setExpandedEncyclopediaModels([]);
+                      return next;
+                    });
+                  }}
+                  title={t('modelSelector.openEncyclopedia')}
+                  aria-pressed={encyclopediaOpen}
+                >
+                  <HelpCircle size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="model-picker-close"
+                  onClick={() => setOpen(false)}
+                  title={t('common.close')}
+                >
+                  <X size={16} />
+                </button>
               </div>
             </div>
 
-            <div className="model-filter-grid">
-              <div className="model-filter-group">
-                <span className="model-filter-label">{t('modelSelector.filterProvider')}</span>
-                <div className="model-filter-chips">
-                  {renderFilterButton({ value: 'all', label: t('modelSelector.all'), count: availableModels.length }, providerFilter, setProviderFilter)}
-                  {providerOptions.map(option => renderFilterButton(option, providerFilter, setProviderFilter))}
-                </div>
-              </div>
-              <div className="model-filter-group">
-                <span className="model-filter-label">{t('modelSelector.filterContext')}</span>
-                <div className="model-filter-chips">
-                  {[
-                    { value: 'all', label: t('modelSelector.all') },
-                    { value: 'known', label: t('modelSelector.contextKnown') },
-                    { value: '128k', label: '>=128K' },
-                    { value: '200k', label: '>=200K' },
-                    { value: '1m', label: '>=1M' },
-                    { value: 'unknown', label: t('modelSelector.contextUnknown') },
-                  ].map(option => renderFilterButton(option, contextFilter, setContextFilter))}
-                </div>
-              </div>
-              {modalityOptions.length > 0 && (
-                <div className="model-filter-group">
-                  <span className="model-filter-label">{t('modelSelector.filterModality')}</span>
-                  <div className="model-filter-chips">
-                    {renderFilterButton({ value: 'all', label: t('modelSelector.all') }, modalityFilter, setModalityFilter)}
-                    {modalityOptions.map(option => renderFilterButton(option, modalityFilter, setModalityFilter))}
+            {!encyclopediaOpen && (
+              <>
+                <div className="model-picker-toolbar">
+                  <div className="model-dropdown-search model-picker-search">
+                    <Search size={15} />
+                    {selectedItems.length > 0 && (
+                      <span className="model-search-selected-tags" aria-label={t('modelSelector.selectedCount', { count: selectedItems.length })}>
+                        {selectedItems.map(renderSearchSelectedChip)}
+                      </span>
+                    )}
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={query}
+                      onChange={e => {
+                        setQuery(e.target.value);
+                        setExpandedEncyclopediaModels([]);
+                      }}
+                      placeholder={t('modelSelector.searchPlaceholder')}
+                      disabled={disabled}
+                    />
+                  </div>
+                  <div className="model-picker-actions">
+                    {multiple && clearable && count > 0 && (
+                      <button
+                        type="button"
+                        className="model-clear-btn"
+                        onClick={() => setSelectedModelIds([])}
+                        disabled={disabled}
+                      >{t('modelSelector.clearAll')}</button>
+                    )}
+                    <button
+                      type="button"
+                      className="model-clear-btn"
+                      onClick={resetFilters}
+                      disabled={activeFilterCount === 0}
+                    >{t('modelSelector.resetFilters')}</button>
+                    <button
+                      type="button"
+                      className={`model-filter-toggle ${filtersExpanded ? 'active' : ''}`}
+                      onClick={() => setFiltersExpanded(open => !open)}
+                      aria-expanded={filtersExpanded}
+                    >
+                      {activeFilterCount > 0
+                        ? t('modelSelector.filterToggleWithCount', { count: activeFilterCount })
+                        : t('modelSelector.filterToggle')}
+                    </button>
                   </div>
                 </div>
-              )}
-              {capabilityOptions.length > 0 && (
-                <div className="model-filter-group model-filter-group-wide">
-                  <span className="model-filter-label">{t('modelSelector.filterCapability')}</span>
-                  <div className="model-filter-chips">
-                    {renderFilterButton({ value: 'all', label: t('modelSelector.all') }, capabilityFilter, setCapabilityFilter)}
-                    {capabilityOptions.map(option => renderFilterButton(option, capabilityFilter, setCapabilityFilter))}
-                  </div>
-                </div>
-              )}
-            </div>
 
+                <div className={`model-filter-grid ${filtersExpanded ? 'open' : ''}`}>
+                  <div className="model-filter-group">
+                    <span className="model-filter-label">{t('modelSelector.filterProvider')}</span>
+                    <div className="model-filter-chips">
+                      {renderFilterButton({ value: 'all', label: t('modelSelector.all'), count: availableModels.length }, providerFilter, setProviderFilter)}
+                      {providerOptions.map(option => renderFilterButton(option, providerFilter, setProviderFilter))}
+                    </div>
+                  </div>
+                  <div className="model-filter-group">
+                    <span className="model-filter-label">{t('modelSelector.filterContext')}</span>
+                    <div className="model-filter-chips">
+                      {[
+                        { value: 'all', label: t('modelSelector.all') },
+                        { value: 'known', label: t('modelSelector.contextKnown') },
+                        { value: '128k', label: '>=128K' },
+                        { value: '200k', label: '>=200K' },
+                        { value: '1m', label: '>=1M' },
+                        { value: 'unknown', label: t('modelSelector.contextUnknown') },
+                      ].map(option => renderFilterButton(option, contextFilter, setContextFilter))}
+                    </div>
+                  </div>
+                  {modalityOptions.length > 0 && (
+                    <div className="model-filter-group">
+                      <span className="model-filter-label">{t('modelSelector.filterModality')}</span>
+                      <div className="model-filter-chips">
+                        {renderFilterButton({ value: 'all', label: t('modelSelector.all') }, modalityFilter, setModalityFilter)}
+                        {modalityOptions.map(option => renderFilterButton(option, modalityFilter, setModalityFilter))}
+                      </div>
+                    </div>
+                  )}
+                  {capabilityOptions.length > 0 && (
+                    <div className="model-filter-group model-filter-group-wide">
+                      <span className="model-filter-label">{t('modelSelector.filterCapability')}</span>
+                      <div className="model-filter-chips">
+                        {renderFilterButton({ value: 'all', label: t('modelSelector.all') }, capabilityFilter, setCapabilityFilter)}
+                        {capabilityOptions.map(option => renderFilterButton(option, capabilityFilter, setCapabilityFilter))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="model-filter-group model-filter-group-wide model-category-filter-group">
+                    <span className="model-filter-label">{t('modelSelector.filterTaskType')}</span>
+                    <div className="model-category-checkboxes">
+                      {MODEL_CATEGORY_DEFS.map(renderCategoryCheckbox)}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {encyclopediaOpen ? (
+              <div className="model-encyclopedia">
+                <div className="model-encyclopedia-head">
+                  <div>
+                    <h2>{t('modelSelector.encyclopediaTitle')}</h2>
+                    <p>{t('modelSelector.encyclopediaIntro')}</p>
+                  </div>
+                  <span className="model-encyclopedia-range">
+                    {t('modelSelector.encyclopediaCount', { count: filteredCatalogModels.length })}
+                  </span>
+                </div>
+                <div className="model-encyclopedia-guide">
+                  {MODEL_CATEGORY_DEFS.map(category => (
+                    <div key={category.id} className="model-encyclopedia-guide-item" title={`${t(category.labelKey)}: ${t(category.descKey)}`}>
+                      <strong>{t(category.labelKey)}</strong>
+                      <span>{t(category.descKey)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="model-encyclopedia-list">
+                  {encyclopediaPublisherGroups.length === 0
+                    ? <span className="model-options-empty">{t('modelSelector.noMatch')}</span>
+                    : encyclopediaPublisherGroups.map(renderEncyclopediaPublisherGroup)}
+                </div>
+              </div>
+            ) : (
+              <>
             {multiple && selectedModelIds.length > 1 && (
               <div className="strategy-toggle model-picker-strategy">
                 <button
@@ -454,6 +857,8 @@ function ModelPickerDropdown({
                 ))}
               </div>
             </div>
+              </>
+            )}
           </div>
         </div>
       )}
