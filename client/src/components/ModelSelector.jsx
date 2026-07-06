@@ -126,10 +126,6 @@ function providerOf(model) {
   return model?.provider || 'unknown';
 }
 
-function publisherOf(model) {
-  return model?.publisher || model?.provider || 'unknown';
-}
-
 function groupByProvider(models) {
   const groups = [];
   const byName = new Map();
@@ -143,23 +139,6 @@ function groupByProvider(models) {
     byName.get(provider).models.push(model);
   }
   return groups;
-}
-
-function groupByPublisher(models) {
-  const byName = new Map();
-  for (const model of models) {
-    const publisher = publisherOf(model);
-    if (!byName.has(publisher)) {
-      byName.set(publisher, { publisher, models: [] });
-    }
-    byName.get(publisher).models.push(model);
-  }
-  return [...byName.values()]
-    .sort((a, b) => a.publisher.localeCompare(b.publisher))
-    .map(group => ({
-      ...group,
-      models: group.models.slice().sort((a, b) => (a.label || a.id).localeCompare(b.label || b.id)),
-    }));
 }
 
 function uniqueSorted(values) {
@@ -426,7 +405,7 @@ function ModelPickerDropdown({
   const capabilityOptions = countOptions(availableModels, modelCapabilities).slice(0, 12);
   const categoryCounts = countOptions(availableModels, modelCategoryIds)
     .reduce((acc, option) => ({ ...acc, [option.value]: option.count }), {});
-  const encyclopediaPublisherGroups = groupByPublisher(filteredCatalogModels);
+  const encyclopediaGroups = groupByProvider(filteredCatalogModels);
   const visibleCount = selectedItems.length + filteredUnselected.length;
   const activeFilterCount = [
     providerFilter !== 'all',
@@ -620,11 +599,11 @@ function ModelPickerDropdown({
     );
   };
 
-  const renderEncyclopediaPublisherGroup = group => (
-    <section key={group.publisher} className="model-encyclopedia-tree-group">
+  const renderEncyclopediaGroup = group => (
+    <section key={group.provider} className="model-encyclopedia-tree-group">
       <div className="model-encyclopedia-tree-heading">
         <span className="model-encyclopedia-tree-dot" aria-hidden="true" />
-        <span className="model-encyclopedia-tree-provider">{group.publisher}</span>
+        <span className="model-encyclopedia-tree-provider">{group.provider}</span>
         <span className="model-encyclopedia-tree-count">{group.models.length}</span>
       </div>
       <div className="model-encyclopedia-tree-children">
@@ -820,9 +799,9 @@ function ModelPickerDropdown({
                   ))}
                 </div>
                 <div className="model-encyclopedia-list">
-                  {encyclopediaPublisherGroups.length === 0
+                  {encyclopediaGroups.length === 0
                     ? <span className="model-options-empty">{t('modelSelector.noMatch')}</span>
-                    : encyclopediaPublisherGroups.map(renderEncyclopediaPublisherGroup)}
+                    : encyclopediaGroups.map(renderEncyclopediaGroup)}
                 </div>
               </div>
             ) : (
