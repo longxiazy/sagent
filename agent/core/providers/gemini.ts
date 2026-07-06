@@ -41,6 +41,31 @@ function buildGeminiUsage(meta: any) {
   };
 }
 
+function dataUrlToInlineData(url: string) {
+  const match = String(url || '').match(/^data:([^;,]+);base64,(.+)$/i);
+  if (!match) return null;
+  return {
+    mimeType: match[1],
+    data: match[2],
+  };
+}
+
+function toGeminiPart(part: any) {
+  if (!part || typeof part !== 'object') return { text: String(part ?? '') };
+  if (part.type === 'text') {
+    return { text: typeof part.text === 'string' ? part.text : '' };
+  }
+  if (part.type === 'image_url') {
+    const url = typeof part.image_url === 'string'
+      ? part.image_url
+      : part.image_url?.url;
+    const inlineData = dataUrlToInlineData(url);
+    if (inlineData) return { inlineData };
+    return { text: `[image_url: ${url || 'unsupported'}]` };
+  }
+  return { text: JSON.stringify(part) };
+}
+
 // 把 OpenAI 风格 chat messages（system/user/assistant）转成 Gemini contents + systemInstruction。
 // 返回 { systemInstruction, contents }。assistant → model；system 抽出来单独传。
 function toGeminiContents(messages: any[]) {
@@ -52,8 +77,10 @@ function toGeminiContents(messages: any[]) {
       continue;
     }
     const role = msg.role === 'assistant' ? 'model' : 'user';
-    const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-    contents.push({ role, parts: [{ text }] });
+    const parts = Array.isArray(msg.content)
+      ? msg.content.map(toGeminiPart)
+      : [{ text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content) }];
+    contents.push({ role, parts });
   }
   return { systemInstruction, contents };
 }
