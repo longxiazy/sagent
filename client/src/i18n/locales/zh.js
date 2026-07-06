@@ -411,6 +411,7 @@ export const zh = {
   'modelSelector.searchPlaceholder': '搜索模型…',
   'modelSelector.noMatch': '无匹配模型',
   'modelSelector.providerTitle': '当前供应商：{provider}',
+  'modelSelector.selected': '已选',
   'modelSelector.deselect': '取消选择',
   'modelSelector.selectConcurrent': '选择并发执行',
   'modelSelector.raisePriority': '提高优先级',

@@ -410,6 +410,7 @@ export const en = {
   'modelSelector.searchPlaceholder': 'Search models…',
   'modelSelector.noMatch': 'No matching models',
   'modelSelector.providerTitle': 'Current provider: {provider}',
+  'modelSelector.selected': 'Selected',
   'modelSelector.deselect': 'Deselect',
   'modelSelector.selectConcurrent': 'Select for concurrent run',
   'modelSelector.raisePriority': 'Raise priority',

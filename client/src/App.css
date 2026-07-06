@@ -2510,6 +2510,38 @@ select,
   min-width: 0;
 }
 
+.model-encyclopedia-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0 9px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text-secondary);
+  font-size: var(--f-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.model-encyclopedia-select:hover:not(:disabled) {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+}
+
+.model-encyclopedia-select.selected {
+  border-color: var(--c-primary);
+  background: var(--c-primary-bg);
+  color: var(--c-primary);
+}
+
+.model-encyclopedia-select:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .model-encyclopedia-item-side code {
   min-width: 0;
   padding: 3px 6px;
@@ -6604,6 +6636,7 @@ textarea:disabled {
 
   .model-encyclopedia-item-side {
     justify-content: space-between;
+    flex-wrap: wrap;
   }
 
   .model-encyclopedia-fields {

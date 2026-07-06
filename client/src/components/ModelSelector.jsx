@@ -571,6 +571,7 @@ function ModelPickerDropdown({
   const renderEncyclopediaItem = model => {
     const expanded = expandedEncyclopediaModels.includes(model.id);
     const hasFields = ENCYCLOPEDIA_FIELD_DEFS.some(field => formatEncyclopediaValue(field.getValue(model), field));
+    const isSelected = selectedSet.has(model.id);
     return (
       <article key={model.id} className={`model-encyclopedia-item ${expanded ? 'expanded' : ''}`}>
         <div className="model-encyclopedia-row">
@@ -593,6 +594,15 @@ function ModelPickerDropdown({
             </span>
           </button>
           <div className="model-encyclopedia-item-side">
+            <button
+              type="button"
+              className={`model-encyclopedia-select ${isSelected ? 'selected' : ''}`}
+              onClick={() => toggleModel(model.id)}
+              disabled={disabled || (!multiple && isSelected)}
+              title={isSelected ? t('modelSelector.selected') : t(multiple ? 'modelSelector.selectConcurrent' : 'modelSelector.selectModel')}
+            >
+              {isSelected ? t('modelSelector.selected') : t('modelSelector.selectModel')}
+            </button>
             <code>{model.id}</code>
             {model.catalogUrl && (
               <a href={model.catalogUrl} target="_blank" rel="noreferrer" title={t('modelSelector.catalogLink')}>
