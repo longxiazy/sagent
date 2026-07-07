@@ -358,6 +358,9 @@ export async function runAgentRuntime({
         observation,
         state,
       });
+      if (decision?.model && typeof decision.model === 'string') {
+        state.model = decision.model;
+      }
 
       if (cancelled()) {
         throw new Error("Agent 已取消");

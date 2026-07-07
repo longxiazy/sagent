@@ -14,14 +14,16 @@ describe('computeEnvDefaults', () => {
       maxResultChars: 8000,
       maxParallelResultChars: 32000,
       memoryMaxEntries: 20,
+      autoModelRouting: false,
     });
   });
 
   it('从 env 读取覆盖值', () => {
-    const d = computeEnvDefaults({ AGENT_MAX_STEPS: '64', AGENT_MODEL_TIMEOUT: '120', AGENT_OBSERVE_DESKTOP: 'true' });
+    const d = computeEnvDefaults({ AGENT_MAX_STEPS: '64', AGENT_MODEL_TIMEOUT: '120', AGENT_OBSERVE_DESKTOP: 'true', AGENT_AUTO_MODEL_ROUTING: 'true' });
     expect(d.maxSteps).toBe(64);
     expect(d.modelTimeoutSec).toBe(120);
     expect(d.observeDesktop).toBe(true);
+    expect(d.autoModelRouting).toBe(true);
   });
 
   it('observeDesktop 仅字符串 "true" 为真', () => {
@@ -62,6 +64,11 @@ describe('validateConfig', () => {
 
   it('observeDesktop 非布尔被拒', () => {
     expect(validateConfig({ observeDesktop: 'yes' }).errors.length).toBe(1);
+  });
+
+  it('autoModelRouting 接受布尔并拒绝非布尔', () => {
+    expect(validateConfig({ autoModelRouting: true }).clean.autoModelRouting).toBe(true);
+    expect(validateConfig({ autoModelRouting: 'true' }).errors.length).toBe(1);
   });
 
   it('staggerDelaySec 允许 0', () => {

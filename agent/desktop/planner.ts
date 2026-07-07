@@ -1,4 +1,5 @@
 import { aggregateModelResults } from '../core/multi-model.ts';
+import { routeAgentModels } from '../core/model-routing.ts';
 import { displayWidth, padEndW } from '../core/utils.ts';
 import { log } from '../../helpers/logger.ts';
 import { extractErrorDiagnostics } from '../../helpers/retry.ts';
@@ -98,6 +99,7 @@ export function createDesktopPlanner({
   staggerDelayMs = 0,
   batchSize = 1,
   rateLimitCooldownMs = DEFAULT_RATE_LIMIT_COOLDOWN_MS,
+  autoModelRouting = false,
 }: any) {
   const modelCooldownUntil = new Map<string, number>();
 
@@ -151,46 +153,55 @@ export function createDesktopPlanner({
   }
 
   return async ({ model, agentModels, strategy = 'race', onEvent, cancelSignal, step, ...context }: any) => {
-    const extraModels = Array.isArray(agentModels) && agentModels.length > 1
-      ? agentModels.filter((candidate: string) => candidate !== model)
-      : [];
+    const routing = routeAgentModels({
+      enabled: autoModelRouting,
+      primaryModel: model,
+      agentModels,
+      modelConfig,
+      task: context.task,
+      step,
+      history: context.history,
+    });
+    const routedModels = routing.models.length > 0 ? routing.models : [model];
+    const primaryModel = routedModels[0];
+    const extraModels = routedModels.slice(1);
     const planCtx = { ...context, step };
 
     if (extraModels.length === 0) {
-      onEvent?.({ type: 'model_plan', stage: 'start', models: [model], step });
-      if (blacklistedModels.has(model)) {
+      onEvent?.({ type: 'model_plan', stage: 'start', models: [primaryModel], step, routing: autoModelRouting ? routing : undefined });
+      if (blacklistedModels.has(primaryModel)) {
         const err = '模型已被禁用（此前超时）';
-        onEvent?.({ type: 'model_plan', stage: 'failed', model, step, error: err });
+        onEvent?.({ type: 'model_plan', stage: 'failed', model: primaryModel, step, error: err });
         throw new Error(err);
       }
-      onEvent?.({ type: 'model_plan', stage: 'thinking', model, step });
+      onEvent?.({ type: 'model_plan', stage: 'thinking', model: primaryModel, step });
       for (let attempt = 0; ; attempt++) {
         try {
-          const result = await planWithTimeout(model, planCtx, cancelSignal, undefined);
-          onEvent?.({ type: 'model_plan', stage: 'success', model, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
+          const result = await planWithTimeout(primaryModel, planCtx, cancelSignal, undefined);
+          onEvent?.({ type: 'model_plan', stage: 'success', model: primaryModel, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
           return result;
         } catch (err: any) {
           if (err.message.includes('模型超时')) {
-            blacklistedModels.add(model);
-            log.warn(`[MultiModel] ${model} 超时，已加入黑名单`);
-            onEvent?.({ type: 'model_plan', stage: 'failed', model, step, error: err.message });
+            blacklistedModels.add(primaryModel);
+            log.warn(`[MultiModel] ${primaryModel} 超时，已加入黑名单`);
+            onEvent?.({ type: 'model_plan', stage: 'failed', model: primaryModel, step, error: err.message });
             throw err;
           }
           if (isRateLimitError(err) && attempt < SINGLE_MODEL_RATE_LIMIT_RETRY) {
             const backoff = SINGLE_MODEL_RETRY_BASE_BACKOFF_MS * Math.pow(2, attempt);
-            log.warn(`[MultiModel] ${model} 触发限流，${Math.round(backoff / 1000)}s 后重试 (${attempt + 1}/${SINGLE_MODEL_RATE_LIMIT_RETRY})`);
-            onEvent?.({ type: 'model_plan', stage: 'rate_limited', model, step, cooldown_ms: backoff, error: String(err.message || err).slice(0, 160) });
+            log.warn(`[MultiModel] ${primaryModel} 触发限流，${Math.round(backoff / 1000)}s 后重试 (${attempt + 1}/${SINGLE_MODEL_RATE_LIMIT_RETRY})`);
+            onEvent?.({ type: 'model_plan', stage: 'rate_limited', model: primaryModel, step, cooldown_ms: backoff, error: String(err.message || err).slice(0, 160) });
             await sleepWithCancel(backoff, cancelSignal);
-            onEvent?.({ type: 'model_plan', stage: 'thinking', model, step });
+            onEvent?.({ type: 'model_plan', stage: 'thinking', model: primaryModel, step });
             continue;
           }
-          onEvent?.({ type: 'model_plan', stage: 'failed', model, step, error: err.message });
+          onEvent?.({ type: 'model_plan', stage: 'failed', model: primaryModel, step, error: err.message });
           throw err;
         }
       }
     }
 
-    const allModels = [model, ...extraModels];
+    const allModels = [primaryModel, ...extraModels];
     let activeModels = allModels.filter((candidate: string) => !blacklistedModels.has(candidate) && !isModelCoolingDown(candidate));
 
     log.info(`[MultiModel] step=${step} allModels=[${allModels}] blacklisted=[${[...blacklistedModels]}] cooling=[${[...modelCooldownUntil.keys()]}] activeModels=[${activeModels}]`);
@@ -207,7 +218,7 @@ export function createDesktopPlanner({
       throw new Error(err);
     }
 
-    onEvent?.({ type: 'model_plan', stage: 'start', models: allModels, strategy, step });
+    onEvent?.({ type: 'model_plan', stage: 'start', models: allModels, strategy, step, routing: autoModelRouting ? routing : undefined });
 
     for (const candidate of allModels) {
       if (blacklistedModels.has(candidate)) {

@@ -30,6 +30,7 @@ export interface RuntimeConfig {
   maxResultChars: number;
   maxParallelResultChars: number;
   memoryMaxEntries: number;
+  autoModelRouting: boolean;
 }
 
 type FieldSpec = { type: 'int' | 'bool'; min?: number; max?: number };
@@ -45,6 +46,7 @@ const FIELD_SPEC: Record<keyof RuntimeConfig, FieldSpec> = {
   maxResultChars: { type: 'int', min: 100, max: 200000 },
   maxParallelResultChars: { type: 'int', min: 100, max: 1000000 },
   memoryMaxEntries: { type: 'int', min: 1, max: 1000 },
+  autoModelRouting: { type: 'bool' },
 };
 
 const FIELD_KEYS = Object.keys(FIELD_SPEC) as (keyof RuntimeConfig)[];
@@ -61,6 +63,7 @@ export function computeEnvDefaults(env: Record<string, string | undefined> = pro
     maxResultChars: Number(env.AGENT_MAX_RESULT_CHARS) || 8000,
     maxParallelResultChars: Number(env.AGENT_MAX_PARALLEL_RESULT_CHARS) || 32000,
     memoryMaxEntries: Number(env.AGENT_MEMORY_MAX_ENTRIES) || 20,
+    autoModelRouting: env.AGENT_AUTO_MODEL_ROUTING === 'true',
   };
 }
 
