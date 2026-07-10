@@ -33,6 +33,12 @@ const THEME_OPTIONS = [
   { value: 'system', labelKey: 'appearance.theme.system' },
 ];
 
+const FONT_SIZE_OPTIONS = [
+  { value: 'small', labelKey: 'appearance.fontSize.small' },
+  { value: 'standard', labelKey: 'appearance.fontSize.standard' },
+  { value: 'large', labelKey: 'appearance.fontSize.large' },
+];
+
 // 设置分组：左侧导航 → 右侧内容。
 const GROUPS = [
   { id: 'appearance', labelKey: 'settings.group.appearance', Icon: Palette },
@@ -46,7 +52,7 @@ const GROUPS = [
 // 记忆（记忆开关为前端偏好即时生效 + 记忆最大条数后端参数）、API Key 只读展示。
 export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
   const t = useT();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, fontSize, setFontSize } = useTheme();
   const { locale, setLocale } = useI18n();
   const [activeGroup, setActiveGroup] = useState('appearance');
   const [agent, setAgent] = useState(null);
@@ -163,31 +169,47 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
       return (
         <div className="settings-section">
           <p className="settings-section-title">{t('appearance.title')}</p>
-          <div className="settings-field settings-field-switch">
-            <span>{t('appearance.theme')}</span>
-            <div className="settings-segment">
-              {THEME_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  className={`settings-segment-btn${theme === opt.value ? ' active' : ''}`}
-                  onClick={() => setTheme(opt.value)}
-                >
-                  {t(opt.labelKey)}
-                </button>
-              ))}
+          <div className="settings-appearance-stack">
+            <div className="settings-field settings-field-switch">
+              <span>{t('appearance.theme')}</span>
+              <div className="settings-segment">
+                {THEME_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    className={`settings-segment-btn${theme === opt.value ? ' active' : ''}`}
+                    onClick={() => setTheme(opt.value)}
+                  >
+                    {t(opt.labelKey)}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="settings-field settings-field-switch">
-            <span>{t('appearance.language')}</span>
-            <div className="settings-segment">
-              <button
-                className={`settings-segment-btn${locale === 'zh' ? ' active' : ''}`}
-                onClick={() => setLocale('zh')}
-              >中文</button>
-              <button
-                className={`settings-segment-btn${locale === 'en' ? ' active' : ''}`}
-                onClick={() => setLocale('en')}
-              >English</button>
+            <div className="settings-field settings-field-switch">
+              <span>{t('appearance.language')}</span>
+              <div className="settings-segment">
+                <button
+                  className={`settings-segment-btn${locale === 'zh' ? ' active' : ''}`}
+                  onClick={() => setLocale('zh')}
+                >中文</button>
+                <button
+                  className={`settings-segment-btn${locale === 'en' ? ' active' : ''}`}
+                  onClick={() => setLocale('en')}
+                >English</button>
+              </div>
+            </div>
+            <div className="settings-field settings-field-switch">
+              <span>{t('appearance.fontSize')}</span>
+              <div className="settings-segment">
+                {FONT_SIZE_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    className={`settings-segment-btn${fontSize === opt.value ? ' active' : ''}`}
+                    onClick={() => setFontSize(opt.value)}
+                  >
+                    {t(opt.labelKey)}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -267,23 +289,29 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
 
   // 保存/重置只对后端 agent 配置生效，外观/记忆开关是前端偏好（即时生效，无需保存）。
   const showSaveBar = activeGroup === 'agent' || activeGroup === 'memory' || activeGroup === 'apiKeys';
+  const activeGroupLabel = t(GROUPS.find(group => group.id === activeGroup)?.labelKey || 'settings.title');
 
   return (
-    <div className="dialog-mask settings-mask" onClick={onClose}>
-      <div className="dialog settings-dialog" onClick={e => e.stopPropagation()}>
-        <button
-          type="button"
-          className="settings-close-btn"
-          onClick={onClose}
-          disabled={saving}
-          aria-label={t('common.close')}
-          title={t('common.close')}
-        >
-          <X size={18} strokeWidth={2} />
-        </button>
-        <p className="dialog-title">{t('settings.title')}</p>
+    <div className="model-picker-mask settings-mask" onPointerDown={onClose}>
+      <div className="model-picker-dialog settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title" onPointerDown={e => e.stopPropagation()}>
+        <div className="model-picker-header settings-dialog-header">
+          <div className="model-picker-title">
+            <span id="settings-dialog-title">{t('settings.title')}</span>
+            <span className="model-picker-subtitle">{activeGroupLabel}</span>
+          </div>
+          <button
+            type="button"
+            className="model-picker-close"
+            onClick={onClose}
+            disabled={saving}
+            aria-label={t('common.close')}
+            title={t('common.close')}
+          >
+            <X size={16} strokeWidth={2} />
+          </button>
+        </div>
 
-        <div className="settings-layout">
+        <div className="settings-layout settings-dialog-body">
           <nav className="settings-nav">
             {GROUPS.map(g => (
               <button
@@ -297,7 +325,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
             ))}
           </nav>
 
-          <div className="settings-content">
+          <div className="settings-content settings-dialog-content">
             {renderGroup()}
             {showSaveBar && error && <p className="settings-error">{error}</p>}
             {showSaveBar && saved && !error && <p className="settings-ok">{t('common.saved')}</p>}
@@ -305,7 +333,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
         </div>
 
         {showSaveBar && (
-          <div className="dialog-actions">
+          <div className="settings-dialog-footer">
             <button type="button" className="dialog-btn" onClick={handleReset} disabled={loading || saving || !agent}>{t('common.resetDefault')}</button>
             <button type="button" className="dialog-btn primary" onClick={handleSave} disabled={loading || saving || !agent}>{t('common.save')}</button>
           </div>

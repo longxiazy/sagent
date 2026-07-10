@@ -8,6 +8,7 @@ import { usePersistentState } from '../hooks/usePersistentState.js';
 // resolvedTheme 是 system 折算后的最终值（只会是 light 或 dark），
 // CSS 用 <html data-theme="light|dark"> 选择器消费它。
 const THEME_KEY = 'app_theme';
+const FONT_SIZE_KEY = 'app_font_size';
 
 const ThemeContext = createContext(null);
 
@@ -24,6 +25,7 @@ function resolveTheme(theme, systemDark) {
 
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = usePersistentState(THEME_KEY, 'system');
+  const [fontSize, setFontSize] = usePersistentState(FONT_SIZE_KEY, 'standard');
   const [systemDark, setSystemDark] = useState(() => matchDark()?.matches ?? false);
 
   // 监听系统主题变化：只有在 theme === 'system' 时才会影响 resolvedTheme，
@@ -42,6 +44,10 @@ export function ThemeProvider({ children }) {
     document.documentElement.dataset.theme = resolvedTheme;
   }, [resolvedTheme]);
 
+  useEffect(() => {
+    document.documentElement.dataset.fontSize = ['small', 'large'].includes(fontSize) ? fontSize : 'standard';
+  }, [fontSize]);
+
   // 顶栏一键切换：在 light/dark 间翻转。若当前是 system，则相对当前呈现取反，
   // 切换后变成显式 light/dark（符合“点一下就立刻反过来”的直觉）。
   const toggleTheme = useCallback(() => {
@@ -49,8 +55,8 @@ export function ThemeProvider({ children }) {
   }, [resolvedTheme, setTheme]);
 
   const value = useMemo(
-    () => ({ theme, setTheme, resolvedTheme, toggleTheme }),
-    [theme, setTheme, resolvedTheme, toggleTheme]
+    () => ({ theme, setTheme, resolvedTheme, toggleTheme, fontSize, setFontSize }),
+    [theme, setTheme, resolvedTheme, toggleTheme, fontSize, setFontSize]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
