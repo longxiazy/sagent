@@ -93,6 +93,7 @@ export const zh = {
   'settings.memoryEnabled': '启用记忆',
   'settings.memoryDesc': 'Agent 是否使用历史记忆辅助任务（前端偏好，即时生效）。',
   'settings.observeDesktop': '观测 macOS 桌面',
+  'settings.autoModelRouting': '动态模型路由',
   'settings.apiKeys': 'API Key（只读）',
   'settings.apiKeysDesc': 'Key 在 .env 配置，修改后需重启后端。',
   'settings.keyNotConfigured': '未配置',

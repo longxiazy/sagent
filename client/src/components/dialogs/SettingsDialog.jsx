@@ -210,6 +210,14 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
                   onChange={e => setField('observeDesktop', e.target.checked)}
                 />
               </label>
+              <label className="settings-field settings-field-switch">
+                <span>{t('settings.autoModelRouting')}</span>
+                <input
+                  type="checkbox"
+                  checked={!!agent.autoModelRouting}
+                  onChange={e => setField('autoModelRouting', e.target.checked)}
+                />
+              </label>
             </div>
           )}
         </div>

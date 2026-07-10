@@ -92,6 +92,7 @@ export const en = {
   'settings.memoryEnabled': 'Enable memory',
   'settings.memoryDesc': 'Whether the agent uses history memory to assist tasks (frontend preference, applies immediately).',
   'settings.observeDesktop': 'Observe macOS desktop',
+  'settings.autoModelRouting': 'Dynamic model routing',
   'settings.apiKeys': 'API Keys (read-only)',
   'settings.apiKeysDesc': 'Keys are set in .env; restart the backend after changes.',
   'settings.keyNotConfigured': 'Not configured',

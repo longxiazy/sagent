@@ -76,6 +76,7 @@ export function createDesktopAgentRunner({
       staggerDelayMs: c.staggerDelaySec * 1000,
       batchSize: c.batchSize,
       observeDesktop: c.observeDesktop,
+      autoModelRouting: c.autoModelRouting,
     };
   }
 
@@ -85,7 +86,7 @@ export function createDesktopAgentRunner({
 
     return async (task: string, subIndex: number) => {
       const subRunId = `${parentRunId}::sub${subIndex}`;
-      const { maxSteps, modelTimeoutMs, staggerDelayMs, batchSize } = liveConfig();
+      const { maxSteps, modelTimeoutMs, staggerDelayMs, batchSize, autoModelRouting } = liveConfig();
       log.info(`[SubAgent] 启动子任务 ${subIndex}: ${task.slice(0, 60)}...`);
 
       const subBlacklistedModels = new Set();
@@ -96,6 +97,7 @@ export function createDesktopAgentRunner({
         modelTimeoutMs,
         staggerDelayMs,
         batchSize,
+        autoModelRouting,
       });
 
       const subAuthorize = createReadOnlyAuthorizer();
@@ -280,9 +282,9 @@ export function createDesktopAgentRunner({
     dataDir = null,
     checkpointWriter = null,
   }) {
-    const { maxSteps, modelTimeoutMs, staggerDelayMs, batchSize, observeDesktop } = liveConfig();
+    const { maxSteps, modelTimeoutMs, staggerDelayMs, batchSize, observeDesktop, autoModelRouting } = liveConfig();
     const blacklistedModels = new Set();
-    const plan = createDesktopPlanner({ registry, modelConfig, blacklistedModels, modelTimeoutMs, staggerDelayMs, batchSize });
+    const plan = createDesktopPlanner({ registry, modelConfig, blacklistedModels, modelTimeoutMs, staggerDelayMs, batchSize, autoModelRouting });
 
     const authorize = createAgentAuthorizer({
       runId,
