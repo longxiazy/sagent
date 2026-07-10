@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Square, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp,
-  Monitor, Loader2, Bot, Clock3, Coins, ListChecks, Trophy, History, X,
+  Monitor, Loader2, Bot, Clock3, Coins, ListChecks, Trophy, History,
 } from 'lucide-react';
 import { PHONE_BREAKPOINT } from '../../utils/constants.js';
 import { ModelPlanGroup } from './ModelPlanGroup.jsx';
@@ -15,6 +15,7 @@ import { useT } from '../../i18n/I18nProvider.jsx';
 import { formatFullTime, formatRelativeTime } from '../../utils/format.js';
 import { fetchAgentTrace } from '../../api/streams.js';
 import { appendUniqueTraceEvent } from '../../utils/agent-trace.js';
+import { DialogShell } from '../dialogs/DialogShell.jsx';
 
 // AgentPanel 既是执行面板，也是运行时仪表盘：
 // - 负责展示 trace
@@ -249,17 +250,15 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
     }
   }, [expandedHistoryRun, historyTraceCache, projectId]);
 
-  // ESC closes the topmost overlay.
+  // Screenshot lightbox stays above dialogs and handles its own Escape key.
   useEffect(() => {
-    if (!lightboxSrc && !historyDialogOpen) return;
+    if (!lightboxSrc) return;
     const handler = e => {
-      if (e.key !== 'Escape') return;
-      if (lightboxSrc) setLightboxSrc(null);
-      else setHistoryDialogOpen(false);
+      if (e.key === 'Escape') setLightboxSrc(null);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [historyDialogOpen, lightboxSrc]);
+  }, [lightboxSrc]);
 
   useEffect(() => {
     if (!traceStickyRef.current) return;
@@ -410,17 +409,14 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
       </div>
     </section>
     {historyDialogOpen && (
-      <div className="agent-history-dialog-mask" onPointerDown={() => setHistoryDialogOpen(false)}>
-        <div className="agent-history-dialog" role="dialog" aria-modal="true" aria-labelledby="agent-history-dialog-title" onPointerDown={e => e.stopPropagation()}>
-          <div className="agent-history-dialog-head">
-            <div>
-              <h3 id="agent-history-dialog-title">{t('agentPanel.previousRuns')}</h3>
-              <span>{historyRuns.length}</span>
-            </div>
-            <button type="button" className="agent-history-dialog-close" onClick={() => setHistoryDialogOpen(false)} title={t('common.close')}>
-              <X size={16} />
-            </button>
-          </div>
+      <DialogShell
+        title={t('agentPanel.previousRuns')}
+        subtitle={historyRuns.length}
+        onClose={() => setHistoryDialogOpen(false)}
+        escapeDisabled={!!lightboxSrc}
+        maskClassName="agent-history-dialog-mask"
+        dialogClassName="agent-history-dialog"
+      >
           <div className="agent-run-history agent-run-history--dialog">
             {historyRuns.map((run, index) => {
               const key = runKey(run, index);
@@ -459,8 +455,7 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
               );
             })}
           </div>
-        </div>
-      </div>
+      </DialogShell>
     )}
     {lightboxSrc && (
       <div className="screenshot-lightbox" onClick={() => setLightboxSrc(null)}>

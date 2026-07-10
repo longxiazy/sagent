@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Palette, SlidersHorizontal, Brain, KeyRound, X, Minus, Plus } from 'lucide-react';
+import { Palette, SlidersHorizontal, Brain, KeyRound, Minus, Plus } from 'lucide-react';
 import { fetchConfig, saveConfig, resetConfig } from '../../api/config.js';
 import { useTheme } from '../../theme/ThemeProvider.jsx';
 import { useI18n, useT } from '../../i18n/I18nProvider.jsx';
+import { DialogShell } from './DialogShell.jsx';
 
 // Agent 行为参数（可写，热生效）。单位与 .env 一致，换算放后端消费点。
 // label 改为 i18n key，渲染时经 t() 取文案。memoryMaxEntries 归到「记忆」组。
@@ -292,25 +293,20 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
   const activeGroupLabel = t(GROUPS.find(group => group.id === activeGroup)?.labelKey || 'settings.title');
 
   return (
-    <div className="model-picker-mask settings-mask" onPointerDown={onClose}>
-      <div className="model-picker-dialog settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title" onPointerDown={e => e.stopPropagation()}>
-        <div className="model-picker-header settings-dialog-header">
-          <div className="model-picker-title">
-            <span id="settings-dialog-title">{t('settings.title')}</span>
-            <span className="model-picker-subtitle">{activeGroupLabel}</span>
-          </div>
-          <button
-            type="button"
-            className="model-picker-close"
-            onClick={onClose}
-            disabled={saving}
-            aria-label={t('common.close')}
-            title={t('common.close')}
-          >
-            <X size={16} strokeWidth={2} />
-          </button>
+    <DialogShell
+      title={t('settings.title')}
+      subtitle={activeGroupLabel}
+      onClose={onClose}
+      closeDisabled={saving}
+      maskClassName="settings-mask"
+      dialogClassName="settings-dialog"
+      footer={showSaveBar ? (
+        <div className="settings-dialog-footer">
+          <button type="button" className="dialog-btn" onClick={handleReset} disabled={loading || saving || !agent}>{t('common.resetDefault')}</button>
+          <button type="button" className="dialog-btn primary" onClick={handleSave} disabled={loading || saving || !agent}>{t('common.save')}</button>
         </div>
-
+      ) : null}
+    >
         <div className="settings-layout settings-dialog-body">
           <nav className="settings-nav">
             {GROUPS.map(g => (
@@ -332,13 +328,6 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
           </div>
         </div>
 
-        {showSaveBar && (
-          <div className="settings-dialog-footer">
-            <button type="button" className="dialog-btn" onClick={handleReset} disabled={loading || saving || !agent}>{t('common.resetDefault')}</button>
-            <button type="button" className="dialog-btn primary" onClick={handleSave} disabled={loading || saving || !agent}>{t('common.save')}</button>
-          </div>
-        )}
-      </div>
-    </div>
+    </DialogShell>
   );
 }

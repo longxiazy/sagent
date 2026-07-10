@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Check, ChevronDown, ChevronRight, ChevronUp, ExternalLink, HelpCircle, Search, X } from 'lucide-react';
 import { useT } from '../i18n/I18nProvider.jsx';
+import { DialogShell } from './dialogs/DialogShell.jsx';
 
 const MODEL_CATEGORY_DEFS = [
   { id: 'text-chat', labelKey: 'modelSelector.categoryTextChat', descKey: 'modelSelector.categoryTextChatDesc' },
@@ -643,42 +644,29 @@ function ModelPickerDropdown({
         <ChevronDown size={14} />
       </button>
       {open && (
-        <div className="model-picker-mask" onPointerDown={() => setOpen(false)}>
-          <div className="model-picker-dialog" role="dialog" aria-modal="true" onPointerDown={e => e.stopPropagation()}>
-            <div className="model-picker-header">
-              <div className="model-picker-title">
-                <span>{dialogTitle || t(multiple ? 'modelSelector.selectModels' : 'modelSelector.selectModel')}</span>
-                <span className="model-picker-subtitle">
-                  {t('modelSelector.resultCount', { count: visibleCount, total: availableModels.length })}
-                </span>
-              </div>
-              <div className="model-picker-header-actions">
-                <button
-                  type="button"
-                  className={`model-picker-help ${encyclopediaOpen ? 'active' : ''}`}
-                  onClick={() => {
-                    setEncyclopediaOpen(current => {
-                      const next = !current;
-                      setFiltersExpanded(next ? false : shouldExpandFiltersByDefault());
-                      if (next) setExpandedEncyclopediaModels([]);
-                      return next;
-                    });
-                  }}
-                  title={t('modelSelector.openEncyclopedia')}
-                  aria-pressed={encyclopediaOpen}
-                >
-                  <HelpCircle size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="model-picker-close"
-                  onClick={() => setOpen(false)}
-                  title={t('common.close')}
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
+        <DialogShell
+          title={dialogTitle || t(multiple ? 'modelSelector.selectModels' : 'modelSelector.selectModel')}
+          subtitle={t('modelSelector.resultCount', { count: visibleCount, total: availableModels.length })}
+          onClose={() => setOpen(false)}
+          headerActions={(
+            <button
+              type="button"
+              className={`model-picker-help ${encyclopediaOpen ? 'active' : ''}`}
+              onClick={() => {
+                setEncyclopediaOpen(current => {
+                  const next = !current;
+                  setFiltersExpanded(next ? false : shouldExpandFiltersByDefault());
+                  if (next) setExpandedEncyclopediaModels([]);
+                  return next;
+                });
+              }}
+              title={t('modelSelector.openEncyclopedia')}
+              aria-pressed={encyclopediaOpen}
+            >
+              <HelpCircle size={16} />
+            </button>
+          )}
+        >
 
             {!encyclopediaOpen && (
               <>
@@ -848,8 +836,7 @@ function ModelPickerDropdown({
             </div>
               </>
             )}
-          </div>
-        </div>
+        </DialogShell>
       )}
     </div>
   );
