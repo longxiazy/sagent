@@ -159,12 +159,6 @@ export function SessionList({
       ) : statsPanelOpen ? (
         <AgentStatsPanel
           sessions={visibleSessions}
-          modelList={modelList}
-          onSelectSession={id => {
-            onSelect(id);
-            setShowStatsPanel(false);
-          }}
-          locked={locked}
         />
       ) : (
         <>

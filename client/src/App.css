@@ -1331,75 +1331,6 @@ select,
   white-space: nowrap;
 }
 
-.agent-stats-empty {
-  padding: 18px 10px;
-  border: 1px dashed var(--c-border);
-  border-radius: var(--r-sm);
-  color: var(--c-text-hint);
-  font-size: var(--f-sm);
-  text-align: center;
-}
-
-.agent-stats-runs {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.agent-stats-run {
-  width: 100%;
-  min-width: 0;
-  padding: 7px 8px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
-  background: var(--c-surface);
-  color: var(--c-text);
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-align: left;
-  transition: all var(--ease);
-}
-
-.agent-stats-run:hover:not(:disabled) {
-  border-color: var(--c-primary-light);
-  background: var(--c-primary-bg);
-}
-
-.agent-stats-run:disabled {
-  cursor: default;
-  opacity: 0.7;
-}
-
-.agent-stats-run-title,
-.agent-stats-run-meta,
-.agent-stats-run-foot span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agent-stats-run-title {
-  font-size: var(--f-xs);
-  font-weight: 600;
-}
-
-.agent-stats-run-meta {
-  color: var(--c-text-muted);
-  font-size: var(--f-micro);
-}
-
-.agent-stats-run-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  color: var(--c-text-hint);
-  font-size: var(--f-micro);
-}
-
 .agent-token-chart {
   width: 100%;
   height: auto;
@@ -3548,69 +3479,15 @@ a.model-encyclopedia-field-value:hover {
 }
 
 .agent-history-dialog-mask {
-  position: fixed;
-  inset: 0;
   z-index: 190;
-  padding: 24px;
   background: rgba(0, 0, 0, 0.48);
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
-.agent-history-dialog {
+.model-picker-dialog.agent-history-dialog {
   width: min(760px, 100%);
+  height: auto;
   max-height: min(760px, calc(100vh - 48px));
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
-  background: var(--c-surface);
-  box-shadow: var(--shadow-lg);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
-
-.agent-history-dialog-head {
-  min-height: 54px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--c-border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.agent-history-dialog-head > div {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.agent-history-dialog-head h3 {
-  margin: 0;
-  color: var(--c-text);
-  font-size: var(--f-base);
-}
-
-.agent-history-dialog-head span {
-  color: var(--c-text-muted);
-  font-size: var(--f-xs);
-}
-
-.agent-history-dialog-close {
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--c-text-secondary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.agent-history-dialog-close:hover { background: var(--c-surface-hover); }
 
 .agent-run-history--dialog {
   margin: 0;
@@ -3619,21 +3496,9 @@ a.model-encyclopedia-field-value:hover {
 }
 
 @media (max-width: 639px) {
-  .agent-history-dialog-mask { padding: 10px; }
-  .agent-history-dialog { max-height: calc(100vh - 20px); }
+  .model-picker-dialog.agent-history-dialog { max-height: calc(100vh - 20px); }
   .agent-history-btn > span:not(.agent-history-btn-count) { display: none; }
   .agent-history-run-side > span:first-child { display: none; }
-}
-
-.agent-run-history-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--c-text-muted);
-  font-size: var(--f-micro);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .agent-history-run {
@@ -5427,8 +5292,6 @@ textarea:disabled {
   width: min(820px, calc(100vw - 40px));
   height: min(76dvh, 620px);
 }
-
-.settings-dialog-header { min-height: 46px; }
 
 /* 左导航 + 右内容两栏布局 */
 .settings-layout { display: flex; gap: 0; flex: 1; min-height: 0; }

@@ -1,26 +1,8 @@
 import { BarChart3, Bot, Clock3, Coins, Zap } from 'lucide-react';
 import { useMemo } from 'react';
 import { buildAgentStats } from '../../utils/agent-stats.js';
-import { formatFullTime, formatRelativeTime } from '../../utils/format.js';
 import { formatDurationMs, formatTokenCount } from '../agent/trace-metrics.js';
 import { useT } from '../../i18n/I18nProvider.jsx';
-
-function modelLabel(modelId, modelList) {
-  return modelList.find(item => item.id === modelId)?.label || modelId;
-}
-
-function strategyLabel(strategy, t) {
-  if (strategy === 'vote') return t('agentStats.strategyVote');
-  return t('agentStats.strategyRace');
-}
-
-function statusLabel(status, t) {
-  if (status === 'done_degraded') return t('agentStats.statusDegraded');
-  if (status === 'done_unverified') return t('agentStats.statusUnverified');
-  if (status === 'error') return t('agentStats.statusError');
-  if (status === 'cancelled') return t('agentStats.statusCancelled');
-  return t('agentStats.statusDone');
-}
 
 function StatTile({ icon, value, label }) {
   return (
@@ -65,7 +47,7 @@ function TokenChart({ dailyData }) {
   );
 }
 
-export function AgentStatsPanel({ sessions, modelList = [], onSelectSession, locked }) {
+export function AgentStatsPanel({ sessions }) {
   const t = useT();
   const stats = useMemo(() => buildAgentStats(sessions), [sessions]);
   const hasRuns = stats.totalRuns > 0;
@@ -90,41 +72,6 @@ export function AgentStatsPanel({ sessions, modelList = [], onSelectSession, loc
 
       <section className="agent-stats-section">
         <div className="agent-stats-section-head">
-          <h4>{t('agentStats.recentRuns')}</h4>
-          <span>{t('agentStats.totalRuns', { n: stats.totalRuns })}</span>
-        </div>
-        {stats.recentRuns.length === 0 ? (
-          <div className="agent-stats-empty">{t('agentStats.empty')}</div>
-        ) : (
-          <div className="agent-stats-runs">
-            {stats.recentRuns.map(run => {
-              const models = run.models.map(model => modelLabel(model, modelList));
-              const title = run.task || t('agent.taskFallback');
-              return (
-                <button
-                  key={`${run.sessionId}-${run.runId || run.endedAt || title}`}
-                  className="agent-stats-run"
-                  onClick={() => onSelectSession?.(run.sessionId)}
-                  disabled={locked}
-                  title={run.endedAt ? formatFullTime(run.endedAt) : title}
-                >
-                  <span className="agent-stats-run-title">{title}</span>
-                  <span className="agent-stats-run-meta">
-                    {formatDurationMs(run.elapsedMs)} · {formatTokenCount(run.totalTokens)} tok · {run.stepCount} {t('agentStats.steps')}
-                  </span>
-                  <span className="agent-stats-run-foot">
-                    <span>{models.slice(0, 2).join(' + ') || t('session.unknownModel')}</span>
-                    <span>{run.endedAt ? formatRelativeTime(run.endedAt) : statusLabel(run.status, t)}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <section className="agent-stats-section">
-        <div className="agent-stats-section-head">
           <h4>{t('agentStats.trend')}</h4>
           <span>{maxTokens > 0 ? `${formatTokenCount(maxTokens)} tok` : t('agentStats.noTokens')}</span>
         </div>
@@ -142,8 +89,8 @@ export function AgentStatsPanel({ sessions, modelList = [], onSelectSession, loc
             <strong>{formatDurationMs(stats.totalElapsedMs)}</strong>
           </div>
           <div>
-            <span>{t('agentStats.strategy')}</span>
-            <strong>{strategyLabel(stats.recentRuns[0]?.strategy, t)}</strong>
+            <span>{t('agentStats.allTimeRuns')}</span>
+            <strong>{stats.totalRuns}</strong>
           </div>
         </section>
       )}
