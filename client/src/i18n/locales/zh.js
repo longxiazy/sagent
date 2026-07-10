@@ -22,6 +22,10 @@ export const zh = {
   'appearance.theme.dark': '深色',
   'appearance.theme.system': '跟随系统',
   'appearance.language': '语言',
+  'appearance.fontSize': '总体字号',
+  'appearance.fontSize.small': '小',
+  'appearance.fontSize.standard': '标准',
+  'appearance.fontSize.large': '大',
   'appearance.toggleTheme': '切换深浅色',
 
   // 顶栏

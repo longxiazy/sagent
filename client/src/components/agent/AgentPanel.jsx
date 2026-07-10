@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Square, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp,
-  Monitor, Loader2, Bot, Clock3, Coins, ListChecks, Trophy,
+  Monitor, Loader2, Bot, Clock3, Coins, ListChecks, Trophy, History, X,
 } from 'lucide-react';
 import { PHONE_BREAKPOINT } from '../../utils/constants.js';
 import { ModelPlanGroup } from './ModelPlanGroup.jsx';
@@ -182,6 +182,7 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
   const [expandedHistoryRun, setExpandedHistoryRun] = useState(null);
   const [historyTraceCache, setHistoryTraceCache] = useState({});
   const [historyTraceLoading, setHistoryTraceLoading] = useState(null);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [recentRunExpanded, setRecentRunExpanded] = useState(true);
 
   // onRollback 来自上层且每次 render 是新引用；用 ref 包出稳定回调，
@@ -248,13 +249,17 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
     }
   }, [expandedHistoryRun, historyTraceCache, projectId]);
 
-  // ESC closes lightbox
+  // ESC closes the topmost overlay.
   useEffect(() => {
-    if (!lightboxSrc) return;
-    const handler = e => { if (e.key === 'Escape') setLightboxSrc(null); };
+    if (!lightboxSrc && !historyDialogOpen) return;
+    const handler = e => {
+      if (e.key !== 'Escape') return;
+      if (lightboxSrc) setLightboxSrc(null);
+      else setHistoryDialogOpen(false);
+    };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [lightboxSrc]);
+  }, [historyDialogOpen, lightboxSrc]);
 
   useEffect(() => {
     if (!traceStickyRef.current) return;
@@ -293,6 +298,17 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
             </button>
           )}
           <div className="agent-head-actions">
+            {historyRuns.length > 0 && (
+              <button
+                className="agent-collapse-btn agent-history-btn"
+                onClick={e => { e.stopPropagation(); setHistoryDialogOpen(true); }}
+                title={t('agentPanel.previousRuns')}
+              >
+                <History size={12} />
+                <span>{t('agentPanel.previousRuns')}</span>
+                <span className="agent-history-btn-count">{historyRuns.length}</span>
+              </button>
+            )}
             {hasModelCards && !collapsed && showCurrentTrace && (
               <>
                 <button className="agent-collapse-btn agent-expand-all" onClick={e => { e.stopPropagation(); setCardsExpanded(true); }} title={t('agentPanel.expandAllTitle')}>
@@ -330,66 +346,6 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
           <p className="agent-panel-note">
             {t('agentPanel.note')}
           </p>
-
-          {historyRuns.length > 0 && (
-            <div className="agent-run-history">
-              <div className="agent-run-history-head">
-                <span>{t('agentPanel.previousRuns')}</span>
-                <span>{historyRuns.length}</span>
-              </div>
-              {historyRuns.map((run, index) => {
-                const key = runKey(run, index);
-                const meta = run.meta || {};
-                const title = meta.task || t('agent.taskFallback');
-                const expanded = expandedHistoryRun === key;
-                const cachedTrace = historyTraceCache[key];
-                const historyTrace = Array.isArray(run.trace) && run.trace.length > 0 ? run.trace : (cachedTrace || []);
-                const loading = historyTraceLoading === key;
-                const models = (meta.models || []).map(model => modelList.find(item => item.id === model)?.label || model);
-                return (
-                  <div className="agent-history-run" key={key}>
-                    <button className="agent-history-run-toggle" onClick={() => toggleHistoryRun(run, index)}>
-                      <span className="agent-history-run-main">
-                        <strong title={title}>{title}</strong>
-                        <span>
-                          {formatDurationMs(meta.elapsedMs || 0)} · {formatTokenCount(meta.totalTokens || 0)} tok · {t('agentPanel.stepCount', { n: meta.stepCount || 0 })}
-                        </span>
-                      </span>
-                      <span className="agent-history-run-side">
-                        <span>{models.slice(0, 2).join(' + ') || t('session.unknownModel')}</span>
-                        <span title={meta.endedAt ? formatFullTime(meta.endedAt) : ''}>
-                          {meta.endedAt ? formatRelativeTime(meta.endedAt) : statusLabel(meta.status, t)}
-                        </span>
-                        {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                      </span>
-                    </button>
-                    {expanded && (
-                      <div className="agent-history-trace">
-                        {loading ? (
-                          <div className="agent-history-empty">{t('agentPanel.historyLoading')}</div>
-                        ) : historyTrace.length === 0 ? (
-                          <div className="agent-history-empty">{t('agentPanel.historyTraceUnavailable')}</div>
-                        ) : (
-                          <AgentTraceTimeline
-                            trace={historyTrace}
-                            running={false}
-                            modelList={modelList}
-                            cardsExpanded={false}
-                            onManualToggle={disabledRollback}
-                            onRollback={disabledRollback}
-                            rollbackLoading
-                            openLightbox={setLightboxSrc}
-                            t={t}
-                            history
-                          />
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
 
           {!running && lastRun && (
             <LastRunFrame
@@ -453,6 +409,59 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
             </>
       </div>
     </section>
+    {historyDialogOpen && (
+      <div className="agent-history-dialog-mask" onPointerDown={() => setHistoryDialogOpen(false)}>
+        <div className="agent-history-dialog" role="dialog" aria-modal="true" aria-labelledby="agent-history-dialog-title" onPointerDown={e => e.stopPropagation()}>
+          <div className="agent-history-dialog-head">
+            <div>
+              <h3 id="agent-history-dialog-title">{t('agentPanel.previousRuns')}</h3>
+              <span>{historyRuns.length}</span>
+            </div>
+            <button type="button" className="agent-history-dialog-close" onClick={() => setHistoryDialogOpen(false)} title={t('common.close')}>
+              <X size={16} />
+            </button>
+          </div>
+          <div className="agent-run-history agent-run-history--dialog">
+            {historyRuns.map((run, index) => {
+              const key = runKey(run, index);
+              const meta = run.meta || {};
+              const title = meta.task || t('agent.taskFallback');
+              const expanded = expandedHistoryRun === key;
+              const cachedTrace = historyTraceCache[key];
+              const historyTrace = Array.isArray(run.trace) && run.trace.length > 0 ? run.trace : (cachedTrace || []);
+              const loading = historyTraceLoading === key;
+              const models = (meta.models || []).map(model => modelList.find(item => item.id === model)?.label || model);
+              return (
+                <div className="agent-history-run" key={key}>
+                  <button className="agent-history-run-toggle" onClick={() => toggleHistoryRun(run, index)}>
+                    <span className="agent-history-run-main">
+                      <strong title={title}>{title}</strong>
+                      <span>{formatDurationMs(meta.elapsedMs || 0)} · {formatTokenCount(meta.totalTokens || 0)} tok · {t('agentPanel.stepCount', { n: meta.stepCount || 0 })}</span>
+                    </span>
+                    <span className="agent-history-run-side">
+                      <span>{models.slice(0, 2).join(' + ') || t('session.unknownModel')}</span>
+                      <span title={meta.endedAt ? formatFullTime(meta.endedAt) : ''}>{meta.endedAt ? formatRelativeTime(meta.endedAt) : statusLabel(meta.status, t)}</span>
+                      {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </span>
+                  </button>
+                  {expanded && (
+                    <div className="agent-history-trace">
+                      {loading ? (
+                        <div className="agent-history-empty">{t('agentPanel.historyLoading')}</div>
+                      ) : historyTrace.length === 0 ? (
+                        <div className="agent-history-empty">{t('agentPanel.historyTraceUnavailable')}</div>
+                      ) : (
+                        <AgentTraceTimeline trace={historyTrace} running={false} modelList={modelList} cardsExpanded={false} onManualToggle={disabledRollback} onRollback={disabledRollback} rollbackLoading openLightbox={setLightboxSrc} t={t} history />
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    )}
     {lightboxSrc && (
       <div className="screenshot-lightbox" onClick={() => setLightboxSrc(null)}>
         <img className="screenshot-lightbox-img" src={lightboxSrc} alt="screenshot" />

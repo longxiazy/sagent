@@ -21,6 +21,10 @@ export const en = {
   'appearance.theme.dark': 'Dark',
   'appearance.theme.system': 'System',
   'appearance.language': 'Language',
+  'appearance.fontSize': 'Overall text size',
+  'appearance.fontSize.small': 'Small',
+  'appearance.fontSize.standard': 'Default',
+  'appearance.fontSize.large': 'Large',
   'appearance.toggleTheme': 'Toggle theme',
 
   // Header

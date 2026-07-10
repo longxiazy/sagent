@@ -162,6 +162,28 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
+:root[data-font-size="small"] {
+  --f-micro: 10px;
+  --f-xs: 11px;
+  --f-sm: 12px;
+  --f-base: 13px;
+  --f-md: 15px;
+  --f-lg: 17px;
+  --f-xl: 20px;
+  --f-display: 26px;
+}
+
+:root[data-font-size="large"] {
+  --f-micro: 12px;
+  --f-xs: 13px;
+  --f-sm: 14px;
+  --f-base: 16px;
+  --f-md: 18px;
+  --f-lg: 20px;
+  --f-xl: 24px;
+  --f-display: 32px;
+}
+
 /* ── 暗色主题：仅覆盖语义变量，规则本身不必改动 ── */
 :root[data-theme="dark"] {
   --c-primary: #7a70e6;
@@ -3351,6 +3373,24 @@ a.model-encyclopedia-field-value:hover {
 
 .agent-collapse-btn:hover { background: var(--c-surface-hover); }
 
+.agent-history-btn {
+  gap: 4px;
+  padding: 0 7px;
+}
+
+.agent-history-btn-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-hover);
+  color: var(--c-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
 .agent-memory-btn {
   width: 28px;
   height: 28px;
@@ -3505,6 +3545,84 @@ a.model-encyclopedia-field-value:hover {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.agent-history-dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 190;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.48);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-history-dialog {
+  width: min(760px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.agent-history-dialog-head {
+  min-height: 54px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--c-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-history-dialog-head > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.agent-history-dialog-head h3 {
+  margin: 0;
+  color: var(--c-text);
+  font-size: var(--f-base);
+}
+
+.agent-history-dialog-head span {
+  color: var(--c-text-muted);
+  font-size: var(--f-xs);
+}
+
+.agent-history-dialog-close {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.agent-history-dialog-close:hover { background: var(--c-surface-hover); }
+
+.agent-run-history--dialog {
+  margin: 0;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+@media (max-width: 639px) {
+  .agent-history-dialog-mask { padding: 10px; }
+  .agent-history-dialog { max-height: calc(100vh - 20px); }
+  .agent-history-btn > span:not(.agent-history-btn-count) { display: none; }
+  .agent-history-run-side > span:first-child { display: none; }
 }
 
 .agent-run-history-head {
@@ -5243,7 +5361,7 @@ textarea:disabled {
   background: var(--c-overlay);
 }
 .settings-mask {
-  background: var(--c-settings-mask);
+  z-index: 100;
 }
 
 .dialog {
@@ -5304,38 +5422,34 @@ textarea:disabled {
 
 /* ── Settings dialog ── */
 
-/* 固定高度:切换分组时弹窗不再跳动;标题/底部按钮固定,内容区内部滚动 */
+/* 与模型选择器共用 mask / dialog / header，设置页只定义尺寸和内容布局。 */
 .settings-dialog {
-  position: relative;
-  width: min(720px, 94vw);
-  height: min(540px, 86vh);
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--c-settings-glass-border);
-  background: var(--c-settings-glass);
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.42);
-  backdrop-filter: blur(22px) saturate(1.35);
-  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+  width: min(820px, calc(100vw - 40px));
+  height: min(76dvh, 620px);
 }
-.settings-dialog .dialog-title,
-.settings-dialog .dialog-actions { flex-shrink: 0; }
-.settings-dialog .dialog-title { padding-right: 40px; }
+
+.settings-dialog-header { min-height: 46px; }
 
 /* 左导航 + 右内容两栏布局 */
-.settings-layout { display: flex; gap: 20px; flex: 1; min-height: 0; }
+.settings-layout { display: flex; gap: 0; flex: 1; min-height: 0; }
+.settings-dialog-body { overflow: hidden; }
 .settings-nav {
   flex-shrink: 0;
-  width: 132px;
+  width: 156px;
+  padding: 12px 10px;
+  border-right: 1px solid var(--c-border);
+  background: var(--c-surface-dim);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 .settings-nav-btn {
   display: flex;
   align-items: center;
   gap: 8px;
   text-align: left;
-  padding: 8px 12px;
+  min-height: 38px;
+  padding: 8px 10px;
   border: none;
   border-radius: var(--r-sm);
   background: transparent;
@@ -5350,8 +5464,10 @@ textarea:disabled {
 .settings-nav-btn.active { background: var(--c-primary-bg); color: var(--c-primary); font-weight: 600; }
 .settings-nav-btn.active .settings-nav-icon { opacity: 1; }
 .settings-content { flex: 1; min-width: 0; overflow-y: auto; }
+.settings-dialog-content { padding: 20px 22px; }
 .settings-content .settings-section:last-child { margin-bottom: 0; }
-.settings-close-btn {
+
+.project-dialog .settings-close-btn {
   position: absolute;
   top: 16px;
   right: 16px;
@@ -5367,13 +5483,22 @@ textarea:disabled {
   cursor: pointer;
   transition: all 0.15s;
 }
-.settings-close-btn:hover:not(:disabled) {
+
+.project-dialog .settings-close-btn:hover:not(:disabled) {
   background: var(--c-surface-hover);
   color: var(--c-text);
 }
-.settings-close-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.settings-dialog .dialog-actions {
-  justify-content: space-between;
+
+.project-dialog .settings-close-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.settings-dialog-footer {
+  min-height: 58px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--c-border);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
 .project-dialog {
@@ -5429,12 +5554,24 @@ textarea:disabled {
   justify-content: flex-end;
 }
 
-.settings-section { margin-bottom: 20px; }
-.settings-section-title { font-size: var(--f-sm); font-weight: 600; margin-bottom: 4px; }
+.settings-section { margin-bottom: 0; }
+.settings-section-title { margin: 0 0 6px; font-size: var(--f-md); font-weight: 700; color: var(--c-text); }
+.settings-section > .dialog-desc { margin-bottom: 16px; }
 
-.settings-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 16px; }
-.settings-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--f-sm); color: var(--c-text-secondary); }
-.settings-field-switch { flex-direction: row; align-items: center; justify-content: space-between; grid-column: 1 / -1; }
+.settings-appearance-stack {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-appearance-stack .settings-field-switch {
+  min-height: 48px;
+}
+
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.settings-field { display: flex; flex-direction: column; gap: 6px; font-size: var(--f-sm); color: var(--c-text-secondary); }
+.settings-field-switch { min-height: 42px; padding: 0 12px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface-inline); flex-direction: row; align-items: center; justify-content: space-between; grid-column: 1 / -1; }
 .settings-field-switch input { width: 18px; height: 18px; }
 .settings-stepper {
   display: grid;
@@ -5477,10 +5614,10 @@ textarea:disabled {
   white-space: nowrap;
 }
 
-.settings-keys { display: flex; flex-direction: column; gap: 8px; }
+.settings-keys { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .settings-key-row {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 12px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-settings-glass-inner); font-size: var(--f-sm);
+  min-height: 42px; padding: 8px 12px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface-inline); font-size: var(--f-sm);
 }
 .settings-key-provider { font-weight: 600; text-transform: capitalize; }
 .settings-key-status.on { color: var(--c-success); font-family: monospace; }
@@ -5515,25 +5652,26 @@ textarea:disabled {
 
 @media (max-width: 560px) {
   .settings-dialog {
-    width: calc(100vw - 16px);
-    height: calc(100dvh - 16px);
-    max-height: calc(100dvh - 16px);
-    padding: 16px;
+    width: 100%;
+    height: min(92dvh, 760px);
+    max-height: calc(100dvh - max(8px, env(safe-area-inset-top)));
   }
-  .settings-layout { flex-direction: column; gap: 12px; }
+  .settings-layout { flex-direction: column; }
   .settings-nav {
     width: 100%;
     flex-direction: row;
     flex-wrap: nowrap;
     overflow-x: auto;
-    padding-bottom: 2px;
+    padding: 8px 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--c-border);
   }
   .settings-nav-btn {
     flex: 0 0 auto;
     min-height: 36px;
     padding: 8px 10px;
   }
-  .settings-content { padding-right: 2px; }
+  .settings-dialog-content { padding: 16px 14px; }
   .settings-grid { grid-template-columns: 1fr; }
   .settings-field-switch {
     align-items: flex-start;
@@ -5545,10 +5683,7 @@ textarea:disabled {
     flex-direction: column;
   }
   .settings-key-status { overflow-wrap: anywhere; }
-  .settings-dialog .dialog-actions {
-    justify-content: space-between;
-  }
-  .settings-dialog .dialog-btn { flex: 0 1 calc(50% - 4px); }
+  .settings-dialog-footer .dialog-btn { flex: 0 1 calc(50% - 4px); justify-content: center; }
   .project-dialog {
     width: calc(100vw - 16px);
     height: auto;
