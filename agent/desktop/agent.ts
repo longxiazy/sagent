@@ -47,6 +47,30 @@ import { createDesktopPlanner, DEFAULT_MODEL_TIMEOUT_MS } from './planner.ts';
 import { saveCheckpoint } from '../core/checkpoint.ts';
 import { log } from '../../helpers/logger.ts';
 import { runtimeConfig } from '../core/runtime-config.ts';
+import type { ProviderRegistry } from '../core/providers/registry.ts';
+import type { ModelInfo } from '../core/providers/types.ts';
+import type {
+  AgentRunStore,
+  ApprovalStore,
+  DesktopAgentRunOptions,
+  DesktopAgentRunner,
+} from '../core/contracts.ts';
+
+interface DesktopAgentRunnerConfig {
+  registry: ProviderRegistry;
+  openai_client: unknown;
+  modelConfig: ModelInfo[];
+  maxSteps?: number;
+  defaultHeadless?: boolean;
+  observeDesktop?: boolean;
+  runStore?: AgentRunStore | null;
+  approvalStore: Pick<ApprovalStore, 'request'>;
+  checkpointDir?: string;
+  visionModel: string;
+  modelTimeoutMs?: number;
+  staggerDelayMs?: number;
+  batchSize?: number;
+}
 
 export function createDesktopAgentRunner({
   registry,
@@ -55,14 +79,14 @@ export function createDesktopAgentRunner({
   maxSteps = 8,
   defaultHeadless = false,
   observeDesktop = false,
-  runStore: _runStore,
+  runStore,
   approvalStore,
   checkpointDir,
   visionModel,
   modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS,
   staggerDelayMs = 0,
   batchSize = 1,
-}) {
+}: DesktopAgentRunnerConfig): DesktopAgentRunner {
   const domainRules = createDomainRules(checkpointDir);
   const { ensureBrowserSession } = createSharedBrowserSessionManager();
 
@@ -281,7 +305,8 @@ export function createDesktopAgentRunner({
     projectRoot = null,
     dataDir = null,
     checkpointWriter = null,
-  }) {
+  }: DesktopAgentRunOptions) {
+    agentModels = agentModels || [model];
     const { maxSteps, modelTimeoutMs, staggerDelayMs, batchSize, observeDesktop, autoModelRouting } = liveConfig();
     const blacklistedModels = new Set();
     const plan = createDesktopPlanner({ registry, modelConfig, blacklistedModels, modelTimeoutMs, staggerDelayMs, batchSize, autoModelRouting });
@@ -290,6 +315,7 @@ export function createDesktopAgentRunner({
       runId,
       approvalStore,
       onEvent,
+      runStore,
     });
 
     // 本次 run 的落盘目录：命中项目用项目目录，否则回退工厂注入的全局 checkpointDir。
@@ -364,6 +390,7 @@ export function createDesktopAgentRunner({
     });
   }
 
-  runDesktopAgent.domainRules = domainRules;
-  return runDesktopAgent;
+  const runner = runDesktopAgent as DesktopAgentRunner;
+  runner.domainRules = domainRules;
+  return runner;
 }

@@ -83,6 +83,7 @@ describe('Chrome MCP action normalization', () => {
     });
 
     expect(result.action.type).toBe('chrome_call_tool');
+    if (result.action.type !== 'chrome_call_tool') throw new Error('expected chrome_call_tool');
     expect(result.action.toolName).toBe('click');
   });
 });

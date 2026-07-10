@@ -9,6 +9,8 @@
  *     调用 inferTool(action.type) 补全，再根据 tool 路由到对应的 normalize 函数
  */
 
+import type { AgentTool } from './contracts.ts';
+
 export const ACTION_TYPE_TO_TOOL = {
   // browser
   navigate: 'browser',
@@ -63,8 +65,10 @@ export const ACTION_TYPE_TO_TOOL = {
   done: 'core',
   ask_user: 'core',
   notify_user: 'core',
-};
+} as const satisfies Record<string, AgentTool>;
 
-export function inferTool(type) {
+export type KnownActionType = keyof typeof ACTION_TYPE_TO_TOOL;
+
+export function inferTool(type: string): AgentTool | '' {
   return ACTION_TYPE_TO_TOOL[type] ?? '';
 }

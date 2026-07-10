@@ -12,7 +12,7 @@ export function createAgentCheckpointRouter({ checkpointDir, agentRunStore, memo
     if (!checkpointDir) {
       return res.json({ checkpoints: [] });
     }
-    const queryRunId = req.query.runId;
+    const queryRunId = typeof req.query.runId === 'string' ? req.query.runId : null;
     const activeRun = agentRunStore.getActiveRun();
     const runId = queryRunId || activeRun?.runId;
     if (!runId) {

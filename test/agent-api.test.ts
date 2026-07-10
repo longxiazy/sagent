@@ -54,7 +54,7 @@ beforeEach(async () => {
     memoryDir: tmpDir,
     checkpointDir: tmpDir,
     domainRules: null,
-    modelConfig: [{ id: 'test-model', provider: 'test' }],
+    modelConfig: [{ id: 'test-model', label: 'test-model', provider: 'test' }],
     registry: mockRegistry,
     runtimeConfig,
     projectStore,

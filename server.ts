@@ -112,6 +112,7 @@ const runDesktopAgent = AGENT_SANDBOXED_WORKERS
       checkpointDir: CHECKPOINT_DIR,
       modelConfig,
       approvalStore,
+      runStore: agentRunStore,
       visionModel: VISION_MODEL,
       sandbox: AGENT_WORKER_SANDBOX,
     }) as any

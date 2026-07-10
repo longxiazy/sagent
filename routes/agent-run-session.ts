@@ -3,6 +3,22 @@ import { formatLogTime, buildAgentMetrics, buildSseWriter, logAgentEvent } from 
 import { createBaseEventSender } from '../helpers/run-agent.ts';
 import { log } from '../helpers/logger.ts';
 import { tReq } from '../helpers/i18n.ts';
+import type { Request, Response } from 'express';
+import type { AgentEvent, AgentRunStore, ApprovalStore } from '../agent/core/contracts.ts';
+
+export interface AgentRunTrackingState {
+  completedStepCount: number;
+  observedStepCount: number;
+  modelsUsed: string[];
+  modelUsage: Record<string, number>;
+  stepModels: Record<number, string>;
+}
+
+export interface AgentRunSession {
+  sendEvent(payload: AgentEvent): void;
+  getTrackingState(): AgentRunTrackingState;
+  close(args: { finalAnswer: string | null; agentError: Error | null; approvalStore: ApprovalStore }): void;
+}
 
 export function createAgentRunSession({
   req,
@@ -15,19 +31,19 @@ export function createAgentRunSession({
   agentRunStore,
   memoryDir,
 }: {
-  req: any;
-  res: any;
+  req: Request;
+  res: Response;
   model: string;
   agentHeadless: boolean;
   normalizedTask: string;
   runId: string;
   startedAt: number;
-  agentRunStore: any;
+  agentRunStore: AgentRunStore;
   memoryDir?: string;
 }) {
   let completedStepCount = 0;
   let observedStepCount = 0;
-  const modelsUsed = new Set();
+  const modelsUsed = new Set<string>();
   const modelUsageCounts = new Map<string, number>();
   const stepModels: Record<number, string> = {};
   let sseClosed = false;
@@ -57,7 +73,7 @@ export function createAgentRunSession({
 
   const rawSendEvent = buildSseWriter(res);
   const baseSendEvent = createBaseEventSender(runId, agentRunStore, memoryDir);
-  const sendEvent = (payload: any) => {
+  const sendEvent = (payload: AgentEvent) => {
     if (payload.type === 'step') {
       observedStepCount = Math.max(observedStepCount, payload.step || 0);
       if (payload.stage === 'result') {
@@ -88,7 +104,7 @@ export function createAgentRunSession({
   });
   log.debug(`[SSE] stream started, writableEnded=${res.writableEnded} writableFinished=${res.writableFinished}`);
 
-  function getTrackingState() {
+  function getTrackingState(): AgentRunTrackingState {
     return {
       completedStepCount,
       observedStepCount,
@@ -98,7 +114,7 @@ export function createAgentRunSession({
     };
   }
 
-  function close({ finalAnswer, agentError, approvalStore }: { finalAnswer: string | null; agentError: any; approvalStore: any }) {
+  function close({ finalAnswer, agentError, approvalStore }: { finalAnswer: string | null; agentError: Error | null; approvalStore: ApprovalStore }) {
     const status = agentError
       ? agentError.message === 'Agent 已取消'
         ? 'cancelled'
@@ -145,5 +161,5 @@ export function createAgentRunSession({
     sseClosed = true;
   }
 
-  return { sendEvent, getTrackingState, close };
+  return { sendEvent, getTrackingState, close } satisfies AgentRunSession;
 }

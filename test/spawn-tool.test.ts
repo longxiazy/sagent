@@ -46,6 +46,7 @@ describe('Spawn action normalization', () => {
       },
     });
 
+    if (result.action.type !== 'spawn') throw new Error('expected spawn action');
     expect(result.action.tasks).toEqual(['task1', 'task2', 'task3']);
   });
 
@@ -57,6 +58,7 @@ describe('Spawn action normalization', () => {
       },
     });
 
+    if (result.action.type !== 'spawn') throw new Error('expected spawn action');
     expect(result.action.tasks).toHaveLength(5);
     expect(result.action.tasks).toEqual(['t1', 't2', 't3', 't4', 't5']);
   });

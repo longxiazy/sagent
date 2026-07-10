@@ -37,6 +37,12 @@ import {
 } from "./checkpoint.js";
 import { assessResultQuality } from "./result-quality.ts";
 import { runtimeConfig } from "./runtime-config.ts";
+import type {
+  AgentAction,
+  AgentStep,
+  ActionResultStatus,
+  RunAgentRuntimeOptions,
+} from './contracts.ts';
 
 function actionTargetUrl(action) {
   if (typeof action?.url === 'string' && action.url) return action.url;
@@ -44,7 +50,13 @@ function actionTargetUrl(action) {
   return null;
 }
 
-function compressHistory(history, maxSteps?) {
+function observationText(observation: unknown, key: 'url' | 'title'): string | undefined {
+  if (!observation || typeof observation !== 'object') return undefined;
+  const value = (observation as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function compressHistory(history: AgentStep[], maxSteps?: number) {
   // 历史截断预算每次从运行时配置读取，前台改完无需重启即生效
   const { maxHistorySteps, maxResultChars: MAX_RESULT_CHARS, maxParallelResultChars: MAX_PARALLEL_RESULT_CHARS } = runtimeConfig.get();
   if (maxSteps == null) maxSteps = maxHistorySteps;
@@ -118,7 +130,7 @@ function stableStringify(value) {
   return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
 }
 
-function actionLoopKey(action) {
+function actionLoopKey(action: AgentAction | undefined | null) {
   if (!action || typeof action !== 'object') return '';
   if (action.type === 'finish' || action.type === 'ask_user' || action.type === 'notify_user') return '';
   const tool = action.tool || 'core';
@@ -147,7 +159,7 @@ function resultFingerprint(result) {
   return String(result ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000);
 }
 
-function normalizeResultStatus(status) {
+function normalizeResultStatus(status): ActionResultStatus | '' {
   const value = typeof status === 'string' ? status.trim().toLowerCase() : '';
   if (value === 'success' || value === 'failed' || value === 'rejected') return value;
   return '';
@@ -157,7 +169,11 @@ function historyEntryFailed(entry) {
   return normalizeResultStatus(entry?.resultStatus || entry?.status) === 'failed';
 }
 
-function normalizeActionResult(value) {
+function normalizeActionResult(value): {
+  result: unknown;
+  resultStatus: ActionResultStatus;
+  resultError: string | null;
+} {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     const isStructuredResult = Object.prototype.hasOwnProperty.call(value, 'resultStatus')
       || Object.prototype.hasOwnProperty.call(value, 'result')
@@ -168,7 +184,7 @@ function normalizeActionResult(value) {
     if (!isStructuredResult) {
       return { result: value, resultStatus: 'success', resultError: null };
     }
-    const resultStatus = normalizeResultStatus(value.resultStatus || value.status)
+    const resultStatus: ActionResultStatus = normalizeResultStatus(value.resultStatus || value.status)
       || (value.ok === false ? 'failed' : 'success');
     const resultError = value.resultError != null
       ? String(value.resultError)
@@ -188,7 +204,7 @@ function visionImageKey(action) {
   return isVisionImageAnalyze(action) ? String(action.image).trim() : '';
 }
 
-function detectRepeatedActionLoop(history, action) {
+function detectRepeatedActionLoop(history: AgentStep[], action: AgentAction) {
   const key = actionLoopKey(action);
   if (!key || !Array.isArray(history) || history.length === 0) return null;
 
@@ -215,7 +231,7 @@ function detectRepeatedActionLoop(history, action) {
   return { count, key, result: fingerprint || '', failed: false };
 }
 
-function detectRepeatedVisionLoop(history, action) {
+function detectRepeatedVisionLoop(history: AgentStep[], action: AgentAction) {
   const image = visionImageKey(action);
   if (!image || !Array.isArray(history) || history.length === 0) return null;
 
@@ -276,7 +292,7 @@ export async function runAgentRuntime({
   // v2: 会话检查点 & 手动回滚
   sessionCheckpointDir = null,
   runRecord = null,
-}) {
+}: RunAgentRuntimeOptions) {
   const history = initialHistory;
   let finalAnswer = "";
   const state = await initialize?.({ task, onEvent });
@@ -406,7 +422,7 @@ export async function runAgentRuntime({
         const result = authorization.message || "操作未获批准";
         const resultStatus = "rejected";
         const resultError = result;
-        const url = actionTargetUrl(decision.action) || observation?.url;
+        const url = actionTargetUrl(decision.action) || observationText(observation, 'url');
         history.push({
           step,
           rationale: decision.rationale,
@@ -415,7 +431,7 @@ export async function runAgentRuntime({
           resultStatus,
           resultError,
           url,
-          title: observation?.title,
+          title: observationText(observation, 'title'),
         });
 
         onEvent?.({
@@ -440,7 +456,7 @@ export async function runAgentRuntime({
 
       // ---- 执行 ----
       let result;
-      let resultStatus = "success";
+      let resultStatus: 'success' | 'failed' | 'rejected' = "success";
       let resultError = null;
       try {
         const rawResult = await execute(state, decision.action, {
@@ -469,8 +485,8 @@ export async function runAgentRuntime({
         result,
         resultStatus,
         resultError,
-        url: actionTargetUrl(decision.action) || observation?.url,
-        title: observation?.title,
+        url: actionTargetUrl(decision.action) || observationText(observation, 'url'),
+        title: observationText(observation, 'title'),
       });
 
       if (decision.action.type !== "finish") {

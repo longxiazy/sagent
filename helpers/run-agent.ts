@@ -13,6 +13,7 @@ import { shutdownChromeMcp, closeAllChromePagesQuiet } from '../agent/tools/chro
 import { resetChromeSnapshotState } from '../agent/tools/chrome/execute.ts';
 import { appendTraceEvent } from './trace-store.ts';
 import { log } from './logger.ts';
+import type { AgentEvent, AgentRunStore, TerminalRunStatus } from '../agent/core/contracts.ts';
 
 function spanPart(value: any) {
   return String(value ?? '')
@@ -61,15 +62,15 @@ function buildOperation(payload: any) {
   return payload?.type || 'event';
 }
 
-export function createBaseEventSender(runId: string, agentRunStore: any, memoryDir?: string) {
+export function createBaseEventSender(runId: string, agentRunStore: AgentRunStore, memoryDir?: string) {
   const stageTimes = new Map<string, number>();
   const modelTimes = new Map<string, number>();
 
-  return (payload: any) => {
+  return (payload: AgentEvent): AgentEvent => {
     const timestamp = Number.isFinite(payload?.timestamp) ? payload.timestamp : Date.now();
     const spanId = buildSpanId(payload);
     const parentId = buildParentId(payload);
-    const event: any = {
+    const event = {
       ...payload,
       runId: payload?.runId || runId,
       timestamp,
@@ -77,7 +78,7 @@ export function createBaseEventSender(runId: string, agentRunStore: any, memoryD
       span_id: spanId,
       operation: buildOperation(payload),
       ...(parentId ? { parent_id: parentId } : {}),
-    };
+    } as AgentEvent;
 
     if (event.usage) {
       event.input_tokens = event.input_tokens ?? event.usage.prompt_tokens ?? null;
@@ -142,7 +143,12 @@ export async function loadMemoryForPrompt(memoryDir: string) {
   }
 }
 
-export async function cleanupAgentRun(checkpointDir: string | undefined, runId: string, agentRunStore: any, { removeSnapshots = false }: { removeSnapshots?: boolean } = {}) {
+export async function cleanupAgentRun(
+  checkpointDir: string | undefined,
+  runId: string,
+  agentRunStore: AgentRunStore,
+  { removeSnapshots = false, finalStatus }: { removeSnapshots?: boolean; finalStatus?: TerminalRunStatus } = {},
+) {
   if (checkpointDir) {
     // step-level checkpoint 只用于崩溃恢复，任务完成后可删除
     await removeCheckpoint(checkpointDir, runId).catch(() => {});
@@ -151,7 +157,7 @@ export async function cleanupAgentRun(checkpointDir: string | undefined, runId: 
       await removeSessionCheckpoints(checkpointDir, runId).catch(() => {});
     }
   }
-  agentRunStore.closeRun(runId);
+  agentRunStore.closeRun(runId, finalStatus);
   resetChromeSnapshotState();
   // run 结束（或异常）默认关闭本次 run 期间打开的 Chrome tab，避免长期跑下来 tab 堆积；
   // 设 CHROME_MCP_KEEP_TABS=true 跳过（适合调试或想保留页面看结果的场景）。

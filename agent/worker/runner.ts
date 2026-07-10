@@ -100,6 +100,7 @@ export function createSandboxedWorkerAgentRunner({
   checkpointDir,
   modelConfig,
   approvalStore,
+  runStore,
   visionModel,
   sandbox = true,
   sandboxFile = path.join(REPO_ROOT, 'sandbox.sb'),
@@ -109,6 +110,7 @@ export function createSandboxedWorkerAgentRunner({
   checkpointDir: string;
   modelConfig: any[];
   approvalStore: any;
+  runStore?: any;
   visionModel: string;
   sandbox?: boolean;
   sandboxFile?: string;
@@ -179,11 +181,17 @@ export function createSandboxedWorkerAgentRunner({
       }
       if (message.type === 'approval_request') {
         try {
+          if (opts.runRecord && runStore?.getRun(runId)?.status === 'running') {
+            runStore.transitionRun(runId, 'waiting_approval');
+          }
           const { approvalId, promise } = approvalStore.request({
             ...(message.payload || {}),
             runId,
           }, message.approvalId);
           promise.then((decision: string) => {
+            if (runStore?.getRun(runId)?.status === 'waiting_approval') {
+              runStore.transitionRun(runId, 'running');
+            }
             writeWorkerMessage(child, { type: 'approval_response', approvalId, decision });
           });
         } catch (err: any) {

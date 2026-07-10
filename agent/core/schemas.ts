@@ -21,12 +21,17 @@
 
 import { cleanText } from './utils.ts';
 import { inferTool } from './action-types.ts';
+import type { AgentAction, AgentDecision, JsonObject } from './contracts.ts';
 
-function normalizePath(value, fallback = '.') {
+function isRecord(value: unknown): value is JsonObject {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizePath(value: unknown, fallback = '.') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
-function sanitizeUrl(rawUrl) {
+function sanitizeUrl(rawUrl: unknown) {
   if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
     throw new Error('navigate 缺少 url');
   }
@@ -45,14 +50,13 @@ function sanitizeUrl(rawUrl) {
   }
 }
 
-function normalizeBrowserAction(type, action) {
+function normalizeBrowserAction(type: string, action: JsonObject): AgentAction {
   if (type === 'open' || type === 'goto') {
     type = 'navigate';
   }
 
   if (type === 'get_page_content') {
-    type = 'get_page_content';
-    return { tool: 'browser', type };
+    return { tool: 'browser', type: 'get_page_content' };
   }
 
   if (type === 'navigate') {
@@ -123,7 +127,7 @@ function normalizeBrowserAction(type, action) {
   throw new Error(`不支持的浏览器动作: ${type}`);
 }
 
-function normalizeSearchAction(type, action) {
+function normalizeSearchAction(type: string, action: JsonObject): AgentAction {
   if (type === 'web_search') {
     const query = typeof action.query === 'string' ? action.query.trim() : '';
     if (!query) throw new Error('web_search 缺少 query');
@@ -139,7 +143,7 @@ function normalizeSearchAction(type, action) {
   throw new Error(`不支持的搜索动作: ${type}`);
 }
 
-function normalizeCodegraphAction(type, action) {
+function normalizeCodegraphAction(type: string, action: JsonObject): AgentAction {
   if (type === 'codegraph_query') {
     const query = typeof action.query === 'string' ? action.query.trim() : '';
     if (!query) throw new Error('codegraph_query 缺少 query');
@@ -148,7 +152,7 @@ function normalizeCodegraphAction(type, action) {
   throw new Error(`不支持的代码图谱动作: ${type}`);
 }
 
-function normalizeVisionAction(type, action) {
+function normalizeVisionAction(type: string, action: JsonObject): AgentAction {
   if (type === 'image_analyze') {
     const image = typeof action.image === 'string' ? action.image.trim() : '';
     const question = typeof action.question === 'string' ? action.question.trim() : '';
@@ -164,7 +168,7 @@ function normalizeVisionAction(type, action) {
   throw new Error(`不支持的视觉动作: ${type}`);
 }
 
-function normalizeFsAction(type, action) {
+function normalizeFsAction(type: string, action: JsonObject): AgentAction {
   if (type === 'list_dir') {
     return {
       tool: 'fs',
@@ -214,7 +218,7 @@ function normalizeFsAction(type, action) {
   throw new Error(`不支持的文件动作: ${type}`);
 }
 
-function normalizeTerminalAction(type, action) {
+function normalizeTerminalAction(type: string, action: JsonObject): AgentAction {
   if (type === 'run_safe' || type === 'run_confirmed' || type === 'run_review') {
     return {
       tool: 'terminal',
@@ -232,7 +236,7 @@ function normalizeTerminalAction(type, action) {
   throw new Error(`不支持的终端动作: ${type}`);
 }
 
-function normalizeMacOsAction(type, action) {
+function normalizeMacOsAction(type: string, action: JsonObject): AgentAction {
   if (type === 'open_app' || type === 'activate_app') {
     return {
       tool: 'macos',
@@ -284,7 +288,7 @@ function normalizeMacOsAction(type, action) {
   throw new Error(`不支持的 macOS 动作: ${type}`);
 }
 
-function normalizeIdeAction(type, action) {
+function normalizeIdeAction(type: string, action: JsonObject): AgentAction {
   if (type === 'ide_list_tools' || type === 'list_tools') {
     return {
       tool: 'ide',
@@ -294,7 +298,7 @@ function normalizeIdeAction(type, action) {
   }
 
   if (type === 'ide_call_tool' || type === 'call_tool') {
-    const args = action.arguments && typeof action.arguments === 'object' && !Array.isArray(action.arguments)
+    const args = isRecord(action.arguments)
       ? action.arguments
       : {};
     return {
@@ -309,7 +313,7 @@ function normalizeIdeAction(type, action) {
   throw new Error(`不支持的 IDE 动作: ${type}`);
 }
 
-function normalizeChromeAction(type, action) {
+function normalizeChromeAction(type: string, action: JsonObject): AgentAction {
   if (type === 'chrome_list_tools' || type === 'chrome_list') {
     return {
       tool: 'chrome',
@@ -319,7 +323,7 @@ function normalizeChromeAction(type, action) {
   }
 
   if (type === 'chrome_call_tool' || type === 'chrome_call') {
-    const args = action.arguments && typeof action.arguments === 'object' && !Array.isArray(action.arguments)
+    const args = isRecord(action.arguments)
       ? action.arguments
       : {};
     return {
@@ -334,7 +338,7 @@ function normalizeChromeAction(type, action) {
   throw new Error(`不支持的 Chrome 动作: ${type}`);
 }
 
-function normalizeSpawnAction(type, action) {
+function normalizeSpawnAction(type: string, action: JsonObject): AgentAction {
   if (type === 'spawn') {
     const tasks = Array.isArray(action.tasks)
       ? action.tasks
@@ -354,7 +358,7 @@ function normalizeSpawnAction(type, action) {
   throw new Error(`不支持的 spawn 动作: ${type}`);
 }
 
-function normalizeCoreAction(type, action) {
+function normalizeCoreAction(type: string, action: JsonObject): AgentAction {
   if (type === 'finish' || type === 'answer' || type === 'final' || type === 'final_answer' || type === 'done') {
     const answer = typeof action.answer === 'string'
       ? action.answer.trim()
@@ -377,21 +381,24 @@ function normalizeCoreAction(type, action) {
     };
   }
   if (type === 'notify_user') {
+    const level = typeof action.level === 'string' && ['info', 'warning', 'discovery'].includes(action.level)
+      ? action.level as 'info' | 'warning' | 'discovery'
+      : 'info';
     return {
       tool: 'core',
       type,
       message: typeof action.message === 'string' ? action.message.trim() : '',
-      level: ['info', 'warning', 'discovery'].includes(action.level) ? action.level : 'info',
+      level,
     };
   }
   throw new Error(`不支持的核心动作: ${type}`);
 }
 
-export function normalizeDesktopAgentDecision(payload) {
-  const action = payload?.action;
-  if (!action || typeof action !== 'object') {
+export function normalizeDesktopAgentDecision(payload: unknown): AgentDecision {
+  if (!isRecord(payload) || !isRecord(payload.action)) {
     throw new Error('模型未返回 action');
   }
+  const action = payload.action;
 
   const type = String(action.type || '').trim();
   if (!type) {
@@ -405,7 +412,7 @@ export function normalizeDesktopAgentDecision(payload) {
   // fetch 已合并到 browser（统一走 WebView）
   const tool = rawTool === 'fetch' ? 'browser' : rawTool;
 
-  let normalizedAction;
+  let normalizedAction: AgentAction;
   if (tool === 'browser') {
     normalizedAction = normalizeBrowserAction(type, action);
   } else if (tool === 'fs') {

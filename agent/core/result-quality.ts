@@ -1,3 +1,5 @@
+import type { AgentStep, ResultQuality } from './contracts.ts';
+
 const HIGH_STAKES_TASK_PATTERNS = [
   /医保|社保|公积金|签证|移民|贷款|股票|基金|汇率|合规|法律|法规|政策|许可/,
 ];
@@ -108,7 +110,7 @@ function browseStepProducedContent(step: any) {
   return result.length >= 400;
 }
 
-export function assessResultQuality({ task, steps = [], answer = '' }: { task: string; steps?: any[]; answer?: string }) {
+export function assessResultQuality({ task, steps = [], answer = '' }: { task: string; steps?: AgentStep[]; answer?: string }): ResultQuality {
   const requiresVerifiedSources = taskRequiresVerifiedSources(task);
   const hasBrowseIntent = taskHasBrowseIntent(task);
   const failureSteps = steps.filter(step => {
@@ -128,7 +130,7 @@ export function assessResultQuality({ task, steps = [], answer = '' }: { task: s
   const answerText = textOf(answer);
   const answerAcknowledgesUnverified = /未能核验|无法核验|未完成核验|未找到官方|无法确认|请以.*为准/.test(answerText);
 
-  let status = 'done';
+  let status: ResultQuality['status'] = 'done';
   const reasons: string[] = [];
 
   if (requiresVerifiedSources && officialSourceSteps.length === 0) {
