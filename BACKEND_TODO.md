@@ -14,6 +14,7 @@
 - [ ] 使用原子 Run 锁消除并发启动竞态；取消中的 Run 继续占用运行锁。
 - [ ] 统一模型、工具、worker、子 Agent 的 `AbortSignal` 和 deadline，确保超时真正终止底层任务。
 - [ ] 修复 spawn 子 Agent 超时未传递的问题。
+- [x] 项目创建、更新、激活和 Agent Run 启动前校验根目录，失效时返回明确错误。
 - [ ] 强化项目目录隔离：读写都使用 canonical realpath，阻止绝对路径和 symlink 越界。
 - [ ] 让子 Agent 使用真正的只读工具集合，禁止终端写入和浏览器交互副作用。
 - [ ] 修复项目 Run 取消和 SSE 重连错误使用全局 checkpoint/trace 目录的问题。
@@ -27,4 +28,3 @@
 - [ ] 自动恢复任务完成后，正确写入本轮项目记忆。
 - [ ] 对 LLM 日志、trace、终端输出和截图增加敏感信息脱敏。
 - [ ] 继续收紧 provider、工具实现和 checkpoint 边界中的遗留 `any`。
-

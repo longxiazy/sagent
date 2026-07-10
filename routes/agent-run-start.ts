@@ -8,7 +8,7 @@ import { createAgentRunSession } from './agent-run-session.ts';
 import { parseAgentRunRequest, resolveCheckpointSeed } from './agent-run-request.ts';
 import { executeAgentRun } from './agent-run-execution.ts';
 import { removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
-import { resolveRunPaths } from '../agent/core/project-store.ts';
+import { resolveRunPathsForExecution } from '../agent/core/project-store.ts';
 
 export function createAgentRunStartRouter({
   runDesktopAgent,
@@ -39,7 +39,7 @@ export function createAgentRunStartRouter({
       }
 
       // 解析本次 run 的落盘目录与文件工具根：命中项目用项目目录，否则回退全局（无项目态）。
-      const { projectId: resolvedProjectId, projectRoot, dataDir } = resolveRunPaths(projectStore, projectId, memoryDir);
+      const { projectId: resolvedProjectId, projectRoot, dataDir } = await resolveRunPathsForExecution(projectStore, projectId, memoryDir);
       runCheckpointDir = dataDir;
 
       const { checkpointInitialStep, checkpointInitialHistory } = await resolveCheckpointSeed(runCheckpointDir, fromCheckpoint);
@@ -147,7 +147,8 @@ export function createAgentRunStartRouter({
         return;
       }
       if (!res.headersSent) {
-        return res.status(500).json({ error: message });
+        const status = Number(err?.status) || 500;
+        return res.status(status).json({ error: message, ...(err?.code ? { code: err.code } : {}) });
       }
       try { res.end(); } catch {}
     }
