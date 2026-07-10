@@ -20,9 +20,12 @@ export function DialogShell({
   const onCloseRef = useRef(onClose);
   const closeDisabledRef = useRef(closeDisabled);
   const escapeDisabledRef = useRef(escapeDisabled);
-  onCloseRef.current = onClose;
-  closeDisabledRef.current = closeDisabled;
-  escapeDisabledRef.current = escapeDisabled;
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    closeDisabledRef.current = closeDisabled;
+    escapeDisabledRef.current = escapeDisabled;
+  }, [closeDisabled, escapeDisabled, onClose]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
