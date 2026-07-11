@@ -89,12 +89,12 @@ describe('terminal run_safe policy', () => {
     const result = await executeTerminalAction({
       tool: 'terminal',
       type: 'run_safe',
-      command: 'ls "BACKEND_TODO.md"',
+      command: 'ls "package.json"',
       cwd: '',
       timeoutMs: 2000,
     });
     expect(result).toContain('exit_code: 0');
-    expect(result).toContain('command: ls "BACKEND_TODO.md"');
+    expect(result).toContain('command: ls "package.json"');
   });
 
   it('rejects absolute and traversal paths in safe terminal commands', async () => {
