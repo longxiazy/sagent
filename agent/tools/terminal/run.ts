@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { parseSafeCommand } from './safe-policy';
 import { throwIfAborted } from '../../core/abort.ts';
 import { redactText } from '../../../helpers/redact.ts';
@@ -22,6 +23,16 @@ type TerminalActionOptions = {
   onOutput?: (event: TerminalOutputEvent) => void;
   signal?: AbortSignal;
 };
+
+export function resolveCommandShell(
+  candidates = [process.env.SAGENT_SHELL, '/bin/zsh', process.env.SHELL, '/bin/bash', '/bin/sh'],
+): string {
+  return candidates.find(candidate => (
+    typeof candidate === 'string'
+    && path.isAbsolute(candidate)
+    && existsSync(candidate)
+  )) || '/bin/sh';
+}
 
 async function resolveCwd(value, base = process.cwd()) {
   const canonicalBase = await fs.realpath(base);
@@ -209,7 +220,7 @@ export async function executeTerminalAction(action, opts: TerminalActionOptions 
 
   if (action.type === 'run_confirmed' || action.type === 'run_review') {
     return runProcess({
-      file: '/bin/zsh',
+      file: resolveCommandShell(),
       args: ['-lc', command],
       command,
       cwd,

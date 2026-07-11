@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { classifyAgentAction } from '../agent/policy/classify.ts';
 import { canRunSafe, parseSafeCommand } from '../agent/tools/terminal/safe-policy.ts';
-import { executeTerminalAction } from '../agent/tools/terminal/run.ts';
+import { executeTerminalAction, resolveCommandShell } from '../agent/tools/terminal/run.ts';
 
 describe('terminal run_safe policy', () => {
+  it('falls back to a portable shell when zsh is unavailable', () => {
+    expect(resolveCommandShell(['/definitely/missing/zsh', '/bin/sh'])).toBe('/bin/sh');
+  });
+
   it.each([
     'pwd',
     'ls -la',
