@@ -75,9 +75,11 @@ export async function streamAgentRun({ task, model, models, strategy, memory, si
   let runId = null;
   let gotDone = false;
   let initialError = null;
+  let lastSeq = 0;
 
   const wrappedEvent = event => {
     if (event.runId) runId = event.runId;
+    if (Number.isFinite(event.seq)) lastSeq = Math.max(lastSeq, event.seq);
     if (event.type === 'done' || event.type === 'error') gotDone = true;
     onEvent(event);
   };
@@ -96,7 +98,11 @@ export async function streamAgentRun({ task, model, models, strategy, memory, si
 
   if (!gotDone && runId && !signal.aborted) {
     try {
-      const res = await apiFetch(`/api/agent/stream/${runId}`, { signal });
+      const params = new URLSearchParams();
+      if (lastSeq > 0) params.set('cursor', String(lastSeq));
+      if (extra.projectId) params.set('projectId', extra.projectId);
+      const query = params.toString();
+      const res = await apiFetch(`/api/agent/stream/${encodeURIComponent(runId)}${query ? `?${query}` : ''}`, { signal });
       if (!res.ok) return;
       const reader = res.body.getReader();
       const decoder = new TextDecoder();

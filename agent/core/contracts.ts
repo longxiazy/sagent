@@ -101,6 +101,7 @@ export interface AgentStep {
 export type AgentObservation = JsonObject;
 
 interface EventTraceFields {
+  seq?: number;
   runId?: string;
   timestamp?: number;
   trace_id?: string;
@@ -186,7 +187,11 @@ export interface RunRecord {
   events: AgentEvent[];
   status: RunStatus;
   meta: RunMeta;
-  traceWrites?: Promise<unknown>[];
+  nextEventSeq: number;
+  persistence?: {
+    enqueue<T>(task: () => T | Promise<T>): Promise<T>;
+    flush(): Promise<void>;
+  };
   _reconnectWriters?: AgentEventWriter[] | null;
   pendingRollback?: number | null;
   rolledBack?: boolean;
@@ -195,12 +200,15 @@ export interface RunRecord {
 }
 
 export interface AgentRunStore {
-  createRun(meta?: RunMeta, startedAt?: number, existingRunId?: string): RunRecord;
+  createRun(meta?: RunMeta, startedAt?: number, existingRunId?: string, initialEventSeq?: number): RunRecord;
+  tryCreateRun(meta?: RunMeta, startedAt?: number, existingRunId?: string, initialEventSeq?: number):
+    | { ok: true; run: RunRecord }
+    | { ok: false; activeRun: RunRecord };
   getRun(runId: string): RunRecord | null;
   getActiveRun(): RunRecord | null;
   getActiveRuns(): RunRecord[];
   getRunningRuns(): RunRecord[];
-  addEvent(runId: string, event: AgentEvent): void;
+  addEvent(runId: string, event: AgentEvent): AgentEvent;
   transitionRun(runId: string, nextStatus: RunStatus): RunRecord | null;
   cancelRun(runId: string): RunRecord | null;
   closeRun(runId: string, outcome?: TerminalRunStatus): RunRecord | null;

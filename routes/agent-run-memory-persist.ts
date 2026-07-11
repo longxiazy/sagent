@@ -1,5 +1,6 @@
 import {
   saveMemory,
+  loadMemory,
   extractConversationEntry,
   extractProjectKnowledge,
   compactConversationMemory,
@@ -7,6 +8,7 @@ import {
 import { summarizeText } from '../agent/core/summarizer.ts';
 import { log } from '../helpers/logger.ts';
 import type { ProviderRegistry } from '../agent/core/providers/registry.ts';
+import type { DesktopAgentResult } from '../agent/core/contracts.ts';
 
 export async function persistAgentRunMemory({
   memory,
@@ -23,8 +25,8 @@ export async function persistAgentRunMemory({
   memoryDir: string;
   normalizedTask: string;
   finalAnswer: string | null;
-  agentError: any;
-  agentResult: any;
+  agentError: Error | null;
+  agentResult: DesktopAgentResult | null;
   model: string;
   stepModels: Record<number, string>;
   registry: ProviderRegistry;
@@ -52,4 +54,31 @@ export async function persistAgentRunMemory({
   });
   await saveMemory(memoryDir, memory);
   log.info(`[Memory] 压缩完成，保留 ${memory.conversation.length} 条, 耗时 ${Date.now() - memStart}ms, 摘要长度 ${memory.conversationSummary.length}`);
+}
+
+export async function persistRecoveredAgentRunMemory({
+  memoryDir,
+  task,
+  result,
+  model,
+  registry,
+}: {
+  memoryDir: string;
+  task: string;
+  result: DesktopAgentResult;
+  model: string;
+  registry: ProviderRegistry;
+}) {
+  const memory = await loadMemory(memoryDir);
+  await persistAgentRunMemory({
+    memory,
+    memoryDir,
+    normalizedTask: task,
+    finalAnswer: result.answer,
+    agentError: null,
+    agentResult: result,
+    model,
+    stepModels: {},
+    registry,
+  });
 }

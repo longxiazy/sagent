@@ -174,13 +174,14 @@ export function createOpenAICompatProvider(client: any): LLMProvider {
     },
 
     async completionJson(opts: CompletionOpts) {
-      const { preserveReasoningContent: shouldPreserveReasoning } = opts;
+      const { preserveReasoningContent: shouldPreserveReasoning, signal } = opts;
       const { request, defaultedChatTemplateKwargs } = buildChatCompletionRequest(opts, {
         defaultThinking: shouldPreserveReasoning,
       });
       const response = await createChatCompletionWithTemplateFallback({
         client,
         request,
+        reqOpts: signal ? { signal } : undefined,
         defaultedChatTemplateKwargs,
       });
       return shouldPreserveReasoning ? preserveReasoningContent(response) : response;

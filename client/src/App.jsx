@@ -365,7 +365,7 @@ export default function App() {
           });
         });
 
-        const response = await apiFetch(`/api/agent/stream/${data.runId}`, { signal: controller.signal });
+        const response = await apiFetch(`/api/agent/stream/${encodeURIComponent(data.runId)}?cursor=0${data.meta?.projectId ? `&projectId=${encodeURIComponent(data.meta.projectId)}` : ''}`, { signal: controller.signal });
         if (!response.ok || aborted) {
           setAgentRunning(false);
           return;

@@ -11,13 +11,17 @@
  */
 
 import { log } from '../../../helpers/logger.ts';
+import { createAbortScope, throwIfAborted } from '../../core/abort.ts';
+import type { AgentStep, ResultQuality } from '../../core/contracts.ts';
 
 const SUB_AGENT_TIMEOUT_MS = 120_000; // 2 minutes per sub-agent
 
 export async function executeSpawnAction(
   action: { type: string; tasks: string[] },
   context: {
-    runSubAgent?: (task: string, subIndex: number) => Promise<{ answer: string; steps: any[]; quality?: any }>;
+    runSubAgent?: (task: string, subIndex: number, signal: AbortSignal, deadline: number | null) => Promise<{ answer: string; steps: AgentStep[]; quality?: ResultQuality }>;
+    signal?: AbortSignal;
+    timeoutMs?: number;
   }
 ) {
   if (!context.runSubAgent) {
@@ -33,20 +37,27 @@ export async function executeSpawnAction(
   }
 
   log.info(`[Spawn] 启动 ${tasks.length} 个并行子任务`);
+  const timeoutMs = Number.isFinite(context.timeoutMs) && Number(context.timeoutMs) > 0
+    ? Number(context.timeoutMs)
+    : SUB_AGENT_TIMEOUT_MS;
 
   // 并行执行所有子任务，每个带超时保护
   const results = await Promise.allSettled(
     tasks.map(async (task, i) => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), SUB_AGENT_TIMEOUT_MS);
+      const timeoutMessage = `子 Agent 超时 (${Math.round(timeoutMs / 1000)}s)`;
+      const scope = createAbortScope({ signals: [context.signal], timeoutMs, timeoutMessage });
 
       try {
-        const result = await context.runSubAgent(task, i);
-        clearTimeout(timer);
+        throwIfAborted(scope.signal);
+        const result = await context.runSubAgent(task, i, scope.signal, scope.deadline);
         return { index: i, success: true, task, result };
-      } catch (err: any) {
-        clearTimeout(timer);
-        return { index: i, success: false, task, error: err.message || String(err) };
+      } catch (err: unknown) {
+        const error = scope.signal.aborted && scope.signal.reason instanceof Error
+          ? scope.signal.reason.message
+          : err instanceof Error ? err.message : String(err);
+        return { index: i, success: false, task, error };
+      } finally {
+        scope.cleanup();
       }
     })
   );

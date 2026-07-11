@@ -1,12 +1,16 @@
 import { mkdirSync, appendFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getLogPolicy, pruneLogTreeSync, rotateLogFileSync } from './log-policy.ts';
+import { redactSensitiveData, redactText } from './redact.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = join(__dirname, '..', 'data', 'logs');
 const LOG_FILE = join(LOG_DIR, `app-${new Date().toISOString().slice(0, 10)}.log`);
 
 try { mkdirSync(LOG_DIR, { recursive: true }); } catch { /* dir may already exist */ }
+const logPolicy = getLogPolicy();
+pruneLogTreeSync(LOG_DIR, logPolicy.retentionDays);
 
 const LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
 
@@ -25,18 +29,27 @@ const C = {
 
 function fmt(level, args) {
   const ts = new Date().toISOString().slice(11, 19);
-  if (NO_COLOR) return [`[${ts} ${level.toUpperCase()}]`, ...args];
-  return [`${C[level]}${C.bold}[${ts} ${level.toUpperCase()}]${C.reset}`, ...args];
+  const safeArgs = args.map(arg => typeof arg === 'string' || arg instanceof Error
+    ? redactText(arg instanceof Error ? arg.stack || arg.message : arg)
+    : redactSensitiveData(arg));
+  if (NO_COLOR) return [`[${ts} ${level.toUpperCase()}]`, ...safeArgs];
+  return [`${C[level]}${C.bold}[${ts} ${level.toUpperCase()}]${C.reset}`, ...safeArgs];
 }
 
 function writeToFile(level, args) {
   const ts = new Date().toISOString();
   const line = args.map(a => {
-    if (typeof a === 'string') return a;
-    if (a instanceof Error) return a.stack || a.message;
-    try { return JSON.stringify(a); } catch { return String(a); }
+    if (typeof a === 'string') return redactText(a);
+    if (a instanceof Error) return redactText(a.stack || a.message);
+    try { return JSON.stringify(redactSensitiveData(a)); } catch { return redactText(String(a)); }
   }).join(' ');
-  try { appendFileSync(LOG_FILE, `[${ts} ${level.toUpperCase()}] ${line}\n`); } catch { /* ignore write errors */ }
+  const output = `[${ts} ${level.toUpperCase()}] ${line}\n`;
+  try {
+    const buffer = Buffer.from(output);
+    const capped = buffer.length > logPolicy.maxBytes ? buffer.subarray(0, logPolicy.maxBytes) : buffer;
+    rotateLogFileSync(LOG_FILE, capped.length, logPolicy.maxBytes);
+    appendFileSync(LOG_FILE, capped);
+  } catch { /* ignore write errors */ }
 }
 
 export const log = {

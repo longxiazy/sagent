@@ -14,6 +14,7 @@ import { resetChromeSnapshotState } from '../agent/tools/chrome/execute.ts';
 import { appendTraceEvent } from './trace-store.ts';
 import { log } from './logger.ts';
 import type { AgentEvent, AgentRunStore, TerminalRunStatus } from '../agent/core/contracts.ts';
+import { redactSensitiveData } from './redact.ts';
 
 function spanPart(value: any) {
   return String(value ?? '')
@@ -70,7 +71,7 @@ export function createBaseEventSender(runId: string, agentRunStore: AgentRunStor
     const timestamp = Number.isFinite(payload?.timestamp) ? payload.timestamp : Date.now();
     const spanId = buildSpanId(payload);
     const parentId = buildParentId(payload);
-    const event = {
+    const event = redactSensitiveData({
       ...payload,
       runId: payload?.runId || runId,
       timestamp,
@@ -78,7 +79,7 @@ export function createBaseEventSender(runId: string, agentRunStore: AgentRunStor
       span_id: spanId,
       operation: buildOperation(payload),
       ...(parentId ? { parent_id: parentId } : {}),
-    } as AgentEvent;
+    }) as AgentEvent;
 
     if (event.usage) {
       event.input_tokens = event.input_tokens ?? event.usage.prompt_tokens ?? null;
@@ -114,21 +115,19 @@ export function createBaseEventSender(runId: string, agentRunStore: AgentRunStor
       }
     }
 
-    agentRunStore.addEvent(runId, event);
-    const traceWrite = appendTraceEvent(memoryDir, runId, event).catch((err: any) => {
+    const sequencedEvent = agentRunStore.addEvent(runId, event);
+    const run = agentRunStore.getRun(runId);
+    const writeTrace = () => appendTraceEvent(memoryDir, runId, sequencedEvent);
+    const traceWrite = run?.persistence ? run.persistence.enqueue(writeTrace) : writeTrace();
+    traceWrite.catch((err: any) => {
       log.warn(`[TraceStore] append failed runId=${runId}: ${err.message}`);
     });
-    const run = agentRunStore.getRun(runId);
-    if (run) {
-      run.traceWrites = run.traceWrites || [];
-      run.traceWrites.push(traceWrite);
-    }
     if (run?._reconnectWriters) {
       for (const writer of run._reconnectWriters) {
-        writer(event);
+        writer(sequencedEvent);
       }
     }
-    return event;
+    return sequencedEvent;
   };
 }
 
@@ -149,6 +148,8 @@ export async function cleanupAgentRun(
   agentRunStore: AgentRunStore,
   { removeSnapshots = false, finalStatus }: { removeSnapshots?: boolean; finalStatus?: TerminalRunStatus } = {},
 ) {
+  const run = agentRunStore.getRun(runId);
+  await run?.persistence?.flush();
   if (checkpointDir) {
     // step-level checkpoint 只用于崩溃恢复，任务完成后可删除
     await removeCheckpoint(checkpointDir, runId).catch(() => {});

@@ -9,6 +9,7 @@ import { parseAgentRunRequest, resolveCheckpointSeed } from './agent-run-request
 import { executeAgentRun } from './agent-run-execution.ts';
 import { removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
 import { resolveRunPathsForExecution } from '../agent/core/project-store.ts';
+import { readTraceEvents } from '../helpers/trace-store.ts';
 
 export function createAgentRunStartRouter({
   runDesktopAgent,
@@ -33,11 +34,6 @@ export function createAgentRunStartRouter({
       }
       const { task, model, agentModels, strategy, headless, useMemory, conversationHistory, fromCheckpoint, projectId } = parsed;
 
-      const activeRun = agentRunStore.getActiveRun();
-      if (activeRun) {
-        return res.status(409).json({ error: tReq(req, 'run.alreadyRunning'), runId: activeRun.runId });
-      }
-
       // 解析本次 run 的落盘目录与文件工具根：命中项目用项目目录，否则回退全局（无项目态）。
       const { projectId: resolvedProjectId, projectRoot, dataDir } = await resolveRunPathsForExecution(projectStore, projectId, memoryDir);
       runCheckpointDir = dataDir;
@@ -48,9 +44,7 @@ export function createAgentRunStartRouter({
       if (runCheckpointDir && !fromCheckpoint) {
         const { listSessionCheckpointRuns } = await import('../agent/core/checkpoint.ts');
         const runs = await listSessionCheckpointRuns(runCheckpointDir);
-        for (const rid of runs) {
-          removeSessionCheckpoints(runCheckpointDir, rid).catch(() => {});
-        }
+        await Promise.all(runs.map(rid => removeSessionCheckpoints(runCheckpointDir, rid).catch(() => {})));
       }
 
       const normalizedTask = task.trim();
@@ -58,7 +52,14 @@ export function createAgentRunStartRouter({
       const startedAt = Date.now();
       // fromCheckpoint 回滚时复用原 runId，保持 trace 连续性
       const existingRunId = fromCheckpoint?.runId;
-      const runRecord = agentRunStore.createRun({
+      const existingTraceEvents = existingRunId ? await readTraceEvents(dataDir, existingRunId) : [];
+      const initialEventSeq = existingTraceEvents.reduce(
+        (next, event, index) => Number.isFinite(event?.seq)
+          ? Math.max(next, Number(event.seq) + 1)
+          : Math.max(next, index + 2),
+        1,
+      );
+      const acquired = agentRunStore.tryCreateRun({
         model,
         agentModels,
         task: normalizedTask,
@@ -66,7 +67,11 @@ export function createAgentRunStartRouter({
         projectId: resolvedProjectId,
         dataDir,
         projectRoot,
-      }, startedAt, existingRunId);
+      }, startedAt, existingRunId, initialEventSeq);
+      if ('activeRun' in acquired) {
+        return res.status(409).json({ error: tReq(req, 'run.alreadyRunning'), runId: acquired.activeRun.runId });
+      }
+      const runRecord = acquired.run;
       runId = runRecord.runId;
       let finalAnswer: string | null = null;
       let agentError: any = null;
@@ -81,6 +86,7 @@ export function createAgentRunStartRouter({
         agentRunStore,
         memoryDir: dataDir,
       });
+      agentRunStore.transitionRun(runId, 'running');
 
       let memory = null;
       let systemPrompt = '';
@@ -107,18 +113,15 @@ export function createAgentRunStartRouter({
         checkpointInitialStep,
         checkpointInitialHistory,
         checkpointDir: runCheckpointDir,
-        agentRunStore,
         projectRoot,
         dataDir,
       });
-      const { agentResult, finalAnswer: nextFinalAnswer, agentError: nextAgentError } = result;
+      const { agentResult, finalAnswer: nextFinalAnswer, agentError: nextAgentError, finalStatus } = result;
       finalAnswer = nextFinalAnswer;
       agentError = nextAgentError;
-      session.close({ finalAnswer, agentError, approvalStore });
-
       if (memory) {
-        (async () => {
-          try {
+        try {
+          await runRecord.persistence?.enqueue(async () => {
             const { stepModels } = session!.getTrackingState();
             await persistAgentRunMemory({
               memory,
@@ -131,11 +134,14 @@ export function createAgentRunStartRouter({
               stepModels,
               registry,
             });
-          } catch (err: any) {
-            log.error('Memory save failed:', err.message);
-          }
-        })();
+          });
+        } catch (err: any) {
+          log.error('Memory save failed:', err.message);
+        }
       }
+      await runRecord.persistence?.flush();
+      session.close({ finalAnswer, agentError, approvalStore });
+      await cleanupAgentRun(runCheckpointDir, runId, agentRunStore, { finalStatus });
       return;
     } catch (err: any) {
       const message = err?.message || String(err);
@@ -143,8 +149,13 @@ export function createAgentRunStartRouter({
       if (session && runId) {
         session.sendEvent({ type: 'error', runId, error: message });
         session.close({ finalAnswer: null, agentError: err, approvalStore });
-        await cleanupAgentRun(runCheckpointDir, runId, agentRunStore).catch(() => {});
+        const finalStatus = agentRunStore.getRun(runId)?.status === 'cancelling' ? 'cancelled' : 'failed';
+        await cleanupAgentRun(runCheckpointDir, runId, agentRunStore, { finalStatus }).catch(() => {});
         return;
+      }
+      if (runId) {
+        const finalStatus = agentRunStore.getRun(runId)?.status === 'cancelling' ? 'cancelled' : 'failed';
+        await cleanupAgentRun(runCheckpointDir, runId, agentRunStore, { finalStatus }).catch(() => {});
       }
       if (!res.headersSent) {
         const status = Number(err?.status) || 500;

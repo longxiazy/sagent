@@ -70,7 +70,15 @@ function buildRecentSearchesHint(history: any[], lookback = 6): string | null {
   return `最近搜索过的 query（避免在失败或重复后原样重试）：\n${lines.join('\n')}`;
 }
 
-export function buildDesktopAgentSystemPrompt(systemPrompt: string | null) {
+export function buildDesktopAgentSystemPrompt(systemPrompt: string | null, toolMode: 'full' | 'readonly' = 'full') {
+  if (toolMode === 'readonly') {
+    return [
+      '你是只读子 Agent，只负责分析并返回结果。',
+      '只能使用当前提供的只读工具；禁止写文件、运行终端、操作浏览器/Chrome/IDE/macOS、询问或通知用户、继续 spawn。',
+      '路径必须使用项目内相对路径。完成后立即调用 finish 返回简洁结果。',
+      systemPrompt ? `附加约束：${systemPrompt}` : '',
+    ].filter(Boolean).join('\n');
+  }
   const ideLines = buildIdePromptLines();
   const chromeLines = buildChromePromptLines();
   return [
@@ -142,6 +150,7 @@ export function buildNvidiaTaskMessages({
   observation,
   conversationHistory,
   compact = false,
+  toolMode = 'full',
 }: {
   task: string;
   systemPrompt?: string | null;
@@ -150,6 +159,7 @@ export function buildNvidiaTaskMessages({
   observation: any;
   conversationHistory?: Array<{ role: string; content: string }>;
   compact?: boolean;
+  toolMode?: 'full' | 'readonly';
 }) {
   const ideEnabled = isIdeMcpEnabled();
   const ideLines = buildIdePromptLines();
@@ -163,6 +173,25 @@ export function buildNvidiaTaskMessages({
 
   const recentUrlsHint = buildRecentUrlsHint(history);
   const recentSearchesHint = buildRecentSearchesHint(history);
+
+  if (toolMode === 'readonly') {
+    return [
+      {
+        role: 'system',
+        content: [
+          '你是只读子 Agent，只能输出一个 JSON 对象。',
+          '可用动作只有：fs list_dir/read_file/get_file_info/search_files；search web_search；vision image_analyze；codegraph codegraph_query；core finish。',
+          '禁止写文件、运行终端、操作浏览器/Chrome/IDE/macOS、询问或通知用户、继续 spawn。',
+          '路径必须使用项目内相对路径。完成后立即 finish。',
+          systemPrompt ? `附加约束：${systemPrompt}` : '',
+        ].filter(Boolean).join(' '),
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({ task, step, history: history?.slice?.(compact ? -2 : -6) || [], observation }),
+      },
+    ];
+  }
 
   if (compact) {
     return [
@@ -215,7 +244,7 @@ export function buildNvidiaTaskMessages({
         '{"rational":"并发抓取多个页面","action":{"tool":"browser","type":"parallel_fetch","urls":["https://example.com/a","https://example.com/b"]}}',
         '{"rationale":"网络搜索关键词","action":{"tool":"search","type":"web_search","query":"2026 北京最低工资标准"}}',
         '{"rationale":"查询项目代码图谱定位相关模块","action":{"tool":"codegraph","type":"codegraph_query","query":"记忆 memory"}}',
-        '{"rationale":"分析图片内容","action":{"tool":"vision","type":"image_analyze","image":"/abs/path/to/image.png","question":"图片里有什么内容？请详细描述。"}}',
+        '{"rationale":"分析图片内容","action":{"tool":"vision","type":"image_analyze","image":"@uploads/2026-01-01/image.png","question":"图片里有什么内容？请详细描述。"}}',
         '{"rationale":"并行分析多个文件","action":{"tool":"spawn","type":"spawn","tasks":["分析 src/index.ts 的架构","检查 test/ 目录的测试覆盖率","搜索项目中的 TODO 注释"]}}',
         ...(ideEnabled
           ? [

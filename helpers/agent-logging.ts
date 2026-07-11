@@ -17,7 +17,8 @@ export function buildAgentMetrics(startedAt, { stepCount = 0, status = 'done' } 
 export function buildSseWriter(res) {
   return payload => {
     if (!res.writableEnded) {
-      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      const idLine = Number.isFinite(payload?.seq) ? `id: ${payload.seq}\n` : '';
+      res.write(`${idLine}data: ${JSON.stringify(payload)}\n\n`);
     }
   };
 }

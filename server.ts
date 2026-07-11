@@ -35,7 +35,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAgentRunStore } from './helpers/run-store.ts';
 import { createApprovalStore } from './agent/core/approval-store.ts';
-import { initLlmLogger } from './agent/core/llm-logger.ts';
+import { flushLlmLogs, initLlmLogger } from './agent/core/llm-logger.ts';
 import { createDesktopAgentRunner } from './agent/desktop/agent.ts';
 import { createSandboxedWorkerAgentRunner, getWorkerCancelDelays } from './agent/worker/runner.ts';
 import { DEFAULT_VISION_MODEL } from './agent/tools/vision/execute.ts';
@@ -49,13 +49,15 @@ import { createCompletionsRouter } from './routes/completions.ts';
 import { createSuggestionsRouter } from './routes/suggestions.ts';
 import { createSuggestionStore } from './helpers/suggestion-store.ts';
 import { listCheckpoints, clearCheckpoints, removeCheckpoint } from './agent/core/checkpoint.ts';
-import { loadMemory, saveMemory } from './agent/core/memory.ts';
 import { createProjectStore, projectDataDir } from './agent/core/project-store.ts';
 import { createBaseEventSender, loadMemoryForPrompt, cleanupAgentRun } from './helpers/run-agent.ts';
+import { readTraceEvents } from './helpers/trace-store.ts';
 import { padEndW, truncateW } from './agent/core/utils.ts';
 import { log } from './helpers/logger.ts';
 import { runtimeConfig } from './agent/core/runtime-config.ts';
 import { createApiAuth, createCorsOptions, createOriginGuard, loadServerSecurityConfig } from './helpers/security.ts';
+import { flushAllPersistenceTasks } from './helpers/persistence-queue.ts';
+import { persistRecoveredAgentRunMemory } from './routes/agent-run-memory-persist.ts';
 
 const securityConfig = loadServerSecurityConfig();
 const app = express();
@@ -161,19 +163,20 @@ async function resumeFromCheckpoint(cp) {
   const projectRoot = cp.projectRoot || null;
   log.info(`[Resume] 恢复运行 run_id=${runId} step=${step} task=${task.slice(0, 60)}…`);
 
-  // 回放历史事件不需要写 trace 文件（已经存在），只写内存 run-store 供 SSE 重连用
-  const sendEvent = createBaseEventSender(runId, agentRunStore);
   const sendEventWithTrace = createBaseEventSender(runId, agentRunStore, dataDir);
 
   const { systemPrompt } = await loadMemoryForPrompt(dataDir);
 
-  // Replay historical steps so frontend sees all previous steps (memory-only, no trace write)
-  sendEvent({ type: 'status', status: 'starting', runId, message: '准备启动桌面 Agent' });
-  for (const h of history) {
-    sendEvent({ type: 'step', step: h.step, stage: 'action', rationale: h.rationale, action: h.action });
-    sendEvent({ type: 'step', step: h.step, stage: 'result', result: h.result });
+  // 旧 checkpoint 可能没有 trace；仅在 trace 缺失时重建历史，避免恢复时重复写入旧步骤。
+  const existingTraceEvents = await readTraceEvents(dataDir, runId);
+  if (existingTraceEvents.length === 0) {
+    sendEventWithTrace({ type: 'status', status: 'starting', runId, message: '准备启动桌面 Agent' });
+    for (const h of history) {
+      sendEventWithTrace({ type: 'step', step: h.step, stage: 'action', rationale: h.rationale, action: h.action });
+      sendEventWithTrace({ type: 'step', step: h.step, stage: 'result', result: h.result });
+    }
   }
-  sendEvent({ type: 'status', status: 'resuming', runId, message: `从断点恢复：从第 ${step + 1} 步继续执行任务「${task.slice(0, 60)}」` });
+  sendEventWithTrace({ type: 'status', status: 'resuming', runId, message: `从断点恢复：从第 ${step + 1} 步继续执行任务「${task.slice(0, 60)}」` });
 
   try {
     const runRecord = agentRunStore.getRun(runId);
@@ -199,8 +202,16 @@ async function resumeFromCheckpoint(cp) {
     sendEventWithTrace({ type: 'done', runId, answer: result.answer, steps: result.steps, meta: { elapsed_ms: Date.now() - startedAt, step_count: result.steps.length } });
     if (cp.memory !== false) {
       try {
-        const mem = await loadMemory(dataDir);
-        await saveMemory(dataDir, mem);
+        const runRecord = agentRunStore.getRun(runId);
+        const persistMemory = () => persistRecoveredAgentRunMemory({
+          memoryDir: dataDir,
+          task,
+          result,
+          model,
+          registry,
+        });
+        if (runRecord?.persistence) await runRecord.persistence.enqueue(persistMemory);
+        else await persistMemory();
       } catch (err: any) {
         log.warn('[Resume] Memory save failed:', err.message);
       }
@@ -285,7 +296,15 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
         for (const d of new Set(found.map(f => f.dir))) await clearCheckpoints(d);
       } else {
         console.log(`[Resume] 发现 ${found.length} 个未完成任务，恢复最后一个: ${cp.runId}`);
-        agentRunStore.createRun({ model: cp.model, task: cp.task, projectId: cp.dataDir ? undefined : null, dataDir: cp.dataDir || MEMORY_DIR, projectRoot: cp.projectRoot || null }, cp.startedAt, cp.runId);
+        const resumeDataDir = cp.dataDir || MEMORY_DIR;
+        const existingTraceEvents = await readTraceEvents(resumeDataDir, cp.runId);
+        const initialEventSeq = existingTraceEvents.reduce(
+          (next: number, event: any, index: number) => Number.isFinite(event?.seq)
+            ? Math.max(next, Number(event.seq) + 1)
+            : Math.max(next, index + 2),
+          1,
+        );
+        agentRunStore.createRun({ model: cp.model, task: cp.task, projectId: cp.dataDir ? undefined : null, dataDir: resumeDataDir, projectRoot: cp.projectRoot || null }, cp.startedAt, cp.runId, initialEventSeq);
         resumeFromCheckpoint(cp).catch(err => {
           log.error(`[Resume] 恢复失败 run_id=${cp.runId}:`, err.message);
         });
@@ -306,6 +325,14 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
 });
 
 let shuttingDown = false;
+let exiting = false;
+async function exitAfterFlush(code: number) {
+  if (exiting) return;
+  exiting = true;
+  await Promise.allSettled([flushAllPersistenceTasks(), flushLlmLogs()]);
+  process.exit(code);
+}
+
 function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -332,12 +359,12 @@ function shutdown(signal: string) {
     if (remainingRuns.length === 0) {
       clearInterval(interval);
       log.warn('[Shutdown] active runs 已结束，退出');
-      process.exit(0);
+      void exitAfterFlush(0);
     }
     if (Date.now() - startedAt >= graceMs) {
       clearInterval(interval);
       log.warn(`[Shutdown] 等待 ${graceMs}ms 后仍有 ${remainingRuns.length} 个 active run，退出进程`);
-      process.exit(exitCode);
+      void exitAfterFlush(exitCode);
     }
   }, 100);
 }

@@ -10,7 +10,7 @@ export function createAgentTraceRouter({ memoryDir, agentRunStore, projectStore 
   router.get('/api/agent/traces/:runId', async (req, res) => {
     const { runId } = req.params;
     const run = agentRunStore.getRun(runId);
-    await Promise.allSettled(run?.traceWrites || []);
+    await run?.persistence?.flush();
     // trace 落盘目录优先取 run 记录里的 dataDir；run 已过期则用 ?projectId 解析；都没有回退全局。
     const pid = typeof req.query.projectId === 'string' ? req.query.projectId : null;
     const dir = run?.meta?.dataDir || resolveRunPaths(projectStore, pid, memoryDir).dataDir;

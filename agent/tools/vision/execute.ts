@@ -17,6 +17,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ModelInfo } from '../../core/providers/types.ts';
+import { createAbortScope, throwIfAborted } from '../../core/abort.ts';
+import type { ActionForTool } from '../../core/contracts.ts';
+import type { ProviderRegistry } from '../../core/providers/registry.ts';
 
 const REQUEST_TIMEOUT_MS = 60000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -38,13 +41,43 @@ function mimeFromExt(target: string): string {
   return 'image/png';
 }
 
-function asStringArray(value: any): string[] {
+interface VisionContext {
+  registry?: Pick<ProviderRegistry, 'resolve'>;
+  openai_client?: unknown;
+  modelConfig?: ModelInfo[];
+  visionModel?: string;
+  model?: string;
+  models?: string[];
+  agentModels?: string[];
+  selectedModels?: string[];
+  signal?: AbortSignal;
+  projectRoot?: string | null;
+  dataDir?: string | null;
+}
+
+type CompletionLike = { choices?: Array<{ message?: { content?: unknown } }> };
+type OpenAIClientLike = {
+  chat: { completions: { create(request: unknown, options?: { signal?: AbortSignal }): Promise<unknown> } };
+};
+
+function asOpenAIClient(value: unknown): OpenAIClientLike | null {
+  if (!value || typeof value !== 'object') return null;
+  const chat = (value as Record<string, unknown>).chat;
+  if (!chat || typeof chat !== 'object') return null;
+  const completions = (chat as Record<string, unknown>).completions;
+  if (!completions || typeof completions !== 'object') return null;
+  return typeof (completions as Record<string, unknown>).create === 'function'
+    ? value as OpenAIClientLike
+    : null;
+}
+
+function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter(item => typeof item === 'string').map(item => item.trim()).filter(Boolean)
     : [];
 }
 
-function uniqueModels(values: any[]): string[] {
+function uniqueModels(values: unknown[]): string[] {
   return [...new Set(values
     .flatMap(value => Array.isArray(value) ? value : [value])
     .filter(item => typeof item === 'string')
@@ -61,9 +94,9 @@ function findModelInfo(model: string, modelConfig: ModelInfo[] = []) {
 
 function modelSupportsImageInput(model: string, modelConfig: ModelInfo[] = []) {
   const info = findModelInfo(model, modelConfig);
-  const inputs = asStringArray(info?.inputModalities || (info as any)?.input_modalities)
+  const inputs = asStringArray(info?.inputModalities)
     .map(item => item.toLowerCase());
-  const outputs = asStringArray(info?.outputModalities || (info as any)?.output_modalities)
+  const outputs = asStringArray(info?.outputModalities)
     .map(item => item.toLowerCase());
 
   if (outputs.length > 0 && !outputs.includes('text')) return false;
@@ -82,7 +115,7 @@ function modelSupportsImageInput(model: string, modelConfig: ModelInfo[] = []) {
     || /image (understanding|input|analysis)|understands? images?|text\/img/i.test(haystack);
 }
 
-export function resolveVisionModel(context: any = {}) {
+export function resolveVisionModel(context: VisionContext = {}) {
   const modelConfig = Array.isArray(context.modelConfig) ? context.modelConfig : [];
   const selectedModels = uniqueModels([
     context.model,
@@ -101,16 +134,21 @@ export function resolveVisionModel(context: any = {}) {
   };
 }
 
-async function toImageDataUrl(image: string): Promise<string> {
+async function toImageDataUrl(
+  image: string,
+  signal?: AbortSignal,
+  projectRoot?: string | null,
+  dataDir?: string | null,
+): Promise<string> {
+  throwIfAborted(signal);
   if (/^data:image\//i.test(image)) {
     return image;
   }
 
   if (/^https?:\/\//i.test(image)) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const scope = createAbortScope({ signals: [signal], timeoutMs: REQUEST_TIMEOUT_MS, timeoutMessage: '下载图片超时' });
     try {
-      const res = await fetch(image, { signal: controller.signal });
+      const res = await fetch(image, { signal: scope.signal });
       if (!res.ok) {
         throw new Error(`下载图片失败 HTTP ${res.status}`);
       }
@@ -122,38 +160,66 @@ async function toImageDataUrl(image: string): Promise<string> {
       const mime = contentType && /^image\//.test(contentType) ? contentType : mimeFromExt(image);
       return `data:${mime};base64,${buf.toString('base64')}`;
     } finally {
-      clearTimeout(timer);
+      scope.cleanup();
     }
   }
 
-  const abs = path.isAbsolute(image) ? image : path.resolve(process.cwd(), image);
-  const buf = await fs.readFile(abs);
+  if (path.isAbsolute(image)) throw new Error(`禁止使用绝对路径: ${image}`);
+  const isUpload = image.startsWith('@uploads/');
+  if (isUpload && !dataDir) throw new Error('当前会话没有附件数据目录');
+  const root = await fs.realpath(isUpload ? path.join(dataDir!, 'uploads') : projectRoot || process.cwd());
+  const relativeImage = isUpload ? image.slice('@uploads/'.length) : image;
+  const lexicalPath = path.resolve(root, relativeImage);
+  const relative = path.relative(root, lexicalPath);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`路径越界，禁止读取项目目录之外: ${image}`);
+  }
+  const abs = await fs.realpath(lexicalPath);
+  const canonicalRelative = path.relative(root, abs);
+  if (canonicalRelative === '..' || canonicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(canonicalRelative)) {
+    throw new Error(`路径越界，禁止读取项目目录之外: ${image}`);
+  }
+  const buf = await fs.readFile(abs, { signal });
   if (buf.length > MAX_IMAGE_BYTES) {
     throw new Error(`图片过大（${(buf.length / 1024 / 1024).toFixed(1)} MB），上限 10 MB`);
   }
   return `data:${mimeFromExt(abs)};base64,${buf.toString('base64')}`;
 }
 
-export async function executeVisionAction(action, context = {}) {
+export async function executeVisionAction(
+  action: Pick<ActionForTool<'vision'>, 'image' | 'question'> & Partial<Pick<ActionForTool<'vision'>, 'tool' | 'type'>>,
+  context: VisionContext = {},
+) {
   const image = typeof action?.image === 'string' ? action.image.trim() : '';
   const question = typeof action?.question === 'string' ? action.question.trim() : '';
   if (!image) return 'image_analyze 失败：缺少 image 参数';
   if (!question) return 'image_analyze 失败：缺少 question 参数';
 
-  const openai = (context as any)?.openai_client;
-  const registry = (context as any)?.registry;
-  const modelConfig = Array.isArray((context as any)?.modelConfig) ? (context as any).modelConfig : [];
+  const openai = asOpenAIClient(context.openai_client);
+  const registry = context.registry;
+  const modelConfig = Array.isArray(context.modelConfig) ? context.modelConfig : [];
+  const signal = context.signal;
   if (!registry && !openai) {
     return 'image_analyze 失败：未配置可用视觉模型供应商，无法调用多模态接口';
   }
-
+  const scope = createAbortScope({
+    signals: [signal],
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    timeoutMessage: `image_analyze 超时 (${Math.round(REQUEST_TIMEOUT_MS / 1000)}s)`,
+  });
   const { model } = resolveVisionModel(context);
 
   let imageUrl: string;
   try {
-    imageUrl = await toImageDataUrl(image);
-  } catch (err: any) {
-    return `image_analyze 失败：${err?.message || String(err)}`;
+    imageUrl = await toImageDataUrl(
+      image,
+      scope.signal,
+      context.projectRoot,
+      context.dataDir,
+    );
+  } catch (err: unknown) {
+    scope.cleanup();
+    return `image_analyze 失败：${err instanceof Error ? err.message : String(err)}`;
   }
 
   try {
@@ -166,26 +232,29 @@ export async function executeVisionAction(action, context = {}) {
         ],
       },
     ];
-    const completion = registry
+    const completion = (registry
       ? await registry.resolve(model, modelConfig).completionJson({
           model,
           max_tokens: 1024,
           temperature: 0.2,
           top_p: 1,
           messages,
+          signal: scope.signal,
         })
       : await openai.chat.completions.create({
           model,
           max_tokens: 1024,
           temperature: 0.2,
           messages,
-        });
+        }, { signal: scope.signal })) as CompletionLike;
     const text = completion?.choices?.[0]?.message?.content;
     const answer = typeof text === 'string' ? text.trim() : '';
     if (!answer) return `image_analyze 模型 ${model} 未返回内容`;
     return `image_analyze 结果（model=${model}）:\n${answer}`;
-  } catch (err: any) {
-    const msg = err?.message || String(err);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
     return `image_analyze 调用 NIM 失败：${msg}`;
+  } finally {
+    scope.cleanup();
   }
 }

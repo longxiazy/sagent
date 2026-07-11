@@ -1,8 +1,6 @@
 import { loadLatestHealthySnapshot } from '../agent/core/checkpoint.ts';
-import { cleanupAgentRun } from '../helpers/run-agent.ts';
 import { log } from '../helpers/logger.ts';
 import type {
-  AgentRunStore,
   AgentStep,
   DesktopAgentResult,
   DesktopAgentRunner,
@@ -42,7 +40,7 @@ async function buildRollbackSuggestion({
       step: snapshot.step,
       lastAction: lastStep ? { type: lastStep.action?.type, tool: lastStep.action?.tool } : null,
       lastRationale: lastStep?.rationale?.slice(0, 200) || null,
-      lastResult: lastStep?.result?.slice(0, 200) || null,
+      lastResult: typeof lastStep?.result === 'string' ? lastStep.result.slice(0, 200) : null,
     };
   } catch {
     return null;
@@ -66,7 +64,6 @@ export async function executeAgentRun({
   checkpointInitialStep,
   checkpointInitialHistory,
   checkpointDir,
-  agentRunStore,
   projectRoot,
   dataDir,
 }: {
@@ -86,7 +83,6 @@ export async function executeAgentRun({
   checkpointInitialStep?: number;
   checkpointInitialHistory?: AgentStep[];
   checkpointDir: string;
-  agentRunStore: AgentRunStore;
   projectRoot?: string;
   dataDir?: string;
 }) {
@@ -150,9 +146,7 @@ export async function executeAgentRun({
       error: err.message,
       rollbackSuggestion,
     });
-  } finally {
-    await cleanupAgentRun(checkpointDir, runId, agentRunStore, { finalStatus });
   }
 
-  return { agentResult, finalAnswer, agentError };
+  return { agentResult, finalAnswer, agentError, finalStatus };
 }

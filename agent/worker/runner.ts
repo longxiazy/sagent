@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { saveCheckpoint, saveHealthySnapshot } from '../core/checkpoint.ts';
+import { createPersistenceQueue } from '../../helpers/persistence-queue.ts';
 import { log } from '../../helpers/logger.ts';
+import { getLogPolicy, pruneLogTreeSync, rotateLogFileSync } from '../../helpers/log-policy.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -77,7 +79,27 @@ function createWorkerLogStream(baseDir: string, runId: string) {
   try {
     const dir = path.join(baseDir, 'worker-logs');
     fs.mkdirSync(dir, { recursive: true });
-    return fs.createWriteStream(path.join(dir, `${runId}.log`), { flags: 'a' });
+    const policy = getLogPolicy();
+    pruneLogTreeSync(dir, policy.retentionDays);
+    const filePath = path.join(dir, `${runId}.log`);
+    rotateLogFileSync(filePath, 0, policy.maxBytes);
+    const stream = fs.createWriteStream(filePath, { flags: 'a' });
+    let writtenBytes = (() => {
+      try { return fs.statSync(filePath).size; } catch { return 0; }
+    })();
+    return {
+      write(chunk: string | Buffer) {
+        if (writtenBytes >= policy.maxBytes) return false;
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        const remaining = policy.maxBytes - writtenBytes;
+        const output = buffer.length > remaining ? buffer.subarray(0, remaining) : buffer;
+        writtenBytes += output.length;
+        return stream.write(output);
+      },
+      end() {
+        stream.end();
+      },
+    };
   } catch {
     return null;
   }
@@ -139,7 +161,7 @@ export function createSandboxedWorkerAgentRunner({
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    const pendingPersistence: Promise<any>[] = [];
+    const persistence = opts.runRecord?.persistence || createPersistenceQueue();
     let stdoutBuffer = '';
     let stderrText = '';
     let settled = false;
@@ -148,16 +170,16 @@ export function createSandboxedWorkerAgentRunner({
     let terminateTimer: NodeJS.Timeout | null = null;
     let killTimer: NodeJS.Timeout | null = null;
 
-    const persist = (promise: Promise<any>) => {
-      pendingPersistence.push(promise.catch(err => {
+    const persist = (task: () => Promise<any>) => {
+      persistence.enqueue(task).catch(err => {
         log.warn(`[Worker] persistence failed runId=${runId}: ${err?.message || err}`);
-      }));
+      });
     };
 
     const finish = async (fn: () => void) => {
       if (settled) return;
       settled = true;
-      await Promise.allSettled(pendingPersistence);
+      await persistence.flush();
       fn();
     };
 
@@ -172,11 +194,13 @@ export function createSandboxedWorkerAgentRunner({
         return;
       }
       if (message.type === 'checkpoint') {
-        persist(saveCheckpoint(dataDir, message.data));
+        if (cancelRequested) return;
+        persist(() => saveCheckpoint(dataDir, message.data));
         return;
       }
       if (message.type === 'session_checkpoint_snapshot') {
-        persist(saveHealthySnapshot({ ...message.data, dir: dataDir }));
+        if (cancelRequested) return;
+        persist(() => saveHealthySnapshot({ ...message.data, dir: dataDir }));
         return;
       }
       if (message.type === 'approval_request') {
@@ -250,7 +274,8 @@ export function createSandboxedWorkerAgentRunner({
         }, killAfterMs);
       }, terminateAfterMs);
     };
-    opts.cancelSignal?.addEventListener?.('abort', abortHandler, { once: true });
+    if (opts.cancelSignal?.aborted) abortHandler();
+    else opts.cancelSignal?.addEventListener?.('abort', abortHandler, { once: true });
 
     if (opts.runRecord) {
       opts.runRecord.workerControl = {

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import { throwIfAborted } from '../../core/abort.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -9,7 +10,10 @@ function resolveInputPath(rawPath, cwd = process.cwd()) {
   if (!rawPath || rawPath === '.') {
     return cwd;
   }
-  return path.isAbsolute(rawPath) ? path.normalize(rawPath) : path.resolve(cwd, rawPath);
+  if (path.isAbsolute(rawPath)) {
+    throw new Error(`禁止使用绝对路径: ${rawPath}`);
+  }
+  return path.resolve(cwd, rawPath);
 }
 
 function formatFileType(dirent) {
@@ -33,11 +37,10 @@ function formatStatsType(stats) {
   return 'other';
 }
 
-function assertWithinSandbox(targetPath, sandboxPath) {
-  const normalized = path.normalize(targetPath);
-  const sandbox = path.normalize(sandboxPath);
-  if (!normalized.startsWith(sandbox + path.sep) && normalized !== sandbox) {
-    throw new Error(`路径越界，禁止写入 sandbox 之外: ${targetPath}`);
+function assertWithinSandbox(targetPath, sandboxPath, operation = '访问') {
+  const relative = path.relative(sandboxPath, targetPath);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`路径越界，禁止${operation}项目目录之外: ${targetPath}`);
   }
 }
 
@@ -50,21 +53,83 @@ const DANGEROUS_PATTERNS = [
   / authorized_keys/,
 ];
 
-function assertSafePath(targetPath) {
-  const normalized = path.normalize(targetPath);
+function assertSafePath(targetPath, sandboxPath) {
+  const normalized = path.relative(sandboxPath, targetPath);
   for (const pattern of DANGEROUS_PATTERNS) {
     if (pattern.test(normalized)) {
-      throw new Error(`禁止写入敏感路径: ${targetPath}`);
+      throw new Error(`禁止访问敏感路径: ${targetPath}`);
     }
   }
 }
 
-export async function executeFsAction(action, opts: { cwd?: string | null } = {}) {
+export async function executeFsAction(action, opts: { cwd?: string | null; dataDir?: string | null; signal?: AbortSignal } = {}) {
   // 文件工具根：命中项目用项目 rootPath，否则回退 process.cwd()（无项目态，旧行为）。
-  const baseCwd = opts?.cwd || process.cwd();
+  const baseCwd = await fs.realpath(opts?.cwd || process.cwd());
+  throwIfAborted(opts.signal);
+
+  const resolveRoot = async rawPath => {
+    const value = String(rawPath || '.');
+    if (!value.startsWith('@uploads/')) {
+      return { sandboxRoot: baseCwd, relativePath: value, virtual: false };
+    }
+    if (!opts.dataDir) throw new Error('当前会话没有附件数据目录');
+    const uploadsRoot = await fs.realpath(path.join(opts.dataDir, 'uploads'));
+    return {
+      sandboxRoot: uploadsRoot,
+      relativePath: value.slice('@uploads/'.length),
+      virtual: true,
+    };
+  };
+
+  const resolveExisting = async (rawPath, operation = '访问') => {
+    const { sandboxRoot, relativePath } = await resolveRoot(rawPath);
+    const lexicalPath = resolveInputPath(relativePath, sandboxRoot);
+    assertWithinSandbox(lexicalPath, sandboxRoot, operation);
+    assertSafePath(lexicalPath, sandboxRoot);
+    const canonicalPath = await fs.realpath(lexicalPath);
+    assertWithinSandbox(canonicalPath, sandboxRoot, operation);
+    assertSafePath(canonicalPath, sandboxRoot);
+    return { lexicalPath, canonicalPath };
+  };
+
+  const resolveWriteTarget = async rawPath => {
+    const root = await resolveRoot(rawPath);
+    if (root.virtual) throw new Error('禁止写入 @uploads 附件目录');
+    const lexicalPath = resolveInputPath(rawPath, baseCwd);
+    assertWithinSandbox(lexicalPath, baseCwd, '写入');
+    assertSafePath(lexicalPath, baseCwd);
+
+    let existingAncestor = lexicalPath;
+    while (true) {
+      try {
+        await fs.lstat(existingAncestor);
+        break;
+      } catch (err: any) {
+        if (err?.code !== 'ENOENT') throw err;
+        const parent = path.dirname(existingAncestor);
+        if (parent === existingAncestor) throw err;
+        existingAncestor = parent;
+      }
+    }
+    const canonicalAncestor = await fs.realpath(existingAncestor);
+    assertWithinSandbox(canonicalAncestor, baseCwd, '写入');
+
+    await fs.mkdir(path.dirname(lexicalPath), { recursive: true });
+    const canonicalParent = await fs.realpath(path.dirname(lexicalPath));
+    assertWithinSandbox(canonicalParent, baseCwd, '写入');
+    const canonicalPath = path.join(canonicalParent, path.basename(lexicalPath));
+    try {
+      const existingTarget = await fs.realpath(lexicalPath);
+      assertWithinSandbox(existingTarget, baseCwd, '写入');
+      return existingTarget;
+    } catch (err: any) {
+      if (err?.code !== 'ENOENT') throw err;
+      return canonicalPath;
+    }
+  };
 
   if (action.type === 'list_dir') {
-    const targetPath = resolveInputPath(action.path, baseCwd);
+    const { canonicalPath: targetPath } = await resolveExisting(action.path, '读取');
     const entries = await fs.readdir(targetPath, { withFileTypes: true });
     const summary = entries
       .slice(0, 40)
@@ -76,9 +141,8 @@ export async function executeFsAction(action, opts: { cwd?: string | null } = {}
   }
 
   if (action.type === 'get_file_info') {
-    const targetPath = resolveInputPath(action.path, baseCwd);
-    assertSafePath(targetPath);
-    const stats = await fs.lstat(targetPath);
+    const { lexicalPath, canonicalPath: targetPath } = await resolveExisting(action.path, '读取');
+    const [stats, lexicalStats] = await Promise.all([fs.stat(targetPath), fs.lstat(lexicalPath)]);
     const info = {
       path: targetPath,
       type: formatStatsType(stats),
@@ -86,25 +150,20 @@ export async function executeFsAction(action, opts: { cwd?: string | null } = {}
       modifiedAt: stats.mtime.toISOString(),
       createdAt: stats.birthtime.toISOString(),
       mode: stats.mode.toString(8),
-      symlink: stats.isSymbolicLink(),
+      symlink: lexicalStats.isSymbolicLink(),
     };
     return `文件信息:\n${JSON.stringify(info, null, 2)}`;
   }
 
   if (action.type === 'read_file') {
-    const targetPath = resolveInputPath(action.path, baseCwd);
-    assertSafePath(targetPath);
-    const buffer = await fs.readFile(targetPath);
+    const { canonicalPath: targetPath } = await resolveExisting(action.path, '读取');
+    const buffer = await fs.readFile(targetPath, { signal: opts.signal });
     const text = buffer.toString('utf8', 0, Math.min(buffer.length, action.maxBytes || 12000));
     return `文件 ${targetPath} 内容预览:\n${text}`;
   }
 
   if (action.type === 'write_file') {
-    const sandbox = baseCwd;
-    const targetPath = resolveInputPath(action.path, sandbox);
-    assertWithinSandbox(targetPath, sandbox);
-    assertSafePath(targetPath);
-    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    const targetPath = await resolveWriteTarget(action.path);
     if (action.append) {
       await fs.appendFile(targetPath, action.content, 'utf8');
       return `已追加写入文件 ${targetPath}`;
@@ -114,7 +173,7 @@ export async function executeFsAction(action, opts: { cwd?: string | null } = {}
   }
 
   if (action.type === 'search_files') {
-    const targetPath = resolveInputPath(action.path, baseCwd);
+    const { canonicalPath: targetPath } = await resolveExisting(action.path, '读取');
     const query = action.query || '';
     if (!query) {
       throw new Error('search_files 缺少 query');
@@ -131,6 +190,12 @@ export async function executeFsAction(action, opts: { cwd?: string | null } = {}
         proc.kill();
         resolve(collected);
       }, 10000);
+      const onAbort = () => {
+        clearTimeout(timer);
+        proc.kill('SIGTERM');
+        reject(opts.signal?.reason instanceof Error ? opts.signal.reason : new Error('Agent 已取消'));
+      };
+      opts.signal?.addEventListener('abort', onAbort, { once: true });
 
       proc.stdout.on('data', (chunk: Buffer) => {
         buf += chunk.toString();
@@ -153,6 +218,7 @@ export async function executeFsAction(action, opts: { cwd?: string | null } = {}
 
       proc.on('close', (code: number) => {
         clearTimeout(timer);
+        opts.signal?.removeEventListener('abort', onAbort);
         if (buf) collected.push(buf);
         if (code === 1 && collected.length === 0) {
           resolve([]);
@@ -163,6 +229,7 @@ export async function executeFsAction(action, opts: { cwd?: string | null } = {}
 
       proc.on('error', (err: Error) => {
         clearTimeout(timer);
+        opts.signal?.removeEventListener('abort', onAbort);
         reject(err);
       });
     });

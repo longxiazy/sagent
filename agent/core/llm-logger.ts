@@ -13,11 +13,14 @@ import { mkdir, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { log } from '../../helpers/logger.ts';
 import { extractErrorDiagnostics, formatErrorDiagnostics } from '../../helpers/retry.ts';
+import { getLogPolicy, pruneLogTreeSync, rotateLogFileSync } from '../../helpers/log-policy.ts';
+import { redactSensitiveData } from '../../helpers/redact.ts';
 
 let logDir = 'data/llm-logs';
 
 export function initLlmLogger(baseDir) {
   logDir = join(baseDir, 'llm-logs');
+  pruneLogTreeSync(logDir, getLogPolicy().retentionDays);
 }
 
 function todayDir() {
@@ -42,7 +45,12 @@ const activeFlushes = new Set<Promise<void>>();
 async function flushLog(filePath, lines) {
   try {
     await mkdir(filePath.slice(0, filePath.lastIndexOf('/')), { recursive: true });
-    await appendFile(filePath, lines.join('\n') + '\n');
+    const output = lines.join('\n') + '\n';
+    const policy = getLogPolicy();
+    const buffer = Buffer.from(output);
+    const capped = buffer.length > policy.maxBytes ? buffer.subarray(0, policy.maxBytes) : buffer;
+    rotateLogFileSync(filePath, capped.length, policy.maxBytes);
+    await appendFile(filePath, capped);
   } catch (err: any) {
     log.warn(`[LLM] 日志写入失败 file=${filePath}: ${err?.message || err}`);
   }
@@ -85,21 +93,21 @@ export async function flushLlmLogs() {
 }
 
 export function logLlmRequest(model, messages) {
-  const line = JSON.stringify({ time: timeStr(), type: 'request', model, messages });
+  const line = JSON.stringify(redactSensitiveData({ time: timeStr(), type: 'request', model, messages }));
   enqueueLog(join(todayDir(), modelFileName(model)), line);
   log.debug(`[LLM] → ${model} messages=${messages.length}`);
 }
 
 export function logLlmResponse(model, response) {
   const usage = response.usage || {};
-  const line = JSON.stringify({ time: timeStr(), type: 'response', model, usage, response });
+  const line = JSON.stringify(redactSensitiveData({ time: timeStr(), type: 'response', model, usage, response }));
   enqueueLog(join(todayDir(), modelFileName(model)), line);
   const tokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || usage.output_tokens || 0);
   log.debug(`[LLM] ← ${model} tokens=${tokens}`);
 }
 
 export function logLlmError(model, err, context = {}) {
-  const line = JSON.stringify({ time: timeStr(), type: 'error', model, context, error: extractErrorDiagnostics(err) });
+  const line = JSON.stringify(redactSensitiveData({ time: timeStr(), type: 'error', model, context, error: extractErrorDiagnostics(err) }));
   enqueueLog(join(todayDir(), modelFileName(model)), line);
   log.warn(`[LLM] ✕ ${model} ${formatErrorDiagnostics(err)}`);
 }

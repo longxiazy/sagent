@@ -27,6 +27,7 @@ import {
   type RunStatus,
   type TerminalRunStatus,
 } from '../agent/core/contracts.ts';
+import { createPersistenceQueue } from './persistence-queue.ts';
 
 function createRunId() {
   return `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -35,8 +36,35 @@ function createRunId() {
 /** 运行结束后保留在内存中的时长，超时自动清理 */
 const RUN_TTL_MS = 5 * 60 * 1000;
 
-export function createAgentRunStore(): AgentRunStore {
+export function createAgentRunStore({
+  maxEvents = Number(process.env.AGENT_RUN_MAX_EVENTS) || 2000,
+}: { maxEvents?: number } = {}): AgentRunStore {
   const runs = new Map<string, RunRecord>();
+  const eventLimit = Number.isFinite(maxEvents) && maxEvents > 0 ? Math.floor(maxEvents) : 2000;
+
+  function insertRun(
+    meta: RunMeta,
+    startedAt: number,
+    existingRunId: string | undefined,
+    status: RunStatus,
+    initialEventSeq = 1,
+  ): RunRecord {
+    const runId = existingRunId || createRunId();
+    const existing = runs.get(runId);
+    if (existing?.cleanupTimer) clearTimeout(existing.cleanupTimer);
+    const record: RunRecord = {
+      runId,
+      startedAt,
+      cancelAc: new AbortController(),
+      events: [],
+      status,
+      meta,
+      nextEventSeq: Math.max(1, Math.floor(initialEventSeq)),
+      persistence: createPersistenceQueue(),
+    };
+    runs.set(runId, record);
+    return record;
+  }
 
   function getRun(runId: string): RunRecord | null {
     return runs.get(runId) || null;
@@ -53,25 +81,34 @@ export function createAgentRunStore(): AgentRunStore {
     return run;
   }
 
+  function getActiveRun(): RunRecord | null {
+    for (const run of runs.values()) {
+      if (ACTIVE_RUN_STATUSES.has(run.status)) {
+        return run;
+      }
+    }
+    return null;
+  }
+
   return {
     /**
      * 创建新的运行记录
      * 调用时机：POST /api/agent 收到任务后立即创建
      */
-    createRun(meta: RunMeta = {}, startedAt = Date.now(), existingRunId?: string) {
-      const runId = existingRunId || createRunId();
-      const existing = runs.get(runId);
-      if (existing?.cleanupTimer) clearTimeout(existing.cleanupTimer);
-      const record = {
-        runId,
-        startedAt,
-        cancelAc: new AbortController(),
-        events: [],
-        status: 'running' as const,
-        meta,
-      };
-      runs.set(runId, record);
-      return record;
+    createRun(meta: RunMeta = {}, startedAt = Date.now(), existingRunId?: string, initialEventSeq = 1) {
+      return insertRun(meta, startedAt, existingRunId, 'running', initialEventSeq);
+    },
+
+    /**
+     * 原子地检查运行锁并预留一个 starting Run。
+     * 本方法不包含 await；在单个 Node.js 进程内，检查和写入不会被另一个请求插入。
+     */
+    tryCreateRun(meta: RunMeta = {}, startedAt = Date.now(), existingRunId?: string, initialEventSeq = 1) {
+      const activeRun = getActiveRun();
+      if (activeRun) {
+        return { ok: false as const, activeRun };
+      }
+      return { ok: true as const, run: insertRun(meta, startedAt, existingRunId, 'starting', initialEventSeq) };
     },
 
     getRun,
@@ -80,14 +117,7 @@ export function createAgentRunStore(): AgentRunStore {
      * 获取当前占用运行锁的 Agent（包括 waiting_approval / cancelling）
      * 调用时机：GET /api/agent/active 前端刷新后检测是否有进行中的任务
      */
-    getActiveRun() {
-      for (const run of runs.values()) {
-        if (ACTIVE_RUN_STATUSES.has(run.status)) {
-          return run;
-        }
-      }
-      return null;
-    },
+    getActiveRun,
 
     getActiveRuns() {
       return Array.from(runs.values()).filter(run => ACTIVE_RUN_STATUSES.has(run.status));
@@ -104,8 +134,19 @@ export function createAgentRunStore(): AgentRunStore {
     addEvent(runId: string, event: AgentEvent) {
       const run = getRun(runId);
       if (run) {
-        run.events.push(event);
+        const sequencedEvent = Number.isFinite(event.seq)
+          ? event
+          : { ...event, seq: run.nextEventSeq++ } as AgentEvent;
+        if (Number.isFinite(sequencedEvent.seq)) {
+          run.nextEventSeq = Math.max(run.nextEventSeq, Number(sequencedEvent.seq) + 1);
+        }
+        run.events.push(sequencedEvent);
+        if (run.events.length > eventLimit) {
+          run.events.splice(0, run.events.length - eventLimit);
+        }
+        return sequencedEvent;
       }
+      return event;
     },
 
     /**

@@ -92,4 +92,35 @@ describe('terminal run_safe policy', () => {
     expect(result).toContain('exit_code: 0');
     expect(result).toContain('command: ls "BACKEND_TODO.md"');
   });
+
+  it('rejects absolute and traversal paths in safe terminal commands', async () => {
+    await expect(executeTerminalAction({
+      tool: 'terminal',
+      type: 'run_safe',
+      command: 'ls /etc',
+      cwd: '',
+      timeoutMs: 2000,
+    })).rejects.toThrow('绝对路径');
+
+    await expect(executeTerminalAction({
+      tool: 'terminal',
+      type: 'run_safe',
+      command: 'ls ../',
+      cwd: '',
+      timeoutMs: 2000,
+    })).rejects.toThrow('路径参数越界');
+  });
+
+  it('redacts credentials from terminal output and command metadata', async () => {
+    const result = await executeTerminalAction({
+      tool: 'terminal',
+      type: 'run_confirmed',
+      command: 'printf "api_key=super-secret-value"',
+      cwd: '',
+      timeoutMs: 2000,
+    });
+
+    expect(result).toContain('[REDACTED]');
+    expect(result).not.toContain('super-secret-value');
+  });
 });

@@ -255,7 +255,7 @@ class ChromeMcpClient {
     this.toolsCache = null;
   }
 
-  async listTools({ refresh = false } = {}) {
+  async listTools({ refresh = false, signal = undefined } = {}) {
     if (!refresh && this.toolsCache) {
       return this.toolsCache;
     }
@@ -273,7 +273,7 @@ class ChromeMcpClient {
 
     while (true) {
       const params = cursor ? { cursor } : {};
-      const result = await this.transport.request('tools/list', params);
+      const result = await this.transport.request('tools/list', params, { signal });
       if (Array.isArray(result?.tools)) {
         tools.push(...result.tools);
       }
@@ -293,25 +293,25 @@ class ChromeMcpClient {
     return tools;
   }
 
-  async getTool(toolName, { refresh = false } = {}) {
-    const tools = await this.listTools({ refresh });
+  async getTool(toolName, { refresh = false, signal = undefined } = {}) {
+    const tools = await this.listTools({ refresh, signal });
     const found = tools.find(tool => tool?.name === toolName) || null;
     if (found || refresh) {
       return found;
     }
-    const refreshed = await this.listTools({ refresh: true });
+    const refreshed = await this.listTools({ refresh: true, signal });
     return refreshed.find(tool => tool?.name === toolName) || null;
   }
 
-  async callTool(toolName, toolArgs) {
+  async callTool(toolName, toolArgs, { signal = undefined } = {}) {
     try {
       return await this.transport.request('tools/call', {
         name: toolName,
         arguments: toolArgs || {},
-      });
+      }, { signal });
     } catch (err) {
       if (this._isClientTimeoutError(err) && IDEMPOTENT_RETRY_TOOLS.has(toolName)) {
-        return await this._retryAfterClientTimeout(toolName, toolArgs, err);
+        return await this._retryAfterClientTimeout(toolName, toolArgs, err, signal);
       }
       throw err;
     }
@@ -321,14 +321,15 @@ class ChromeMcpClient {
     return (err?.message || '').startsWith('Chrome MCP 请求超时');
   }
 
-  async _retryAfterClientTimeout(toolName, toolArgs, originalError) {
+  async _retryAfterClientTimeout(toolName, toolArgs, originalError, signal?: AbortSignal) {
     log.info(`[Chrome MCP] 工具调用 ${toolName} 客户端超时，原地重试一次`);
     await new Promise(r => setTimeout(r, 1500));
+    if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error('Agent 已取消');
     try {
       return await this.transport.request('tools/call', {
         name: toolName,
         arguments: toolArgs || {},
-      });
+      }, { signal });
     } catch (retryErr: any) {
       if (this._isClientTimeoutError(retryErr)) {
         throw originalError;
@@ -627,7 +628,7 @@ class SseTransport {
     });
   }
 
-  async sendRequest(method, params, { skipInit = false } = {}) {
+  async sendRequest(method, params, { skipInit = false, signal = undefined } = {}) {
     if (!skipInit) {
       await this.ensureInitialized();
     }
@@ -635,8 +636,19 @@ class SseTransport {
     const id = this.nextId++;
     const timeoutMs = timeoutForRequest(method, params);
     return new Promise(async (resolve, reject) => {
+      const cancelRequest = (reason: string) => this.sendNotification('notifications/cancelled', {
+        requestId: id,
+        reason,
+      }).catch(() => {});
+      const onAbort = () => {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        cancelRequest('parent AbortSignal aborted');
+        reject(signal?.reason instanceof Error ? signal.reason : new Error('Agent 已取消'));
+      };
       const timer = setTimeout(() => {
         this.pending.delete(id);
+        signal?.removeEventListener('abort', onAbort);
         // MCP 规范：超时时主动通知服务端取消 in-flight 请求，避免悬挂的 CDP 操作继续动 Chrome。
         this.sendNotification('notifications/cancelled', {
           requestId: id,
@@ -645,7 +657,18 @@ class SseTransport {
         reject(new Error(`Chrome MCP 请求超时: ${method} (${timeoutMs}ms)`));
       }, timeoutMs);
 
-      this.pending.set(id, { resolve, reject, timer });
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      signal?.addEventListener('abort', onAbort, { once: true });
+
+      const cleanup = () => signal?.removeEventListener('abort', onAbort);
+      this.pending.set(id, {
+        resolve: value => { cleanup(); resolve(value); },
+        reject: err => { cleanup(); reject(err); },
+        timer,
+      });
 
       try {
         await this.postJsonRpc({
@@ -657,13 +680,14 @@ class SseTransport {
       } catch (err) {
         clearTimeout(timer);
         this.pending.delete(id);
+        cleanup();
         reject(err);
       }
     });
   }
 
-  async request(method, params) {
-    return this.sendRequest(method, params);
+  async request(method, params, options = {}) {
+    return this.sendRequest(method, params, options);
   }
 
   async close() {

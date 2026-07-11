@@ -1,11 +1,17 @@
 import type { ModelInfo } from './types.ts';
 
-function finiteNumber(value: any): number | null {
+type UnknownRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): UnknownRecord {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as UnknownRecord : {};
+}
+
+function finiteNumber(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function firstNumber(values: any[]): number | undefined {
+function firstNumber(values: unknown[]): number | undefined {
   for (const value of values) {
     const n = finiteNumber(value);
     if (n) return n;
@@ -13,13 +19,13 @@ function firstNumber(values: any[]): number | undefined {
   return undefined;
 }
 
-function stringArray(value: any): string[] | undefined {
+function stringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const items = [...new Set(value.map(item => (typeof item === 'string' ? item.trim() : '')).filter(Boolean))];
   return items.length ? items : undefined;
 }
 
-function firstStringArray(values: any[]): string[] | undefined {
+function firstStringArray(values: unknown[]): string[] | undefined {
   for (const value of values) {
     const items = stringArray(value);
     if (items) return items;
@@ -27,11 +33,11 @@ function firstStringArray(values: any[]): string[] | undefined {
   return undefined;
 }
 
-function stringValue(value: any): string | undefined {
+function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
-function parseModality(modality: any, side: 'input' | 'output'): string[] | undefined {
+function parseModality(modality: unknown, side: 'input' | 'output'): string[] | undefined {
   const value = stringValue(modality);
   if (!value) return undefined;
   const parts = value.split('->');
@@ -40,12 +46,9 @@ function parseModality(modality: any, side: 'input' | 'output'): string[] | unde
   return stringArray(raw.split('+').map(part => part.trim()));
 }
 
-export function extractModelMetadata(source: any): Partial<ModelInfo> {
-  if (!source || typeof source !== 'object') return {};
-
-  const architecture = source.architecture && typeof source.architecture === 'object'
-    ? source.architecture
-    : {};
+export function extractModelMetadata(input: unknown): Partial<ModelInfo> {
+  const source = asRecord(input);
+  const architecture = asRecord(source.architecture);
 
   const inputTokenLimit = firstNumber([
     source.inputTokenLimit,

@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { appendTraceEvent, listTraceRuns, readTraceEvents } from '../helpers/trace-store.ts';
+import { createAgentRunStore } from '../helpers/run-store.ts';
+import { createBaseEventSender } from '../helpers/run-agent.ts';
 
 let tmpDir: string;
 
@@ -32,5 +34,36 @@ describe('trace store', () => {
     await appendTraceEvent(tmpDir, '../bad', { type: 'status' });
     expect(await readTraceEvents(tmpDir, '../bad')).toEqual([]);
     expect(await listTraceRuns(tmpDir)).toEqual([]);
+  });
+
+  it('serializes rapid trace writes and flushes them in event order', async () => {
+    const runId = 'run_trace_queue';
+    const store = createAgentRunStore();
+    const run = store.createRun({}, 1, runId);
+    const send = createBaseEventSender(runId, store, tmpDir);
+
+    for (let index = 0; index < 50; index += 1) {
+      send({ type: 'notification', level: 'info', message: `event-${index}` });
+    }
+    await run.persistence?.flush();
+
+    const events = await readTraceEvents(tmpDir, runId);
+    expect(events.map((event: any) => event.message)).toEqual(
+      Array.from({ length: 50 }, (_, index) => `event-${index}`),
+    );
+  });
+
+  it('redacts credentials before trace events are persisted', async () => {
+    const runId = 'run_trace_redact';
+    const store = createAgentRunStore();
+    const run = store.createRun({}, 1, runId);
+    const send = createBaseEventSender(runId, store, tmpDir);
+
+    send({ type: 'notification', level: 'warning', message: 'api_key=super-secret-value' });
+    await run.persistence?.flush();
+
+    const events = await readTraceEvents(tmpDir, runId);
+    expect(events[0].message).toContain('[REDACTED]');
+    expect(events[0].message).not.toContain('super-secret-value');
   });
 });

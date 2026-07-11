@@ -7,9 +7,9 @@ const DEFAULT_HELPER_CANDIDATES = [
   path.resolve(process.cwd(), 'agent/tools/macos/helper/bin/macos-agent-helper'),
 ].filter(Boolean);
 
-function execFileJson(file: string, args: string[], payload: any = {}, timeout = 12000): Promise<any> {
+function execFileJson(file: string, args: string[], payload: any = {}, timeout = 12000, signal?: AbortSignal): Promise<any> {
   return new Promise((resolve, reject) => {
-    const child = execFile(file, args, { timeout }, (error, stdout, stderr) => {
+    const child = execFile(file, args, { timeout, signal }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(stderr?.trim() || error.message));
         return;
@@ -47,11 +47,11 @@ export function resolveMacOSBackend(candidatePaths = DEFAULT_HELPER_CANDIDATES) 
   };
 }
 
-export async function invokeMacOSHelper(command: string, payload: any = {}, candidatePaths = DEFAULT_HELPER_CANDIDATES): Promise<any> {
+export async function invokeMacOSHelper(command: string, payload: any = {}, candidatePaths = DEFAULT_HELPER_CANDIDATES, opts: { signal?: AbortSignal } = {}): Promise<any> {
   const helperPath = resolveMacOSHelperPath(candidatePaths);
   if (!helperPath) {
     throw new Error('未找到 macOS helper 二进制');
   }
 
-  return execFileJson(helperPath, [command], payload);
+  return execFileJson(helperPath, [command], payload, 12000, opts.signal);
 }
