@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Palette, SlidersHorizontal, Brain, KeyRound, Minus, Plus } from 'lucide-react';
-import { fetchConfig, saveConfig, resetConfig } from '../../api/config.js';
+import { Palette, SlidersHorizontal, Brain, KeyRound, Minus, Plus, Plug, ChevronDown, ChevronRight } from 'lucide-react';
+import { fetchConfig, saveConfig, resetConfig, applyConfigProfile, saveMcpServer, testMcpServer } from '../../api/config.js';
 import { useTheme } from '../../theme/ThemeProvider.jsx';
 import { useI18n, useT } from '../../i18n/I18nProvider.jsx';
 import { DialogShell } from './DialogShell.jsx';
 
 // Agent 行为参数（可写，热生效）。单位与 .env 一致，换算放后端消费点。
 // label 改为 i18n key，渲染时经 t() 取文案。memoryMaxEntries 归到「记忆」组。
-const AGENT_FIELDS = [
+const BASIC_AGENT_FIELDS = [
   { key: 'maxSteps', labelKey: 'settings.maxSteps' },
   { key: 'modelTimeoutSec', labelKey: 'settings.modelTimeoutSec' },
+];
+
+const ADVANCED_AGENT_FIELDS = [
+  { key: 'maxOutputTokens', labelKey: 'settings.maxOutputTokens' },
   { key: 'staggerDelaySec', labelKey: 'settings.staggerDelaySec' },
   { key: 'batchSize', labelKey: 'settings.batchSize' },
   { key: 'maxHistorySteps', labelKey: 'settings.maxHistorySteps' },
@@ -17,15 +21,11 @@ const AGENT_FIELDS = [
   { key: 'maxParallelResultChars', labelKey: 'settings.maxParallelResultChars' },
 ];
 
-const NUMBER_FIELD_LIMITS = {
-  maxSteps: { min: 1, max: 512, step: 1 },
-  modelTimeoutSec: { min: 1, max: 3600, step: 5 },
-  staggerDelaySec: { min: 0, max: 120, step: 1 },
-  batchSize: { min: 1, max: 32, step: 1 },
-  maxHistorySteps: { min: 1, max: 200, step: 1 },
-  maxResultChars: { min: 100, max: 200000, step: 1000 },
-  maxParallelResultChars: { min: 100, max: 1000000, step: 1000 },
-  memoryMaxEntries: { min: 1, max: 1000, step: 1 },
+const NUMBER_FIELD_STEPS = {
+  modelTimeoutSec: 5,
+  maxOutputTokens: 128,
+  maxResultChars: 1000,
+  maxParallelResultChars: 1000,
 };
 
 const THEME_OPTIONS = [
@@ -40,11 +40,28 @@ const FONT_SIZE_OPTIONS = [
   { value: 'large', labelKey: 'appearance.fontSize.large' },
 ];
 
+const PROFILE_OPTIONS = ['fast', 'balanced', 'deep', 'safe'];
+
+const DEFAULT_MCP_SERVERS = {
+  chrome: {
+    enabled: false,
+    transport: { type: 'sse', url: 'http://127.0.0.1:3099/sse' },
+    promptMode: 'lazy',
+  },
+  jetbrains: {
+    enabled: false,
+    transport: { type: 'sse', url: 'http://127.0.0.1:6365/sse' },
+    projectPath: '.',
+    promptMode: 'lazy',
+  },
+};
+
 // 设置分组：左侧导航 → 右侧内容。
 const GROUPS = [
   { id: 'appearance', labelKey: 'settings.group.appearance', Icon: Palette },
   { id: 'agent', labelKey: 'settings.group.agent', Icon: SlidersHorizontal },
   { id: 'memory', labelKey: 'settings.group.memory', Icon: Brain },
+  { id: 'mcp', labelKey: 'settings.group.mcp', Icon: Plug },
   { id: 'apiKeys', labelKey: 'settings.group.apiKeys', Icon: KeyRound },
 ];
 
@@ -57,18 +74,39 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
   const { locale, setLocale } = useI18n();
   const [activeGroup, setActiveGroup] = useState('appearance');
   const [agent, setAgent] = useState(null);
+  const [sources, setSources] = useState({});
+  const [schema, setSchema] = useState({});
+  const [profile, setProfile] = useState('custom');
+  const [profiles, setProfiles] = useState({});
+  const [mcpServers, setMcpServers] = useState(DEFAULT_MCP_SERVERS);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [mcpStatus, setMcpStatus] = useState({});
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
 
+  const applyConfigData = data => {
+    if (data.agent) setAgent(data.agent);
+    if (data.sources) setSources(data.sources);
+    if (data.schema) setSchema(data.schema);
+    if (data.profile) setProfile(data.profile);
+    if (data.profiles) setProfiles(data.profiles);
+    if (data.mcpServers) {
+      setMcpServers({
+        chrome: data.mcpServers.chrome || DEFAULT_MCP_SERVERS.chrome,
+        jetbrains: data.mcpServers.jetbrains || DEFAULT_MCP_SERVERS.jetbrains,
+      });
+    }
+  };
+
   useEffect(() => {
     let alive = true;
     fetchConfig()
       .then(data => {
         if (!alive) return;
-        setAgent(data.agent);
+        applyConfigData(data);
         setKeys(data.keys || []);
       })
       .catch(e => { if (alive) setError(e.message); })
@@ -99,7 +137,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
     setError('');
     try {
       const data = await saveConfig(agent);
-      setAgent(data.agent);
+      applyConfigData(data);
       setSaved(true);
     } catch (e) {
       setError(e.message);
@@ -113,7 +151,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
     setError('');
     try {
       const data = await resetConfig();
-      setAgent(data.agent);
+      applyConfigData(data);
       setSaved(true);
     } catch (e) {
       setError(e.message);
@@ -122,13 +160,70 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
     }
   };
 
+  const handleProfile = async nextProfile => {
+    setSaving(true);
+    setError('');
+    try {
+      const data = await applyConfigProfile(nextProfile);
+      applyConfigData(data);
+      setSaved(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateMcp = (name, updater) => {
+    setMcpServers(current => ({
+      ...current,
+      [name]: updater(current[name] || DEFAULT_MCP_SERVERS[name]),
+    }));
+    setMcpStatus(current => ({ ...current, [name]: null }));
+  };
+
+  const handleSaveMcp = async name => {
+    setMcpStatus(current => ({ ...current, [name]: { loading: true } }));
+    try {
+      const data = await saveMcpServer(name, mcpServers[name]);
+      setMcpServers(current => ({ ...current, [name]: data.mcpServers[name] }));
+      setMcpStatus(current => ({ ...current, [name]: { ok: true, message: t('settings.mcpSaved') } }));
+      return true;
+    } catch (e) {
+      setMcpStatus(current => ({ ...current, [name]: { ok: false, message: e.message } }));
+      return false;
+    }
+  };
+
+  const handleTestMcp = async name => {
+    if (!await handleSaveMcp(name)) return;
+    setMcpStatus(current => ({ ...current, [name]: { loading: true } }));
+    try {
+      const data = await testMcpServer(name);
+      setMcpStatus(current => ({
+        ...current,
+        [name]: { ok: true, message: t('settings.mcpConnected', { count: data.toolCount }) },
+      }));
+    } catch (e) {
+      setMcpStatus(current => ({ ...current, [name]: { ok: false, message: e.message } }));
+    }
+  };
+
   const numberField = (key, labelKey) => {
-    const limit = NUMBER_FIELD_LIMITS[key];
+    const fieldSchema = schema[key] || {};
+    const limit = {
+      min: Number.isFinite(fieldSchema.min) ? fieldSchema.min : Number.MIN_SAFE_INTEGER,
+      max: Number.isFinite(fieldSchema.max) ? fieldSchema.max : Number.MAX_SAFE_INTEGER,
+      step: NUMBER_FIELD_STEPS[key] || 1,
+    };
     const value = Number(agent[key]);
     const displayValue = Number.isFinite(value) ? value : limit.min;
     return (
       <div key={key} className="settings-field">
-        <span>{t(labelKey)}</span>
+        <span className="settings-field-label">
+          <span>{t(labelKey)}</span>
+          {sources[key] && <small>{t(`settings.source.${sources[key]}`)}</small>}
+        </span>
         <div className="settings-stepper">
           <button
             type="button"
@@ -163,6 +258,93 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
     if (loading) return <p className="dialog-desc">{t('common.loading')}</p>;
     if (!agent) return <p className="settings-error">{error || t('common.loadFailed')}</p>;
     return null;
+  };
+
+  const renderMcpServer = name => {
+    const server = mcpServers[name] || DEFAULT_MCP_SERVERS[name];
+    const transport = server.transport || DEFAULT_MCP_SERVERS[name].transport;
+    const status = mcpStatus[name];
+    return (
+      <div key={name} className="settings-mcp-card">
+        <div className="settings-mcp-heading">
+          <strong>{name === 'chrome' ? 'Chrome DevTools' : 'JetBrains IDE'}</strong>
+          <label className="settings-mcp-enabled">
+            <span>{t('settings.mcpEnabled')}</span>
+            <input
+              type="checkbox"
+              checked={!!server.enabled}
+              onChange={e => updateMcp(name, current => ({ ...current, enabled: e.target.checked }))}
+            />
+          </label>
+        </div>
+        <div className="settings-mcp-grid">
+          <label className="settings-field">
+            <span>{t('settings.mcpTransport')}</span>
+            <select
+              value={transport.type}
+              onChange={e => updateMcp(name, current => ({
+                ...current,
+                transport: e.target.value === 'stdio'
+                  ? { type: 'stdio', command: 'npx', args: [] }
+                  : { type: 'sse', url: name === 'chrome' ? 'http://127.0.0.1:3099/sse' : 'http://127.0.0.1:6365/sse' },
+              }))}
+            >
+              <option value="sse">SSE</option>
+              {name !== 'chrome' && <option value="stdio">stdio</option>}
+            </select>
+          </label>
+          {transport.type === 'sse' ? (
+            <label className="settings-field settings-mcp-wide">
+              <span>URL</span>
+              <input
+                value={transport.url || ''}
+                onChange={e => updateMcp(name, current => ({
+                  ...current,
+                  transport: { ...current.transport, type: 'sse', url: e.target.value },
+                }))}
+              />
+            </label>
+          ) : (
+            <>
+              <label className="settings-field">
+                <span>{t('settings.mcpCommand')}</span>
+                <input
+                  value={transport.command || ''}
+                  onChange={e => updateMcp(name, current => ({
+                    ...current,
+                    transport: { ...current.transport, type: 'stdio', command: e.target.value },
+                  }))}
+                />
+              </label>
+              <label className="settings-field settings-mcp-wide">
+                <span>{t('settings.mcpArgs')}</span>
+                <input
+                  value={(transport.args || []).join(' ')}
+                  onChange={e => updateMcp(name, current => ({
+                    ...current,
+                    transport: { ...current.transport, type: 'stdio', args: e.target.value.split(/\s+/).filter(Boolean) },
+                  }))}
+                />
+              </label>
+            </>
+          )}
+          {name === 'jetbrains' && (
+            <label className="settings-field settings-mcp-wide">
+              <span>{t('settings.mcpProjectPath')}</span>
+              <input
+                value={server.projectPath || '.'}
+                onChange={e => updateMcp(name, current => ({ ...current, projectPath: e.target.value }))}
+              />
+            </label>
+          )}
+        </div>
+        <div className="settings-mcp-actions">
+          <button type="button" className="dialog-btn" onClick={() => handleSaveMcp(name)} disabled={status?.loading}>{t('common.save')}</button>
+          <button type="button" className="dialog-btn primary" onClick={() => handleTestMcp(name)} disabled={status?.loading || !server.enabled}>{t('settings.mcpTest')}</button>
+          {status?.message && <span className={status.ok ? 'settings-ok' : 'settings-error'}>{status.message}</span>}
+        </div>
+      </div>
+    );
   };
 
   const renderGroup = () => {
@@ -223,25 +405,50 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
           <p className="settings-section-title">{t('settings.agentParams')}</p>
           <p className="dialog-desc">{t('settings.agentParamsDesc')}</p>
           {renderBackendGuard() || (
-            <div className="settings-grid">
-              {AGENT_FIELDS.map(f => numberField(f.key, f.labelKey))}
-              <label className="settings-field settings-field-switch">
-                <span>{t('settings.observeDesktop')}</span>
-                <input
-                  type="checkbox"
-                  checked={!!agent.observeDesktop}
-                  onChange={e => setField('observeDesktop', e.target.checked)}
-                />
-              </label>
-              <label className="settings-field settings-field-switch">
-                <span>{t('settings.autoModelRouting')}</span>
-                <input
-                  type="checkbox"
-                  checked={!!agent.autoModelRouting}
-                  onChange={e => setField('autoModelRouting', e.target.checked)}
-                />
-              </label>
-            </div>
+            <>
+              <div className="settings-profile-row">
+                <span>{t('settings.profile')}</span>
+                <div className="settings-segment">
+                  {PROFILE_OPTIONS.map(item => (
+                    <button
+                      key={item}
+                      type="button"
+                      className={`settings-segment-btn${profile === item ? ' active' : ''}`}
+                      onClick={() => handleProfile(item)}
+                      disabled={saving || !profiles[item]}
+                    >{t(`settings.profile.${item}`)}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="settings-grid">
+                {BASIC_AGENT_FIELDS.map(f => numberField(f.key, f.labelKey))}
+                <label className="settings-field settings-field-switch">
+                  <span>{t('settings.autoModelRouting')}</span>
+                  <input
+                    type="checkbox"
+                    checked={!!agent.autoModelRouting}
+                    onChange={e => setField('autoModelRouting', e.target.checked)}
+                  />
+                </label>
+              </div>
+              <button type="button" className="settings-advanced-toggle" onClick={() => setAdvancedOpen(open => !open)}>
+                {advancedOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                {t('settings.advanced')}
+              </button>
+              {advancedOpen && (
+                <div className="settings-grid settings-advanced-grid">
+                  {ADVANCED_AGENT_FIELDS.map(f => numberField(f.key, f.labelKey))}
+                  <label className="settings-field settings-field-switch">
+                    <span>{t('settings.observeDesktop')}</span>
+                    <input
+                      type="checkbox"
+                      checked={!!agent.observeDesktop}
+                      onChange={e => setField('observeDesktop', e.target.checked)}
+                    />
+                  </label>
+                </div>
+              )}
+            </>
           )}
         </div>
       );
@@ -263,6 +470,21 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
             </label>
             {renderBackendGuard() || numberField('memoryMaxEntries', 'settings.memoryMaxEntries')}
           </div>
+        </div>
+      );
+    }
+
+    if (activeGroup === 'mcp') {
+      return (
+        <div className="settings-section">
+          <p className="settings-section-title">{t('settings.group.mcp')}</p>
+          <p className="dialog-desc">{t('settings.mcpDesc')}</p>
+          {renderBackendGuard() || (
+            <div className="settings-mcp-list">
+              {renderMcpServer('chrome')}
+              {renderMcpServer('jetbrains')}
+            </div>
+          )}
         </div>
       );
     }
@@ -289,7 +511,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
   };
 
   // 保存/重置只对后端 agent 配置生效，外观/记忆开关是前端偏好（即时生效，无需保存）。
-  const showSaveBar = activeGroup === 'agent' || activeGroup === 'memory' || activeGroup === 'apiKeys';
+  const showSaveBar = activeGroup === 'agent' || activeGroup === 'memory';
   const activeGroupLabel = t(GROUPS.find(group => group.id === activeGroup)?.labelKey || 'settings.title');
 
   return (

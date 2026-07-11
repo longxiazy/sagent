@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { log } from '../../../helpers/logger.ts';
+import { runtimeConfig } from '../../core/runtime-config.ts';
 
 const DEFAULT_PROTOCOL_VERSIONS = ['2025-03-26', '2024-11-05'];
 const DEFAULT_SSE_HOST = '127.0.0.1';
@@ -153,6 +154,8 @@ function toolKey(config) {
 }
 
 export function isIdeMcpEnabled(env = process.env) {
+  const configured = runtimeConfig.mcpServers().jetbrains;
+  if (configured) return configured.enabled;
   if (envFlag(env.IDE_MCP_ENABLED)) {
     return true;
   }
@@ -178,6 +181,25 @@ export function buildIdePromptLines(env = process.env) {
 }
 
 export function loadIdeMcpConfig(env = process.env) {
+  const configured = runtimeConfig.mcpServers().jetbrains;
+  if (configured) {
+    const transport = configured.transport;
+    const projectPath = toAbsolutePath(configured.projectPath || '.', process.cwd());
+    return {
+      enabled: configured.enabled,
+      transport: transport.type,
+      host: DEFAULT_SSE_HOST,
+      port: DEFAULT_SSE_PORT,
+      ssePath: DEFAULT_SSE_PATH,
+      url: transport.type === 'sse' ? transport.url : null,
+      messagesUrl: transport.type === 'sse' ? transport.messagesUrl || null : null,
+      command: transport.type === 'stdio' ? transport.command : DEFAULT_STDIO_COMMAND,
+      args: transport.type === 'stdio' ? transport.args || [] : DEFAULT_STDIO_ARGS,
+      cwd: toAbsolutePath(transport.type === 'stdio' ? transport.cwd || projectPath : projectPath, process.cwd()),
+      projectPath,
+      source: 'config',
+    };
+  }
   const transport = String(env.IDE_MCP_TRANSPORT || '').trim().toLowerCase() === 'stdio' ? 'stdio' : 'sse';
   const host = String(env.IDE_MCP_HOST || DEFAULT_SSE_HOST).trim() || DEFAULT_SSE_HOST;
   const port = Number(env.IDE_MCP_PORT || DEFAULT_SSE_PORT) || DEFAULT_SSE_PORT;
@@ -201,6 +223,7 @@ export function loadIdeMcpConfig(env = process.env) {
     args,
     cwd,
     projectPath,
+    source: 'env',
   };
 }
 

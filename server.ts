@@ -10,21 +10,9 @@
  *   5. 检查断点（checkpoint），自动恢复上次未完成的任务
  *   6. 输出图形化启动信息（表格样式）
  *
- * 配置项 / Configuration (env vars):
- *   PORT, HOST                      — 监听地址
- *   MODELS                          — 可用模型列表（逗号分隔）
- *   AGENT_MULTI_MODELS              — 多模型竞速列表
- *   AGENT_MAX_STEPS                 — 单次任务最大步数
- *   AGENT_MODEL_TIMEOUT             — 单步超时（秒）
- *   AGENT_STAGGER_DELAY             — 竞速错峰延迟（秒）
- *   AGENT_BATCH_SIZE                — 每批并发模型数
- *   AGENT_MEMORY_MAX_ENTRIES        — 记忆压缩阈值
- *   AGENT_HEADLESS                  — 兼容旧配置，WebView 后端会忽略该值
- *   AGENT_OBSERVE_DESKTOP           — 是否观测 macOS 桌面
- *   AGENT_RESUME                    — 是否自动恢复断点
- *   MEMORY_DIR                      — 记忆和截图存储目录
- *   VISION_MODEL                    — image_analyze 工具使用的多模态视觉模型
- *   NVIDIA_API_KEY / GEMINI_API_KEY — LLM API 密钥
+ * 配置 / Configuration:
+ *   .env             — API Key、监听地址、认证和本地二进制覆盖
+ *   data/config.json — Agent profile、上下文、工具和 MCP server
  */
 
 import 'dotenv/config';
@@ -39,7 +27,7 @@ import { flushLlmLogs, initLlmLogger } from './agent/core/llm-logger.ts';
 import { createDesktopAgentRunner } from './agent/desktop/agent.ts';
 import { createSandboxedWorkerAgentRunner, getWorkerCancelDelays } from './agent/worker/runner.ts';
 import { DEFAULT_VISION_MODEL } from './agent/tools/vision/execute.ts';
-import { createClients, loadAgentMultiModels, deriveProviderName } from './agent/core/ai-client.ts';
+import { createClients, deriveProviderName } from './agent/core/ai-client.ts';
 import { createProviderRegistry } from './agent/core/providers/registry.ts';
 import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
 import { loadIdeMcpConfig } from './agent/tools/ide/mcp-client.ts';
@@ -58,6 +46,7 @@ import { runtimeConfig } from './agent/core/runtime-config.ts';
 import { createApiAuth, createCorsOptions, createOriginGuard, loadServerSecurityConfig } from './helpers/security.ts';
 import { flushAllPersistenceTasks } from './helpers/persistence-queue.ts';
 import { persistRecoveredAgentRunMemory } from './routes/agent-run-memory-persist.ts';
+import { warnLegacyConfiguration } from './helpers/config-deprecations.ts';
 
 const securityConfig = loadServerSecurityConfig();
 const app = express();
@@ -78,35 +67,37 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST_DIR = path.resolve(__dirname, 'client/dist');
 const MEMORY_DIR = path.resolve(__dirname, process.env.MEMORY_DIR || 'data');
 const CHECKPOINT_DIR = MEMORY_DIR;
-const AGENT_RESUME = process.env.AGENT_RESUME !== 'false';
 
 initLlmLogger(MEMORY_DIR);
 initWebViewDataStore(MEMORY_DIR);
-// 运行时配置层：以 .env 为默认值底，叠加 data/runtime-config.json 的前台覆盖。
+// 运行时配置层：读取版本化 data/config.json，并兼容迁移旧 runtime-config.json。
 // 必须在 createDesktopAgentRunner 之前 init，且供 runtime.ts/memory.ts 热读取。
 await runtimeConfig.init(MEMORY_DIR);
+warnLegacyConfiguration(runtimeConfig);
+const executionConfig = runtimeConfig.execution();
+const AGENT_RESUME = executionConfig.resume;
 
 // 项目注册表：每个项目隔离记忆/trace/checkpoint/uploads 与文件工具根。
 // 注册表为空时为「无项目」全局态，行为与引入项目概念前一致。
 const projectStore = createProjectStore(MEMORY_DIR);
 await projectStore.init();
 
-const AGENT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS || 8);
-const VISION_MODEL = (process.env.VISION_MODEL || DEFAULT_VISION_MODEL).trim();
-const AGENT_SANDBOXED_WORKERS = process.env.AGENT_SANDBOXED_WORKERS === 'true';
-const AGENT_WORKER_SANDBOX = process.env.AGENT_WORKER_SANDBOX !== 'false';
+const VISION_MODEL = (runtimeConfig.tools().vision?.model || process.env.VISION_MODEL || DEFAULT_VISION_MODEL).trim();
+const AGENT_SANDBOXED_WORKERS = executionConfig.sandboxedWorkers;
+const AGENT_WORKER_SANDBOX = executionConfig.workerSandbox;
 const agentRunStore = createAgentRunStore();
 const approvalStore = createApprovalStore();
+const initialAgentConfig = runtimeConfig.get();
 const directRunDesktopAgent = createDesktopAgentRunner({
   registry,
   openai_client,
   modelConfig,
-  maxSteps: AGENT_MAX_STEPS,
-  defaultHeadless: process.env.AGENT_HEADLESS === 'true',
-  observeDesktop: process.env.AGENT_OBSERVE_DESKTOP === 'true',
-  modelTimeoutMs: Number(process.env.AGENT_MODEL_TIMEOUT || 90) * 1000,
-  staggerDelayMs: Number(process.env.AGENT_STAGGER_DELAY || 5) * 1000,
-  batchSize: Number(process.env.AGENT_BATCH_SIZE || 1),
+  maxSteps: initialAgentConfig.maxSteps,
+  defaultHeadless: false,
+  observeDesktop: initialAgentConfig.observeDesktop,
+  modelTimeoutMs: initialAgentConfig.modelTimeoutSec * 1000,
+  staggerDelayMs: initialAgentConfig.staggerDelaySec * 1000,
+  batchSize: initialAgentConfig.batchSize,
   runStore: agentRunStore,
   approvalStore,
   checkpointDir: CHECKPOINT_DIR,
@@ -238,7 +229,6 @@ async function collectAllCheckpoints() {
 
 const httpServer = app.listen(Number(PORT), HOST, async () => {
   const cfg = runtimeConfig.get();
-  const multiModels = loadAgentMultiModels();
   const ideConfig = loadIdeMcpConfig();
   const chromeConfig = loadChromeMcpConfig();
   const W = 56;
@@ -252,7 +242,6 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
   ${row('🚀 Sagent Server', `http://${HOST}:${PORT}`)}
   ╠${dLine.slice(2)}╣
   ${row('Models', modelConfig.map(m => m.id).join(', '))}
-  ${multiModels.length > 0 ? row('MultiModel', multiModels.join(', ')) : ''}
   ${row('VISION_MODEL', VISION_MODEL)}
   ${hLine}
   ${row('AGENT_MAX_STEPS', cfg.maxSteps)}
@@ -261,7 +250,6 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
   ${row('AGENT_BATCH_SIZE', cfg.batchSize)}
   ${row('AGENT_MEMORY_MAX_ENTRIES', cfg.memoryMaxEntries)}
   ${hLine}
-  ${row('AGENT_HEADLESS', process.env.AGENT_HEADLESS || false)}
   ${row('AGENT_OBSERVE_DESKTOP', cfg.observeDesktop)}
   ${row('AGENT_RESUME', AGENT_RESUME)}
   ${row('AGENT_WORKERS', AGENT_SANDBOXED_WORKERS ? (AGENT_WORKER_SANDBOX ? 'sandboxed' : 'plain') : 'disabled')}
