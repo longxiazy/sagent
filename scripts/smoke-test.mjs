@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import 'dotenv/config';
+
 /**
  * Smoke 测试脚本 — 每次功能开发完后跑一组预设问题,用 quality 字段做断言
  *
@@ -39,6 +41,7 @@ const USAGE = `
 
 环境变量:
   SMOKE_BASE_URL, SMOKE_TIMEOUT_MS, SMOKE_MODEL
+  SMOKE_API_TOKEN      Smoke 专用 API Token；未设置时回退到 SAGENT_API_TOKEN
 `.trim();
 
 function parseArgs() {
@@ -48,6 +51,7 @@ function parseArgs() {
     base: process.env.SMOKE_BASE_URL || `http://127.0.0.1:${process.env.PORT || 3001}`,
     timeoutMs: Number(process.env.SMOKE_TIMEOUT_MS || 300_000),
     model: process.env.SMOKE_MODEL || undefined,
+    apiToken: process.env.SMOKE_API_TOKEN || process.env.SAGENT_API_TOKEN || '',
     only: null,
     category: null,
     reportDir: path.join(ROOT, 'data', 'smoke-reports'),
@@ -69,14 +73,24 @@ function parseArgs() {
   return cfg;
 }
 
-async function checkServiceReady(base) {
-  const r = await fetch(`${base}/api/agent/active`);
+function authHeaders(apiToken, headers = {}) {
+  return apiToken
+    ? { ...headers, Authorization: `Bearer ${apiToken}` }
+    : headers;
+}
+
+async function checkServiceReady(base, apiToken) {
+  const r = await fetch(`${base}/api/agent/active`, {
+    headers: authHeaders(apiToken),
+  });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
 }
 
-async function getActiveRun(base) {
+async function getActiveRun(base, apiToken) {
   try {
-    const r = await fetch(`${base}/api/agent/active`);
+    const r = await fetch(`${base}/api/agent/active`, {
+      headers: authHeaders(apiToken),
+    });
     if (!r.ok) return null;
     const j = await r.json();
     return j.active ? j : null;
@@ -85,12 +99,12 @@ async function getActiveRun(base) {
   }
 }
 
-async function cancelRun(base, runId) {
+async function cancelRun(base, runId, apiToken) {
   if (!runId) return;
   try {
     await fetch(`${base}/api/agent/cancel`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(apiToken, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({ runId }),
     });
   } catch {
@@ -98,10 +112,10 @@ async function cancelRun(base, runId) {
   }
 }
 
-async function waitForIdle(base, timeoutMs = 15000) {
+async function waitForIdle(base, apiToken, timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const active = await getActiveRun(base);
+    const active = await getActiveRun(base, apiToken);
     if (!active) return true;
     await new Promise(resolve => setTimeout(resolve, 500));
   }
@@ -112,16 +126,16 @@ async function waitForIdle(base, timeoutMs = 15000) {
  * 保证服务端没有残留 run。如果有(例如上一条客户端超时了),先 cancel + 等 idle。
  * 返回:'idle' 已空闲 / 'cancelled' 取消了残留 / 'busy' 取消失败仍未空闲
  */
-async function ensureIdle(base, { hint } = {}) {
-  const active = await getActiveRun(base);
+async function ensureIdle(base, apiToken, { hint } = {}) {
+  const active = await getActiveRun(base, apiToken);
   if (!active) return 'idle';
   console.log(`[smoke] ${hint || '清理'}残留 run: ${active.runId}(任务: ${(active.task || '').slice(0, 40)}…),发送 cancel…`);
-  await cancelRun(base, active.runId);
-  const ok = await waitForIdle(base, 20000);
+  await cancelRun(base, active.runId, apiToken);
+  const ok = await waitForIdle(base, apiToken, 20000);
   return ok ? 'cancelled' : 'busy';
 }
 
-async function runQuery(base, query, timeoutMs, model, onRunIdResolved) {
+async function runQuery(base, query, timeoutMs, model, apiToken, onRunIdResolved) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
 
@@ -137,7 +151,7 @@ async function runQuery(base, query, timeoutMs, model, onRunIdResolved) {
   try {
     const res = await fetch(`${base}/api/agent`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      headers: authHeaders(apiToken, { 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
       body: JSON.stringify(body),
       signal: ac.signal,
     });
@@ -269,27 +283,27 @@ async function main() {
   }
 
   try {
-    await checkServiceReady(cfg.base);
+    await checkServiceReady(cfg.base, cfg.apiToken);
   } catch (err) {
     console.error(`[smoke] 服务未就绪(${cfg.base}): ${err.message}`);
     console.error('[smoke] 先在另一个终端跑 `npm run dev` 启动服务,再跑 smoke');
     process.exit(2);
   }
 
-  const startupState = await ensureIdle(cfg.base, { hint: '启动前' });
+  const startupState = await ensureIdle(cfg.base, cfg.apiToken, { hint: '启动前' });
   if (startupState === 'busy') {
     console.error('[smoke] 服务端存在无法取消的 active run,放弃');
     process.exit(2);
   }
 
-  console.log(`[smoke] base=${cfg.base} timeout=${Math.round(cfg.timeoutMs / 1000)}s queries=${queries.length}${cfg.model ? ' model=' + cfg.model : ''}`);
+  console.log(`[smoke] base=${cfg.base} auth=${cfg.apiToken ? 'configured' : 'disabled'} timeout=${Math.round(cfg.timeoutMs / 1000)}s queries=${queries.length}${cfg.model ? ' model=' + cfg.model : ''}`);
 
   if (cfg.writeReport) await fs.mkdir(cfg.reportDir, { recursive: true });
 
   const currentRun = { base: cfg.base, runId: null };
   const onSignal = async sig => {
     console.log(`\n[smoke] 收到 ${sig},取消当前任务并退出…`);
-    if (currentRun.runId) await cancelRun(currentRun.base, currentRun.runId);
+    if (currentRun.runId) await cancelRun(currentRun.base, currentRun.runId, cfg.apiToken);
     process.exit(130);
   };
   process.on('SIGINT', () => { onSignal('SIGINT'); });
@@ -306,6 +320,7 @@ async function main() {
       query,
       query.timeoutMs || cfg.timeoutMs,
       cfg.model,
+      cfg.apiToken,
       runId => { currentRun.runId = runId; }
     );
     const verdict = evaluateQuery(query, result);
@@ -321,7 +336,7 @@ async function main() {
     }
 
     // 客户端超时/异常退出但服务端 run 还在跑 → 必须主动 cancel,否则下一条会被 409 拦截
-    const cleanupState = await ensureIdle(cfg.base, { hint: '下一条前' });
+    const cleanupState = await ensureIdle(cfg.base, cfg.apiToken, { hint: '下一条前' });
     if (cleanupState === 'busy') {
       console.log('        · 警告:服务端仍 busy,等下一条可能 409');
     }
