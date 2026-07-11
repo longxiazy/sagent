@@ -55,6 +55,8 @@ Docker builds the frontend and serves the UI/API from one Bun process. It is use
 
 ```bash
 cp .env.example .env
+openssl rand -hex 24
+# Paste the output into SAGENT_API_TOKEN= in .env.
 docker compose up --build
 ```
 
@@ -75,11 +77,20 @@ Dangerous operations such as deleting files, installing packages, or executing t
 
 ## Multi-Device View
 
-Devices on the same LAN can open `http://<Mac-IP>:5173` to watch the active Agent run in real time.
+The default dev server only listens on `127.0.0.1`. To share it on the LAN, generate a token in `.env`, then explicitly expose Vite:
+
+```bash
+openssl rand -hex 24
+# Paste the output into SAGENT_API_TOKEN= in .env.
+VITE_HOST=0.0.0.0 npm run sandbox
+```
+
+Devices on the same LAN can then open `http://<Mac-IP>:5173`. The first protected request prompts for the token. For a separately hosted frontend, list its exact origin in `SAGENT_CORS_ORIGINS`.
 
 - While an Agent run is active, secondary devices show the execution flow and receive the final result when it completes.
 - Chat history is local to each browser/device.
 - Only one Agent run can execute at a time; additional requests receive a 409 response.
+- API, OpenAI-compatible `/v1`, and screenshot routes require authentication whenever `SAGENT_API_TOKEN` is configured. Non-loopback backend listeners refuse to start without one.
 
 ## Core Workflows
 

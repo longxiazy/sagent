@@ -4,9 +4,9 @@
 
 ## P0 — 安全边界
 
-- [ ] 重构 `terminal.run_safe`：改为无 shell 的命令 + 参数白名单，移除可写/可执行子命令。
-- [ ] 为局域网 API 增加认证、严格 CORS 和安全的默认监听地址。
-- [ ] 审批接口校验 `approvalId` 与 `runId` 的归属关系。
+- [x] 重构 `terminal.run_safe`：改为无 shell 的命令 + 参数白名单，移除可写/可执行子命令。
+- [x] 为局域网 API 增加认证、严格 CORS 和安全的默认监听地址。
+- [x] 审批接口校验 `approvalId` 与 `runId` 的归属关系。
 
 ## P1 — 核心正确性
 

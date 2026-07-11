@@ -25,6 +25,28 @@ interface ApprovalRecord {
   resolve: (decision: string) => void;
 }
 
+export class ApprovalNotFoundError extends Error {
+  readonly code = 'APPROVAL_NOT_FOUND';
+
+  constructor(readonly approvalId: string) {
+    super(`审批不存在: ${approvalId}`);
+    this.name = 'ApprovalNotFoundError';
+  }
+}
+
+export class ApprovalRunMismatchError extends Error {
+  readonly code = 'APPROVAL_RUN_MISMATCH';
+
+  constructor(
+    readonly approvalId: string,
+    readonly expectedRunId: string,
+    readonly actualRunId: string,
+  ) {
+    super(`审批与运行不匹配: ${approvalId}`);
+    this.name = 'ApprovalRunMismatchError';
+  }
+}
+
 function serializeApproval(approval: ApprovalRecord) {
   return {
     ...approval.payload,
@@ -75,10 +97,13 @@ export function createApprovalStore(): ApprovalStore {
      * @param {'approve'|'reject'|string} decision
      * @returns {Object} 审批时传入的 payload
      */
-    resolve(approvalId: string, decision: string) {
+    resolve(approvalId: string, decision: string, expectedRunId: string) {
       const approval = pending.get(approvalId);
       if (!approval) {
-        throw new Error(`审批不存在: ${approvalId}`);
+        throw new ApprovalNotFoundError(approvalId);
+      }
+      if (approval.payload.runId !== expectedRunId) {
+        throw new ApprovalRunMismatchError(approvalId, expectedRunId, approval.payload.runId);
       }
       pending.delete(approvalId);
       approval.resolve(decision);

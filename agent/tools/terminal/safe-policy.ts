@@ -1,8 +1,17 @@
-// run_safe 终端命令策略：只读 / 低破坏命令的白名单，以及允许在命令前剥离的环境变量前缀。
-// 修改前请确认条目对应的命令在 macOS 上没有副作用、不会加载额外二进制或脚本。
+/**
+ * run_safe 安全策略。
+ *
+ * run_safe 只允许执行一个无 shell 的只读进程。这里同时负责命令行分词和参数校验；
+ * 未通过的命令会在 policy 层升级为 run_confirmed，由用户审批后才进入 zsh。
+ */
 
-export const SAFE_COMMANDS = new Set([
-  // 文件查看 / 搜索（只读）
+export interface ParsedSafeCommand {
+  file: string;
+  args: string[];
+  env?: NodeJS.ProcessEnv;
+}
+
+const SIMPLE_READ_ONLY_COMMANDS = new Set([
   'pwd',
   'ls',
   'cat',
@@ -10,40 +19,14 @@ export const SAFE_COMMANDS = new Set([
   'tail',
   'wc',
   'stat',
-  'date',
-  'echo',
-  'rg',
-  'find',
   'which',
-  'git',
   'grep',
-  'diff',
-  'sort',
-  'uniq',
-  'awk',
-  'sed',
   'cut',
   'tr',
-  'xargs',
-  'tee',
   'tree',
   'du',
   'df',
   'jq',
-  // 文件操作（低破坏性）
-  'mkdir',
-  'touch',
-  'cp',
-  'mv',
-  'ln',
-  'tar',
-  'gzip',
-  'gunzip',
-  'zip',
-  'unzip',
-  // 系统信息（只读）
-  'env',
-  'printenv',
   'id',
   'whoami',
   'hostname',
@@ -51,62 +34,232 @@ export const SAFE_COMMANDS = new Set([
   'ps',
   'pgrep',
   'pidof',
-  // 网络 / 系统观测（只读）
   'lsof',
   'netstat',
   'ss',
-  'memory_pressure',
   'vm_stat',
   'system_profiler',
-  'plutil',
 ]);
 
-// 允许在命令前出现并被剥离的环境变量前缀。
-// 这些变量都不会影响 shell 二进制查找或加载（不像 PATH / DYLD_* / LD_* / IFS / BASH_ENV / ENV / ZDOTDIR）。
-export const SAFE_ENV_PREFIXES = new Set([
-  'GIT_CONFIG_GLOBAL',   // 指定 .gitconfig 路径，常见 =/dev/null
-  'GIT_CONFIG_NOSYSTEM', // =1 时让 git 忽略 /etc/gitconfig
-  'HOME',                // 用户主目录，影响 ~ 展开
-  'LANG',                // 默认 locale
-  'LC_ALL',              // 强制覆盖所有 locale 类别
-  'LC_CTYPE',            // 字符分类 locale
-  'TZ',                  // 时区
+export const SAFE_COMMANDS = new Set([
+  ...SIMPLE_READ_ONLY_COMMANDS,
+  'date',
+  'diff',
+  'rg',
+  'git',
 ]);
 
-// 取命令首词，跳过 SAFE_ENV_PREFIXES 列出的环境变量前缀（如 GIT_CONFIG_GLOBAL=...）。
-export function getFirstToken(command) {
-  const tokens = String(command || '').trim().split(/\s+/);
-  for (const token of tokens) {
-    const m = token.match(/^([A-Za-z_][A-Za-z0-9_]*)=/);
-    if (m && SAFE_ENV_PREFIXES.has(m[1])) {
+const SHELL_META = new Set(['|', ';', '&', '>', '<', '`']);
+const GIT_READ_ONLY_SUBCOMMANDS = new Set([
+  'status',
+  'diff',
+  'log',
+  'show',
+  'rev-parse',
+  'ls-files',
+  'ls-tree',
+  'grep',
+]);
+
+function tokenize(command: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let quote: 'single' | 'double' | null = null;
+  let escaping = false;
+  let tokenStarted = false;
+
+  const push = () => {
+    if (tokenStarted) tokens.push(current);
+    current = '';
+    tokenStarted = false;
+  };
+
+  for (let i = 0; i < command.length; i += 1) {
+    const char = command[i];
+    if (escaping) {
+      current += char;
+      escaping = false;
+      tokenStarted = true;
       continue;
     }
-    return token;
+    if (char === '\\' && quote !== 'single') {
+      escaping = true;
+      continue;
+    }
+    if (quote === 'single') {
+      if (char === "'") quote = null;
+      else {
+        current += char;
+        tokenStarted = true;
+      }
+      continue;
+    }
+    if (quote === 'double') {
+      if (char === '"') quote = null;
+      else if (char === '$' || char === '`') throw new Error('run_safe 不允许 shell 展开');
+      else {
+        current += char;
+        tokenStarted = true;
+      }
+      continue;
+    }
+    if (char === "'") {
+      quote = 'single';
+      tokenStarted = true;
+      continue;
+    }
+    if (char === '"') {
+      quote = 'double';
+      tokenStarted = true;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      push();
+      continue;
+    }
+    if (SHELL_META.has(char) || char === '$') {
+      throw new Error(`run_safe 不允许 shell 操作符: ${char}`);
+    }
+    current += char;
+    tokenStarted = true;
   }
-  return '';
+
+  if (escaping || quote) throw new Error('run_safe 命令引号或转义不完整');
+  push();
+  return tokens;
 }
 
-// 命令是否可以走 run_safe 路径（首词在白名单且没有危险 shell 操作符）。
-// classify 阶段用它判断是否需要把 run_safe 升级到 run_confirmed 走审批。
-export function canRunSafe(command) {
-  const cmd = String(command || '');
-  const firstToken = getFirstToken(cmd);
-  if (!SAFE_COMMANDS.has(firstToken)) {
-    return false;
+function hasOption(args: string[], ...options: string[]) {
+  return args.some(arg => options.some(option => arg === option || arg.startsWith(`${option}=`)));
+}
+
+function validateDate(args: string[]) {
+  // macOS date 的数字位置参数（包括 HHMM 这种短格式）会修改系统时间。
+  // -j 明确禁止设置时间；没有 -j 时只允许纯查询/格式化参数。
+  if (args.includes('-j')) {
+    return !args.some(arg => arg === '--set' || arg.startsWith('--set='));
   }
-  // 与 run.ts 内的危险操作符黑名单保持一致
-  if (
-    /[|;]/.test(cmd) ||
-    /`/.test(cmd) ||
-    /\$\(/.test(cmd) ||
-    /\$\{/.test(cmd) ||
-    /[^&]&[^&]/.test(cmd) ||
-    /\s&(\s|$)/.test(cmd) ||
-    /&&|\|\|/.test(cmd) ||
-    /[<>]\(/.test(cmd) ||
-    /<<\s*\w/.test(cmd)
-  ) {
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg.startsWith('+') || arg === '-u' || arg === '-R' || arg === '-I' || arg.startsWith('-I')) {
+      continue;
+    }
+    if (arg === '-r' || arg === '-v') {
+      index += 1;
+      if (index >= args.length) return false;
+      continue;
+    }
     return false;
   }
   return true;
+}
+
+function validateDiff(args: string[]) {
+  return !hasOption(args, '--output', '-o');
+}
+
+function validateRipgrep(args: string[]) {
+  return !hasOption(args, '--pre', '--pre-glob', '--hostname-bin');
+}
+
+function validateGit(args: string[]) {
+  if (args.length === 0) return false;
+  // 禁止 git -c / --config-env 在只读命令中注入外部 diff、pager 或过滤器。
+  if (args[0].startsWith('-') || hasOption(args, '-c', '--config-env', '--exec-path')) return false;
+  const subcommand = args[0];
+  if (!GIT_READ_ONLY_SUBCOMMANDS.has(subcommand)) return false;
+  if (hasOption(
+    args,
+    '--output',
+    '-o',
+    '--ext-diff',
+    '--textconv',
+    '--exec',
+    '--paginate',
+    '--open-files-in-pager',
+  )) return false;
+  return true;
+}
+
+function validateSimpleCommand(file: string, args: string[]) {
+  // tree -o/--output 写文件，其余简单命令只保留只读参数面。
+  if (file === 'tree' && args.some(arg => arg === '--output' || arg.startsWith('--output=') || arg.startsWith('-o'))) return false;
+  // macOS/BSD hostname 的位置参数会直接修改系统 hostname。
+  if (file === 'hostname' && !args.every(arg => ['-f', '-s', '-d'].includes(arg))) return false;
+  return true;
+}
+
+function validateArgs(file: string, args: string[]) {
+  if (args.some(arg => arg.includes('\0') || arg.includes('\n') || arg.includes('\r'))) return false;
+  if (SIMPLE_READ_ONLY_COMMANDS.has(file)) return validateSimpleCommand(file, args);
+  if (file === 'date') return validateDate(args);
+  if (file === 'diff') return validateDiff(args);
+  if (file === 'rg') return validateRipgrep(args);
+  if (file === 'git') return validateGit(args);
+  return false;
+}
+
+export function parseSafeCommand(command: string): ParsedSafeCommand {
+  const tokens = tokenize(String(command || '').trim());
+  if (tokens.length === 0) throw new Error('run_safe 命令为空');
+  const [file, ...args] = tokens;
+  if (file.includes('/') || !SAFE_COMMANDS.has(file)) {
+    throw new Error(`run_safe 不允许执行该命令: ${file}`);
+  }
+  if (!validateArgs(file, args)) {
+    throw new Error(`run_safe 不允许该命令参数: ${command}`);
+  }
+  if (file !== 'git') return { file, args };
+
+  const [subcommand, ...subcommandArgs] = args;
+  const hardenedArgs = [
+    '-c', 'core.fsmonitor=false',
+    '-c', 'core.pager=cat',
+    '-c', `pager.${subcommand}=false`,
+    subcommand,
+  ];
+  if (['diff', 'log', 'show'].includes(subcommand)) {
+    hardenedArgs.push('--no-ext-diff', '--no-textconv');
+  }
+  hardenedArgs.push(...subcommandArgs);
+
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key === 'GIT_CONFIG_PARAMETERS' || key.startsWith('GIT_CONFIG_KEY_') || key.startsWith('GIT_CONFIG_VALUE_')) {
+      delete env[key];
+    }
+  }
+  delete env.GIT_CONFIG_COUNT;
+
+  return {
+    file,
+    args: hardenedArgs,
+    env: {
+      ...env,
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_EXTERNAL_DIFF: '',
+      GIT_OPTIONAL_LOCKS: '0',
+      GIT_PAGER: 'cat',
+      PAGER: 'cat',
+    },
+  };
+}
+
+export function getFirstToken(command: string) {
+  try {
+    return tokenize(String(command || '').trim())[0] || '';
+  } catch {
+    return '';
+  }
+}
+
+export function canRunSafe(command: string) {
+  try {
+    parseSafeCommand(command);
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -12,7 +12,7 @@ describe('approval store', () => {
     }, 'worker_approval_1');
 
     expect(approvalId).toBe('worker_approval_1');
-    store.resolve('worker_approval_1', 'approve');
+    store.resolve('worker_approval_1', 'approve', 'run_worker_1');
     await expect(promise).resolves.toBe('approve');
   });
 
@@ -56,5 +56,22 @@ describe('approval store', () => {
       },
     ]);
     expect(store.getPendingForRun('run_abc_123')?.approvalId).toBe('approval_pending_1');
+  });
+
+  it('does not resolve an approval through a different run id', async () => {
+    const store = createApprovalStore();
+    const { promise } = store.request({
+      type: 'approval_required',
+      runId: 'run_owner',
+      action: { tool: 'terminal', type: 'run_confirmed', command: 'npm test', cwd: '', timeoutMs: 12000 },
+    }, 'approval_owned');
+
+    expect(() => store.resolve('approval_owned', 'approve', 'run_attacker')).toThrowError(
+      expect.objectContaining({ code: 'APPROVAL_RUN_MISMATCH' }),
+    );
+    expect(store.getPendingForRun('run_owner')?.approvalId).toBe('approval_owned');
+
+    store.resolve('approval_owned', 'reject', 'run_owner');
+    await expect(promise).resolves.toBe('reject');
   });
 });
