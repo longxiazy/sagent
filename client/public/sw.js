@@ -29,12 +29,15 @@ async function focusOrOpenWindow() {
 }
 
 async function postApprovalDecision(data, decision) {
-  const { runId, approvalId } = data || {};
+  const { runId, approvalId, apiToken } = data || {};
   if (!runId || !approvalId) return;
   try {
     await fetch('/api/agent/approvals', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiToken ? { 'X-Sagent-Token': apiToken } : {}),
+      },
       body: JSON.stringify({ runId, approvalId, decision }),
     });
   } catch {

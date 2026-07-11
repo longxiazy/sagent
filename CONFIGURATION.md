@@ -45,7 +45,9 @@ npm run sandbox
 | 变量 | 说明 | 默认值 / 备注 |
 | --- | --- | --- |
 | `PORT` | 后端监听端口。开发模式下前端 Vite 仍是 `5173`，并代理到后端。 | `3001`；Docker 镜像内为 `5173` |
-| `HOST` | 后端监听地址。 | `0.0.0.0` |
+| `HOST` | 后端监听地址。非回环地址必须同时配置 `SAGENT_API_TOKEN`。 | `127.0.0.1`；Docker 中显式为 `0.0.0.0` |
+| `SAGENT_API_TOKEN` | `/api`、`/v1` 和 `/screenshots` 的访问令牌。可用 Bearer 或 `X-Sagent-Token` 传递。 | 本机回环监听时可为空；对外监听时至少 16 个字符 |
+| `SAGENT_CORS_ORIGINS` | 额外允许的 Web Origin，逗号分隔。无 Origin 的 CLI、精确同源和本机开发 Origin 自动允许。 | 空 |
 | `MEMORY_DIR` | 本地数据目录，保存记忆、trace、checkpoint、截图、上传文件、运行时配置。 | `data`；Docker 中为 `/app/data` |
 | `HOST_PORT` | `docker compose` 映射到宿主机的端口。 | `5173` |
 | `LOG_LEVEL` | 日志等级。 | `info`，可选 `debug` / `info` / `warn` / `error` |
@@ -204,8 +206,12 @@ bridge 自身也支持这些变量：
 
 ```bash
 cp .env.example .env
+openssl rand -hex 24
+# 把输出填入 .env 的 SAGENT_API_TOKEN=
 docker compose up --build
 ```
+
+容器内服务监听 `0.0.0.0`，因此 `SAGENT_API_TOKEN` 是必填项。浏览器首次访问受保护接口时会提示输入该 token，并在本地浏览器保存。
 
 修改宿主机端口：
 

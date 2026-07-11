@@ -165,6 +165,40 @@ describe('GET /api/agent/active', () => {
   });
 });
 
+describe('approval ownership', () => {
+  it('rejects approval decisions submitted with another run id', async () => {
+    approvalStore.request({
+      type: 'approval_required',
+      runId: 'run_owner',
+      action: { tool: 'terminal', type: 'run_confirmed', command: 'npm test', cwd: '', timeoutMs: 12000 },
+    }, 'approval_owner_1');
+
+    const res = await request(app)
+      .post('/api/agent/approvals')
+      .send({ runId: 'run_other', approvalId: 'approval_owner_1', decision: 'approve' });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('APPROVAL_RUN_MISMATCH');
+    expect(approvalStore.getPendingForRun('run_owner')?.approvalId).toBe('approval_owner_1');
+    approvalStore.rejectAll();
+  });
+
+  it('rejects question responses submitted with another run id', async () => {
+    approvalStore.request({
+      type: 'question_required',
+      runId: 'run_question_owner',
+      action: { tool: 'ask_user', type: 'question', question: 'Continue?' },
+    }, 'question_owner_1');
+
+    const res = await request(app)
+      .post('/api/agent/question')
+      .send({ runId: 'run_other', approvalId: 'question_owner_1', response: 'yes' });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('APPROVAL_RUN_MISMATCH');
+    expect(approvalStore.getPendingForRun('run_question_owner')?.approvalId).toBe('question_owner_1');
+    approvalStore.rejectAll();
+  });
+});
+
 describe('POST /api/agent', () => {
   it('requires an explicit model selection', async () => {
     const res = await request(app)

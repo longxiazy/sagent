@@ -55,9 +55,13 @@ import { createBaseEventSender, loadMemoryForPrompt, cleanupAgentRun } from './h
 import { padEndW, truncateW } from './agent/core/utils.ts';
 import { log } from './helpers/logger.ts';
 import { runtimeConfig } from './agent/core/runtime-config.ts';
+import { createApiAuth, createCorsOptions, createOriginGuard, loadServerSecurityConfig } from './helpers/security.ts';
 
+const securityConfig = loadServerSecurityConfig();
 const app = express();
-app.use(cors());
+app.use(createOriginGuard(securityConfig));
+app.use(cors(createCorsOptions(securityConfig)));
+app.use(createApiAuth(securityConfig));
 app.use(express.json({ limit: '25mb' }));
 
 const { openai_client, gemini_client } = createClients();
@@ -137,7 +141,7 @@ if (fs.existsSync(path.join(CLIENT_DIST_DIR, 'index.html'))) {
 }
 
 const PORT = process.env.PORT || 3001;
-const HOST = process.env.HOST || '0.0.0.0';
+const HOST = securityConfig.host;
 const SIGNAL_EXIT_CODES: Record<string, number> = { SIGINT: 130, SIGTERM: 143 };
 
 function envMs(name: string, fallback: number) {

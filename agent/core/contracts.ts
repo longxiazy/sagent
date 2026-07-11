@@ -220,7 +220,7 @@ export interface PendingApproval extends ApprovalPayload {
 
 export interface ApprovalStore {
   request(payload: ApprovalPayload, requestedApprovalId?: string): { approvalId: string; promise: Promise<string> };
-  resolve(approvalId: string, decision: string): ApprovalPayload;
+  resolve(approvalId: string, decision: string, expectedRunId: string): ApprovalPayload;
   listPendingForRun(runId: string): PendingApproval[];
   getPendingForRun(runId: string): PendingApproval | null;
   rejectAll(): void;

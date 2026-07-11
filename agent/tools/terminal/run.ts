@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { SAFE_COMMANDS, getFirstToken } from './safe-policy';
+import { parseSafeCommand } from './safe-policy';
 
 type TerminalOutputEvent = {
   phase: 'start' | 'stdout' | 'stderr' | 'exit' | 'error' | 'timeout';
@@ -26,29 +26,6 @@ function resolveCwd(value, base = process.cwd()) {
   return path.isAbsolute(value) ? value : path.resolve(base, value);
 }
 
-function assertSafeCommand(command) {
-  const firstToken = getFirstToken(command);
-  if (!SAFE_COMMANDS.has(firstToken)) {
-    throw new Error(`run_safe 不允许执行该命令: ${firstToken || command}`);
-  }
-
-  // Block dangerous shell operators: pipe, semicolon, backticks, command substitution,
-  // background &, logical &&/||, process substitution, heredoc
-  if (
-    /[|;]/.test(command) ||
-    /`/.test(command) ||
-    /\$\(/.test(command) ||
-    /\$\{/.test(command) ||
-    /[^&]&[^&]/.test(command) ||
-    /\s&(\s|$)/.test(command) ||
-    /&&|\|\|/.test(command) ||
-    /[<>]\(/.test(command) ||
-    /<<\s*\w/.test(command)
-  ) {
-    throw new Error(`run_safe 不允许使用危险操作符: ${command}`);
-  }
-}
-
 function emitTerminalEvent(onOutput: TerminalActionOptions['onOutput'], event: TerminalOutputEvent) {
   if (typeof onOutput !== 'function') return;
   try {
@@ -58,7 +35,7 @@ function emitTerminalEvent(onOutput: TerminalActionOptions['onOutput'], event: T
   }
 }
 
-async function runShellCommand(command, { cwd, timeoutMs, onOutput }) {
+async function runProcess({ file, args, env = process.env, command, cwd, timeoutMs, onOutput }) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     let sequence = 0;
@@ -77,8 +54,9 @@ async function runShellCommand(command, { cwd, timeoutMs, onOutput }) {
       timestamp: startedAt,
     });
 
-    const child = spawn('zsh', ['-lc', command], {
+    const child = spawn(file, args, {
       cwd,
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -172,12 +150,19 @@ export async function executeTerminalAction(action, opts: TerminalActionOptions 
   }
 
   if (action.type === 'run_safe') {
-    assertSafeCommand(command);
-    return runShellCommand(command, { cwd, timeoutMs, onOutput: opts.onOutput });
+    const parsed = parseSafeCommand(command);
+    return runProcess({ ...parsed, command, cwd, timeoutMs, onOutput: opts.onOutput });
   }
 
   if (action.type === 'run_confirmed' || action.type === 'run_review') {
-    return runShellCommand(command, { cwd, timeoutMs: Math.max(timeoutMs, 12000), onOutput: opts.onOutput });
+    return runProcess({
+      file: '/bin/zsh',
+      args: ['-lc', command],
+      command,
+      cwd,
+      timeoutMs: Math.max(timeoutMs, 12000),
+      onOutput: opts.onOutput,
+    });
   }
 
   throw new Error(`不支持的终端动作: ${action.type}`);
