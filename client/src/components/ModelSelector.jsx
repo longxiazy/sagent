@@ -682,6 +682,19 @@ function ModelPickerDropdown({
                       ref={inputRef}
                       type="text"
                       value={query}
+                      onKeyDown={e => {
+                        if (
+                          multiple
+                          && clearable
+                          && !disabled
+                          && query.length === 0
+                          && selectedModelIds.length > 0
+                          && (e.key === 'Backspace' || e.key === 'Delete')
+                        ) {
+                          e.preventDefault();
+                          setSelectedModelIds(selectedModelIds.slice(0, -1));
+                        }
+                      }}
                       onChange={e => {
                         setQuery(e.target.value);
                         setExpandedEncyclopediaModels([]);
