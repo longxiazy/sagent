@@ -12,6 +12,7 @@
  */
 
 import type { Response } from 'express';
+import type { AgentAction, AgentObservation, AgentStep, JsonObject, TokenUsage } from '../contracts.ts';
 
 // 归一化后的模型信息。provider 是「展示名」（gemini / nvidia 等，
 // 由 baseURL 推断），前端徽标依赖它；与下面 LLMProvider.name 这个「内部路由标识」区分开。
@@ -40,31 +41,32 @@ export interface ModelInfo {
 // 由 runtime 的 decide 阶段透传，各 provider 自行决定如何构造 messages。
 export interface AgentPlanOpts {
   model: string;
+  modelConfig?: ModelInfo[];
   signal?: AbortSignal;
   systemPrompt?: string | null;
   task?: string;
   step?: number;
-  history?: any[];
-  observation?: any;
+  history?: AgentStep[];
+  observation?: AgentObservation;
   conversationHistory?: Array<{ role: string; content: string }>;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // agent 决策的归一化返回，对齐现有 planner 的输出形状。
 export interface AgentPlanResult {
   rationale?: string;
-  action: any;
-  usage?: { prompt_tokens: number; completion_tokens: number } | null;
+  action: AgentAction;
+  usage?: TokenUsage | null;
   reasoning?: string | null;
 }
 
 export interface CompletionOpts {
   model: string;
-  messages: any[];
+  messages: JsonObject[];
   temperature: number;
   top_p: number;
   max_tokens: number;
-  chat_template_kwargs?: any;
+  chat_template_kwargs?: JsonObject;
   preserveReasoningContent?: boolean;
 }
 

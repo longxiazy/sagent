@@ -32,6 +32,7 @@ let tmpDir;
 let app;
 let agentRunStore;
 let approvalStore;
+let projectStore;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sagent-api-test-'));
@@ -44,7 +45,7 @@ beforeEach(async () => {
   agentRunStore = createAgentRunStore();
   approvalStore = createApprovalStore();
   // 空注册表 → resolveRunPaths 回退到 tmpDir/process.cwd()，与无项目态一致。
-  const projectStore = createProjectStore(tmpDir);
+  projectStore = createProjectStore(tmpDir);
   await projectStore.init();
 
   const router = createAgentRouter({
@@ -54,7 +55,7 @@ beforeEach(async () => {
     memoryDir: tmpDir,
     checkpointDir: tmpDir,
     domainRules: null,
-    modelConfig: [{ id: 'test-model', provider: 'test' }],
+    modelConfig: [{ id: 'test-model', label: 'test-model', provider: 'test' }],
     registry: mockRegistry,
     runtimeConfig,
     projectStore,
@@ -172,6 +173,21 @@ describe('POST /api/agent', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('模型');
+  });
+
+  it('returns a clear validation error when the selected project directory was moved', async () => {
+    const projectRoot = path.join(tmpDir, 'movable-project');
+    await fs.mkdir(projectRoot);
+    const project = await projectStore.create({ name: 'movable', rootPath: projectRoot });
+    await fs.rm(projectRoot, { recursive: true, force: true });
+
+    const res = await request(app)
+      .post('/api/agent')
+      .send({ task: 'inspect project', model: 'test-model', memory: false, projectId: project.projectId });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('PROJECT_ROOT_UNAVAILABLE');
+    expect(res.body.error).toContain('项目根目录不存在或已移动');
   });
 
   it('returns JSON errors for startup failures before the SSE stream opens', async () => {

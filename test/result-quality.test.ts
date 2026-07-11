@@ -8,11 +8,13 @@ describe('result quality assessment', () => {
       steps: [
         {
           step: 1,
-          action: { tool: 'browser', type: 'http_fetch', url: 'https://example.com' },
+          rationale: 'fetch',
+          action: { tool: 'browser', type: 'http_fetch', url: 'https://example.com', extractLinks: false },
           result: '您的请求已中断 Web应用防护服务检测您当前访问存在Web安全风险',
         },
         {
           step: 2,
+          rationale: 'read',
           action: { tool: 'browser', type: 'get_page_content' },
           result: '百度安全验证 请完成下方验证后继续操作 拖动左侧滑块使图片为正',
         },
@@ -30,13 +32,15 @@ describe('result quality assessment', () => {
       steps: [
         {
           step: 1,
-          action: { tool: 'fs', type: 'search_files' },
+          rationale: 'search',
+          action: { tool: 'fs', type: 'search_files', query: 'error', path: '.', include: '*', maxResults: 20 },
           result: '未找到明显问题',
           resultStatus: 'success',
         },
         {
           step: 2,
-          action: { tool: 'terminal', type: 'run_safe' },
+          rationale: 'run',
+          action: { tool: 'terminal', type: 'run_safe', command: 'pwd', cwd: '', timeoutMs: 8000 },
           result: 'command exited without details',
           resultStatus: 'failed',
           resultError: 'exit code 1',
@@ -55,11 +59,13 @@ describe('result quality assessment', () => {
       steps: [
         {
           step: 1,
+          rationale: 'navigate',
           action: {
             tool: 'chrome',
             type: 'chrome_call_tool',
             toolName: 'navigate_page',
             arguments: { url: 'https://www.gov.cn/zhengce/example.html' },
+            refreshTools: false,
           },
           result: '这里是政策正文，包含足够多的可用内容用于判断来源有效。这里继续补充政策适用范围、办理条件、材料要求、办理流程、办理时限、责任部门和注意事项，确保内容长度超过最低可用阈值。',
         },

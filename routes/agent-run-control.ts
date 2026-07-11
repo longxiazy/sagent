@@ -4,14 +4,13 @@ import { removeCheckpoint, removeSessionCheckpoints } from '../agent/core/checkp
 import { readTraceEvents } from '../helpers/trace-store.ts';
 import { log } from '../helpers/logger.ts';
 import { tReq } from '../helpers/i18n.ts';
+import { ACTIVE_RUN_STATUSES, type AgentEvent, type ApprovalStore } from '../agent/core/contracts.ts';
 
-function pendingApprovalState(approvalStore: any, runId: string) {
-  const pending = typeof approvalStore.listPendingForRun === 'function'
-    ? approvalStore.listPendingForRun(runId)
-    : [];
+function pendingApprovalState(approvalStore: ApprovalStore, runId: string) {
+  const pending = approvalStore.listPendingForRun(runId);
   return {
-    pendingApproval: pending.find((item: any) => item.type === 'approval_required') || null,
-    pendingQuestion: pending.find((item: any) => item.type === 'question_required') || null,
+    pendingApproval: pending.find(item => item.type === 'approval_required') || null,
+    pendingQuestion: pending.find(item => item.type === 'question_required') || null,
     pendingEvents: pending,
   };
 }
@@ -104,8 +103,8 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
     }
 
     let writer = null;
-    if (run.status === 'running' && !run.cancelAc.signal.aborted) {
-      writer = (payload: any) => {
+    if (ACTIVE_RUN_STATUSES.has(run.status)) {
+      writer = (payload: AgentEvent) => {
         if (!res.writableEnded) {
           res.write(`data: ${JSON.stringify(payload)}\n\n`);
         }
@@ -115,7 +114,7 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
 
       req.on('close', () => {
         if (run._reconnectWriters) {
-          run._reconnectWriters = run._reconnectWriters.filter((reconnectWriter: any) => reconnectWriter !== writer);
+          run._reconnectWriters = run._reconnectWriters.filter(reconnectWriter => reconnectWriter !== writer);
         }
       });
     }
@@ -126,7 +125,7 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     }
 
-    if (run.status !== 'running' || run.cancelAc.signal.aborted) {
+    if (!ACTIVE_RUN_STATUSES.has(run.status)) {
       res.end();
     }
     return;

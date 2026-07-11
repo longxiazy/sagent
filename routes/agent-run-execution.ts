@@ -1,6 +1,19 @@
 import { loadLatestHealthySnapshot } from '../agent/core/checkpoint.ts';
 import { cleanupAgentRun } from '../helpers/run-agent.ts';
 import { log } from '../helpers/logger.ts';
+import type {
+  AgentRunStore,
+  AgentStep,
+  DesktopAgentResult,
+  DesktopAgentRunner,
+  RunRecord,
+  TerminalRunStatus,
+} from '../agent/core/contracts.ts';
+import type { AgentRunSession } from './agent-run-session.ts';
+
+function asError(value: unknown): Error {
+  return value instanceof Error ? value : new Error(String(value));
+}
 
 async function buildRollbackSuggestion({
   checkpointDir,
@@ -57,7 +70,7 @@ export async function executeAgentRun({
   projectRoot,
   dataDir,
 }: {
-  runDesktopAgent: any;
+  runDesktopAgent: DesktopAgentRunner;
   task: string;
   model: string;
   models: string[];
@@ -65,21 +78,22 @@ export async function executeAgentRun({
   systemPrompt: string;
   headless: boolean;
   runId: string;
-  runRecord: any;
-  session: any;
+  runRecord: RunRecord;
+  session: AgentRunSession;
   cancelSignal: AbortSignal;
-  conversationHistory: any;
+  conversationHistory: Array<{ role: string; content: string }> | unknown;
   useMemory: boolean;
-  checkpointInitialStep: any;
-  checkpointInitialHistory: any;
+  checkpointInitialStep?: number;
+  checkpointInitialHistory?: AgentStep[];
   checkpointDir: string;
-  agentRunStore: any;
+  agentRunStore: AgentRunStore;
   projectRoot?: string;
   dataDir?: string;
 }) {
   let finalAnswer: string | null = null;
-  let agentError: any = null;
-  let agentResult = null;
+  let agentError: Error | null = null;
+  let agentResult: DesktopAgentResult | null = null;
+  let finalStatus: TerminalRunStatus = 'completed';
 
   try {
     agentResult = await runDesktopAgent({
@@ -118,9 +132,11 @@ export async function executeAgentRun({
         quality: agentResult.quality,
       },
     });
-  } catch (err: any) {
+  } catch (value: unknown) {
+    const err = asError(value);
     agentError = err;
-    log.error('Desktop agent error:', err?.message || err);
+    finalStatus = err.message === 'Agent 已取消' ? 'cancelled' : 'failed';
+    log.error('Desktop agent error:', err.message);
     const { completedStepCount, observedStepCount } = session.getTrackingState();
     const rollbackSuggestion = await buildRollbackSuggestion({
       checkpointDir,
@@ -135,7 +151,7 @@ export async function executeAgentRun({
       rollbackSuggestion,
     });
   } finally {
-    await cleanupAgentRun(checkpointDir, runId, agentRunStore);
+    await cleanupAgentRun(checkpointDir, runId, agentRunStore, { finalStatus });
   }
 
   return { agentResult, finalAnswer, agentError };

@@ -1,7 +1,15 @@
 import { classifyAgentAction } from './classify.ts';
+import type {
+  AgentAction,
+  AgentAuthorization,
+  AgentEventWriter,
+  AgentExecutionContext,
+  AgentRunStore,
+  ApprovalStore,
+} from '../core/contracts.ts';
 
 export function createReadOnlyAuthorizer() {
-  return async (_state, action, _context) => {
+  return async (_state: unknown, action: AgentAction, _context: AgentExecutionContext): Promise<AgentAuthorization> => {
     const policy = classifyAgentAction(action);
 
     if (policy.level === 'safe') {
@@ -20,8 +28,14 @@ export function createAgentAuthorizer({
   runId,
   approvalStore,
   onEvent,
+  runStore,
+}: {
+  runId: string;
+  approvalStore: Pick<ApprovalStore, 'request'>;
+  onEvent?: AgentEventWriter;
+  runStore?: AgentRunStore | null;
 }) {
-  return async (_state, action, context) => {
+  return async (_state: unknown, action: AgentAction, context: AgentExecutionContext): Promise<AgentAuthorization> => {
     const policy = classifyAgentAction(action);
 
     if (policy.level === 'safe') {
@@ -66,7 +80,17 @@ export function createAgentAuthorizer({
       message,
     });
 
-    const decision = await promise;
+    if (runStore?.getRun(runId)?.status === 'running') {
+      runStore.transitionRun(runId, 'waiting_approval');
+    }
+    let decision: string;
+    try {
+      decision = await promise;
+    } finally {
+      if (runStore?.getRun(runId)?.status === 'waiting_approval') {
+        runStore.transitionRun(runId, 'running');
+      }
+    }
 
     if (isQuestion) {
       const response = typeof decision === 'string' && decision !== 'approve' && decision !== 'reject'

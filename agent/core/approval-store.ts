@@ -13,21 +13,27 @@
  *   - routes/agent.js 的 POST /api/agent finally → rejectAll（运行结束时清理）
  */
 
+import type { ApprovalPayload, ApprovalStore } from './contracts.ts';
+
 function createApprovalId() {
   return `approval_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function serializeApproval(approval: any) {
-  const payload = approval.payload && typeof approval.payload === 'object' ? approval.payload : {};
+interface ApprovalRecord {
+  approvalId: string;
+  payload: ApprovalPayload;
+  resolve: (decision: string) => void;
+}
+
+function serializeApproval(approval: ApprovalRecord) {
   return {
-    ...payload,
+    ...approval.payload,
     approvalId: approval.approvalId,
   };
 }
 
-export function createApprovalStore() {
-  /** @type {Map<string, {approvalId: string, payload: Object, resolve: Function}>} approvalId → 审批记录 */
-  const pending = new Map();
+export function createApprovalStore(): ApprovalStore {
+  const pending = new Map<string, ApprovalRecord>();
 
   return {
     /**
@@ -37,15 +43,15 @@ export function createApprovalStore() {
      * @param {string} requestedApprovalId - worker bridge 已发给前端的审批 ID
      * @returns {{ approvalId: string, promise: Promise<string> }}
      */
-    request(payload = {}, requestedApprovalId?: string) {
+    request(payload: ApprovalPayload, requestedApprovalId?: string) {
       const approvalId = requestedApprovalId || createApprovalId();
       if (pending.has(approvalId)) {
         throw new Error(`审批已存在: ${approvalId}`);
       }
       let settled = false;
-      let resolvePromise;
+      let resolvePromise: (decision: string) => void = () => {};
 
-      const promise = new Promise(resolve => {
+      const promise = new Promise<string>(resolve => {
         resolvePromise = decision => {
           if (settled) return;
           settled = true;
@@ -69,7 +75,7 @@ export function createApprovalStore() {
      * @param {'approve'|'reject'|string} decision
      * @returns {Object} 审批时传入的 payload
      */
-    resolve(approvalId, decision) {
+    resolve(approvalId: string, decision: string) {
       const approval = pending.get(approvalId);
       if (!approval) {
         throw new Error(`审批不存在: ${approvalId}`);

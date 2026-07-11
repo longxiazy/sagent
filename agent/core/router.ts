@@ -12,8 +12,19 @@
  *   { browser: async (state, action) => ..., fs: async (state, action) => ..., ... }
  */
 
-export function createActionRouter(handlers, { defaultTool }: { defaultTool?: string } = {} as any) {
-  return async (state, action, context) => {
+import type {
+  ActionHandlerMap,
+  AgentAction,
+  AgentExecutionContext,
+  AgentRuntimeState,
+  AgentTool,
+} from './contracts.ts';
+
+export function createActionRouter<State extends AgentRuntimeState>(
+  handlers: ActionHandlerMap<State>,
+  { defaultTool }: { defaultTool?: AgentTool } = {},
+) {
+  return async (state: State, action: AgentAction, context: AgentExecutionContext) => {
     const toolName =
       typeof action?.tool === 'string' && action.tool.trim()
         ? action.tool.trim()
@@ -28,6 +39,6 @@ export function createActionRouter(handlers, { defaultTool }: { defaultTool?: st
       throw new Error(`未找到工具处理器: ${toolName}`);
     }
 
-    return handler(state, action, context);
+    return handler(state, action as never, context);
   };
 }

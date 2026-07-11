@@ -74,6 +74,38 @@ function normalizeProjectInput({ name, rootPath }: { name?: string; rootPath?: s
   return { name: trimmedName, rootPath: path.normalize(trimmedRoot) };
 }
 
+export class ProjectPathError extends Error {
+  status = 400;
+  code = 'PROJECT_ROOT_UNAVAILABLE';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProjectPathError';
+  }
+}
+
+/** 校验项目根存在、可访问且确实为目录，并返回消除 symlink/.. 后的 canonical 路径。 */
+export async function validateProjectRoot(rootPath: string): Promise<string> {
+  const normalized = path.normalize(rootPath);
+  let stats;
+  try {
+    stats = await fs.stat(normalized);
+  } catch (err: any) {
+    if (err?.code === 'ENOENT') {
+      throw new ProjectPathError(`项目根目录不存在或已移动: ${normalized}`);
+    }
+    throw new ProjectPathError(`项目根目录无法访问: ${normalized} (${err?.message || err})`);
+  }
+  if (!stats.isDirectory()) {
+    throw new ProjectPathError(`项目根路径不是目录: ${normalized}`);
+  }
+  try {
+    return await fs.realpath(normalized);
+  } catch (err: any) {
+    throw new ProjectPathError(`项目根目录无法解析: ${normalized} (${err?.message || err})`);
+  }
+}
+
 export interface Project {
   projectId: string;
   name: string;
@@ -120,6 +152,7 @@ export function createProjectStore(memoryRoot: string) {
 
     async create({ name, rootPath }: { name?: string; rootPath?: string }) {
       const normalized = normalizeProjectInput({ name, rootPath });
+      normalized.rootPath = await validateProjectRoot(normalized.rootPath);
       const now = new Date().toISOString();
       const project: Project = { projectId: generateProjectId(), ...normalized, createdAt: now, updatedAt: now };
       registry.projects.push(project);
@@ -138,6 +171,7 @@ export function createProjectStore(memoryRoot: string) {
           name: patch.name ?? project.name,
           rootPath: patch.rootPath ?? project.rootPath,
         });
+        normalized.rootPath = await validateProjectRoot(normalized.rootPath);
         project.name = normalized.name;
         project.rootPath = normalized.rootPath;
       }
@@ -160,7 +194,9 @@ export function createProjectStore(memoryRoot: string) {
 
     /** 设置当前项目;传 null 回到「无项目」全局态 */
     async setActive(projectId: string | null) {
-      if (projectId !== null && !store.get(projectId)) throw new Error('项目不存在');
+      const project = projectId === null ? null : store.get(projectId);
+      if (projectId !== null && !project) throw new Error('项目不存在');
+      if (project) await validateProjectRoot(project.rootPath);
       registry.activeProjectId = projectId;
       await writeRegistry(memoryRoot, registry);
       return registry.activeProjectId;
@@ -195,4 +231,28 @@ export function resolveRunPaths(
     };
   }
   return { projectId: null, projectRoot: process.cwd(), dataDir: globalMemoryDir };
+}
+
+/**
+ * 执行 Agent 前使用的严格路径解析：显式项目不存在或根目录失效时直接报错，
+ * 避免静默回退到全局 cwd，或让 child_process 报误导性的 posix_spawn ENOENT。
+ */
+export async function resolveRunPathsForExecution(
+  projectStore: ProjectStore,
+  projectId: string | null | undefined,
+  globalMemoryDir: string,
+): Promise<{ projectId: string | null; projectRoot: string; dataDir: string }> {
+  if (!projectId) {
+    return { projectId: null, projectRoot: process.cwd(), dataDir: globalMemoryDir };
+  }
+  const project = projectStore.get(projectId);
+  if (!project) {
+    throw new ProjectPathError(`项目不存在或已删除: ${projectId}`);
+  }
+  const projectRoot = await validateProjectRoot(project.rootPath);
+  return {
+    projectId: project.projectId,
+    projectRoot,
+    dataDir: projectDataDir(globalMemoryDir, project.projectId),
+  };
 }

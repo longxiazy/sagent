@@ -9,6 +9,8 @@ import {
   KEEP_HEALTHY,
 } from '../agent/core/checkpoint.ts';
 import { runAgentRuntime } from '../agent/core/runtime.ts';
+import { normalizeDesktopAgentDecision } from '../agent/core/schemas.ts';
+import type { AgentStep } from '../agent/core/contracts.ts';
 
 let tmpDir;
 
@@ -20,11 +22,11 @@ afterEach(async () => {
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
-function makeHistory(steps) {
+function makeHistory(steps: number[]): AgentStep[] {
   return steps.map(s => ({
     step: s,
     rationale: `step ${s} rationale`,
-    action: { type: 'click', elementId: `el-${s}` },
+    action: { tool: 'browser', type: 'click', elementId: `el-${s}` },
     result: `step ${s} result`,
   }));
 }
@@ -132,6 +134,11 @@ describe('listSessionCheckpoints', () => {
 // ─── runtime integration tests ───
 
 function noop() {}
+const initialize = () => ({});
+const observe = () => ({});
+const approve = () => ({ status: 'approved' as const });
+const decision = (action: Record<string, unknown>, rationale = '') =>
+  normalizeDesktopAgentDecision({ action, rationale });
 const events = () => {
   const log = [];
   return { log, onEvent: e => log.push(e) };
@@ -145,15 +152,12 @@ describe('runtime: session checkpoint integration', () => {
       maxSteps: 2,
       onEvent: noop,
       cancelSignal,
-      initialize: noop,
+      initialize,
       observe: () => ({ url: 'https://previous.example/', title: 'Previous' }),
       decide: ({ step }) => step === 1
-        ? {
-            action: { tool: 'browser', type: 'http_fetch', url: 'https://target.example/page' },
-            rationale: 'fetch target',
-          }
-        : { action: { type: 'finish', answer: 'done' }, rationale: 'done' },
-      authorize: noop,
+        ? decision({ tool: 'browser', type: 'http_fetch', url: 'https://target.example/page' }, 'fetch target')
+        : decision({ type: 'finish', answer: 'done' }, 'done'),
+      authorize: approve,
       execute: () => 'target content',
       cleanup: noop,
     });
@@ -170,12 +174,12 @@ describe('runtime: session checkpoint integration', () => {
       maxSteps: 2,
       onEvent,
       cancelSignal,
-      initialize: noop,
-      observe: noop,
+      initialize,
+      observe,
       decide: ({ step }) => step === 1
-        ? { action: { tool: 'terminal', type: 'run_safe', command: 'bad' }, rationale: 'run' }
-        : { action: { type: 'finish', answer: 'done' }, rationale: 'finish' },
-      authorize: noop,
+        ? decision({ tool: 'terminal', type: 'run_safe', command: 'bad' }, 'run')
+        : decision({ type: 'finish', answer: 'done' }, 'finish'),
+      authorize: approve,
       execute: (_state, action) => {
         if (action.type === 'finish') return action.answer;
         throw new Error('exit code 1');
@@ -204,13 +208,10 @@ describe('runtime: session checkpoint integration', () => {
       maxSteps: 6,
       onEvent,
       cancelSignal,
-      initialize: noop,
-      observe: noop,
-      decide: () => ({
-        action: { tool: 'fs', type: 'read_file', path: 'word/document.xml', maxBytes: 12000 },
-        rationale: 'read template',
-      }),
-      authorize: () => ({ status: 'approved' }),
+      initialize,
+      observe,
+      decide: () => decision({ tool: 'fs', type: 'read_file', path: 'word/document.xml', maxBytes: 12000 }, 'read template'),
+      authorize: approve,
       execute: () => {
         executeCalls += 1;
         return 'same file content';
@@ -234,13 +235,10 @@ describe('runtime: session checkpoint integration', () => {
       maxSteps: 4,
       onEvent,
       cancelSignal,
-      initialize: noop,
-      observe: noop,
-      decide: () => ({
-        action: { tool: 'search', type: 'web_search', query: '2026年7月3日 A股收盘行情' },
-        rationale: 'search',
-      }),
-      authorize: () => ({ status: 'approved' }),
+      initialize,
+      observe,
+      decide: () => decision({ tool: 'search', type: 'web_search', query: '2026年7月3日 A股收盘行情' }, 'search'),
+      authorize: approve,
       execute: () => {
         executeCalls += 1;
         return {
@@ -272,16 +270,16 @@ describe('runtime: session checkpoint integration', () => {
       cancelSignal,
       sessionCheckpointDir: tmpDir,
       runRecord,
-      initialize: noop,
-      observe: noop,
+      initialize,
+      observe,
       decide: () => {
         stepCount++;
         if (stepCount >= 7) {
-          return { action: { type: 'finish', answer: 'all done' }, rationale: 'enough' };
+          return decision({ type: 'finish', answer: 'all done' }, 'enough');
         }
-        return { action: { type: 'click', elementId: 'btn' }, rationale: 'go' };
+        return decision({ type: 'click', elementId: 'btn' }, 'go');
       },
-      authorize: noop,
+      authorize: approve,
       execute: () => 'executed',
       cleanup: noop,
     });
@@ -313,13 +311,13 @@ describe('runtime: session checkpoint integration', () => {
       initialize: () => ({
         runId,
         onEvent: noop,
-        browserSession: { view: { circular: true } },
+        browserSession: { view: { navigate: async () => {}, circular: true } },
         observeDesktop: true,
         keep: 'ok',
       }),
-      observe: noop,
-      decide: () => ({ action: { type: 'finish', answer: 'done' }, rationale: 'ok' }),
-      authorize: noop,
+      observe,
+      decide: () => decision({ type: 'finish', answer: 'done' }, 'ok'),
+      authorize: approve,
       execute: () => 'done',
       cleanup: noop,
     });
@@ -344,16 +342,16 @@ describe('runtime: session checkpoint integration', () => {
       cancelSignal,
       sessionCheckpointDir: tmpDir,
       runRecord: { runId, pendingRollback: null },
-      initialize: noop,
-      observe: noop,
+      initialize,
+      observe,
       decide: () => {
         stepCount++;
         if (stepCount >= 7) {
-          return { action: { type: 'finish', answer: 'done' }, rationale: 'enough' };
+          return decision({ type: 'finish', answer: 'done' }, 'enough');
         }
-        return { action: { type: 'click', elementId: 'btn' }, rationale: 'go' };
+        return decision({ type: 'click', elementId: 'btn' }, 'go');
       },
-      authorize: noop,
+      authorize: approve,
       execute: () => 'executed',
       cleanup: noop,
     });
@@ -384,16 +382,16 @@ describe('runtime: session checkpoint integration', () => {
       runRecord: runRecord2,
       initialStep: 1,
       initialHistory: makeHistory([1, 2, 3, 4]),
-      initialize: noop,
-      observe: noop,
+      initialize,
+      observe,
       decide: () => {
         stepCount++;
         if (stepCount >= 3) {
-          return { action: { type: 'finish', answer: 'rolled back' }, rationale: 'done' };
+          return decision({ type: 'finish', answer: 'rolled back' }, 'done');
         }
-        return { action: { type: 'click', elementId: 'btn' }, rationale: 'retry' };
+        return decision({ type: 'click', elementId: 'btn' }, 'retry');
       },
-      authorize: noop,
+      authorize: approve,
       execute: () => 'executed',
       cleanup: noop,
     });
@@ -419,10 +417,10 @@ describe('runtime: session checkpoint integration', () => {
       cancelSignal,
       sessionCheckpointDir: tmpDir,
       runRecord,
-      initialize: noop,
-      observe: noop,
-      decide: () => ({ action: { type: 'finish', answer: 'done' }, rationale: 'ok' }),
-      authorize: noop,
+      initialize,
+      observe,
+      decide: () => decision({ type: 'finish', answer: 'done' }, 'ok'),
+      authorize: approve,
       execute: noop,
       cleanup: noop,
     });
