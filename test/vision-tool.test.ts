@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { executeVisionAction, resolveVisionModel } from '../agent/tools/vision/execute.ts';
 import { createGeminiProvider } from '../agent/core/providers/gemini.ts';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 const DATA_URL = 'data:image/png;base64,aGVsbG8=';
 
@@ -36,6 +39,31 @@ describe('vision tool model selection', () => {
     expect(registry.resolve).toHaveBeenCalledWith('meta/llama-3.2-11b-vision-instruct', expect.any(Array));
     expect(provider.completionJson.mock.calls[0][0].model).toBe('meta/llama-3.2-11b-vision-instruct');
     expect(result).toContain('model=meta/llama-3.2-11b-vision-instruct');
+  });
+
+  it('maps @uploads paths to the controlled project data directory', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sagent-vision-upload-'));
+    const dataDir = path.join(root, 'data');
+    try {
+      await fs.mkdir(path.join(dataDir, 'uploads', '2026-01-01'), { recursive: true });
+      await fs.writeFile(path.join(dataDir, 'uploads', '2026-01-01', 'image.png'), Buffer.from('hello'));
+      const provider = {
+        completionJson: vi.fn().mockResolvedValue({
+          choices: [{ message: { content: '读取成功' } }],
+        }),
+      };
+
+      const result = await executeVisionAction(
+        { image: '@uploads/2026-01-01/image.png', question: '图里是什么？' },
+        { registry: mockRegistry(provider), projectRoot: root, dataDir },
+      );
+
+      expect(result).toContain('读取成功');
+      expect(provider.completionJson.mock.calls[0][0].messages[0].content[1].image_url.url)
+        .toMatch(/^data:image\/png;base64,/);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   it('falls back to VISION_MODEL when selected models are text-only', () => {

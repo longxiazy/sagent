@@ -236,7 +236,7 @@ class IdeMcpClient {
     this.toolsCache = null;
   }
 
-  async listTools({ refresh = false } = {}) {
+  async listTools({ refresh = false, signal = undefined } = {}) {
     if (!refresh && this.toolsCache) {
       return this.toolsCache;
     }
@@ -247,7 +247,7 @@ class IdeMcpClient {
 
     while (true) {
       const params = cursor ? { cursor } : {};
-      const result = await this.transport.request('tools/list', params);
+      const result = await this.transport.request('tools/list', params, { signal });
       if (Array.isArray(result?.tools)) {
         tools.push(...result.tools);
       }
@@ -264,16 +264,16 @@ class IdeMcpClient {
     return tools;
   }
 
-  async getTool(toolName, { refresh = false } = {}) {
-    const tools = await this.listTools({ refresh });
+  async getTool(toolName, { refresh = false, signal = undefined } = {}) {
+    const tools = await this.listTools({ refresh, signal });
     return tools.find(tool => tool?.name === toolName) || null;
   }
 
-  async callTool(toolName, args) {
+  async callTool(toolName, args, { signal = undefined } = {}) {
     return this.transport.request('tools/call', {
       name: toolName,
       arguments: args || {},
-    });
+    }, { signal });
   }
 
   async close() {
@@ -495,7 +495,7 @@ class StdioTransport {
     });
   }
 
-  async sendRequest(method, params, { skipInit = false } = {}) {
+  async sendRequest(method, params, { skipInit = false, signal = undefined } = {}) {
     if (!skipInit) {
       await this.ensureInitialized();
     }
@@ -503,12 +503,30 @@ class StdioTransport {
     const id = this.nextId++;
     logIdeRequest('stdio', 'stdio', method, params, `id=${id}`);
     return new Promise(async (resolve, reject) => {
+      const onAbort = () => {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        this.sendNotification('notifications/cancelled', { requestId: id, reason: 'parent AbortSignal aborted' }).catch(() => {});
+        reject(signal?.reason instanceof Error ? signal.reason : new Error('Agent 已取消'));
+      };
       const timer = setTimeout(() => {
         this.pending.delete(id);
+        signal?.removeEventListener('abort', onAbort);
+        this.sendNotification('notifications/cancelled', { requestId: id, reason: 'client timeout' }).catch(() => {});
         reject(new Error(`IDE MCP 请求超时: ${method}`));
       }, 15000);
 
-      this.pending.set(id, { resolve, reject, timer });
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      signal?.addEventListener('abort', onAbort, { once: true });
+      const cleanup = () => signal?.removeEventListener('abort', onAbort);
+      this.pending.set(id, {
+        resolve: value => { cleanup(); resolve(value); },
+        reject: err => { cleanup(); reject(err); },
+        timer,
+      });
 
       try {
         await this.sendRaw({
@@ -520,13 +538,14 @@ class StdioTransport {
       } catch (err) {
         clearTimeout(timer);
         this.pending.delete(id);
+        cleanup();
         reject(err);
       }
     });
   }
 
-  async request(method, params) {
-    return this.sendRequest(method, params);
+  async request(method, params, options = {}) {
+    return this.sendRequest(method, params, options);
   }
 
   async close() {
@@ -822,19 +841,37 @@ class SseTransport {
     });
   }
 
-  async sendRequest(method, params, { skipInit = false } = {}) {
+  async sendRequest(method, params, { skipInit = false, signal = undefined } = {}) {
     if (!skipInit) {
       await this.ensureInitialized();
     }
 
     const id = this.nextId++;
     return new Promise(async (resolve, reject) => {
+      const onAbort = () => {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        this.sendNotification('notifications/cancelled', { requestId: id, reason: 'parent AbortSignal aborted' }).catch(() => {});
+        reject(signal?.reason instanceof Error ? signal.reason : new Error('Agent 已取消'));
+      };
       const timer = setTimeout(() => {
         this.pending.delete(id);
+        signal?.removeEventListener('abort', onAbort);
+        this.sendNotification('notifications/cancelled', { requestId: id, reason: 'client timeout' }).catch(() => {});
         reject(new Error(`IDE MCP 请求超时: ${method}`));
       }, 15000);
 
-      this.pending.set(id, { resolve, reject, timer });
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      signal?.addEventListener('abort', onAbort, { once: true });
+      const cleanup = () => signal?.removeEventListener('abort', onAbort);
+      this.pending.set(id, {
+        resolve: value => { cleanup(); resolve(value); },
+        reject: err => { cleanup(); reject(err); },
+        timer,
+      });
 
       try {
         await this.postJsonRpc({
@@ -846,13 +883,14 @@ class SseTransport {
       } catch (err) {
         clearTimeout(timer);
         this.pending.delete(id);
+        cleanup();
         reject(err);
       }
     });
   }
 
-  async request(method, params) {
-    return this.sendRequest(method, params);
+  async request(method, params, options = {}) {
+    return this.sendRequest(method, params, options);
   }
 
   async close() {

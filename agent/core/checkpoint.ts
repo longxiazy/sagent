@@ -15,6 +15,30 @@
 import { mkdir, writeFile, readFile, unlink, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { log } from '../../helpers/logger.ts';
+import type { ActionResultStatus, AgentRuntimeState, AgentStep, JsonObject, TokenUsage } from './contracts.ts';
+
+export type StepCheckpoint = { runId: string; [key: string]: unknown };
+
+export interface SessionSnapshot {
+  type: 'healthy';
+  runId: string;
+  step: number;
+  history: AgentStep[];
+  state: JsonObject | null;
+  usage: Partial<TokenUsage> | JsonObject;
+  health: 'healthy' | 'unhealthy' | 'degraded' | 'unknown';
+  resultStatus?: ActionResultStatus;
+  resultError?: string | null;
+  timestamp: number;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isStepCheckpoint(value: unknown): value is StepCheckpoint {
+  return Boolean(value && typeof value === 'object' && typeof (value as Record<string, unknown>).runId === 'string');
+}
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -32,7 +56,7 @@ function tmpPath(dir: string, runId: string) {
   return join(dir, 'checkpoints', `${runId}.json.tmp`);
 }
 
-export async function saveCheckpoint(dir: string, data: any) {
+export async function saveCheckpoint(dir: string, data: StepCheckpoint): Promise<void> {
   const cpDir = join(dir, 'checkpoints');
   await mkdir(cpDir, { recursive: true });
   const tmp = tmpPath(dir, data.runId);
@@ -46,18 +70,20 @@ export async function saveCheckpoint(dir: string, data: any) {
   }
 }
 
-export async function listCheckpoints(dir: string) {
+export async function listCheckpoints(dir: string): Promise<StepCheckpoint[]> {
   const cpDir = join(dir, 'checkpoints');
   try {
     const files = await readdir(cpDir);
-    const checkpoints = [];
+    const checkpoints: StepCheckpoint[] = [];
     for (const f of files) {
       if (!f.endsWith('.json')) continue;
       try {
         const raw = await readFile(join(cpDir, f), 'utf8');
-        checkpoints.push(JSON.parse(raw));
-      } catch (err: any) {
-        log.warn(`Checkpoint parse failed: ${f}:`, err.message);
+        const parsed: unknown = JSON.parse(raw);
+        if (isStepCheckpoint(parsed)) checkpoints.push(parsed);
+        else log.warn(`Checkpoint validation failed: ${f}`);
+      } catch (err: unknown) {
+        log.warn(`Checkpoint parse failed: ${f}:`, errorMessage(err));
       }
     }
     return checkpoints;
@@ -69,8 +95,8 @@ export async function listCheckpoints(dir: string) {
 export async function removeCheckpoint(dir: string, runId: string) {
   try {
     await unlink(checkpointPath(dir, runId));
-  } catch (err: any) {
-    log.debug(`Checkpoint remove failed for ${runId}:`, err.message);
+  } catch (err: unknown) {
+    log.debug(`Checkpoint remove failed for ${runId}:`, errorMessage(err));
   }
 }
 
@@ -83,8 +109,8 @@ export async function clearCheckpoints(dir: string) {
         await unlink(join(cpDir, f)).catch(() => {});
       }
     }
-  } catch (err: any) {
-    log.debug('Clear checkpoints failed:', err.message);
+  } catch (err: unknown) {
+    log.debug('Clear checkpoints failed:', errorMessage(err));
   }
 }
 
@@ -112,7 +138,7 @@ function failedPath(dir: string, runId: string, step: number) {
   return join(sessionDir(dir, runId), `session-failed-${step}.json`);
 }
 
-function assessHealth(result: any, resultStatus?: any) {
+function assessHealth(result: unknown, resultStatus?: ActionResultStatus): SessionSnapshot['health'] {
   if (resultStatus === 'failed') return 'unhealthy';
   if (resultStatus === 'rejected') return 'degraded';
   if (!result || typeof result !== 'string') return 'unknown';
@@ -122,9 +148,9 @@ function assessHealth(result: any, resultStatus?: any) {
   return 'healthy';
 }
 
-function sanitizeState(state: any) {
+function sanitizeState(state: AgentRuntimeState | null | undefined): JsonObject | null {
   if (!state) return null;
-  const safe = { ...state };
+  const safe: Record<string, unknown> = { ...state };
   delete safe.chromium;
   delete safe.browserCandidatePaths;
   delete safe.onEvent;
@@ -157,15 +183,35 @@ async function pruneSnapshots(dir: string, runId: string, type: string, keepCoun
   } catch { /* ignore */ }
 }
 
-export async function saveHealthySnapshot({ dir, runId, step, history, state, result, resultStatus, resultError, usage = {} }: { dir: any; runId: any; step: any; history: any; state: any; result: any; resultStatus?: any; resultError?: any; usage?: any }) {
+export async function saveHealthySnapshot({
+  dir,
+  runId,
+  step,
+  history,
+  state,
+  result,
+  resultStatus,
+  resultError,
+  usage = {},
+}: {
+  dir: string;
+  runId: string;
+  step: number;
+  history: AgentStep[];
+  state: AgentRuntimeState | null;
+  result: unknown;
+  resultStatus?: ActionResultStatus;
+  resultError?: string | null;
+  usage?: Partial<TokenUsage> | JsonObject;
+}): Promise<void> {
   const cpDir = sessionDir(dir, runId);
   await mkdir(cpDir, { recursive: true });
 
-  const snapshot = {
+  const snapshot: SessionSnapshot = {
     type: 'healthy',
     runId,
     step,
-    history: history.map((h: any) => ({
+    history: history.map(h => ({
       step: h.step,
       rationale: h.rationale,
       action: h.action,
@@ -198,7 +244,7 @@ export async function saveHealthySnapshot({ dir, runId, step, history, state, re
   await pruneSnapshots(dir, runId, 'healthy', KEEP_HEALTHY);
 }
 
-export async function loadLatestHealthySnapshot(dir: string, runId: string, upToStep: number) {
+export async function loadLatestHealthySnapshot(dir: string, runId: string, upToStep: number): Promise<SessionSnapshot | null> {
   const cpDir = sessionDir(dir, runId);
   try {
     const files = await readdir(cpDir);
@@ -214,7 +260,11 @@ export async function loadLatestHealthySnapshot(dir: string, runId: string, upTo
     if (healthyFiles.length === 0) return null;
 
     const raw = await readFile(join(cpDir, healthyFiles[0].file), 'utf8');
-    return JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const snapshot = parsed as Partial<SessionSnapshot>;
+    if (snapshot.type !== 'healthy' || snapshot.runId !== runId || !Number.isInteger(snapshot.step) || !Array.isArray(snapshot.history)) return null;
+    return snapshot as SessionSnapshot;
   } catch {
     return null;
   }

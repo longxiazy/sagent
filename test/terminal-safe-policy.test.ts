@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { classifyAgentAction } from '../agent/policy/classify.ts';
 import { canRunSafe, parseSafeCommand } from '../agent/tools/terminal/safe-policy.ts';
-import { executeTerminalAction } from '../agent/tools/terminal/run.ts';
+import { executeTerminalAction, resolveCommandShell } from '../agent/tools/terminal/run.ts';
 
 describe('terminal run_safe policy', () => {
+  it('falls back to a portable shell when zsh is unavailable', () => {
+    expect(resolveCommandShell(['/definitely/missing/zsh', '/bin/sh'])).toBe('/bin/sh');
+  });
+
   it.each([
     'pwd',
     'ls -la',
@@ -85,11 +89,42 @@ describe('terminal run_safe policy', () => {
     const result = await executeTerminalAction({
       tool: 'terminal',
       type: 'run_safe',
-      command: 'ls "BACKEND_TODO.md"',
+      command: 'ls "package.json"',
       cwd: '',
       timeoutMs: 2000,
     });
     expect(result).toContain('exit_code: 0');
-    expect(result).toContain('command: ls "BACKEND_TODO.md"');
+    expect(result).toContain('command: ls "package.json"');
+  });
+
+  it('rejects absolute and traversal paths in safe terminal commands', async () => {
+    await expect(executeTerminalAction({
+      tool: 'terminal',
+      type: 'run_safe',
+      command: 'ls /etc',
+      cwd: '',
+      timeoutMs: 2000,
+    })).rejects.toThrow('绝对路径');
+
+    await expect(executeTerminalAction({
+      tool: 'terminal',
+      type: 'run_safe',
+      command: 'ls ../',
+      cwd: '',
+      timeoutMs: 2000,
+    })).rejects.toThrow('路径参数越界');
+  });
+
+  it('redacts credentials from terminal output and command metadata', async () => {
+    const result = await executeTerminalAction({
+      tool: 'terminal',
+      type: 'run_confirmed',
+      command: 'printf "api_key=super-secret-value"',
+      cwd: '',
+      timeoutMs: 2000,
+    });
+
+    expect(result).toContain('[REDACTED]');
+    expect(result).not.toContain('super-secret-value');
   });
 });

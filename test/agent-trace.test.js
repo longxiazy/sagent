@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { agentTraceEventKey, appendUniqueTraceEvent } from '../client/src/utils/agent-trace.js';
 
 describe('agent trace event de-duplication', () => {
+  it('uses the server sequence as the primary event identity', () => {
+    const first = { runId: 'run_1', seq: 4, type: 'step', step: 1, stage: 'action' };
+    const replay = { ...first, timestamp: 999 };
+
+    expect(agentTraceEventKey(first)).toBe('run_1:seq:4');
+    expect(appendUniqueTraceEvent([first], replay)).toHaveLength(1);
+  });
+
   it('keeps distinct terminal output events from the same step', () => {
     const events = [
       { type: 'terminal_output', step: 2, phase: 'start', sequence: 1 },

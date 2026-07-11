@@ -63,13 +63,14 @@ export interface Codegraph {
 
 // ── 落盘读写(仿 memory.ts) ──
 
-export async function loadCodegraph(dir: string): Promise<Codegraph | null> {
+export async function loadCodegraph(dir: string, signal?: AbortSignal): Promise<Codegraph | null> {
   try {
-    const raw = await fs.readFile(path.join(dir, CODEGRAPH_FILE), 'utf8');
+    const raw = await fs.readFile(path.join(dir, CODEGRAPH_FILE), { encoding: 'utf8', signal });
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.modules)) return null;
     return parsed as Codegraph;
-  } catch {
+  } catch (err) {
+    if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : err;
     return null;
   }
 }

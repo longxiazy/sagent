@@ -124,10 +124,10 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
     },
 
     async agentPlan(opts: AgentPlanOpts): Promise<AgentPlanResult> {
-      const { model, signal, systemPrompt, modelConfig } = opts;
-      const system = buildDesktopAgentSystemPrompt(systemPrompt);
+      const { model, signal, systemPrompt, modelConfig, toolMode = 'full' } = opts;
+      const system = buildDesktopAgentSystemPrompt(systemPrompt, toolMode as 'full' | 'readonly');
       const { contents } = buildGeminiTaskMessages(opts as any);
-      const tools = [{ functionDeclarations: createModelTools().map(toolToGeminiTool) }];
+      const tools = [{ functionDeclarations: createModelTools({ mode: toolMode as 'full' | 'readonly' }).map(toolToGeminiTool) }];
       const toolConfig = { functionCallingConfig: { mode: 'ANY' } };
       const maxOutputTokens = resolveAgentMaxTokens({
         model,
@@ -171,10 +171,11 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
     },
 
     async completionJson(opts: CompletionOpts) {
-      const { model, messages, temperature, max_tokens } = opts;
+      const { model, messages, temperature, max_tokens, signal } = opts;
       const { systemInstruction, contents } = toGeminiContents(messages);
       const config: Record<string, any> = { maxOutputTokens: max_tokens, temperature };
       if (systemInstruction) config.systemInstruction = systemInstruction;
+      if (signal) config.abortSignal = signal;
 
       const response = await client.models.generateContent({ model, contents, config } as any);
       const text = (response as any).text || '';

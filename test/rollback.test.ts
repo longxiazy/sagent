@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { saveHealthySnapshot } from '../agent/core/checkpoint.ts';
 import { resolveCheckpointSeed } from '../routes/agent-run-request.ts';
+import type { AgentStep } from '../agent/core/contracts.ts';
 
 let tmpDir;
 
@@ -15,11 +16,11 @@ afterEach(async () => {
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
-function makeHistory(steps: number[]) {
+function makeHistory(steps: number[]): AgentStep[] {
   return steps.map(s => ({
     step: s,
     rationale: `step ${s} rationale`,
-    action: { type: 'click', elementId: `el-${s}` },
+    action: { tool: 'browser', type: 'click', elementId: `el-${s}` },
     result: `step ${s} result`,
   }));
 }

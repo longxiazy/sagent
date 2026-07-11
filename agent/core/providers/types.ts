@@ -68,6 +68,7 @@ export interface CompletionOpts {
   max_tokens: number;
   chat_template_kwargs?: JsonObject;
   preserveReasoningContent?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface CompletionStreamOpts extends CompletionOpts {

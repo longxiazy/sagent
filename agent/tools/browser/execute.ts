@@ -24,10 +24,20 @@ function isTimeoutError(err) {
   return /超时|timeout|timed out|etimedout/.test(msg);
 }
 
-function withTimeout(promise, ms, message) {
+function stopView(view) {
+  try {
+    if (typeof view?.stop === 'function') return view.stop();
+    if (typeof view?.close === 'function') return view.close();
+  } catch {}
+}
+
+function withTimeout(promise, ms, message, onTimeout = null) {
   let timer;
   const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), ms);
+    timer = setTimeout(() => {
+      try { onTimeout?.(); } catch {}
+      reject(new Error(message));
+    }, ms);
   });
   return Promise.race([promise, timeout]).finally(() => {
     clearTimeout(timer);
@@ -73,12 +83,12 @@ function failedResult(result, error = result) {
 // 仅对超时错误重试 1 次，证书/DNS/HTTP 错误不重试
 async function navigateWithRetry(view, url, firstTimeoutMs, retryTimeoutMs, errMessage) {
   try {
-    return await withTimeout(safeNavigate(view, url), firstTimeoutMs, errMessage);
+    return await withTimeout(safeNavigate(view, url), firstTimeoutMs, errMessage, () => stopView(view));
   } catch (err) {
     if (!isTimeoutError(err)) throw err;
     await delay(FETCH_RETRY_BACKOFF_MS);
     try {
-      const result = await withTimeout(safeNavigate(view, url), retryTimeoutMs, errMessage);
+      const result = await withTimeout(safeNavigate(view, url), retryTimeoutMs, errMessage, () => stopView(view));
       return result;
     } catch (err2) {
       if (isTimeoutError(err2)) {
@@ -221,9 +231,23 @@ function queryElementScript(selector, body) {
   })()`;
 }
 
-export async function executeBrowserAction(view, action) {
+export async function executeBrowserAction(view, action, opts: { signal?: AbortSignal } = {}) {
+  const activeView = view || getWebView();
+  const signal = opts.signal;
+  if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error('Agent 已取消');
+  let rejectAbort: ((reason?: any) => void) | null = null;
+  const abortPromise = new Promise((_, reject) => { rejectAbort = reject; });
+  const onAbort = () => {
+    stopView(activeView);
+    rejectAbort?.(signal?.reason instanceof Error ? signal.reason : new Error('Agent 已取消'));
+  };
+  signal?.addEventListener('abort', onAbort, { once: true });
   try {
-    return await _executeBrowserAction(view || getWebView(), action);
+    if (!signal) return await _executeBrowserAction(activeView, action);
+    return await Promise.race([
+      _executeBrowserAction(activeView, action),
+      abortPromise,
+    ]);
   } catch (err) {
     const msg = err.message || String(err);
     if (/timeout|waiting for|not found|selector|元素不存在/i.test(msg)) {
@@ -233,6 +257,8 @@ export async function executeBrowserAction(view, action) {
       return failedResult(`浏览器操作失败: ${msg.slice(0, 200)}。可能原因: 页面导航失败或连接中断，请尝试重新打开页面或使用其他网站。`, msg);
     }
     throw err;
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
   }
 }
 
@@ -247,7 +273,7 @@ async function _executeBrowserAction(view, action) {
       return failedResult(blockedSearchEngineResult(action.url), '已阻止访问搜索引擎搜索页');
     }
     try {
-      await withTimeout(safeNavigate(view, action.url), FETCH_TIMEOUT_MS, `导航超时: ${action.url}`);
+      await withTimeout(safeNavigate(view, action.url), FETCH_TIMEOUT_MS, `导航超时: ${action.url}`, () => stopView(view));
       await delay(ACTION_SETTLE_MS);
       try {
         const { title, url, body } = await detectBlockedPage(view);

@@ -10,7 +10,18 @@
 import { isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
 import { isChromeMcpEnabled } from '../tools/chrome/mcp-client.ts';
 
-export function createModelTools() {
+const READONLY_TOOL_NAMES = new Set([
+  'list_dir',
+  'read_file',
+  'get_file_info',
+  'search_files',
+  'web_search',
+  'image_analyze',
+  'codegraph_query',
+  'finish',
+]);
+
+export function createModelTools({ mode = 'full' }: { mode?: 'full' | 'readonly' } = {}) {
   const tools: any[] = [
     {
       name: 'navigate',
@@ -409,7 +420,7 @@ export function createModelTools() {
     );
   }
 
-  return tools;
+  return mode === 'readonly' ? tools.filter(tool => READONLY_TOOL_NAMES.has(tool.name)) : tools;
 }
 
 // Gemini FunctionDeclaration：name/description + parametersJsonSchema（标准 JSON Schema，

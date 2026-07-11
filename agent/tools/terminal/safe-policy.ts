@@ -178,6 +178,8 @@ function validateGit(args: string[]) {
     '--exec',
     '--paginate',
     '--open-files-in-pager',
+    '--git-dir',
+    '--work-tree',
   )) return false;
   return true;
 }

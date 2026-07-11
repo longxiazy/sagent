@@ -111,10 +111,12 @@ function failedResult(result, error = result) {
   };
 }
 
-async function fetchHtml(query) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+import { createAbortScope, throwIfAborted } from '../../core/abort.ts';
+
+async function fetchHtml(query, signal?: AbortSignal) {
+  const scope = createAbortScope({ signals: [signal], timeoutMs: REQUEST_TIMEOUT_MS, timeoutMessage: 'web_search 请求超时' });
   try {
+    throwIfAborted(scope.signal);
     const url = ENDPOINT + '?' + new URLSearchParams({ q: query, kl: 'wt-wt' }).toString();
     const response = await fetch(url, {
       method: 'GET',
@@ -123,18 +125,18 @@ async function fetchHtml(query) {
         Accept: 'text/html,application/xhtml+xml',
         'Accept-Language': 'en-US,en;q=0.9,zh;q=0.8',
       },
-      signal: controller.signal,
+      signal: scope.signal,
     });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} ${response.statusText}`);
     }
     return await response.text();
   } finally {
-    clearTimeout(timer);
+    scope.cleanup();
   }
 }
 
-export async function executeSearchAction(action) {
+export async function executeSearchAction(action, opts: { signal?: AbortSignal } = {}) {
   const query = typeof action?.query === 'string' ? action.query.trim() : '';
   if (!query) {
     return failedResult('web_search 失败：query 为空');
@@ -144,7 +146,7 @@ export async function executeSearchAction(action) {
     : 5;
 
   try {
-    const html = await fetchHtml(query);
+    const html = await fetchHtml(query, opts.signal);
     if (html.includes('anomaly-modal') || html.includes('challenge-form')) {
       return failedResult('web_search 失败：DuckDuckGo 触发反爬验证。请稍后重试或改用 http_fetch 直接抓取目标站点。', 'DuckDuckGo 触发反爬验证');
     }

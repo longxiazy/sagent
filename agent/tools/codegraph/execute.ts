@@ -9,16 +9,17 @@
  */
 
 import { loadCodegraph, queryCodegraph } from '../../core/codegraph.ts';
+import type { ActionForTool } from '../../core/contracts.ts';
 
 export async function executeCodegraphQueryAction(
-  action: any,
-  { dataDir }: { dataDir?: string | null } = {},
+  action: ActionForTool<'codegraph'>,
+  { dataDir, signal }: { dataDir?: string | null; signal?: AbortSignal } = {},
 ): Promise<string> {
   const query = typeof action?.query === 'string' ? action.query.trim() : '';
   if (!query) return 'codegraph_query 失败:query 为空';
   if (!dataDir) return 'codegraph_query 失败:当前会话没有项目数据目录,无法读取代码图谱';
 
-  const graph = await loadCodegraph(dataDir);
+  const graph = await loadCodegraph(dataDir, signal);
   if (!graph) {
     return '该项目尚未建立代码图谱(codegraph)。请在左侧记忆面板的「Code Graph」标签页点「重新索引」生成后再查询;在此之前可用 list_dir / search_files 直接探索目录。';
   }

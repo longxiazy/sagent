@@ -6,10 +6,11 @@ export async function observeDesktopAgent(state: {
   runId: string;
   browserSession: any;
   projectRoot?: string | null;
+  cancelSignal?: AbortSignal;
 }) {
   const [desktop, browserRaw] = await Promise.all([
     state.observeDesktop
-      ? observeMacOSDesktop({ runId: state.runId })
+      ? observeMacOSDesktop({ runId: state.runId, signal: state.cancelSignal })
       : Promise.resolve({ frontmostApp: '', frontmostWindowTitle: '', windows: [] }),
     state.browserSession
       ? captureBrowserObservation(state.browserSession.view)

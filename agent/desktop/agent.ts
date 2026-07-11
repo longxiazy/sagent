@@ -44,7 +44,7 @@ import { executeTerminalAction } from '../tools/terminal/run.ts';
 import { createSharedBrowserSessionManager } from './browser-session-manager.ts';
 import { observeDesktopAgent } from './observer.ts';
 import { createDesktopPlanner, DEFAULT_MODEL_TIMEOUT_MS } from './planner.ts';
-import { saveCheckpoint } from '../core/checkpoint.ts';
+import { saveCheckpoint, saveHealthySnapshot } from '../core/checkpoint.ts';
 import { log } from '../../helpers/logger.ts';
 import { runtimeConfig } from '../core/runtime-config.ts';
 import type { ProviderRegistry } from '../core/providers/registry.ts';
@@ -106,9 +106,7 @@ export function createDesktopAgentRunner({
 
   // Sub-agent runner factory: creates isolated runners for parallel execution
   function createSubAgentRunner(parentRunId: string, parentModel: string, parentAgentModels: string[], parentStrategy: string, parentSystemPrompt: string | null, parentCancelSignal: AbortSignal, parentProjectRoot: string | null = null, parentDataDir: string | null = null) {
-    const subBrowserManager = createSharedBrowserSessionManager();
-
-    return async (task: string, subIndex: number) => {
+    return async (task: string, subIndex: number, subSignal: AbortSignal = parentCancelSignal) => {
       const subRunId = `${parentRunId}::sub${subIndex}`;
       const { maxSteps, modelTimeoutMs, staggerDelayMs, batchSize, autoModelRouting } = liveConfig();
       log.info(`[SubAgent] 启动子任务 ${subIndex}: ${task.slice(0, 60)}...`);
@@ -129,22 +127,16 @@ export function createDesktopAgentRunner({
       // Sub-agent action router without spawn support
       const subRouteAction = createActionRouter(
         {
-          core: async (state, action, context) => {
-            if (action.type === 'notify_user') {
-              return `已发送通知`;
-            }
-            if (action.type === 'ask_user') {
-              return '子 Agent 不支持交互式提问';
-            }
+          core: async (_state, action) => {
+            if (action.type !== 'finish') throw new Error(`子 Agent 禁止执行 core.${action.type}`);
             return action.answer || '任务已完成';
           },
-          browser: async (state, action) => {
-            const session = await subBrowserManager.ensureBrowserSession(state, undefined);
-            return executeBrowserAction(session.view, action);
+          fs: async (state, action) => {
+            if (action.type === 'write_file') throw new Error('子 Agent 禁止写文件');
+            return executeFsAction(action, { cwd: parentProjectRoot, dataDir: parentDataDir, signal: state.cancelSignal });
           },
-          fs: async (_state, action) => executeFsAction(action, { cwd: parentProjectRoot }),
-          search: async (_state, action) => executeSearchAction(action),
-          codegraph: async (_state, action) => executeCodegraphQueryAction(action, { dataDir: parentDataDir }),
+          search: async (state, action) => executeSearchAction(action, { signal: state.cancelSignal }),
+          codegraph: async (state, action) => executeCodegraphQueryAction(action, { dataDir: parentDataDir, signal: state.cancelSignal }),
           vision: async (_state, action) => executeVisionAction(action, {
             registry,
             openai_client,
@@ -152,14 +144,10 @@ export function createDesktopAgentRunner({
             visionModel,
             model: parentModel,
             agentModels: parentAgentModels,
+            signal: _state.cancelSignal,
+            projectRoot: parentProjectRoot,
+            dataDir: parentDataDir,
           }),
-          ide: async (_state, action) => executeIdeAction(action),
-          chrome: async (_state, action) => executeChromeAction(action),
-          terminal: async (_state, action) => executeTerminalAction(action, { cwd: parentProjectRoot }),
-          macos: async (state, action) => executeMacOSAction(action, { runId: state.runId }),
-          spawn: async () => {
-            throw new Error('子 Agent 不支持嵌套 spawn 调用');
-          },
         },
         { defaultTool: 'core' }
       );
@@ -175,7 +163,7 @@ export function createDesktopAgentRunner({
         task,
         maxSteps: Math.min(6, maxSteps),
         onEvent: undefined, // Sub-agents don't emit events to parent stream
-        cancelSignal: parentCancelSignal,
+        cancelSignal: subSignal,
         initialStep: 1,
         initialHistory: [],
         sessionCheckpointDir: null, // No checkpoints for sub-agents
@@ -195,26 +183,22 @@ export function createDesktopAgentRunner({
             agentModels: parentAgentModels,
             strategy: parentStrategy,
             onEvent: undefined,
-            cancelSignal: parentCancelSignal,
+            cancelSignal: subSignal,
             task: currentTask,
             systemPrompt: subSystemPrompt,
             step,
             history,
             observation,
             conversationHistory: [],
+            toolMode: 'readonly',
           }),
         authorize: subAuthorize,
         shouldObserve: (lastAction) => {
           if (!lastAction) return false;
-          const tool = lastAction.tool || '';
-          return tool !== 'fs' && tool !== 'terminal' && tool !== 'ide';
+          return lastAction.tool !== 'fs' && lastAction.tool !== 'codegraph';
         },
         execute: async (state, action, context) => subRouteAction(state, action, context),
-        cleanup: async (state) => {
-          if (state.browserSession?.view) {
-            await state.browserSession.view.navigate('about:blank').catch(() => {});
-          }
-        },
+        cleanup: async () => {},
       });
 
       log.info(`[SubAgent] 完成子任务 ${subIndex}: ${result.steps.length} 步`);
@@ -241,11 +225,11 @@ export function createDesktopAgentRunner({
       },
       browser: async (state, action) => {
         const session = await ensureBrowserSession(state, state.onEvent);
-        return executeBrowserAction(session.view, action);
+        return executeBrowserAction(session.view, action, { signal: state.cancelSignal });
       },
-      fs: async (state, action) => executeFsAction(action, { cwd: state.projectRoot }),
-      search: async (_state, action) => executeSearchAction(action),
-      codegraph: async (state, action) => executeCodegraphQueryAction(action, { dataDir: state.dataDir }),
+      fs: async (state, action) => executeFsAction(action, { cwd: state.projectRoot, dataDir: state.dataDir, signal: state.cancelSignal }),
+      search: async (state, action) => executeSearchAction(action, { signal: state.cancelSignal }),
+      codegraph: async (state, action) => executeCodegraphQueryAction(action, { dataDir: state.dataDir, signal: state.cancelSignal }),
       vision: async (state, action) => executeVisionAction(action, {
         registry,
         openai_client,
@@ -253,11 +237,15 @@ export function createDesktopAgentRunner({
         visionModel,
         model: state.model,
         agentModels: state.agentModels,
+        signal: state.cancelSignal,
+        projectRoot: state.projectRoot,
+        dataDir: state.dataDir,
       }),
-      ide: async (_state, action) => executeIdeAction(action),
-      chrome: async (_state, action) => executeChromeAction(action),
+      ide: async (state, action) => executeIdeAction(action, { signal: state.cancelSignal }),
+      chrome: async (state, action) => executeChromeAction(action, { signal: state.cancelSignal }),
       terminal: async (state, action, context) => executeTerminalAction(action, {
         cwd: state.projectRoot,
+        signal: state.cancelSignal,
         onOutput: event => state.onEvent?.({
           type: 'terminal_output',
           step: context?.step,
@@ -267,6 +255,7 @@ export function createDesktopAgentRunner({
       macos: async (state, action) =>
         executeMacOSAction(action, {
           runId: state.runId,
+          signal: state.cancelSignal,
         }),
       spawn: async (state, action) => {
         // Inject runSubAgent for the spawn handler
@@ -280,7 +269,7 @@ export function createDesktopAgentRunner({
           state.projectRoot,
           state.dataDir
         );
-        return executeSpawnAction(action, { runSubAgent });
+        return executeSpawnAction(action, { runSubAgent, signal: state.cancelSignal });
       },
     },
     { defaultTool: 'core' }
@@ -339,12 +328,19 @@ export function createDesktopAgentRunner({
               agentModels, strategy, conversationHistory, memory,
               projectRoot, dataDir,
             };
-            return checkpointWriter?.saveCheckpoint
+            const persist = () => checkpointWriter?.saveCheckpoint
               ? checkpointWriter.saveCheckpoint(checkpoint)
               : saveCheckpoint(runCheckpointDir, checkpoint);
+            return runRecord?.persistence ? runRecord.persistence.enqueue(persist) : persist();
           }
         : null,
-      saveSessionSnapshot: checkpointWriter?.saveHealthySnapshot,
+      saveSessionSnapshot: checkpointWriter?.saveHealthySnapshot
+        ? data => runRecord?.persistence
+          ? runRecord.persistence.enqueue(() => checkpointWriter.saveHealthySnapshot(data))
+          : checkpointWriter.saveHealthySnapshot(data)
+        : runRecord?.persistence
+          ? data => runRecord.persistence!.enqueue(() => saveHealthySnapshot(data as any))
+          : undefined,
       initialize: async () => ({
         runId,
         onEvent,

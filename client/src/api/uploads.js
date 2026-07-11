@@ -1,4 +1,4 @@
-// 调用后端 /api/uploads,把文件 base64 化后上传,返回服务端存档绝对路径。
+// 调用后端 /api/uploads,把文件 base64 化后上传,返回当前项目内的 @uploads/... 虚拟路径。
 // 单文件入口:把 File 对象转 base64,POST 给服务端,服务端落盘后返回 path。
 // 失败时抛错,由调用方在 UI 上标记 chip 为 error。
 import { tStatic } from '../i18n/locale.js';

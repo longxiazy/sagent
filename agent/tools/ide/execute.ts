@@ -55,7 +55,9 @@ function extractToolContent(result) {
   return chunks.join('\n\n');
 }
 
-export async function executeIdeAction(action) {
+export async function executeIdeAction(action, opts: { signal?: AbortSignal } = {}) {
+  const signal = opts.signal;
+  if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error('Agent 已取消');
   if (!isIdeMcpEnabled()) {
     throw new Error('IDE MCP 未启用，请在 .env 中设置 IDE_MCP_ENABLED=true 并配置连接参数');
   }
@@ -64,7 +66,7 @@ export async function executeIdeAction(action) {
   const client = await getSharedIdeMcpClient(config);
 
   if (action.type === 'ide_list_tools') {
-    const tools = await client.listTools({ refresh: Boolean(action.refresh) });
+    const tools = await client.listTools({ refresh: Boolean(action.refresh), signal });
     return formatToolList(tools, config);
   }
 
@@ -74,13 +76,13 @@ export async function executeIdeAction(action) {
       throw new Error('ide_call_tool 缺少 toolName');
     }
 
-    const tool = await client.getTool(toolName, { refresh: Boolean(action.refreshTools) });
+    const tool = await client.getTool(toolName, { refresh: Boolean(action.refreshTools), signal });
     if (!tool) {
       throw new Error(`未找到 IDE 工具 ${toolName}，请先调用 ide_list_tools 确认可用工具名`);
     }
 
     const args = applyIdeToolDefaults(action.arguments, tool, config);
-    const result = await client.callTool(toolName, args);
+    const result = await client.callTool(toolName, args, { signal });
     const content = extractToolContent(result);
     const status = result?.isError ? '失败' : '完成';
 

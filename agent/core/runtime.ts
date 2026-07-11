@@ -501,9 +501,9 @@ export async function runAgentRuntime({
       }
 
       // ---- 原有 checkpoint（step 级） ----
-      onCheckpoint?.(history, step);
+      await onCheckpoint?.(history, step);
 
-      // ---- 会话级健康快照（后台写入，不阻塞） ----
+      // ---- 会话级健康快照（纳入持久化队列，结束前可完整 flush） ----
       if (sessionCheckpointDir && runRecord && step % HEALTH_CHECKPOINT_INTERVAL === 0) {
         const runId = runRecord.runId;
         const snapData = {
@@ -518,7 +518,7 @@ export async function runAgentRuntime({
           usage: decision.usage,
         };
         const saveSnapshot = saveSessionSnapshot || saveHealthySnapshot;
-        Promise.resolve(saveSnapshot(snapData)).catch(err => {
+        await Promise.resolve(saveSnapshot(snapData)).catch(err => {
           log.error(`[Runtime] 健康快照保存失败: ${err.message}`);
         });
         onEvent?.({

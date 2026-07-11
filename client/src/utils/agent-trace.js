@@ -5,6 +5,10 @@ function compactChunk(value) {
 export function agentTraceEventKey(event) {
   if (!event || typeof event !== 'object') return '';
 
+  if (Number.isFinite(event.seq)) {
+    return `${event.runId || ''}:seq:${event.seq}`;
+  }
+
   if (event.type === 'terminal_output') {
     const seq = event.sequence ?? event.seq ?? null;
     if (seq != null) {

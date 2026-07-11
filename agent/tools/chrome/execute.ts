@@ -198,7 +198,9 @@ function extractToolContent(result) {
   return chunks.join('\n\n');
 }
 
-export async function executeChromeAction(action) {
+export async function executeChromeAction(action, opts: { signal?: AbortSignal } = {}) {
+  const signal = opts.signal;
+  if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error('Agent 已取消');
   if (!isChromeMcpEnabled()) {
     throw new Error('Chrome MCP 未启用，请在 .env 中设置 CHROME_MCP_ENABLED=true 并配置连接参数');
   }
@@ -231,7 +233,7 @@ export async function executeChromeAction(action) {
   }
 
   if (action.type === 'chrome_list_tools') {
-    const tools = await client.listTools({ refresh: Boolean(action.refresh) });
+    const tools = await client.listTools({ refresh: Boolean(action.refresh), signal });
     return formatToolList(tools, config);
   }
 
@@ -241,7 +243,7 @@ export async function executeChromeAction(action) {
       throw new Error('chrome_call_tool 缺少 toolName');
     }
 
-    const tool = await client.getTool(toolName, { refresh: Boolean(action.refreshTools) });
+    const tool = await client.getTool(toolName, { refresh: Boolean(action.refreshTools), signal });
     if (!tool) {
       throw new Error(`未找到 Chrome 工具 ${toolName}，请先调用 chrome_list_tools 确认可用工具名`);
     }
@@ -273,7 +275,7 @@ export async function executeChromeAction(action) {
     // 选中页是空白页就直接返回引导文案，不浪费一次工具调用。
     if (PAGE_REQUIRED_TOOLS.has(toolName)) {
       try {
-        const pagesResult = await client.callTool('list_pages', {});
+        const pagesResult = await client.callTool('list_pages', {}, { signal });
         if (!pagesResult?.isError) {
           const pagesText = extractToolContent(pagesResult);
           const selectedUrl = extractSelectedPageUrl(pagesText);
@@ -289,7 +291,7 @@ export async function executeChromeAction(action) {
     let result;
     try {
       // 这里保留原始 MCP tool 调用语义，错误恢复由 mcp-client.ts 统一处理。
-      result = await client.callTool(toolName, args);
+      result = await client.callTool(toolName, args, { signal });
     } catch (err: any) {
       if (err.message?.includes('error -54') || err.message?.includes('xattr')) {
         return [
@@ -306,7 +308,7 @@ export async function executeChromeAction(action) {
     // 主动再 take_snapshot，若页面已 idle（不再 busy），把结果改成"导航完成（超时但已加载）"。
     if ((toolName === 'navigate_page' || toolName === 'new_page') && isNavigationTimeoutResult(result)) {
       try {
-        const probe = await client.callTool('take_snapshot', {});
+        const probe = await client.callTool('take_snapshot', {}, { signal });
         const probeContent = extractToolContent(probe);
         const sid = extractSnapshotIdFromText(probeContent);
         if (sid) currentSnapshotId = sid;

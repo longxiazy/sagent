@@ -3,6 +3,7 @@ import { routeAgentModels } from '../core/model-routing.ts';
 import { displayWidth, padEndW } from '../core/utils.ts';
 import { log } from '../../helpers/logger.ts';
 import { extractErrorDiagnostics } from '../../helpers/retry.ts';
+import { createAbortScope, throwIfAborted } from '../core/abort.ts';
 
 export const DEFAULT_MODEL_TIMEOUT_MS = 10_000;
 const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000;
@@ -36,26 +37,18 @@ function sleepWithCancel(ms: number, cancelSignal?: AbortSignal): Promise<void> 
   });
 }
 
-async function singleModelPlan({ model, registry, modelConfig, cancelSignal, raceSignal, ...context }: any) {
+async function singleModelPlan({ model, registry, modelConfig, cancelSignal, raceSignal, deadlineSignal, ...context }: any) {
   if (cancelSignal?.aborted) throw new Error('Agent 已取消');
 
-  const ac = new AbortController();
-  const onUserCancel = () => ac.abort();
-  const onRaceAbort = () => ac.abort();
-  if (cancelSignal) {
-    if (cancelSignal.aborted) { ac.abort(); } else { cancelSignal.addEventListener('abort', onUserCancel); }
-  }
-  if (raceSignal) {
-    if (raceSignal.aborted) { ac.abort(); } else { raceSignal.addEventListener('abort', onRaceAbort); }
-  }
+  const scope = createAbortScope({ signals: [cancelSignal, raceSignal, deadlineSignal] });
 
   try {
     const provider = registry.resolve(model, modelConfig);
-    const result = await provider.agentPlan({ model, signal: ac.signal, modelConfig, ...context });
+    throwIfAborted(scope.signal);
+    const result = await provider.agentPlan({ model, signal: scope.signal, modelConfig, ...context });
     return { ...result, model };
   } finally {
-    if (cancelSignal) cancelSignal.removeEventListener('abort', onUserCancel);
-    if (raceSignal) raceSignal.removeEventListener('abort', onRaceAbort);
+    scope.cleanup();
   }
 }
 
@@ -132,15 +125,24 @@ export function createDesktopPlanner({
     const startedAt = Date.now();
     logModelRequest(model, context.step, timeoutMs);
 
-    let timer: NodeJS.Timeout | undefined;
-    const timeout = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`模型超时 (${Math.round(timeoutMs / 1000)}s)`)), timeoutMs);
-    });
+    const timeoutMessage = `模型超时 (${Math.round(timeoutMs / 1000)}s)`;
+    const timeoutScope = createAbortScope({ timeoutMs, timeoutMessage });
 
-    return Promise.race([
-      singleModelPlan({ model, registry, modelConfig, cancelSignal, raceSignal, ...context }),
-      timeout,
-    ])
+    return singleModelPlan({
+      model,
+      registry,
+      modelConfig,
+      cancelSignal,
+      raceSignal,
+      deadlineSignal: timeoutScope.signal,
+      ...context,
+    })
+      .catch(err => {
+        if (timeoutScope.signal.aborted && !cancelSignal?.aborted && !raceSignal?.aborted) {
+          throw new Error(timeoutMessage);
+        }
+        throw err;
+      })
       .then(result => {
         logModelResponse(model, Date.now() - startedAt, result);
         return result;
@@ -149,7 +151,7 @@ export function createDesktopPlanner({
         logModelFailure(model, Date.now() - startedAt, err);
         throw err;
       })
-      .finally(() => clearTimeout(timer));
+      .finally(() => timeoutScope.cleanup());
   }
 
   return async ({ model, agentModels, strategy = 'race', onEvent, cancelSignal, step, ...context }: any) => {
