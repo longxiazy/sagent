@@ -275,11 +275,6 @@ function matchesComplexFilters(model, filters) {
   return true;
 }
 
-function shouldExpandFiltersByDefault() {
-  if (typeof window === 'undefined') return true;
-  return !window.matchMedia?.('(max-width: 899px)').matches;
-}
-
 // 模型选择弹框的通用交互：打开后聚焦搜索、ESC 关闭。
 function useModelPickerDialog() {
   const [open, setOpen] = useState(false);
@@ -325,13 +320,13 @@ function ModelPickerDropdown({
   const [contextFilter, setContextFilter] = useState('all');
   const [categoryFilters, setCategoryFilters] = useState([]);
   const [encyclopediaOpen, setEncyclopediaOpen] = useState(false);
-  const [filtersExpanded, setFiltersExpanded] = useState(shouldExpandFiltersByDefault);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [expandedEncyclopediaModels, setExpandedEncyclopediaModels] = useState([]);
 
   const openPanel = () => {
     setQuery('');
     setEncyclopediaOpen(false);
-    setFiltersExpanded(shouldExpandFiltersByDefault());
+    setFiltersExpanded(false);
     setOpen(o => !o);
   };
 
@@ -655,7 +650,7 @@ function ModelPickerDropdown({
               onClick={() => {
                 setEncyclopediaOpen(current => {
                   const next = !current;
-                  setFiltersExpanded(next ? false : shouldExpandFiltersByDefault());
+                  setFiltersExpanded(false);
                   if (next) setExpandedEncyclopediaModels([]);
                   return next;
                 });
