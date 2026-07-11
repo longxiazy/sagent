@@ -8,12 +8,12 @@ export default defineConfig({
     target: ['safari15', 'chrome80', 'firefox80'],
   },
   server: {
-    host: '0.0.0.0',
+    host: process.env.VITE_HOST || '127.0.0.1',
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:3001',
-      '/v1': 'http://localhost:3001',
-      '/screenshots': 'http://localhost:3001',
+      '/api': { target: 'http://localhost:3001', changeOrigin: false },
+      '/v1': { target: 'http://localhost:3001', changeOrigin: false },
+      '/screenshots': { target: 'http://localhost:3001', changeOrigin: false },
     },
   },
 })

@@ -1,6 +1,7 @@
 // 浏览器审批通知工具：注册 ServiceWorker、请求权限、弹通知。
 // 决策按钮的点击 → SW 直接 POST /api/agent/approvals（见 public/sw.js）。
 import { tStatic } from './i18n/locale.js';
+import { getApiToken } from './api/auth.js';
 
 let swRegistrationPromise = null;
 
@@ -117,7 +118,7 @@ export async function showAgentNotification({ runId, approvalId, message, kind =
       renotify: true,
       requireInteraction,
       actions,
-      data: { runId, approvalId, kind },
+      data: { runId, approvalId, kind, apiToken: getApiToken() },
     });
     console.info('[Notifications] 已弹出通知', { kind, approvalId: approvalId || null, runId });
     return true;
