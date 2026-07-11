@@ -52,3 +52,7 @@ function loadCatalog() {
 export function getNvidiaCatalogModelMetadata(modelId: string): Partial<ModelInfo> {
   return loadCatalog().get(normalizeAlias(modelId)) || {};
 }
+
+export function hasNvidiaCatalogModel(modelId: string): boolean {
+  return loadCatalog().has(normalizeAlias(modelId));
+}

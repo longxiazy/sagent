@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { extractModelMetadata } from '../agent/core/providers/model-metadata.ts';
-import { getNvidiaCatalogModelMetadata } from '../agent/core/providers/nvidia-catalog.ts';
+import { getNvidiaCatalogModelMetadata, hasNvidiaCatalogModel } from '../agent/core/providers/nvidia-catalog.ts';
 import { createGeminiProvider } from '../agent/core/providers/gemini.ts';
 import { createOpenAICompatProvider } from '../agent/core/providers/openai-compat.ts';
 
@@ -70,6 +70,42 @@ describe('model metadata', () => {
       label: 'llama-3.1-70b-instruct',
       publisher: 'meta',
     });
+    expect(hasNvidiaCatalogModel('meta/llama-3.1-70b-instruct')).toBe(true);
+    expect(hasNvidiaCatalogModel('moonshotai/kimi-k2.6')).toBe(false);
+  });
+
+  it('only exposes official NVIDIA API models still present in the public catalog', async () => {
+    const provider = createOpenAICompatProvider({
+      chat: { completions: { create: vi.fn() } },
+      models: {
+        list: vi.fn().mockResolvedValue({
+          data: [
+            { id: 'deepseek-ai/deepseek-v4-pro' },
+            { id: 'moonshotai/kimi-k2.6' },
+          ],
+        }),
+      },
+    });
+
+    await expect(provider.listModels()).resolves.toEqual([
+      expect.objectContaining({ id: 'deepseek-ai/deepseek-v4-pro' }),
+    ]);
+  });
+
+  it('does not apply the NVIDIA catalog allowlist to custom OpenAI-compatible endpoints', async () => {
+    const provider = createOpenAICompatProvider({
+      chat: { completions: { create: vi.fn() } },
+      models: {
+        list: vi.fn().mockResolvedValue({ data: [{ id: 'custom/chat-model' }] }),
+      },
+    }, { baseURL: 'https://api.example.com/v1' });
+
+    await expect(provider.listModels()).resolves.toEqual([
+      expect.objectContaining({
+        id: 'custom/chat-model',
+        provider: 'example',
+      }),
+    ]);
   });
 
   it('enriches NVIDIA model listings from the static catalog without changing ids', async () => {

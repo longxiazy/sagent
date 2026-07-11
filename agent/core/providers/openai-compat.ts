@@ -26,7 +26,7 @@ import { retryAsync } from '../../../helpers/retry.ts';
 import { log } from '../../../helpers/logger.ts';
 import { buildSummaryPrompt } from './summary-prompt.ts';
 import { extractModelMetadata } from './model-metadata.ts';
-import { getNvidiaCatalogModelMetadata } from './nvidia-catalog.ts';
+import { getNvidiaCatalogModelMetadata, hasNvidiaCatalogModel } from './nvidia-catalog.ts';
 import type {
   LLMProvider,
   ModelInfo,
@@ -124,7 +124,19 @@ async function* preserveReasoningContentStream(stream: AsyncIterable<any>) {
   }
 }
 
-export function createOpenAICompatProvider(client: any): LLMProvider {
+function isOfficialNvidiaEndpoint(baseURL?: string) {
+  if (!baseURL) return true;
+  try {
+    return new URL(baseURL).hostname.toLowerCase() === 'integrate.api.nvidia.com';
+  } catch {
+    return false;
+  }
+}
+
+export function createOpenAICompatProvider(
+  client: any,
+  { baseURL = process.env.NVIDIA_BASE_URL }: { baseURL?: string } = {},
+): LLMProvider {
   const createStreamingCompletion = createStreamingCompletionFactory(client);
 
   // agent 决策器：JSON-in-prompt + 多策略解析，解析失败带提示重试一次（逻辑在 createJsonPlanner 内）。
@@ -149,11 +161,15 @@ export function createOpenAICompatProvider(client: any): LLMProvider {
 
     async listModels() {
       const models: ModelInfo[] = [];
-      const providerName = deriveProviderName(process.env.NVIDIA_BASE_URL);
+      const providerName = deriveProviderName(baseURL);
+      const useNvidiaCatalogAllowlist = isOfficialNvidiaEndpoint(baseURL);
       // 失败直接抛错，由 registry 聚合原因；全部供应商失败时中止启动。
       const list = await client.models.list();
       for (const m of list.data || []) {
         if (m?.id && isChatCapableModel(m.id)) {
+          // NVIDIA 的公开 catalog 比 /v1/models 下线信息更新更及时；两边都存在才展示。
+          // 自定义 OpenAI 兼容端点不使用 NVIDIA catalog，避免误删第三方模型。
+          if (useNvidiaCatalogAllowlist && !hasNvidiaCatalogModel(m.id)) continue;
           const catalogMetadata = providerName === 'nvidia' ? getNvidiaCatalogModelMetadata(m.id) : {};
           const providerMetadata = extractModelMetadata(m);
           models.push({
