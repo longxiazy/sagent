@@ -119,14 +119,22 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
     setSaved(false);
   };
 
+  const numberFieldLimit = key => {
+    const fieldSchema = schema[key] || {};
+    return {
+      min: Number.isFinite(fieldSchema.min) ? fieldSchema.min : Number.MIN_SAFE_INTEGER,
+      max: Number.isFinite(fieldSchema.max) ? fieldSchema.max : Number.MAX_SAFE_INTEGER,
+      step: NUMBER_FIELD_STEPS[key] || 1,
+    };
+  };
+
   const clampNumberField = (key, value) => {
-    const limit = NUMBER_FIELD_LIMITS[key];
-    if (!limit) return value;
+    const limit = numberFieldLimit(key);
     return Math.min(limit.max, Math.max(limit.min, value));
   };
 
   const stepNumberField = (key, direction) => {
-    const limit = NUMBER_FIELD_LIMITS[key];
+    const limit = numberFieldLimit(key);
     const current = Number(agent[key]);
     const base = Number.isFinite(current) ? current : limit.min;
     setField(key, clampNumberField(key, base + direction * limit.step));
@@ -210,12 +218,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
   };
 
   const numberField = (key, labelKey) => {
-    const fieldSchema = schema[key] || {};
-    const limit = {
-      min: Number.isFinite(fieldSchema.min) ? fieldSchema.min : Number.MIN_SAFE_INTEGER,
-      max: Number.isFinite(fieldSchema.max) ? fieldSchema.max : Number.MAX_SAFE_INTEGER,
-      step: NUMBER_FIELD_STEPS[key] || 1,
-    };
+    const limit = numberFieldLimit(key);
     const value = Number(agent[key]);
     const displayValue = Number.isFinite(value) ? value : limit.min;
     return (
