@@ -186,7 +186,7 @@ function buildPlanningPayload({
   if (providerName === 'gemini') {
     const { contents } = buildGeminiTaskMessages(baseContext);
     return {
-      systemInstruction: buildDesktopAgentSystemPrompt(systemPrompt || ''),
+      systemInstruction: buildDesktopAgentSystemPrompt(systemPrompt || '', 'full', baseContext),
       contents,
       tools: createModelTools(),
       toolConfig: { functionCallingConfig: { mode: 'ANY' } },

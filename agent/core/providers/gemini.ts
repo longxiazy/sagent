@@ -125,7 +125,7 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
 
     async agentPlan(opts: AgentPlanOpts): Promise<AgentPlanResult> {
       const { model, signal, systemPrompt, modelConfig, toolMode = 'full' } = opts;
-      const system = buildDesktopAgentSystemPrompt(systemPrompt, toolMode as 'full' | 'readonly');
+      const system = buildDesktopAgentSystemPrompt(systemPrompt, toolMode as 'full' | 'readonly', opts as any);
       const { contents } = buildGeminiTaskMessages(opts as any);
       const tools = [{ functionDeclarations: createModelTools({ mode: toolMode as 'full' | 'readonly' }).map(toolToGeminiTool) }];
       const toolConfig = { functionCallingConfig: { mode: 'ANY' } };
