@@ -136,7 +136,7 @@ describe('createJsonPlanner', () => {
 
     expect(result.action).toEqual({ tool: 'core', type: 'finish', answer: 'ok' });
     expect(create).toHaveBeenCalledTimes(2);
-    expect(create.mock.calls[0][0].max_tokens).toBe(16_000);
+    expect(create.mock.calls[0][0].max_tokens).toBe(4_096);
     expect(create.mock.calls[1][0].max_tokens).toBe(158);
   });
 

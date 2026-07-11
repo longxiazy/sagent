@@ -1,6 +1,55 @@
 import { buildIdePromptLines, isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
 import { buildChromePromptLines, isChromeMcpEnabled } from '../tools/chrome/mcp-client.ts';
 
+type PromptCapabilityContext = {
+  task?: string;
+  history?: any[];
+  observation?: any;
+};
+
+const CHROME_TASK_RE = /\bchrome\b|devtools|开发者工具|真实浏览器|网络面板|performance|lighthouse|控制台|console/i;
+const IDE_TASK_RE = /\bide\b|jetbrains|intellij|webstorm|pycharm|goland|运行配置|重命名重构|代码检查/i;
+const BROWSER_BLOCK_RE = /captcha|cloudflare|403|forbidden|人机验证|反爬|访问受限|被拦截|blocked/i;
+
+function historyUsesTool(history: any[] | undefined, tool: string) {
+  return Array.isArray(history) && history.some(entry => entry?.action?.tool === tool);
+}
+
+function historyShowsBrowserBlock(history: any[] | undefined) {
+  if (!Array.isArray(history)) return false;
+  return history.some(entry => (
+    entry?.action?.tool === 'browser'
+    && BROWSER_BLOCK_RE.test(String(entry?.result || ''))
+  ));
+}
+
+export function shouldIncludeChromePromptDetails({ task = '', history = [], observation }: PromptCapabilityContext = {}) {
+  return CHROME_TASK_RE.test(task)
+    || historyUsesTool(history, 'chrome')
+    || historyShowsBrowserBlock(history)
+    || BROWSER_BLOCK_RE.test(String(observation?.browser?.text || ''));
+}
+
+export function shouldIncludeIdePromptDetails({ task = '', history = [] }: PromptCapabilityContext = {}) {
+  return IDE_TASK_RE.test(task) || historyUsesTool(history, 'ide');
+}
+
+function chromePromptLines(context: PromptCapabilityContext) {
+  if (!isChromeMcpEnabled()) return [];
+  if (shouldIncludeChromePromptDetails(context)) return buildChromePromptLines();
+  return [
+    'Chrome MCP 已启用但默认不展开。仅当任务明确要求 Chrome/DevTools，或内置浏览器遭遇 CAPTCHA、403、Cloudflare 等拦截时，调用 {"tool":"chrome","type":"chrome_list_tools"} 按需获取工具。',
+  ];
+}
+
+function idePromptLines(context: PromptCapabilityContext) {
+  if (!isIdeMcpEnabled()) return [];
+  if (shouldIncludeIdePromptDetails(context)) return buildIdePromptLines();
+  return [
+    'IDE MCP 已启用但默认不展开。仅当任务明确需要 JetBrains/IDE 能力时，调用 {"tool":"ide","type":"ide_list_tools"} 按需获取工具。',
+  ];
+}
+
 // 提取最近 N 步 browser/chrome 工具访问过的 URL，提示模型避免原地踏步。
 // trace 中曾出现同一 URL 被模型连续访问 3 次的情况，仅靠 history 推理不足以让模型察觉。
 function buildRecentUrlsHint(history: any[], lookback = 5): string | null {
@@ -70,7 +119,36 @@ function buildRecentSearchesHint(history: any[], lookback = 6): string | null {
   return `最近搜索过的 query（避免在失败或重复后原样重试）：\n${lines.join('\n')}`;
 }
 
-export function buildDesktopAgentSystemPrompt(systemPrompt: string | null, toolMode: 'full' | 'readonly' = 'full') {
+function promptResultText(value: any) {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value ?? '');
+  }
+}
+
+export function compactAgentHistory(history: any[], maxEntries = 6, maxResultChars = 4000) {
+  if (!Array.isArray(history) || history.length === 0) return [];
+  return history.slice(-maxEntries).map(entry => {
+    const result = promptResultText(entry?.result);
+    return {
+      step: entry?.step,
+      rationale: entry?.rationale,
+      action: entry?.action,
+      result: result.length > maxResultChars
+        ? `${result.slice(0, maxResultChars)}\n…[结果已截断，共 ${result.length} 字符]`
+        : result,
+      ...(entry?.resultStatus ? { resultStatus: entry.resultStatus } : {}),
+    };
+  });
+}
+
+export function buildDesktopAgentSystemPrompt(
+  systemPrompt: string | null,
+  toolMode: 'full' | 'readonly' = 'full',
+  capabilityContext: PromptCapabilityContext = {},
+) {
   if (toolMode === 'readonly') {
     return [
       '你是只读子 Agent，只负责分析并返回结果。',
@@ -79,8 +157,9 @@ export function buildDesktopAgentSystemPrompt(systemPrompt: string | null, toolM
       systemPrompt ? `附加约束：${systemPrompt}` : '',
     ].filter(Boolean).join('\n');
   }
-  const ideLines = buildIdePromptLines();
-  const chromeLines = buildChromePromptLines();
+  const ideLines = idePromptLines(capabilityContext);
+  const chromeDetails = shouldIncludeChromePromptDetails(capabilityContext);
+  const chromeLines = chromePromptLines(capabilityContext);
   return [
     '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。',
     '通过工具调用完成任务，只能使用提供的工具，不要输出 JSON 以外的文本。',
@@ -103,7 +182,7 @@ export function buildDesktopAgentSystemPrompt(systemPrompt: string | null, toolM
     '11. finish 之前自检：当任务要求基于网页/官网内容作答，但你的浏览操作（navigate/click/take_snapshot/http_fetch 等）没有真正取得目标页面的实质内容（如反复超时、只到达主页、被反爬挡住），不要用模型常识包装成”已确认结论”。要么继续尝试（换路径、换工具、换源站），要么在 answer 里明确说明”未能从目标页面取得信息，以下来自常识仅供参考”。',
     '11.1 查询酒店/机票/电商等实时价格时，优先用 web_search 获取价格区间或聚合报价；这类价格依赖具体入住/出行日期、常需登录且受反爬限制，难以直接抓取。若拿不到确切数字，直接 finish 给出区间与查询入口、并如实说明「未取得实时精确价」，不要在单个站点反复 navigate/snapshot/click 空转。',
     '11.2 浏览器/Chrome 操作要及时止损：对同一目标连续约 5 步（navigate/snapshot/click/evaluate 等）仍未取得实质数据时，停止更换手段反复尝试，直接 finish 汇总已知信息并说明未能取得的部分。',
-    ...(isChromeMcpEnabled() ? ['11. 当内置浏览器被反爬拦截（CAPTCHA、人机验证、403、Cloudflare 等）时，立即改用 chrome_call_tool（navigate_page / take_snapshot / click / fill 等）操作真实 Chrome 浏览器访问同一页面。'] : []),
+    ...(chromeDetails ? ['11. 当内置浏览器被反爬拦截时，改用 Chrome MCP 操作真实浏览器访问同一页面。'] : []),
     ...ideLines,
     ...chromeLines,
     systemPrompt ? `附加约束：${systemPrompt}` : '',
@@ -135,9 +214,10 @@ export function buildGeminiTaskMessages({
   }
   const recentUrlsHint = buildRecentUrlsHint(history);
   const recentSearchesHint = buildRecentSearchesHint(history);
+  const promptHistory = compactAgentHistory(history);
   contents.push({
     role: 'user',
-    parts: [{ text: JSON.stringify({ task, step, history, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }) }],
+    parts: [{ text: JSON.stringify({ task, step, history: promptHistory, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }) }],
   });
   return { contents };
 }
@@ -161,10 +241,13 @@ export function buildNvidiaTaskMessages({
   compact?: boolean;
   toolMode?: 'full' | 'readonly';
 }) {
+  const capabilityContext = { task, history, observation };
   const ideEnabled = isIdeMcpEnabled();
-  const ideLines = buildIdePromptLines();
+  const ideDetails = shouldIncludeIdePromptDetails(capabilityContext);
+  const ideLines = idePromptLines(capabilityContext);
   const chromeEnabled = isChromeMcpEnabled();
-  const chromeLines = buildChromePromptLines();
+  const chromeDetails = shouldIncludeChromePromptDetails(capabilityContext);
+  const chromeLines = chromePromptLines(capabilityContext);
   const conversationSummary = conversationHistory?.length
     ? '\n\n之前的对话（供参考）：\n' + conversationHistory
         .map(message => `${message.role === 'user' ? '用户' : '助手'}: ${message.content}`)
@@ -173,6 +256,7 @@ export function buildNvidiaTaskMessages({
 
   const recentUrlsHint = buildRecentUrlsHint(history);
   const recentSearchesHint = buildRecentSearchesHint(history);
+  const promptHistory = compactAgentHistory(history);
 
   if (toolMode === 'readonly') {
     return [
@@ -188,7 +272,7 @@ export function buildNvidiaTaskMessages({
       },
       {
         role: 'user',
-        content: JSON.stringify({ task, step, history: history?.slice?.(compact ? -2 : -6) || [], observation }),
+        content: JSON.stringify({ task, step, history: compactAgentHistory(history, compact ? 2 : 6), observation }),
       },
     ];
   }
@@ -208,7 +292,7 @@ export function buildNvidiaTaskMessages({
       },
       {
         role: 'user',
-        content: JSON.stringify({ task, step, history: history?.slice?.(-2) || [], observation }),
+        content: JSON.stringify({ task, step, history: compactAgentHistory(history, 2, 1500), observation }),
       },
     ];
   }
@@ -219,48 +303,18 @@ export function buildNvidiaTaskMessages({
       content: [
         '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。',
         '你只能输出一个 JSON 对象，不要输出 Markdown，不要解释。',
-        '可用动作示例：',
-        '{"rationale":"打开网页","action":{"tool":"browser","type":"navigate","url":"https://example.com"}}',
-        '{"rationale":"点击网页元素","action":{"tool":"browser","type":"click","elementId":"3"}}',
-        '{"rationale":"读取目录","action":{"tool":"fs","type":"list_dir","path":"."}}',
-        '{"rationale":"查看文件大小和修改时间","action":{"tool":"fs","type":"get_file_info","path":"README.md"}}',
-        '{"rationale":"读取文件","action":{"tool":"fs","type":"read_file","path":"README.md"}}',
-        '{"rationale":"写文件","action":{"tool":"fs","type":"write_file","path":"notes.txt","content":"内容","append":false}}',
-        '{"rationale":"搜索文件内容","action":{"tool":"fs","type":"search_files","query":"关键词","path":".","include":"*.js"}}',
-        '{"rationale":"运行只读命令","action":{"tool":"terminal","type":"run_safe","command":"pwd"}}',
-        '{"rationale":"运行需确认命令","action":{"tool":"terminal","type":"run_confirmed","command":"git status"}}',
-        '{"rationale":"切换目录","action":{"tool":"terminal","type":"run_review","command":"cd /path/to/dir"}}',
-        '{"rationale":"切换应用","action":{"tool":"macos","type":"activate_app","app":"Finder"}}',
-        '{"rationale":"打开应用","action":{"tool":"macos","type":"open_app","app":"Google Chrome"}}',
-        '{"rationale":"列出窗口","action":{"tool":"macos","type":"list_windows"}}',
-        '{"rationale":"屏幕截图","action":{"tool":"macos","type":"capture_screen"}}',
-        '{"rationale":"桌面输入文字","action":{"tool":"macos","type":"type_text","text":"hello"}}',
-        '{"rationale":"桌面按键","action":{"tool":"macos","type":"press_key","key":"enter","modifiers":["command"]}}',
-        '{"rationale":"点击桌面坐标","action":{"tool":"macos","type":"click_at","x":640,"y":480}}',
-        '{"rationale":"向下滚动页面","action":{"tool":"browser","type":"scroll","direction":"down","amount":3}}',
-        '{"rationale":"获取浏览器当前页面文本内容","action":{"tool":"browser","type":"get_page_content"}}',
-        '{"rationale":"抓取网页内容","action":{"tool":"browser","type":"http_fetch","url":"https://example.com"}}',
-        '{"rationale":"搜索并提取链接","action":{"tool":"browser","type":"http_fetch","url":"https://example.com/search?q=关键词","extractLinks":true}}',
-        '{"rational":"并发抓取多个页面","action":{"tool":"browser","type":"parallel_fetch","urls":["https://example.com/a","https://example.com/b"]}}',
-        '{"rationale":"网络搜索关键词","action":{"tool":"search","type":"web_search","query":"2026 北京最低工资标准"}}',
-        '{"rationale":"查询项目代码图谱定位相关模块","action":{"tool":"codegraph","type":"codegraph_query","query":"记忆 memory"}}',
-        '{"rationale":"分析图片内容","action":{"tool":"vision","type":"image_analyze","image":"@uploads/2026-01-01/image.png","question":"图片里有什么内容？请详细描述。"}}',
-        '{"rationale":"并行分析多个文件","action":{"tool":"spawn","type":"spawn","tasks":["分析 src/index.ts 的架构","检查 test/ 目录的测试覆盖率","搜索项目中的 TODO 注释"]}}',
-        ...(ideEnabled
-          ? [
-              '{"rationale":"查看 IDE 可用工具","action":{"tool":"ide","type":"ide_list_tools"}}',
-              '{"rationale":"调用 IDE 工具获取运行配置","action":{"tool":"ide","type":"ide_call_tool","toolName":"get_run_configurations","arguments":{}}}',
-            ]
-          : []),
-        ...(chromeEnabled
-          ? [
-              '{"rationale":"调用 Chrome 工具截图","action":{"tool":"chrome","type":"chrome_call_tool","toolName":"take_screenshot","arguments":{}}}',
-              '{"rationale":"刷新 Chrome 工具列表（仅在工具缺失/调用失败时使用）","action":{"tool":"chrome","type":"chrome_list_tools","refresh":true}}',
-            ]
-          : []),
-        '{"rationale":"向用户提问","action":{"tool":"core","type":"ask_user","question":"你希望使用什么命名规范？"}}',
-        '{"rationale":"发现重要问题需告知用户","action":{"tool":"core","type":"notify_user","message":"发现 3 个硬编码 API 密钥","level":"warning"}}',
-        '{"rationale":"完成任务","action":{"type":"finish","answer":"最终结果"}}',
+        '输出格式固定为 {"rationale":"简短理由","action":{...}}。示例：',
+        '{"rationale":"搜索天气","action":{"tool":"search","type":"web_search","query":"杭州今日天气"}}',
+        '{"rationale":"任务完成","action":{"type":"finish","answer":"最终结果"}}',
+        '可用动作签名（括号内为主要参数）：',
+        'browser: navigate(url), click(elementId), type(elementId,text), scroll(direction,amount), get_page_content(), http_fetch(url,extractLinks?), parallel_fetch(urls)',
+        'fs: list_dir(path), get_file_info(path), read_file(path), write_file(path,content,append), search_files(query,path,include?)',
+        'terminal: run_safe(command), run_confirmed(command), run_review(command)',
+        'macos: activate_app(app), open_app(app), list_windows(), capture_screen(), type_text(text), press_key(key,modifiers), click_at(x,y)',
+        'search: web_search(query,maxResults?)；codegraph: codegraph_query(query)；vision: image_analyze(image,question)；spawn: spawn(tasks)',
+        ...(ideEnabled && ideDetails ? ['ide: ide_list_tools(refresh?), ide_call_tool(toolName,arguments)'] : []),
+        ...(chromeEnabled && chromeDetails ? ['chrome: chrome_list_tools(refresh?), chrome_call_tool(toolName,arguments,refreshTools?)'] : []),
+        'core: ask_user(question), notify_user(message,level), finish(answer)',
         '重要：每个步骤必须且只能输出一个 JSON 动作。如果你已经收集到足够信息并可以直接回答用户问题，请使用 finish 动作输出答案。绝对不要在 JSON 之外输出解释文字。',
         '规则：',
         '1. 只有 observation.browser.elements 中存在的 elementId 才能用于 browser.click / browser.type。',
@@ -282,7 +336,7 @@ export function buildNvidiaTaskMessages({
         '12. 涉及医保、社保、签证、贷款、股票、基金、汇率、法律、法规、政策、许可、合规等高风险或合规性信息时，必须优先从官方来源核验；如果未能核验，finish 答案必须明确说明”未能完成官方核验”，不要把记忆或常识包装成已确认结论。',
         '13. 查询酒店/机票/电商等实时价格时，优先用 web_search 获取价格区间或聚合报价；这类价格依赖具体入住/出行日期、常需登录且受反爬限制，难以直接抓取。若拿不到确切数字，直接 finish 给出区间与查询入口、并如实说明「未取得实时精确价」，不要在单个站点反复 navigate/snapshot/click 空转。',
         '14. 浏览器/Chrome 操作要及时止损：对同一目标连续约 5 步（navigate/snapshot/click/evaluate 等）仍未取得实质数据时，停止更换手段反复尝试，直接 finish 汇总已知信息并说明未能取得的部分。',
-        ...(chromeEnabled ? ['12. 当内置浏览器被反爬拦截（CAPTCHA、人机验证、403、Cloudflare 等）时，立即改用 chrome_call_tool（navigate_page / take_snapshot / click / fill 等）操作真实 Chrome 浏览器。'] : []),
+        ...(chromeDetails ? ['15. 当内置浏览器被反爬拦截时，改用 Chrome MCP 操作真实浏览器。'] : []),
         ...ideLines,
         ...chromeLines,
         systemPrompt ? `附加约束：${systemPrompt}` : '',
@@ -293,7 +347,7 @@ export function buildNvidiaTaskMessages({
     },
     {
       role: 'user',
-      content: JSON.stringify({ task, step, history, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }),
+      content: JSON.stringify({ task, step, history: promptHistory, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }),
     },
   ];
 }

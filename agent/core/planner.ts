@@ -20,7 +20,8 @@ import {
   createChatCompletionWithTemplateFallback,
 } from './openai-compatible-request.ts';
 
-const DEFAULT_AGENT_MAX_TOKENS = 16_000;
+// 每一步只需产出一个结构化动作；过大的输出预算会放大推理延迟和供应商超时风险。
+const DEFAULT_AGENT_MAX_TOKENS = 4_096;
 const MIN_AGENT_MAX_TOKENS = 1;
 const MIN_USEFUL_AGENT_MAX_TOKENS = 128;
 const CONTEXT_RETRY_RESERVE_TOKENS = 128;
