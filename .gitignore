@@ -36,5 +36,6 @@ npm-debug.log*
 /artifacts/
 
 todo.md
+/todo/
 
 .claude/
