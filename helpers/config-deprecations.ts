@@ -1,5 +1,5 @@
 import { AGENT_CONFIG_KEYS, AGENT_CONFIG_SCHEMA } from '../agent/core/config-schema.ts';
-import type { RuntimeConfigStore } from '../agent/core/runtime-config.ts';
+import type { ConfigStore } from '../agent/core/config-store.ts';
 import { log } from './logger.ts';
 
 const REMOVED_VARIABLES = ['MODELS', 'AGENT_MULTI_MODELS', 'AGENT_HEADLESS'];
@@ -7,7 +7,7 @@ const LEGACY_CHROME_PREFIX = 'CHROME_MCP_';
 const LEGACY_IDE_PREFIX = 'IDE_MCP_';
 
 export function warnLegacyConfiguration(
-  runtimeConfig: RuntimeConfigStore,
+  configStore: ConfigStore,
   env: Record<string, string | undefined> = process.env,
 ) {
   const removed = REMOVED_VARIABLES.filter(key => env[key] != null && String(env[key]).trim() !== '');
@@ -22,7 +22,7 @@ export function warnLegacyConfiguration(
     log.warn(`[Config] Agent 调优环境变量仅作为兼容默认值，请迁移到 data/config.json 或设置页: ${tuning.join(', ')}`);
   }
 
-  const stored = runtimeConfig.mcpServers();
+  const stored = configStore.mcpServers();
   const chromeLegacy = Object.keys(env).filter(key => key.startsWith(LEGACY_CHROME_PREFIX) && env[key]);
   const ideLegacy = Object.keys(env).filter(key => key.startsWith(LEGACY_IDE_PREFIX) && env[key]);
   if (!stored.chrome && chromeLegacy.length > 0) {

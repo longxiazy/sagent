@@ -95,34 +95,32 @@ client/src/
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│ 1-51    import：组件、hook、工具函数                            │
-│ 53-99   辅助函数：附件拼接、模型 ID 清洗、trace 模型提取          │
+│ import：组件、hook、API 和工具函数                               │
+│ 辅助函数：附件拼接、模型 ID 清洗、trace 模型提取                  │
 ├───────────────────────────────────────────────────────────────┤
-│ 101     function App()  ← 应用根组件                           │
+│ function App()  ← 应用根组件                                   │
 │                                                               │
-│ 101-226 ① 状态声明区                                           │
-│ 228-258 ② 启动初始化：拉后端模型列表                            │
-│ 262-266 ③ 同步浏览器地址栏颜色（useThemeColorSync）             │
-│ 268-470 ④ Agent SSE 重连 effect（最复杂的一块）                 │
-│ 479-555 ⑤ 可见性兜底（手机后台漏事件的补救）                    │
-│ 557-633 ⑥ 零碎 effects：聚焦/滚动/建议/textarea 自适应高度      │
-│ 635-641 ⑦ 卸载清理                                            │
+│ ① 状态与持久化 hook                                            │
+│ ② 启动初始化：拉取后端模型、项目和推荐任务                       │
+│ ③ 顶层 effects：主题、Agent SSE 重连、可见性兜底                 │
+│ ④ 交互 effects：聚焦、滚动、快捷键和 textarea 高度               │
+│ ⑤ 卸载清理                                                     │
 │                                                               │
-│ 643-739 ⑧ 业务 handler / hook：session / project / agent /附件 │
-│ 741-786 ⑨ handleSubmit / handleKeyDown                        │
-│ 788-847 ⑩ 派生数据 + 工具栏 slot 变量                          │
+│ ⑥ 业务 handler / hook：session、project、agent、附件            │
+│ ⑦ 提交、停止、审批、回滚和快捷键                                │
+│ ⑧ 派生数据 + 工具栏 slot 变量                                   │
 │                                                               │
-│ 849-1015 ⑪ return (...)：实际渲染的 JSX                       │
+│ ⑨ return (...)：实际渲染的 JSX                                │
 └───────────────────────────────────────────────────────────────┘
 ```
 
-`App` 这个函数会被 React **反复调用**——任何 state 变了就调一次。①-⑩ 区每次渲染都重跑（`useEffect` 内部按依赖触发），⑪ 是当次渲染要画的东西。
+`App` 这个函数会被 React **反复调用**——任何 state 变了就调一次。上面的分区描述职责，不绑定具体行号；重构后应保持职责边界，而不是维持某个行号范围。
 
 ---
 
 ## 3. 区域详解
 
-### ① 状态声明（101-226）
+### ① 状态声明
 
 | 状态 | 来源 | 用途 |
 |---|---|---|
@@ -142,18 +140,18 @@ client/src/
 - `useState` 的值用 `set*` 改，会重渲染。
 - `useRef` 的值用 `.current` 读写，**不会**重渲染。
 
-### ② 拉后端模型列表（228-258）
+### ② 拉后端模型列表
 
 挂载时 `apiFetch('/api/models')`：
 1. 更新 `availableModels`；
 2. 顺手扫一遍历史会话，清除已经下线的 `model/modelsUsed` 引用，不自动替换成首个可用模型；
 3. 设 `modelsLoaded = true`，让"清理用户多选模型"effect 才敢动手。Agent 运行前仍要求用户在模型选择器里手动选择至少一个模型。
 
-### ③ `useThemeColorSync`（262-266）
+### ③ `useThemeColorSync`
 
 把 `<meta name="theme-color">` 改成当前主背景色，让手机浏览器顶部地址栏跟着变色。逻辑全在 hook 里。
 
-### ④ Agent SSE 重连 effect（268-470）⭐
+### ④ Agent SSE 重连 effect ⭐
 
 **场景**：用户开了 Agent 任务，**刷新了页面**。后端还在跑，UI 必须接回来。
 
@@ -181,13 +179,13 @@ client/src/
 - `updateActiveSession` 不能依赖闭包里的 `activeSession`，因为回调可能在很久之后触发；它每次从最新 `chatState` 里拿 `activeSessionId`。
 - SSE 重连时同一批事件可能被回放两次，所以追加前按 `type / step / stage / model` 去重。
 
-### ⑤ 可见性兜底（479-555）
+### ⑤ 可见性兜底
 
 **场景**：手机切到后台时浏览器会冻结 JS、节流网络，SSE reader 可能漏掉 `done` / `error`。
 
 **做法**：监听 `visibilitychange`，切回前台时如果 UI 还以为 agent 在跑，就调 `fetchAgentTrace(rid)` 拉持久化的 trace。如果里面已经有终止事件（`done` / `error`），就把答案灌回去、收掉 running 状态、关掉所有挂起弹窗——避免"任务已结束但 UI 一直转圈"。
 
-### ⑥ 零碎 effects（557-633）
+### ⑥ 零碎 effects
 
 - **挂载聚焦**：进页面自动 focus 输入框。
 - **会话切换同步 trace**：切到另一个会话时，把那个会话的 agentTrace 拉出来（去重后写入），并把"上次 agent 任务原文"记到 ref 里供 rollback 重试用。
@@ -196,13 +194,13 @@ client/src/
 - **建议数据刷新**：从后端拉取推荐任务；提交任务后刷新"最近使用"。
 - **textarea 自适应高度**：根据 `input` 长度计算，最高 144px。
 
-### ⑦ 卸载清理（635-641）
+### ⑦ 卸载清理
 
 组件卸载（页面关闭、导航）时：
 - 中止 Agent 的网络流；
 - 拒绝挂起的审批 Promise（避免悬挂的 `await`）。
 
-### ⑧ 业务 handler / hook（643-739，843-847）
+### ⑧ 业务 handler / hook
 
 | Hook | 返回 | 干嘛 |
 |---|---|---|
@@ -214,14 +212,14 @@ client/src/
 
 **为什么抽 hook**：把"一坨相关的状态+函数"打包，避免 App.jsx 里全是 200 行的内联函数。
 
-### ⑨ 提交 + 快捷键（741-786）
+### ⑨ 提交 + 快捷键
 
 ```js
 handleSubmit  // 按发送：校验输入/附件/模型 → 拼任务文本 → 调 sendAgentTask
 handleKeyDown // 桌面按 Cmd/Ctrl+Enter 发送；手机不拦截（要换行）
 ```
 
-### ⑩ 派生数据 + slot 变量（788-847）
+### ⑩ 派生数据 + slot 变量
 
 派生数据：
 ```js
@@ -247,7 +245,7 @@ React 里可以把一段 JSX 表达式**赋给变量**，之后多处插入。`m
 
 业内叫 **slot pattern** / **render prop**——把 JSX 当数据传。
 
-### ⑪ 最后的 return JSX（849-1015）
+### ⑪ 最后的 return JSX
 
 骨架：
 
@@ -357,7 +355,7 @@ App.jsx 主要做三件事：
 | `components/NotificationBanner.jsx` | 桌面通知权限提示 banner |
 | `components/ScreenshotImages.jsx` | Agent trace 中嵌入的截图 |
 | `components/dialogs/ResetDialog.jsx` | 清空会话确认弹窗 |
-| `components/dialogs/SettingsDialog.jsx` | 设置弹窗（记忆开关等） |
+| `components/dialogs/SettingsDialog.jsx` | 外观、Agent Profiles、基础/高级参数、记忆、MCP 连接和 API Key 状态 |
 | `components/dialogs/ApprovalDialog.jsx` | Agent 操作审批弹窗 |
 | `components/dialogs/QuestionDialog.jsx` | Agent 反向提问弹窗 |
 | `components/dialogs/ProjectDialog.jsx` | 项目创建/编辑弹窗 |

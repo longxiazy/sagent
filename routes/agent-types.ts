@@ -1,6 +1,6 @@
 import type { ProviderRegistry } from '../agent/core/providers/registry.ts';
 import type { ModelInfo } from '../agent/core/providers/types.ts';
-import type { RuntimeConfigStore } from '../agent/core/runtime-config.ts';
+import type { ConfigStore } from '../agent/core/config-store.ts';
 import type { ProjectStore } from '../agent/core/project-store.ts';
 import type {
   AgentRunStore,
@@ -18,6 +18,6 @@ export interface AgentRouterContext {
   domainRules?: DomainRules;
   modelConfig: ModelInfo[];
   registry: ProviderRegistry;
-  runtimeConfig: RuntimeConfigStore;
+  configStore: ConfigStore;
   projectStore: ProjectStore;
 }

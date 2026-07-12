@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { log } from '../../../helpers/logger.ts';
-import { runtimeConfig } from '../../core/runtime-config.ts';
+import { configStore } from '../../core/config-store.ts';
 
 const DEFAULT_PROTOCOL_VERSIONS = ['2025-03-26', '2024-11-05'];
 const DEFAULT_SSE_HOST = '127.0.0.1';
@@ -154,7 +154,7 @@ function toolKey(config) {
 }
 
 export function isIdeMcpEnabled(env = process.env) {
-  const configured = runtimeConfig.mcpServers().jetbrains;
+  const configured = configStore.mcpServers().jetbrains;
   if (configured) return configured.enabled;
   if (envFlag(env.IDE_MCP_ENABLED)) {
     return true;
@@ -181,7 +181,7 @@ export function buildIdePromptLines(env = process.env) {
 }
 
 export function loadIdeMcpConfig(env = process.env) {
-  const configured = runtimeConfig.mcpServers().jetbrains;
+  const configured = configStore.mcpServers().jetbrains;
   if (configured) {
     const transport = configured.transport;
     const projectPath = toAbsolutePath(configured.projectPath || '.', process.cwd());

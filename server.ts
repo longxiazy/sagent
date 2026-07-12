@@ -42,7 +42,7 @@ import { createBaseEventSender, loadMemoryForPrompt, cleanupAgentRun } from './h
 import { readTraceEvents } from './helpers/trace-store.ts';
 import { padEndW, truncateW } from './agent/core/utils.ts';
 import { log } from './helpers/logger.ts';
-import { runtimeConfig } from './agent/core/runtime-config.ts';
+import { configStore } from './agent/core/config-store.ts';
 import { createApiAuth, createCorsOptions, createOriginGuard, loadServerSecurityConfig } from './helpers/security.ts';
 import { flushAllPersistenceTasks } from './helpers/persistence-queue.ts';
 import { persistRecoveredAgentRunMemory } from './routes/agent-run-memory-persist.ts';
@@ -70,11 +70,11 @@ const CHECKPOINT_DIR = MEMORY_DIR;
 
 initLlmLogger(MEMORY_DIR);
 initWebViewDataStore(MEMORY_DIR);
-// 运行时配置层：读取版本化 data/config.json，并兼容迁移旧 runtime-config.json。
+// 配置仓库：读取版本化 data/config.json，并兼容迁移旧 runtime-config.json。
 // 必须在 createDesktopAgentRunner 之前 init，且供 runtime.ts/memory.ts 热读取。
-await runtimeConfig.init(MEMORY_DIR);
-warnLegacyConfiguration(runtimeConfig);
-const executionConfig = runtimeConfig.execution();
+await configStore.init(MEMORY_DIR);
+warnLegacyConfiguration(configStore);
+const executionConfig = configStore.execution();
 const AGENT_RESUME = executionConfig.resume;
 
 // 项目注册表：每个项目隔离记忆/trace/checkpoint/uploads 与文件工具根。
@@ -82,12 +82,12 @@ const AGENT_RESUME = executionConfig.resume;
 const projectStore = createProjectStore(MEMORY_DIR);
 await projectStore.init();
 
-const VISION_MODEL = (runtimeConfig.tools().vision?.model || process.env.VISION_MODEL || DEFAULT_VISION_MODEL).trim();
+const VISION_MODEL = (configStore.tools().vision?.model || process.env.VISION_MODEL || DEFAULT_VISION_MODEL).trim();
 const AGENT_SANDBOXED_WORKERS = executionConfig.sandboxedWorkers;
 const AGENT_WORKER_SANDBOX = executionConfig.workerSandbox;
 const agentRunStore = createAgentRunStore();
 const approvalStore = createApprovalStore();
-const initialAgentConfig = runtimeConfig.get();
+const initialAgentConfig = configStore.get();
 const directRunDesktopAgent = createDesktopAgentRunner({
   registry,
   openai_client,
@@ -119,7 +119,7 @@ runDesktopAgent.domainRules = directRunDesktopAgent.domainRules;
 const SCREENSHOT_DIR = path.join(MEMORY_DIR, 'screenshots');
 app.use('/screenshots', express.static(SCREENSHOT_DIR));
 
-app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, domainRules: runDesktopAgent.domainRules, modelConfig, registry, runtimeConfig, projectStore }));
+app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, domainRules: runDesktopAgent.domainRules, modelConfig, registry, configStore, projectStore }));
 app.use(createCompletionsRouter({ registry, modelConfig }));
 app.use(createSuggestionsRouter({ store: createSuggestionStore(path.join(__dirname, 'data')) }));
 
@@ -228,7 +228,7 @@ async function collectAllCheckpoints() {
 }
 
 const httpServer = app.listen(Number(PORT), HOST, async () => {
-  const cfg = runtimeConfig.get();
+  const cfg = configStore.get();
   const ideConfig = loadIdeMcpConfig();
   const chromeConfig = loadChromeMcpConfig();
   const W = 56;

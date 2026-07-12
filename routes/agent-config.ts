@@ -57,8 +57,8 @@ async function testMcpConnection(name: string) {
   throw new Error(`暂不支持测试 MCP server: ${name}`);
 }
 
-function effectiveMcpServers(runtimeConfig: AgentRouterContext['runtimeConfig']) {
-  const stored = runtimeConfig.mcpServers();
+function effectiveMcpServers(configStore: AgentRouterContext['configStore']) {
+  const stored = configStore.mcpServers();
   const sources: Record<string, 'user' | 'env' | 'default'> = {};
   const servers: Record<string, any> = { ...stored };
   for (const name of Object.keys(stored)) sources[name] = 'user';
@@ -95,17 +95,17 @@ function effectiveMcpServers(runtimeConfig: AgentRouterContext['runtimeConfig'])
   return { servers, sources };
 }
 
-export function createAgentConfigRouter({ runtimeConfig }: AgentRouterContext) {
+export function createAgentConfigRouter({ configStore }: AgentRouterContext) {
   const router = Router();
-  const configPayload = (agent = runtimeConfig.get()) => {
-    const mcp = effectiveMcpServers(runtimeConfig);
+  const configPayload = (agent = configStore.get()) => {
+    const mcp = effectiveMcpServers(configStore);
     return {
       agent,
-      defaults: runtimeConfig.defaults(),
-      sources: runtimeConfig.sources(),
-      schema: runtimeConfig.schema(),
-      profiles: runtimeConfig.profiles(),
-      profile: runtimeConfig.document().profile || 'custom',
+      defaults: configStore.defaults(),
+      sources: configStore.sources(),
+      schema: configStore.schema(),
+      profiles: configStore.profiles(),
+      profile: configStore.document().profile || 'custom',
       mcpServers: mcp.servers,
       mcpSources: mcp.sources,
     };
@@ -119,7 +119,7 @@ export function createAgentConfigRouter({ runtimeConfig }: AgentRouterContext) {
   // 更新 Agent 行为参数；校验失败返回 400 + 原因，成功后落盘并下次任务即生效。
   router.post('/api/config', async (req, res) => {
     try {
-      const agent = await runtimeConfig.update(req.body ?? {});
+      const agent = await configStore.update(req.body ?? {});
       res.json(configPayload(agent));
     } catch (err: any) {
       res.status(400).json({ error: err?.message || tReq(req, 'config.validationFailed') });
@@ -128,13 +128,13 @@ export function createAgentConfigRouter({ runtimeConfig }: AgentRouterContext) {
 
   // 清空前台覆盖，回到 .env 默认值。
   router.post('/api/config/reset', async (_req, res) => {
-    const agent = await runtimeConfig.reset();
+    const agent = await configStore.reset();
     res.json(configPayload(agent));
   });
 
   router.post('/api/config/profile', async (req, res) => {
     try {
-      const agent = await runtimeConfig.applyProfile(req.body?.profile);
+      const agent = await configStore.applyProfile(req.body?.profile);
       res.json(configPayload(agent));
     } catch (err: any) {
       res.status(400).json({ error: err?.message || tReq(req, 'config.validationFailed') });
@@ -143,7 +143,7 @@ export function createAgentConfigRouter({ runtimeConfig }: AgentRouterContext) {
 
   router.put('/api/config/mcp/:name', async (req, res) => {
     try {
-      const mcpServers = await runtimeConfig.updateMcpServer(req.params.name, req.body);
+      const mcpServers = await configStore.updateMcpServer(req.params.name, req.body);
       res.json({ mcpServers });
     } catch (err: any) {
       res.status(400).json({ error: err?.message || tReq(req, 'config.validationFailed') });
@@ -152,7 +152,7 @@ export function createAgentConfigRouter({ runtimeConfig }: AgentRouterContext) {
 
   router.delete('/api/config/mcp/:name', async (req, res) => {
     try {
-      const mcpServers = await runtimeConfig.updateMcpServer(req.params.name, null);
+      const mcpServers = await configStore.updateMcpServer(req.params.name, null);
       res.json({ mcpServers });
     } catch (err: any) {
       res.status(400).json({ error: err?.message || tReq(req, 'config.validationFailed') });

@@ -37,7 +37,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cleanText } from './utils.ts';
-import { runtimeConfig } from './runtime-config.ts';
+import { configStore } from './config-store.ts';
 
 const MEMORY_FILE = 'agent-memory.json';
 const MAX_CHARS = 3000;
@@ -256,7 +256,7 @@ export function extractProjectKnowledge(memory, { task: _task, result }) {
 }
 
 export async function compactConversationMemory(memory, { maxEntries, summarizeFn }: { maxEntries?: number; summarizeFn?: (text: string) => Promise<string> } = {}) {
-  if (maxEntries == null) maxEntries = runtimeConfig.get().memoryMaxEntries;
+  if (maxEntries == null) maxEntries = configStore.get().memoryMaxEntries;
   const conv = memory.conversation;
   if (conv.length <= maxEntries) {
     return;

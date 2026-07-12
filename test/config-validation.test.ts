@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { computeEnvDefaults, validateConfig, mergeConfig } from '../agent/core/runtime-config.js';
+import { computeEnvDefaults, validateConfig, mergeConfig } from '../agent/core/config-store.js';
 
-describe('computeEnvDefaults', () => {
+describe('config validation and effective defaults', () => {
   it('空 env 用内置默认值（与改造前各处默认一致）', () => {
     const d = computeEnvDefaults({});
     expect(d).toEqual({
