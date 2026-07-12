@@ -254,7 +254,7 @@ export async function executeChromeAction(action, opts: { signal?: AbortSignal }
 
     // navigate_page 默认 10s 对国内重型门户站太短（IBKR、招行等首屏 >10s）。
     // 模型未显式传 timeout 时，补到 25s；超时后我们还会兜底处理（见下方 busy 检测）。
-    const NAVIGATE_DEFAULT_TIMEOUT_MS = Number(process.env.CHROME_MCP_NAVIGATE_TIMEOUT_MS) || 25000;
+    const NAVIGATE_DEFAULT_TIMEOUT_MS = config.navigateTimeoutMs || 25000;
     if ((toolName === 'navigate_page' || toolName === 'new_page')
         && (args as any).timeout == null) {
       (args as any).timeout = NAVIGATE_DEFAULT_TIMEOUT_MS;

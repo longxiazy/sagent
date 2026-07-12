@@ -1,5 +1,6 @@
 import { buildIdePromptLines, isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
 import { buildChromePromptLines, isChromeMcpEnabled } from '../tools/chrome/mcp-client.ts';
+import { runtimeConfig } from './runtime-config.ts';
 
 type PromptCapabilityContext = {
   task?: string;
@@ -128,16 +129,19 @@ function promptResultText(value: any) {
   }
 }
 
-export function compactAgentHistory(history: any[], maxEntries = 6, maxResultChars = 4000) {
+export function compactAgentHistory(history: any[], maxEntries?: number, maxResultChars?: number) {
   if (!Array.isArray(history) || history.length === 0) return [];
-  return history.slice(-maxEntries).map(entry => {
+  const config = runtimeConfig.get();
+  const entryLimit = maxEntries ?? config.maxHistorySteps;
+  const resultLimit = maxResultChars ?? config.maxResultChars;
+  return history.slice(-entryLimit).map(entry => {
     const result = promptResultText(entry?.result);
     return {
       step: entry?.step,
       rationale: entry?.rationale,
       action: entry?.action,
-      result: result.length > maxResultChars
-        ? `${result.slice(0, maxResultChars)}\n…[结果已截断，共 ${result.length} 字符]`
+      result: result.length > resultLimit
+        ? `${result.slice(0, resultLimit)}\n…[结果已截断，共 ${result.length} 字符]`
         : result,
       ...(entry?.resultStatus ? { resultStatus: entry.resultStatus } : {}),
     };

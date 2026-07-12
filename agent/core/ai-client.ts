@@ -4,7 +4,6 @@
  * 职责 / Responsibilities:
  *   1. createClients() — 按 .env 构造 OpenAI(NVIDIA) / Gemini 两套 SDK 客户端
  *   2. deriveProviderName() / isChatCapableModel() — 供各 provider 复用的纯工具函数
- *   3. loadAgentMultiModels() — 读取多模型竞速配置
  *
  * 注意：各供应商的 API 差异（决策、chat、列模型、摘要）已封装到 agent/core/providers/*，
  * 由 createProviderRegistry() 装配。本文件不再包含任何 isClaudeModel 式的二选一逻辑。
@@ -37,14 +36,6 @@ export function deriveProviderName(baseURL?: string) {
   } catch {
     return 'nvidia';
   }
-}
-
-export function loadAgentMultiModels() {
-  const env = process.env.AGENT_MULTI_MODELS;
-  if (typeof env === 'string' && env.trim()) {
-    return env.split(',').map(s => s.trim()).filter(Boolean);
-  }
-  return [];
 }
 
 export function createClients() {

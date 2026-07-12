@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { log } from '../../../helpers/logger.ts';
+import { runtimeConfig } from '../../core/runtime-config.ts';
 
 const DEFAULT_PROTOCOL_VERSIONS = ['2025-03-26', '2024-11-05'];
 const DEFAULT_SSE_HOST = '127.0.0.1';
@@ -10,7 +11,6 @@ const SSE_ENDPOINT_WAIT_MS = 250;
 
 // tools/call 默认 15s 对 navigate_page 等浏览器操作太短；不同工具用不同上限。
 const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
-const LONG_TOOL_CALL_TIMEOUT_MS = Number(process.env.CHROME_MCP_TOOL_TIMEOUT_MS) || 60000;
 const SLOW_TOOLS = new Set([
   'navigate_page',
   'new_page',
@@ -21,16 +21,16 @@ const SLOW_TOOLS = new Set([
   'take_memory_snapshot',
 ]);
 
-function timeoutForRequest(method: string, params: any): number {
+function timeoutForRequest(method: string, params: any, longToolTimeoutMs = 60000): number {
   if (method !== 'tools/call') return DEFAULT_REQUEST_TIMEOUT_MS;
   const toolName = params?.name;
   if (SLOW_TOOLS.has(toolName)) {
     // wait_for 自带 timeout 参数；给客户端留 5s 余量，保证服务端先超时
     const argTimeout = Number(params?.arguments?.timeout);
     if (Number.isFinite(argTimeout) && argTimeout > 0) {
-      return Math.max(LONG_TOOL_CALL_TIMEOUT_MS, argTimeout + 5000);
+      return Math.max(longToolTimeoutMs, argTimeout + 5000);
     }
-    return LONG_TOOL_CALL_TIMEOUT_MS;
+    return longToolTimeoutMs;
   }
   return DEFAULT_REQUEST_TIMEOUT_MS;
 }
@@ -165,6 +165,8 @@ function clientKey(config) {
 }
 
 export function isChromeMcpEnabled(env = process.env) {
+  const configured = runtimeConfig.mcpServers().chrome;
+  if (configured) return configured.enabled;
   // 显式开关优先；只要配置了任一连接参数，也视为用户想启用 Chrome MCP。
   if (envFlag(env.CHROME_MCP_ENABLED)) {
     return true;
@@ -227,6 +229,24 @@ export function buildChromePromptLines(env = process.env) {
 }
 
 export function loadChromeMcpConfig(env = process.env) {
+  const configured = runtimeConfig.mcpServers().chrome;
+  if (configured) {
+    const transport = configured.transport;
+    return {
+      enabled: configured.enabled,
+      transport: transport.type,
+      url: transport.type === 'sse' ? transport.url : null,
+      messagesUrl: transport.type === 'sse' ? transport.messagesUrl || null : null,
+      host: DEFAULT_SSE_HOST,
+      port: DEFAULT_SSE_PORT,
+      ssePath: DEFAULT_SSE_PATH,
+      toolTimeoutMs: configured.toolTimeoutMs || 60000,
+      navigateTimeoutMs: configured.navigateTimeoutMs || 25000,
+      keepOpen: configured.keepOpen === true,
+      keepTabs: configured.keepTabs === true,
+      source: 'config',
+    };
+  }
   const host = String(env.CHROME_MCP_HOST || DEFAULT_SSE_HOST).trim() || DEFAULT_SSE_HOST;
   const port = Number(env.CHROME_MCP_PORT || DEFAULT_SSE_PORT) || DEFAULT_SSE_PORT;
   const ssePath = String(env.CHROME_MCP_SSE_PATH || DEFAULT_SSE_PATH).trim() || DEFAULT_SSE_PATH;
@@ -241,6 +261,11 @@ export function loadChromeMcpConfig(env = process.env) {
     ssePath,
     url,
     messagesUrl,
+    toolTimeoutMs: Number(env.CHROME_MCP_TOOL_TIMEOUT_MS) || 60000,
+    navigateTimeoutMs: Number(env.CHROME_MCP_NAVIGATE_TIMEOUT_MS) || 25000,
+    keepOpen: env.CHROME_MCP_KEEP_OPEN === 'true',
+    keepTabs: env.CHROME_MCP_KEEP_TABS === 'true',
+    source: 'env',
   };
 }
 
@@ -634,7 +659,7 @@ class SseTransport {
     }
 
     const id = this.nextId++;
-    const timeoutMs = timeoutForRequest(method, params);
+    const timeoutMs = timeoutForRequest(method, params, this.config.toolTimeoutMs);
     return new Promise(async (resolve, reject) => {
       const cancelRequest = (reason: string) => this.sendNotification('notifications/cancelled', {
         requestId: id,
@@ -707,6 +732,9 @@ class SseTransport {
 export function createChromeMcpClient(config = loadChromeMcpConfig()) {
   if (!config.enabled) {
     throw new Error('Chrome MCP 未启用，请在 .env 中设置 CHROME_MCP_ENABLED=true');
+  }
+  if (config.transport !== 'sse') {
+    throw new Error(`Chrome MCP 暂不支持 transport=${config.transport}`);
   }
 
   return new ChromeMcpClient(config, new SseTransport(config));
