@@ -8,6 +8,8 @@ const DEFAULT_SSE_HOST = '127.0.0.1';
 const DEFAULT_SSE_PORT = 3099;
 const DEFAULT_SSE_PATH = '/sse';
 const SSE_ENDPOINT_WAIT_MS = 250;
+const CHROME_MCP_UNAVAILABLE_COOLDOWN_MS = 5 * 60 * 1000;
+let chromeMcpUnavailableUntil = 0;
 
 // tools/call 默认 15s 对 navigate_page 等浏览器操作太短；不同工具用不同上限。
 const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
@@ -179,6 +181,14 @@ export function isChromeMcpEnabled(env = process.env) {
   );
 }
 
+export function isChromeMcpAvailable(env = process.env) {
+  return isChromeMcpEnabled(env) && Date.now() >= chromeMcpUnavailableUntil;
+}
+
+export function markChromeMcpUnavailable(cooldownMs = CHROME_MCP_UNAVAILABLE_COOLDOWN_MS) {
+  chromeMcpUnavailableUntil = Math.max(chromeMcpUnavailableUntil, Date.now() + cooldownMs);
+}
+
 const CHROME_TOOLS_CACHE_FILE = path.join(process.cwd(), 'data', 'chrome-mcp-tools.json');
 
 function readChromeToolsCacheFromDisk(): any[] | null {
@@ -206,7 +216,7 @@ function writeChromeToolsCacheToDisk(tools: any[]) {
 }
 
 export function buildChromePromptLines(env = process.env) {
-  if (!isChromeMcpEnabled(env)) {
+  if (!isChromeMcpAvailable(env)) {
     return [];
   }
   const lines = [
@@ -437,10 +447,12 @@ class SseTransport {
         if (!response.ok || !response.body) {
           throw new Error(`SSE 连接失败: HTTP ${response.status}`);
         }
+        chromeMcpUnavailableUntil = 0;
         await this.consumeStream(response.body);
       })
       .catch(err => {
         const error = new Error(`Chrome MCP SSE 连接失败: ${err.message}`);
+        markChromeMcpUnavailable();
         log.warn(`[Chrome MCP][sse] stream failed url=${this.streamUrl} reason=${error.message}`);
         this.endpointReject?.(error);
         this.rejectAllPending(error);
@@ -762,6 +774,7 @@ export async function getSharedChromeMcpClient(config = loadChromeMcpConfig()) {
 }
 
 export async function resetChromeMcpClientForTests() {
+  chromeMcpUnavailableUntil = 0;
   if (!sharedClientPromise) {
     sharedClientKey = '';
     return;

@@ -8,7 +8,7 @@
  */
 
 import { isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
-import { isChromeMcpEnabled } from '../tools/chrome/mcp-client.ts';
+import { isChromeMcpAvailable } from '../tools/chrome/mcp-client.ts';
 
 const READONLY_TOOL_NAMES = new Set([
   'list_dir',
@@ -403,7 +403,7 @@ export function createModelTools({
     );
   }
 
-  if (includeChromeMcp && isChromeMcpEnabled()) {
+  if (includeChromeMcp && isChromeMcpAvailable()) {
     tools.splice(tools.length - 1, 0,
       {
         name: 'chrome_list_tools',

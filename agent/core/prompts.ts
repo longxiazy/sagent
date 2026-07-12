@@ -1,7 +1,8 @@
 import { buildIdePromptLines, isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
-import { buildChromePromptLines, isChromeMcpEnabled } from '../tools/chrome/mcp-client.ts';
+import { buildChromePromptLines, isChromeMcpAvailable } from '../tools/chrome/mcp-client.ts';
 import { configStore } from './config-store.ts';
 import { createModelTools, toolToGeminiTool } from './tool-definitions.ts';
+import { compactToolResult } from './result-extraction.ts';
 
 type PromptCapabilityContext = {
   task?: string;
@@ -144,7 +145,7 @@ export function shouldIncludeIdePromptDetails({ task = '', history = [] }: Promp
 }
 
 function chromePromptLines(context: PromptCapabilityContext) {
-  if (!isChromeMcpEnabled()) return [];
+  if (!isChromeMcpAvailable()) return [];
   if (shouldIncludeChromePromptDetails(context)) return buildChromePromptLines();
   if (context.includeInactiveCapabilityHints === false) return [];
   return [
@@ -239,7 +240,7 @@ function promptResultText(value: any) {
   }
 }
 
-export function compactAgentHistory(history: any[], maxEntries?: number, maxResultChars?: number) {
+export function compactAgentHistory(history: any[], maxEntries?: number, maxResultChars?: number, task = '') {
   if (!Array.isArray(history) || history.length === 0) return [];
   const config = configStore.get();
   const entryLimit = maxEntries ?? config.maxHistorySteps;
@@ -250,9 +251,7 @@ export function compactAgentHistory(history: any[], maxEntries?: number, maxResu
       step: entry?.step,
       rationale: entry?.rationale,
       action: entry?.action,
-      result: result.length > resultLimit
-        ? `${result.slice(0, resultLimit)}\n…[结果已截断，共 ${result.length} 字符]`
-        : result,
+      result: compactToolResult({ result, action: entry?.action, task, limit: resultLimit }),
       ...(entry?.resultStatus ? { resultStatus: entry.resultStatus } : {}),
     };
   });
@@ -346,7 +345,7 @@ export function buildGeminiTaskMessages({
   }
   const recentUrlsHint = buildRecentUrlsHint(history);
   const recentSearchesHint = buildRecentSearchesHint(history);
-  const promptHistory = compactAgentHistory(history);
+  const promptHistory = compactAgentHistory(history, undefined, undefined, task);
   contents.push({
     role: 'user',
     parts: [{ text: JSON.stringify({ task, step, history: promptHistory, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }) }],
@@ -404,7 +403,7 @@ export function buildNvidiaTaskMessages({
   const capabilityContext = { task, history, observation };
   const ideEnabled = isIdeMcpEnabled();
   const ideDetails = shouldIncludeIdePromptDetails(capabilityContext);
-  const chromeEnabled = isChromeMcpEnabled();
+  const chromeEnabled = isChromeMcpAvailable();
   const chromeDetails = shouldIncludeChromePromptDetails(capabilityContext);
   const sanitizedConversation = sanitizeConversationHistory(conversationHistory);
   const conversationSummary = sanitizedConversation.length
@@ -415,7 +414,7 @@ export function buildNvidiaTaskMessages({
 
   const recentUrlsHint = buildRecentUrlsHint(history);
   const recentSearchesHint = buildRecentSearchesHint(history);
-  const promptHistory = compactAgentHistory(history);
+  const promptHistory = compactAgentHistory(history, undefined, undefined, task);
 
   if (toolMode === 'readonly') {
     return [
@@ -429,7 +428,7 @@ export function buildNvidiaTaskMessages({
       },
       {
         role: 'user',
-        content: JSON.stringify({ task, step, history: compactAgentHistory(history, compact ? 2 : 6), observation }),
+        content: JSON.stringify({ task, step, history: compactAgentHistory(history, compact ? 2 : 6, undefined, task), observation }),
       },
     ];
   }
@@ -449,7 +448,7 @@ export function buildNvidiaTaskMessages({
       },
       {
         role: 'user',
-        content: JSON.stringify({ task, step, history: compactAgentHistory(history, 2, 1500), observation }),
+        content: JSON.stringify({ task, step, history: compactAgentHistory(history, 2, 1500, task), observation }),
       },
     ];
   }

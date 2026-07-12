@@ -1,5 +1,5 @@
 import { getWebView } from './webview-session.ts';
-import { isChromeMcpEnabled } from '../chrome/mcp-client.ts';
+import { isChromeMcpAvailable } from '../chrome/mcp-client.ts';
 import { log } from '../../../helpers/logger.ts';
 
 const ACTION_SETTLE_MS = 600;
@@ -22,6 +22,10 @@ function delay(ms) {
 function isTimeoutError(err) {
   const msg = (err?.message || String(err || '')).toLowerCase();
   return /超时|timeout|timed out|etimedout/.test(msg);
+}
+
+function isClosedViewError(err) {
+  return /view is closed|invalid state.*webview/i.test(String(err?.message || err || ''));
 }
 
 function stopView(view) {
@@ -184,7 +188,7 @@ function checkUnavailablePage(title, body) {
 }
 
 function blockedHint() {
-  if (!isChromeMcpEnabled()) return '';
+  if (!isChromeMcpAvailable()) return '';
   return '\n\n⚠️ 页面可能被反爬拦截，建议改用 Chrome MCP 工具（chrome_call_tool → navigate_page / take_snapshot）操作真实 Chrome 浏览器访问。';
 }
 
@@ -384,6 +388,7 @@ async function _executeBrowserAction(view, action) {
       await navigateWithRetry(view, url, FETCH_TIMEOUT_MS, FETCH_TIMEOUT_RETRY_MS, `访问超时: ${url}`);
       await delay(1000);
     } catch (err) {
+      if (isClosedViewError(err)) throw err;
       const error = (err.message || '').slice(0, 120);
       return failedResult(`http_fetch ${url}: 浏览器访问失败 (${error})。`, error);
     }
@@ -440,6 +445,7 @@ async function _executeBrowserAction(view, action) {
           failures += 1;
         }
       } catch (err) {
+        if (isClosedViewError(err)) throw err;
         results.push(`http_fetch ${url}: 失败 (${(err.message || '').slice(0, 100)})`);
         failures += 1;
       }

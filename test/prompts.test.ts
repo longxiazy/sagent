@@ -8,6 +8,7 @@ import {
   selectGeminiToolNames,
 } from '../agent/core/prompts.ts';
 import { estimatePayloadTokens } from '../agent/core/context-estimate.ts';
+import { compactToolResult } from '../agent/core/result-extraction.ts';
 
 describe('agent prompts', () => {
   afterEach(() => {
@@ -323,7 +324,56 @@ describe('agent prompts', () => {
 
     expect(compacted).toHaveLength(6);
     expect(compacted[0].step).toBe(4);
-    expect(compacted[0].result).toContain('[结果已截断，共 5000 字符]');
+    expect(compacted[0].result).toContain('[提取摘要：原始 5000 字符]');
     expect(compacted[0].result.length).toBeLessThan(4100);
+  });
+
+  it('extracts task-relevant evidence from every parallel_fetch source', () => {
+    const result = [
+      `http_fetch https://example.com/a:\n${'导航文本。'.repeat(200)}2022年 Alpha 指标达到100亿元，同比增长5%。`,
+      `http_fetch https://example.com/b:\n${'页面说明。'.repeat(200)}2023年 Beta 指标达到220亿元，同比增长8%。`,
+      `http_fetch https://example.com/c:\n${'版权信息。'.repeat(200)}2024年 Gamma 指标达到360亿元，同比增长12%。`,
+    ].join('\n\n---\n\n');
+
+    const compacted = compactToolResult({
+      result,
+      action: { tool: 'browser', type: 'parallel_fetch' },
+      task: '比较 Alpha、Beta、Gamma 近三年指标增长情况',
+      limit: 1500,
+    });
+
+    expect(compacted.length).toBeLessThanOrEqual(1500);
+    expect(compacted).toContain('https://example.com/a');
+    expect(compacted).toContain('2022年 Alpha 指标达到100亿元');
+    expect(compacted).toContain('https://example.com/b');
+    expect(compacted).toContain('2023年 Beta 指标达到220亿元');
+    expect(compacted).toContain('https://example.com/c');
+    expect(compacted).toContain('2024年 Gamma 指标达到360亿元');
+  });
+
+  it('passes task-aware extracted history to every provider prompt', () => {
+    const longResult = [
+      `http_fetch https://example.com/first:\n${'无关内容。'.repeat(1000)}第一来源关键结论 11%。`,
+      `http_fetch https://example.com/second:\n${'其他内容。'.repeat(1000)}第二来源关键结论 22%。`,
+    ].join('\n\n---\n\n');
+    const context = {
+      task: '提取第一来源和第二来源关键结论',
+      step: 2,
+      history: [{
+        step: 1,
+        action: { tool: 'browser', type: 'parallel_fetch', urls: ['https://example.com/first', 'https://example.com/second'] },
+        result: longResult,
+      }],
+      observation: {},
+    };
+    const gemini = JSON.parse(buildGeminiTaskMessages(context).contents.at(-1)!.parts[0].text);
+    const nvidia = JSON.parse(buildNvidiaTaskMessages(context)[1].content);
+
+    for (const payload of [gemini, nvidia]) {
+      expect(payload.history[0].result).toContain('https://example.com/first');
+      expect(payload.history[0].result).toContain('第一来源关键结论 11%');
+      expect(payload.history[0].result).toContain('https://example.com/second');
+      expect(payload.history[0].result).toContain('第二来源关键结论 22%');
+    }
   });
 });

@@ -1,6 +1,7 @@
 import {
   formatChromeMcpError,
   getSharedChromeMcpClient,
+  isChromeMcpAvailable,
   isChromeMcpEnabled,
   loadChromeMcpConfig,
   serializeChromePayload,
@@ -203,6 +204,9 @@ export async function executeChromeAction(action, opts: { signal?: AbortSignal }
   if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error('Agent 已取消');
   if (!isChromeMcpEnabled()) {
     throw new Error('Chrome MCP 未启用，请在 .env 中设置 CHROME_MCP_ENABLED=true 并配置连接参数');
+  }
+  if (!isChromeMcpAvailable()) {
+    throw new Error('Chrome MCP 当前不可达，本轮将停止继续选择 Chrome 工具');
   }
 
   const config = loadChromeMcpConfig();

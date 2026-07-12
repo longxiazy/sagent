@@ -4,7 +4,9 @@ import { normalizeDesktopAgentDecision } from '../agent/core/schemas.ts';
 import { classifyAgentAction } from '../agent/policy/classify.ts';
 import { executeChromeAction } from '../agent/tools/chrome/execute.ts';
 import {
+  isChromeMcpAvailable,
   loadChromeMcpConfig,
+  markChromeMcpUnavailable,
   resetChromeMcpClientForTests,
 } from '../agent/tools/chrome/mcp-client.ts';
 
@@ -34,6 +36,24 @@ describe('Chrome MCP tool exposure', () => {
 
     expect(names).toContain('chrome_list_tools');
     expect(names).toContain('chrome_call_tool');
+  });
+
+  it('stops exposing Chrome tools after the MCP endpoint is marked unreachable', async () => {
+    process.env.CHROME_MCP_ENABLED = 'true';
+    expect(isChromeMcpAvailable()).toBe(true);
+
+    markChromeMcpUnavailable(60_000);
+
+    const names = createModelTools().map(tool => tool.name);
+    expect(isChromeMcpAvailable()).toBe(false);
+    expect(names).not.toContain('chrome_list_tools');
+    expect(names).not.toContain('chrome_call_tool');
+    await expect(executeChromeAction({
+      type: 'chrome_call_tool',
+      toolName: 'list_pages',
+      arguments: {},
+      refreshTools: false,
+    })).rejects.toThrow('Chrome MCP 当前不可达');
   });
 });
 
