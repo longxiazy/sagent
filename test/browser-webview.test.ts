@@ -207,9 +207,131 @@ describe('Bun.WebView browser actions', () => {
     expect(result).toContain('页面正文');
     expect(created).toHaveLength(2);
     expect(state.browserSession?.view).toBe(created[1]);
+    expect(state.browserSession?.generation).toBe(2);
     expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'browser_session', status: 'recovering', reason: 'view_closed', step: 2 }),
-      expect.objectContaining({ type: 'browser_session', status: 'ready', recreated: true, sessionId: 2 }),
+      expect.objectContaining({ type: 'browser_session', status: 'recovering', reason: 'view_closed', step: 2, generation: 1 }),
+      expect.objectContaining({ type: 'browser_session', status: 'ready', recreated: true, sessionId: 2, generation: 2 }),
+    ]));
+  });
+
+  it('serializes operations that share the same WebView', async () => {
+    setWebViewFactoryForTests(options => new FakeWebView(options));
+    const manager = createSharedBrowserSessionManager();
+    const firstState: any = { headless: true, browserSession: null };
+    const secondState: any = { headless: true, browserSession: null };
+    let active = 0;
+    let maxActive = 0;
+    const order: string[] = [];
+
+    const run = (label: string, state: any) => manager.withBrowserSessionRecovery(state, undefined, async session => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      order.push(`${label}:start:${session.generation}`);
+      await new Promise(resolve => setTimeout(resolve, 10));
+      order.push(`${label}:end:${session.generation}`);
+      active -= 1;
+      return label;
+    });
+
+    await expect(Promise.all([run('first', firstState), run('second', secondState)]))
+      .resolves.toEqual(['first', 'second']);
+    expect(maxActive).toBe(1);
+    expect(order).toEqual(['first:start:1', 'first:end:1', 'second:start:1', 'second:end:1']);
+  });
+
+  it('bounds a hanging close and clears the session reference', async () => {
+    const view = new FakeWebView();
+    view.close = async () => new Promise(() => {});
+    setWebViewFactoryForTests(() => view);
+    const manager = createSharedBrowserSessionManager({ closeTimeoutMs: 10 });
+    const state: any = { headless: true, browserSession: null };
+    const session = await manager.ensureBrowserSession(state);
+
+    const startedAt = Date.now();
+    await manager.resetBrowserSession(state);
+
+    expect(Date.now() - startedAt).toBeLessThan(200);
+    expect(state.browserSession).toBeNull();
+    expect(session.lifecycle).toBe('closed');
+  });
+
+  it('uses a longer navigation timeout after recreating an invalid session', async () => {
+    const created: FakeWebView[] = [];
+    setWebViewFactoryForTests(options => {
+      const view = new FakeWebView(options);
+      const baseNavigate = view.navigate.bind(view);
+      view.navigate = async url => {
+        if (url === 'about:blank') return baseNavigate(url);
+        if (created.length === 0) {
+          await new Promise((_, reject) => {
+            view.close = async () => {
+              view.closed = true;
+              reject(new Error('Invalid state: WebView.navigate: view is closed'));
+            };
+          });
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 25));
+        return baseNavigate(url);
+      };
+      created.push(view);
+      return view;
+    });
+
+    const manager = createSharedBrowserSessionManager();
+    const state: any = { headless: true, browserSession: null };
+    const result = await manager.withBrowserSessionRecovery(state, undefined, (session, recoveryAttempt) => (
+      executeBrowserAction(session.view, {
+        type: 'http_fetch',
+        url: 'https://example.com/slow',
+        timeoutMs: 20,
+      }, { recoveryAttempt })
+    ));
+
+    expect(result).toBe('页面正文');
+    expect(created).toHaveLength(2);
+    expect(state.browserRecoveryFailures).toBe(0);
+  });
+
+  it('opens a per-run circuit after two failed session recoveries', async () => {
+    const created: FakeWebView[] = [];
+    setWebViewFactoryForTests(options => {
+      const view = new FakeWebView(options);
+      const baseNavigate = view.navigate.bind(view);
+      view.navigate = async url => {
+        if (url === 'about:blank') return baseNavigate(url);
+        await new Promise((_, reject) => {
+          view.close = async () => {
+            view.closed = true;
+            reject(new Error('Invalid state: WebView.navigate: view is closed'));
+          };
+        });
+      };
+      created.push(view);
+      return view;
+    });
+
+    const manager = createSharedBrowserSessionManager();
+    const state: any = { headless: true, browserSession: null };
+    const events: any[] = [];
+    const operation = (session, recoveryAttempt) => executeBrowserAction(session.view, {
+      type: 'http_fetch',
+      url: 'https://example.com/hangs',
+      timeoutMs: 5,
+    }, { recoveryAttempt });
+
+    await expect(manager.withBrowserSessionRecovery(state, event => events.push(event), operation)).rejects.toThrow('恢复会话后仍超时');
+    const second = await manager.withBrowserSessionRecovery(state, event => events.push(event), operation);
+    const third = await manager.withBrowserSessionRecovery(state, event => events.push(event), operation);
+
+    expect(second).toMatchObject({ resultStatus: 'failed', resultError: '内置浏览器会话熔断' });
+    expect(third).toMatchObject({ resultStatus: 'failed', resultError: '内置浏览器会话熔断' });
+    expect(state.browserSession).toBeNull();
+    expect(state.browserCircuitOpen).toBe(true);
+    expect(created).toHaveLength(4);
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'browser_session', status: 'degraded', circuitOpen: true, recoveryFailures: 2 }),
+      expect.objectContaining({ type: 'browser_session', status: 'degraded', reason: 'circuit_open' }),
     ]));
   });
 

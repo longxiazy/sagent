@@ -90,6 +90,7 @@ export function createDesktopAgentRunner({
   const domainRules = createDomainRules(checkpointDir);
   const {
     cleanupBrowserSession,
+    serializeBrowserOperation,
     withBrowserSessionRecovery,
   } = createSharedBrowserSessionManager();
 
@@ -227,8 +228,8 @@ export function createDesktopAgentRunner({
         return action.answer || '任务已完成';
       },
       browser: async (state, action, context) => {
-        return withBrowserSessionRecovery(state, state.onEvent, session => (
-          executeBrowserAction(session.view, action, { signal: state.cancelSignal })
+        return withBrowserSessionRecovery(state, state.onEvent, (session, recoveryAttempt) => (
+          executeBrowserAction(session.view, action, { signal: state.cancelSignal, recoveryAttempt })
         ), {
           step: context?.step,
           actionType: action.type,
@@ -363,7 +364,7 @@ export function createDesktopAgentRunner({
         projectRoot,
         dataDir,
       }),
-      observe: observeDesktopAgent,
+      observe: state => serializeBrowserOperation(() => observeDesktopAgent(state)),
       decide: async ({ task: currentTask, step, history, observation }) =>
         plan({
           model,

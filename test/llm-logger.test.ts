@@ -25,6 +25,9 @@ describe('llm-logger', () => {
       const raw = await readFile(file, 'utf8');
       expect(raw).toContain('"type":"response"');
       expect(raw).toContain('"model":"vendor/model"');
+      expect(raw).toContain('"prompt_tokens":1');
+      expect(raw).toContain('"completion_tokens":2');
+      expect(raw).not.toContain('"prompt_tokens":"[REDACTED]"');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
