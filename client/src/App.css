@@ -1992,6 +1992,45 @@ select,
   gap: 8px;
 }
 
+.model-sort-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--c-border-input);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text-muted);
+}
+
+.model-sort-control:focus-within,
+.model-sort-control:hover {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+}
+
+.model-sort-control select {
+  max-width: 156px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--c-text-secondary);
+  font: inherit;
+  font-size: var(--f-sm);
+  cursor: pointer;
+}
+
+.model-sort-notice {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--c-warning-border);
+  background: var(--c-warning-bg);
+  color: var(--c-warning-text);
+  font-size: var(--f-xs);
+  line-height: 1.4;
+}
+
 .model-filter-grid {
   --model-filter-control-height: 32px;
   --model-filter-control-min: 98px;
@@ -2620,6 +2659,10 @@ a.model-encyclopedia-field-value:hover {
   gap: 8px;
 }
 
+.model-sorted-options {
+  width: 100%;
+}
+
 .model-picker-body .model-option-wrapper,
 .model-picker-body .model-option {
   width: 100%;
@@ -2701,6 +2744,11 @@ a.model-encyclopedia-field-value:hover {
   text-align: left;
 }
 
+.model-option-wrapper > .model-option {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
 .model-option-check {
   display: inline-flex;
   align-items: center;
@@ -2745,8 +2793,79 @@ a.model-encyclopedia-field-value:hover {
   white-space: normal;
 }
 
-.model-option.selected .model-option-description {
+.model-option-provider {
+  align-self: flex-start;
+  margin-top: 3px;
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-dim);
+  color: var(--c-text-muted);
+  font-size: var(--f-micro);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.model-option.selected .model-option-description,
+.model-option.selected .model-option-provider {
   color: rgba(255, 255, 255, 0.76);
+}
+
+.model-option.selected .model-option-provider {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.model-option-favorite,
+.model-encyclopedia-favorite {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  color: var(--c-text-muted);
+  cursor: pointer;
+  transition: color var(--ease), background var(--ease), border-color var(--ease);
+}
+
+.model-option-favorite {
+  width: 42px;
+  border-left: none;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+.model-option-wrapper:has(.model-option-order) .model-option-favorite {
+  border-radius: 0;
+}
+
+.model-option-favorite:hover:not(:disabled),
+.model-encyclopedia-favorite:hover:not(:disabled),
+.model-option-favorite.active,
+.model-encyclopedia-favorite.active {
+  border-color: var(--c-warning-strong);
+  color: var(--c-warning-strong);
+  background: var(--c-warning-bg);
+}
+
+.model-option-wrapper.selected .model-option-favorite {
+  border-color: var(--c-primary);
+  background: var(--c-primary);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.model-option-wrapper.selected .model-option-favorite.active {
+  color: #ffd166;
+}
+
+.model-option-favorite:disabled,
+.model-encyclopedia-favorite:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.model-encyclopedia-favorite {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
 }
 
 .model-option:hover {
@@ -6528,6 +6647,16 @@ textarea:disabled {
     gap: 6px;
   }
 
+  .model-sort-control {
+    min-height: 36px;
+    flex: 1 1 180px;
+  }
+
+  .model-sort-control select {
+    flex: 1 1 auto;
+    max-width: none;
+  }
+
   .model-clear-btn {
     min-height: 36px;
     padding: 0 10px;
@@ -6634,6 +6763,10 @@ textarea:disabled {
     min-height: 54px;
     padding: 12px;
     gap: 10px;
+  }
+
+  .model-option-favorite {
+    width: 44px;
   }
 
   .model-selected-group .model-option {

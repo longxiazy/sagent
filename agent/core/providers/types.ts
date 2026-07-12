@@ -36,6 +36,13 @@ export interface ModelInfo {
   supportedMessageTypes?: string[];
   supportedParameters?: string[];
   agentCompatible?: boolean;
+  pricePerMillionTokens?: number;
+  inputPricePerMillionTokens?: number;
+  outputPricePerMillionTokens?: number;
+  latencyMs?: number;
+  tokensPerSecond?: number;
+  recommendationScore?: number;
+  qualityScore?: number;
 }
 
 // agent 决策上下文（task/step/history/observation/conversationHistory/systemPrompt 等），

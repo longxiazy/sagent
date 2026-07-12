@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { Check, ChevronDown, ChevronRight, ChevronUp, ExternalLink, HelpCircle, Search, X } from 'lucide-react';
+import { ArrowUpDown, Check, ChevronDown, ChevronRight, ChevronUp, ExternalLink, HelpCircle, Search, Star, X } from 'lucide-react';
 import { useT } from '../i18n/I18nProvider.jsx';
+import { jsonStorage, usePersistentState } from '../hooks/usePersistentState.js';
+import { modelPrice, modelSpeed, sortModels } from '../utils/model-sort.js';
 import { DialogShell } from './dialogs/DialogShell.jsx';
 
 const MODEL_CATEGORY_DEFS = [
@@ -310,6 +312,7 @@ function ModelPickerDropdown({
   placeholder,
   dialogTitle,
   clearable = true,
+  recentModelUsage = {},
 }) {
   const t = useT();
   const { open, setOpen, inputRef } = useModelPickerDialog();
@@ -322,6 +325,17 @@ function ModelPickerDropdown({
   const [encyclopediaOpen, setEncyclopediaOpen] = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [expandedEncyclopediaModels, setExpandedEncyclopediaModels] = useState([]);
+  const [sortMode, setSortMode] = usePersistentState('model_picker_sort', 'recommended');
+  const [storedFavoriteModelIds, setStoredFavoriteModelIds] = usePersistentState('model_picker_favorites', [], jsonStorage);
+  const [recentSelections, setRecentSelections] = usePersistentState('model_picker_recent', {}, jsonStorage);
+  const favoriteModelIds = Array.isArray(storedFavoriteModelIds) ? storedFavoriteModelIds : [];
+  const recentSelectionMap = recentSelections && typeof recentSelections === 'object' && !Array.isArray(recentSelections)
+    ? recentSelections
+    : {};
+  const recentById = { ...recentModelUsage };
+  for (const [id, timestamp] of Object.entries(recentSelectionMap)) {
+    recentById[id] = Math.max(Number(recentById[id]) || 0, Number(timestamp) || 0);
+  }
 
   const openPanel = () => {
     setQuery('');
@@ -352,7 +366,19 @@ function ModelPickerDropdown({
     onChange?.(next[0] || '');
   };
 
+  const markModelRecent = id => {
+    setRecentSelections(current => {
+      const safeCurrent = current && typeof current === 'object' && !Array.isArray(current) ? current : {};
+      const entries = Object.entries({ ...safeCurrent, [id]: Date.now() })
+        .sort((a, b) => Number(b[1]) - Number(a[1]))
+        .slice(0, 100);
+      return Object.fromEntries(entries);
+    });
+  };
+
   const toggleModel = id => {
+    const isSelected = selectedModelIds.includes(id);
+    if (!isSelected) markModelRecent(id);
     if (!multiple) {
       setSelectedModelIds([id]);
       setOpen(false);
@@ -361,6 +387,15 @@ function ModelPickerDropdown({
     setSelectedModelIds(selectedModelIds.includes(id)
       ? selectedModelIds.filter(m => m !== id)
       : [...selectedModelIds, id]);
+  };
+
+  const toggleFavorite = id => {
+    setStoredFavoriteModelIds(current => {
+      const safeCurrent = Array.isArray(current) ? current : [];
+      return safeCurrent.includes(id)
+        ? safeCurrent.filter(item => item !== id)
+        : [...safeCurrent, id];
+    });
   };
 
   const moveModel = (id, dir) => {
@@ -386,13 +421,18 @@ function ModelPickerDropdown({
     context: contextFilter,
     categories: categoryFilters,
   };
-  const filteredUnselected = filterModels(unselectedItems, query)
-    .filter(model => matchesComplexFilters(model, filters));
-  const filteredCatalogModels = filterModels(availableModels, query)
-    .filter(model => matchesComplexFilters(model, filters));
+  const filteredUnselected = sortModels(
+    filterModels(unselectedItems, query).filter(model => matchesComplexFilters(model, filters)),
+    sortMode,
+    { favoriteIds: favoriteModelIds, recentById },
+  );
+  const filteredCatalogModels = sortModels(
+    filterModels(availableModels, query).filter(model => matchesComplexFilters(model, filters)),
+    sortMode,
+    { favoriteIds: favoriteModelIds, recentById },
+  );
   // 筛选结果每次渲染都是新数组,手动 useMemo 反而被 React Compiler 拒绝优化;
   // 这里直接调用,交给编译器自动 memo。
-  const grouped = groupByProvider(filteredUnselected);
   const providerOptions = groupByProvider(availableModels).map(group => ({
     value: group.provider,
     count: group.models.length,
@@ -411,6 +451,10 @@ function ModelPickerDropdown({
     categoryFilters.length > 0,
     Boolean(query.trim()),
   ].filter(Boolean).length;
+  const sortMetricUnavailable = (
+    (sortMode === 'price' && !availableModels.some(model => modelPrice(model) != null))
+    || (sortMode === 'speed' && !availableModels.some(model => modelSpeed(model) != null))
+  );
 
   const count = selectedModelIds.length;
   const triggerLabel = count === 1
@@ -421,6 +465,7 @@ function ModelPickerDropdown({
 
   const renderOption = item => {
     const isSelected = selectedSet.has(item.id);
+    const isFavorite = favoriteModelIds.includes(item.id);
     const orderIdx = selectedModelIds.indexOf(item.id);
     const secondary = item.description || (item.label && item.label !== item.id ? item.id : '');
     return (
@@ -437,7 +482,19 @@ function ModelPickerDropdown({
           <span className="model-option-text">
             <span className="model-option-name">{item.label || item.id}</span>
             {secondary && <span className="model-option-description">{secondary}</span>}
+            <span className="model-option-provider">{providerOf(item)}</span>
           </span>
+        </button>
+        <button
+          type="button"
+          className={`model-option-favorite ${isFavorite ? 'active' : ''}`}
+          onClick={() => toggleFavorite(item.id)}
+          disabled={disabled}
+          title={t(isFavorite ? 'modelSelector.removeFavorite' : 'modelSelector.addFavorite')}
+          aria-label={t(isFavorite ? 'modelSelector.removeFavorite' : 'modelSelector.addFavorite')}
+          aria-pressed={isFavorite}
+        >
+          <Star size={15} fill={isFavorite ? 'currentColor' : 'none'} />
         </button>
         {multiple && isSelected && selectedModelIds.length > 1 && (
           <span className="model-option-order">
@@ -547,6 +604,7 @@ function ModelPickerDropdown({
     const expanded = expandedEncyclopediaModels.includes(model.id);
     const hasFields = ENCYCLOPEDIA_FIELD_DEFS.some(field => formatEncyclopediaValue(field.getValue(model), field));
     const isSelected = selectedSet.has(model.id);
+    const isFavorite = favoriteModelIds.includes(model.id);
     return (
       <article key={model.id} className={`model-encyclopedia-item ${expanded ? 'expanded' : ''}`}>
         <div className="model-encyclopedia-row">
@@ -569,6 +627,17 @@ function ModelPickerDropdown({
             </span>
           </button>
           <div className="model-encyclopedia-item-side">
+            <button
+              type="button"
+              className={`model-encyclopedia-favorite ${isFavorite ? 'active' : ''}`}
+              onClick={() => toggleFavorite(model.id)}
+              disabled={disabled}
+              title={t(isFavorite ? 'modelSelector.removeFavorite' : 'modelSelector.addFavorite')}
+              aria-label={t(isFavorite ? 'modelSelector.removeFavorite' : 'modelSelector.addFavorite')}
+              aria-pressed={isFavorite}
+            >
+              <Star size={14} fill={isFavorite ? 'currentColor' : 'none'} />
+            </button>
             <button
               type="button"
               className={`model-encyclopedia-select ${isSelected ? 'selected' : ''}`}
@@ -699,6 +768,17 @@ function ModelPickerDropdown({
                     />
                   </div>
                   <div className="model-picker-actions">
+                    <label className="model-sort-control" title={t('modelSelector.sortLabel')}>
+                      <ArrowUpDown size={14} aria-hidden="true" />
+                      <select value={sortMode} onChange={event => setSortMode(event.target.value)} aria-label={t('modelSelector.sortLabel')}>
+                        <option value="recommended">{t('modelSelector.sortRecommended')}</option>
+                        <option value="recent">{t('modelSelector.sortRecent')}</option>
+                        <option value="name">{t('modelSelector.sortName')}</option>
+                        <option value="updated">{t('modelSelector.sortUpdated')}</option>
+                        <option value="price">{t('modelSelector.sortPrice')}</option>
+                        <option value="speed">{t('modelSelector.sortSpeed')}</option>
+                      </select>
+                    </label>
                     {multiple && clearable && count > 0 && (
                       <button
                         type="button"
@@ -725,6 +805,10 @@ function ModelPickerDropdown({
                     </button>
                   </div>
                 </div>
+
+                {sortMetricUnavailable && (
+                  <div className="model-sort-notice">{t(sortMode === 'price' ? 'modelSelector.priceUnavailable' : 'modelSelector.speedUnavailable')}</div>
+                )}
 
                 <div className={`model-filter-grid ${filtersExpanded ? 'open' : ''}`}>
                   <div className="model-filter-group">
@@ -832,14 +916,9 @@ function ModelPickerDropdown({
               )}
               <div className="model-options model-picker-results">
                 {filteredUnselected.length === 0 && <span className="model-options-empty">{t('modelSelector.noMatch')}</span>}
-                {grouped.map(group => (
-                  <div key={group.provider} className="model-provider-group">
-                    <div className="model-provider-heading">{group.provider}</div>
-                    <div className="model-provider-options">
-                      {group.models.map(renderOption)}
-                    </div>
-                  </div>
-                ))}
+                <div className="model-provider-options model-sorted-options">
+                  {filteredUnselected.map(renderOption)}
+                </div>
               </div>
             </div>
               </>
@@ -860,6 +939,7 @@ export function ModelSelector({
   agentStrategy,
   setAgentStrategy,
   sessionLocked,
+  recentModelUsage,
 }) {
   return (
     <div className="model-select-row">
@@ -871,6 +951,7 @@ export function ModelSelector({
         agentStrategy={agentStrategy}
         setAgentStrategy={setAgentStrategy}
         disabled={sessionLocked}
+        recentModelUsage={recentModelUsage}
       />
     </div>
   );
