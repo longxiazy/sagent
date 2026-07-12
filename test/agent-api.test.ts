@@ -55,7 +55,10 @@ beforeEach(async () => {
     memoryDir: tmpDir,
     checkpointDir: tmpDir,
     domainRules: null,
-    modelConfig: [{ id: 'test-model', label: 'test-model', provider: 'test' }],
+    modelConfig: [
+      { id: 'test-model', label: 'test-model', provider: 'test' },
+      { id: 'chat-only-model', label: 'chat-only-model', provider: 'test', agentCompatible: false },
+    ],
     registry: mockRegistry,
     configStore,
     projectStore,
@@ -68,6 +71,17 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await fs.rm(tmpDir, { recursive: true, force: true });
+});
+
+describe('POST /api/agent model compatibility', () => {
+  it('rejects models explicitly marked as incompatible with Desktop Agent', async () => {
+    const res = await request(app)
+      .post('/api/agent')
+      .send({ task: 'test task', model: 'chat-only-model' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('chat-only-model');
+  });
 });
 
 describe('POST /api/agent/compact', () => {

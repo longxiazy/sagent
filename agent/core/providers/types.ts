@@ -35,6 +35,7 @@ export interface ModelInfo {
   supportedMessageRoles?: string[];
   supportedMessageTypes?: string[];
   supportedParameters?: string[];
+  agentCompatible?: boolean;
 }
 
 // agent 决策上下文（task/step/history/observation/conversationHistory/systemPrompt 等），

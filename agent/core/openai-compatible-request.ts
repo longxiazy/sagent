@@ -12,6 +12,61 @@ export function defaultChatTemplateKwargsForModel(model: string) {
     : null;
 }
 
+function contentAsText(content: any) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map(part => typeof part === 'string' ? part : (typeof part?.text === 'string' ? part.text : ''))
+      .filter(Boolean)
+      .join('\n');
+  }
+  return content == null ? '' : String(content);
+}
+
+export function isUnsupportedSystemRoleError(err: any) {
+  const message = String(err?.message || err?.error?.message || '').toLowerCase();
+  const status = err?.status || err?.statusCode || 0;
+  return [400, 422, 500].includes(status) && (
+    message.includes('system role not supported') ||
+    message.includes('system message not supported') ||
+    message.includes('does not support system') ||
+    message.includes('unsupported role: system')
+  );
+}
+
+export function withoutSystemRole(request: any) {
+  const messages = Array.isArray(request?.messages) ? request.messages : [];
+  const systemText = messages
+    .filter(message => message?.role === 'system')
+    .map(message => contentAsText(message.content))
+    .filter(Boolean)
+    .join('\n\n');
+  if (!systemText) return request;
+
+  const remaining = messages.filter(message => message?.role !== 'system');
+  const firstUserIndex = remaining.findIndex(message => message?.role === 'user');
+  const prefix = `[System instructions]\n${systemText}\n\n[User message]\n`;
+
+  if (firstUserIndex === -1) {
+    remaining.unshift({ role: 'user', content: prefix.trimEnd() });
+  } else {
+    const firstUser = remaining[firstUserIndex];
+    if (Array.isArray(firstUser.content)) {
+      remaining[firstUserIndex] = {
+        ...firstUser,
+        content: [{ type: 'text', text: prefix }, ...firstUser.content],
+      };
+    } else {
+      remaining[firstUserIndex] = {
+        ...firstUser,
+        content: `${prefix}${contentAsText(firstUser.content)}`,
+      };
+    }
+  }
+
+  return { ...request, messages: remaining };
+}
+
 function normalizeChatTemplateKwargs(value: any) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 }
@@ -25,7 +80,7 @@ export function buildChatCompletionRequest(
     max_tokens: number;
     chat_template_kwargs?: any;
   },
-  { defaultThinking = false } = {}
+  { defaultThinking = false, supportedMessageRoles }: { defaultThinking?: boolean; supportedMessageRoles?: string[] } = {}
 ) {
   const explicitChatTemplateKwargs = normalizeChatTemplateKwargs(opts.chat_template_kwargs);
   const defaultChatTemplateKwargs = explicitChatTemplateKwargs
@@ -35,15 +90,22 @@ export function buildChatCompletionRequest(
       : null;
   const chatTemplateKwargs = explicitChatTemplateKwargs || defaultChatTemplateKwargs;
 
-  return {
-    request: {
+  const request = {
       model: opts.model,
       messages: opts.messages,
       temperature: opts.temperature,
       top_p: opts.top_p,
       max_tokens: opts.max_tokens,
       ...(chatTemplateKwargs ? { chat_template_kwargs: chatTemplateKwargs } : {}),
-    },
+    };
+  const adaptedRequest = Array.isArray(supportedMessageRoles)
+    && supportedMessageRoles.length > 0
+    && !supportedMessageRoles.includes('system')
+    ? withoutSystemRole(request)
+    : request;
+
+  return {
+    request: adaptedRequest,
     defaultedChatTemplateKwargs: Boolean(defaultChatTemplateKwargs),
   };
 }
@@ -86,18 +148,45 @@ export async function createChatCompletionWithTemplateFallback({
     return client.chat.completions.create(payload, reqOpts);
   };
 
-  try {
-    return await create(request);
-  } catch (err) {
-    if (!defaultedChatTemplateKwargs || !request?.chat_template_kwargs || !isUnsupportedChatTemplateKwargsError(err)) {
+  let activeRequest = request;
+  let activeContext = retryContext;
+  let templateFallbackUsed = false;
+  let systemRoleFallbackUsed = false;
+
+  for (;;) {
+    try {
+      return await create(activeRequest, activeContext);
+    } catch (err) {
+      if (
+        !templateFallbackUsed
+        && defaultedChatTemplateKwargs
+        && activeRequest?.chat_template_kwargs
+        && isUnsupportedChatTemplateKwargsError(err)
+      ) {
+        templateFallbackUsed = true;
+        log.warn('chat_template_kwargs 不受支持，改为关闭 thinking 参数重试:', err.message);
+        activeRequest = withoutChatTemplateKwargs(activeRequest);
+        activeContext = retryContext
+          ? { ...retryContext, chat_template_kwargs: 'disabled' }
+          : retryContext;
+        continue;
+      }
+
+      if (
+        !systemRoleFallbackUsed
+        && activeRequest?.messages?.some?.((message: any) => message?.role === 'system')
+        && isUnsupportedSystemRoleError(err)
+      ) {
+        systemRoleFallbackUsed = true;
+        log.warn('system role 不受支持，合并到首条 user 消息后重试:', err.message);
+        activeRequest = withoutSystemRole(activeRequest);
+        activeContext = retryContext
+          ? { ...retryContext, system_role: 'folded_into_user' }
+          : retryContext;
+        continue;
+      }
+
       throw err;
     }
-
-    log.warn('chat_template_kwargs 不受支持，改为关闭 thinking 参数重试:', err.message);
-    const fallbackRequest = withoutChatTemplateKwargs(request);
-    const fallbackContext = retryContext
-      ? { ...retryContext, chat_template_kwargs: 'disabled' }
-      : retryContext;
-    return create(fallbackRequest, fallbackContext);
   }
 }

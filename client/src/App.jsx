@@ -120,6 +120,10 @@ export default function App() {
     activateProject,
   } = useProjects();
   const [availableModels, setAvailableModels] = useState([]);
+  const agentAvailableModels = useMemo(
+    () => availableModels.filter(model => model?.agentCompatible !== false),
+    [availableModels]
+  );
   // modelsLoaded 用来区分“还没拿到后端列表”和“真实列表为空”，
   // 避免启动阶段误清理用户已选的多模型。
   const [modelsLoaded, setModelsLoaded] = useState(false);
@@ -182,12 +186,12 @@ export default function App() {
     }
     // 只有在真正拿到后端模型列表之后才做清理，避免启动阶段误清理本地保存的选择。
     if (selectedAgentModels.length > 0 && availableModels.length > 0) {
-      const valid = selectedAgentModels.filter(m => availableModels.some(avail => avail.id === m));
+      const valid = selectedAgentModels.filter(m => agentAvailableModels.some(avail => avail.id === m));
       if (valid.length !== selectedAgentModels.length) {
         setSelectedAgentModels(valid);
       }
     }
-  }, [availableModels, modelsLoaded, selectedAgentModels, setSelectedAgentModels]);
+  }, [agentAvailableModels, availableModels.length, modelsLoaded, selectedAgentModels, setSelectedAgentModels]);
   const [agentStrategy, setAgentStrategy] = useProjectScopedState('agent_strategy_by_project', activeProjectId, 'race');
 
   // 一次性迁移:历史版本 agent 模型/策略是全局存储(所有项目共用一份),现改为按项目存。
@@ -789,7 +793,7 @@ export default function App() {
     selectedAgentModels,
     agentStrategy,
     agentMemory,
-    availableModels,
+    availableModels: agentAvailableModels,
     agentRunIdRef,
     agentAbortRef,
     approvalRequestRef,
@@ -887,7 +891,7 @@ export default function App() {
   // 行为/状态完全一致，没必要在两处分别构造。
   const modelSelect = (
     <ModelSelector
-      availableModels={availableModels}
+      availableModels={agentAvailableModels}
       selectedAgentModels={selectedAgentModels}
       setSelectedAgentModels={setSelectedAgentModels}
       agentStrategy={agentStrategy}

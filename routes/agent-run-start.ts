@@ -33,6 +33,14 @@ export function createAgentRunStartRouter({
         return res.status(400).json({ error: tReq(req, parsed.error) });
       }
       const { task, model, agentModels, strategy, headless, useMemory, conversationHistory, fromCheckpoint, projectId } = parsed;
+      const incompatibleModels = agentModels.filter(modelId => (
+        modelConfig.find(item => item.id === modelId)?.agentCompatible === false
+      ));
+      if (incompatibleModels.length > 0) {
+        return res.status(400).json({
+          error: tReq(req, 'run.modelAgentIncompatible', { models: incompatibleModels.join(', ') }),
+        });
+      }
 
       // 解析本次 run 的落盘目录与文件工具根：命中项目用项目目录，否则回退全局（无项目态）。
       const { projectId: resolvedProjectId, projectRoot, dataDir } = await resolveRunPathsForExecution(projectStore, projectId, memoryDir);

@@ -52,6 +52,14 @@ export function createAgentContextRouter({
     if (models.length === 0) {
       return res.status(400).json({ error: 'model is required' });
     }
+    const incompatibleModels = models.filter(modelId => (
+      modelConfig.find(item => item.id === modelId)?.agentCompatible === false
+    ));
+    if (incompatibleModels.length > 0) {
+      return res.status(400).json({
+        error: `models are not compatible with the Desktop Agent: ${incompatibleModels.join(', ')}`,
+      });
+    }
 
     const { projectRoot, dataDir } = resolveRunPaths(
       projectStore,
