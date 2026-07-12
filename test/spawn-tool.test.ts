@@ -91,7 +91,7 @@ describe('Spawn action normalization', () => {
           tasks: [],
         },
       });
-    }).toThrow('spawn 缺少有效的 tasks 数组');
+    }).toThrow('spawn.tasks 至少需要一个非空任务字符串');
   });
 
   it('throws error when tasks contains only empty strings', () => {
@@ -102,7 +102,18 @@ describe('Spawn action normalization', () => {
           tasks: ['', '  ', '   '],
         },
       });
-    }).toThrow('spawn 缺少有效的 tasks 数组');
+    }).toThrow('spawn.tasks 至少需要一个非空任务字符串');
+  });
+
+  it('explains that task objects must be rewritten as natural-language strings', () => {
+    expect(() => {
+      normalizeDesktopAgentDecision({
+        action: {
+          type: 'spawn',
+          tasks: [{ tool: 'browser', type: 'http_fetch', url: 'https://example.com' }],
+        },
+      });
+    }).toThrow('不能是 {tool,type,...} 工具动作对象');
   });
 });
 

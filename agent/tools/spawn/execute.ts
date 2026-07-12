@@ -30,7 +30,7 @@ export async function executeSpawnAction(
 
   const tasks = Array.isArray(action.tasks) ? action.tasks : [];
   if (tasks.length === 0) {
-    throw new Error('spawn 缺少有效的 tasks 数组');
+    throw new Error('spawn.tasks 至少需要一个非空任务字符串，例如：["搜索并总结相关官方资料"]');
   }
   if (tasks.length > 5) {
     throw new Error('spawn 最多支持 5 个并行任务');

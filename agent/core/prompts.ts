@@ -467,7 +467,7 @@ export function buildNvidiaTaskMessages({
         'fs: list_dir(path), get_file_info(path), read_file(path), write_file(path,content,append), search_files(query,path,include?)',
         'terminal: run_safe(command), run_confirmed(command), run_review(command)',
         'macos: activate_app(app), open_app(app), list_windows(), capture_screen(), type_text(text), press_key(key,modifiers), click_at(x,y)',
-        'search: web_search(query,maxResults?)；codegraph: codegraph_query(query)；vision: image_analyze(image,question)；spawn: spawn(tasks)',
+        'search: web_search(query,maxResults?)；codegraph: codegraph_query(query)；vision: image_analyze(image,question)；spawn: spawn(tasks:string[])。spawn 的 tasks 必须是 1-5 个自然语言子任务字符串，不是工具动作对象；示例：{"tool":"spawn","type":"spawn","tasks":["抓取页面 A 并提取关键数据","抓取页面 B 并核对来源"]}',
         ...(ideEnabled && ideDetails ? ['ide: ide_list_tools(refresh?), ide_call_tool(toolName,arguments)'] : []),
         ...(chromeEnabled && chromeDetails ? ['chrome: chrome_list_tools(refresh?), chrome_call_tool(toolName,arguments,refreshTools?)'] : []),
         'core: ask_user(question), notify_user(message,level), finish(answer)',
