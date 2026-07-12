@@ -291,7 +291,10 @@ export const en = {
   'session.title': 'Sessions',
   'session.unknownModel': 'Unknown model',
   'session.messageCount': '{n} msgs',
-  'session.deleteTitle': 'Delete session',
+  'session.archiveTitle': 'Archive session',
+  'session.archived': 'Archived',
+  'session.restoreTitle': 'Restore session',
+  'session.deletePermanentlyTitle': 'Delete permanently',
   'session.viewMemory': 'View memory',
   'session.viewAgentStats': 'View Agent stats',
   'session.searchPlaceholder': 'Search sessions…',
@@ -474,6 +477,7 @@ export const en = {
   // Session operations
   'session.newChat': 'New chat',
   'sessionOps.confirmDelete': 'Delete this session? This cannot be undone.',
+  'sessionOps.confirmDeleteArchived': 'Permanently delete this archived session? This cannot be undone.',
   'sessionOps.confirmClearAll': 'Clear all sessions? This cannot be undone.',
   'sessionOps.confirmClearProject': 'Clear all sessions in the current project? Other projects will not be affected. This cannot be undone.',
 };

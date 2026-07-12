@@ -704,7 +704,7 @@ export default function App() {
   // 建议数据从后端拉取;suggestionSeed 触发(刷新按钮 / 提交后)也会重新拉,让"最近使用"即时反映
   useEffect(() => {
     let cancelled = false;
-    fetchSuggestions()
+    fetchSuggestions(activeProjectId)
       .then(data => {
         if (cancelled) return;
         setSuggestionData(data);
@@ -712,7 +712,7 @@ export default function App() {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [suggestionSeed]);
+  }, [suggestionSeed, activeProjectId]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -734,8 +734,9 @@ export default function App() {
   const {
     handleCreateSession,
     handleSelectSession,
-    handleDeleteSession,
-    handleClearAllSessions,
+    handleArchiveSession,
+    handleRestoreSession,
+    handleDeleteArchivedSession,
     handleReset,
   } = useSessionHandlers({
     sessions,
@@ -756,7 +757,7 @@ export default function App() {
     Promise.resolve(activateProject(projectId)).catch(() => {});
     setChatState(prev => {
       const inProject = prev.sessions
-        .filter(s => (s.projectId ?? null) === (projectId ?? null))
+        .filter(s => !s.archivedAt && (s.projectId ?? null) === (projectId ?? null))
         .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       if (inProject.length > 0) {
         return normalizeChatState({ ...prev, activeSessionId: inProject[0].id });
@@ -777,9 +778,9 @@ export default function App() {
     projectsReconciledRef.current = true;
     setChatState(prev => {
       const cur = prev.sessions.find(s => s.id === prev.activeSessionId);
-      if (cur && (cur.projectId ?? null) === (activeProjectId ?? null)) return prev;
+      if (cur && !cur.archivedAt && (cur.projectId ?? null) === (activeProjectId ?? null)) return prev;
       const inProject = prev.sessions
-        .filter(s => (s.projectId ?? null) === (activeProjectId ?? null))
+        .filter(s => !s.archivedAt && (s.projectId ?? null) === (activeProjectId ?? null))
         .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       if (inProject.length > 0) {
         return normalizeChatState({ ...prev, activeSessionId: inProject[0].id });
@@ -860,7 +861,7 @@ export default function App() {
     const title = pendingTitleRef.current
       || (titleSource.length > 12 ? titleSource.slice(0, 12) + '…' : titleSource);
     pendingTitleRef.current = null;
-    recordSuggestionUse({ title, text });
+    recordSuggestionUse({ title, text, projectId: activeSession.projectId ?? null });
     // 下次返回 hero 时能看到新的"最近使用"
     setSuggestionSeed(v => v + 1);
 
@@ -1019,8 +1020,9 @@ export default function App() {
           sessions={sessions}
           activeSessionId={activeSession.id}
           modelList={availableModels}
-          onDelete={handleDeleteSession}
-          onClearAll={handleClearAllSessions}
+          onArchive={handleArchiveSession}
+          onRestore={handleRestoreSession}
+          onDeleteArchived={handleDeleteArchivedSession}
           onSelect={(id) => { handleSelectSession(id); if (window.innerWidth < DOCKED_LAYOUT_BREAKPOINT) setShowSessions(false); }}
           locked={sessionLocked}
           showMemoryPanel={showMemoryPanel}

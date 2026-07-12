@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { BarChart3, Brain, ChevronDown, Search, Trash2, X } from 'lucide-react';
+import { Archive, ArchiveRestore, BarChart3, Brain, ChevronDown, Search, Trash2, X } from 'lucide-react';
 import { getSessionTitle } from '../../hooks/useChatSessions.js';
 import { usePersistentState, jsonStorage } from '../../hooks/usePersistentState.js';
 import { formatRelativeTime, formatShortTime, formatFullTime } from '../../utils/format.js';
@@ -55,7 +55,7 @@ function formatSessionModels(session, modelList, t) {
   return labels.length > 2 ? `${visible} +${labels.length - 2}` : visible;
 }
 
-function SessionCard({ session, active, modelLabel, locked, canDelete, onSelect, onDelete }) {
+function SessionCard({ session, active, modelLabel, locked, canArchive, onSelect, onArchive }) {
   const t = useT();
   const ts = lastActivityTs(session);
 
@@ -71,16 +71,39 @@ function SessionCard({ session, active, modelLabel, locked, canDelete, onSelect,
         ) : null}
       </button>
 
-      {canDelete && (
+      {canArchive && (
         <button
           className="session-delete-btn"
-          onClick={() => onDelete(session.id)}
+          onClick={() => onArchive(session.id)}
           disabled={locked}
-          title={t('session.deleteTitle')}
+          title={t('session.archiveTitle')}
         >
-          <Trash2 size={12} />
+          <Archive size={12} />
         </button>
       )}
+    </div>
+  );
+}
+
+function ArchivedSessionCard({ session, modelLabel, locked, onRestore, onDelete }) {
+  const t = useT();
+  const ts = lastActivityTs(session);
+
+  return (
+    <div className="session-card session-card--archived">
+      <div className="session-main session-main--static">
+        <span className="session-card-title">{getSessionTitle(session.messages)}</span>
+        <span className="session-card-meta">{modelLabel} · {t('session.messageCount', { n: session.messages.length })}</span>
+        {ts ? <span className="session-card-time" title={formatFullTime(ts)}>{formatRelativeTime(ts)} · {formatShortTime(ts)}</span> : null}
+      </div>
+      <div className="session-archive-actions">
+        <button className="session-delete-btn" onClick={() => onRestore(session.id)} disabled={locked} title={t('session.restoreTitle')}>
+          <ArchiveRestore size={12} />
+        </button>
+        <button className="session-delete-btn danger" onClick={() => onDelete(session.id)} disabled={locked} title={t('session.deletePermanentlyTitle')}>
+          <Trash2 size={12} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -89,8 +112,9 @@ export function SessionList({
   sessions,
   activeSessionId,
   modelList,
-  onDelete,
-  onClearAll,
+  onArchive,
+  onRestore,
+  onDeleteArchived,
   onSelect,
   locked,
   showMemoryPanel,
@@ -106,12 +130,21 @@ export function SessionList({
   const t = useT();
   const [query, setQuery] = useState('');
   const [showStatsPanel, setShowStatsPanel] = useState(false);
+  const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = usePersistentState(COLLAPSED_GROUPS_KEY, [], jsonStorage);
 
   // 只显示当前项目的会话；无项目态显示未归属项目的旧会话。
-  const visibleSessions = useMemo(
+  const projectSessions = useMemo(
     () => sessions.filter(s => (s.projectId ?? null) === (activeProjectId ?? null)),
     [sessions, activeProjectId]
+  );
+  const visibleSessions = useMemo(
+    () => projectSessions.filter(s => !s.archivedAt),
+    [projectSessions]
+  );
+  const archivedSessions = useMemo(
+    () => projectSessions.filter(s => Boolean(s.archivedAt)).sort((a, b) => (b.archivedAt || 0) - (a.archivedAt || 0)),
+    [projectSessions]
   );
 
   const groups = useMemo(() => buildGroups(visibleSessions, query), [visibleSessions, query]);
@@ -154,24 +187,24 @@ export function SessionList({
         </div>
       </div>
 
+      <ProjectSwitcher
+        projects={projects}
+        activeProjectId={activeProjectId}
+        onActivate={onActivateProject}
+        onCreate={onCreateProject}
+        onUpdate={onUpdateProject}
+        onDelete={onDeleteProject}
+        locked={locked}
+      />
+
       {showMemoryPanel ? (
         <MemoryPanel onClose={onToggleMemory} activeProjectId={activeProjectId} modelList={modelList} />
       ) : statsPanelOpen ? (
         <AgentStatsPanel
-          sessions={visibleSessions}
+          sessions={projectSessions}
         />
       ) : (
         <>
-          <ProjectSwitcher
-            projects={projects}
-            activeProjectId={activeProjectId}
-            onActivate={onActivateProject}
-            onCreate={onCreateProject}
-            onUpdate={onUpdateProject}
-            onDelete={onDeleteProject}
-            locked={locked}
-          />
-
           <div className="session-search">
             <Search size={14} className="session-search-icon" />
             <input
@@ -213,9 +246,9 @@ export function SessionList({
                         active={session.id === activeSessionId}
                         modelLabel={formatSessionModels(session, modelList, t)}
                         locked={locked}
-                        canDelete={visibleSessions.length > 1}
+                        canArchive={session.messages.length > 0}
                         onSelect={onSelect}
-                        onDelete={onDelete}
+                        onArchive={onArchive}
                       />
                     ))}
                   </div>
@@ -223,8 +256,27 @@ export function SessionList({
               })
             )}
 
-            {visibleSessions.length > 1 && (
-              <button className="session-clear-all-btn" onClick={onClearAll} disabled={locked}>{t('common.clearAll')}</button>
+            {archivedSessions.length > 0 && (
+              <div className="session-group session-archive-group">
+                <button
+                  className={`session-group-header ${archivedExpanded ? '' : 'collapsed'}`}
+                  onClick={() => setArchivedExpanded(value => !value)}
+                >
+                  <ChevronDown size={14} className="session-group-chevron" />
+                  <span className="session-group-label">{t('session.archived')}</span>
+                  <span className="session-group-count">{archivedSessions.length}</span>
+                </button>
+                {archivedExpanded && archivedSessions.map(session => (
+                  <ArchivedSessionCard
+                    key={session.id}
+                    session={session}
+                    modelLabel={formatSessionModels(session, modelList, t)}
+                    locked={locked}
+                    onRestore={onRestore}
+                    onDelete={onDeleteArchived}
+                  />
+                ))}
+              </div>
             )}
           </div>
         </>

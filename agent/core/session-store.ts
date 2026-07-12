@@ -37,6 +37,10 @@ function finiteNumber(value: unknown, fallback: number) {
   return Number.isFinite(value) ? Number(value) : fallback;
 }
 
+function isActiveSession(session: StoredSession) {
+  return !session.archivedAt;
+}
+
 function generateSessionId() {
   return `session_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -87,6 +91,7 @@ function normalizeSession(value: unknown, projectId: string | null): StoredSessi
     agentMeta: session.agentMeta && typeof session.agentMeta === 'object' ? session.agentMeta : null,
     agentRuns: normalizeAgentRuns(session.agentRuns),
     projectId,
+    archivedAt: Number.isFinite(session.archivedAt) ? Number(session.archivedAt) : null,
     createdAt: finiteNumber(session.createdAt, now),
     updatedAt: finiteNumber(session.updatedAt, now),
   };
@@ -109,9 +114,9 @@ async function readScopeState(dataDir: string, projectId: string | null): Promis
     const sessions = Array.isArray(parsed.sessions)
       ? parsed.sessions.map((session: unknown) => normalizeSession(session, projectId)).filter(Boolean) as StoredSession[]
       : [];
-    const activeSessionId = sessions.some(session => session.id === parsed.activeSessionId)
+    const activeSessionId = sessions.some(session => session.id === parsed.activeSessionId && isActiveSession(session))
       ? parsed.activeSessionId
-      : sessions[0]?.id || null;
+      : sessions.find(isActiveSession)?.id || null;
     return {
       version: SESSION_VERSION,
       activeSessionId,
@@ -298,8 +303,8 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
         changed = true;
       }
       state.sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-      if (!state.activeSessionId || !state.sessions.some(session => session.id === state.activeSessionId)) {
-        state.activeSessionId = state.sessions[0]?.id || null;
+      if (!state.activeSessionId || !state.sessions.some(session => session.id === state.activeSessionId && isActiveSession(session))) {
+        state.activeSessionId = state.sessions.find(isActiveSession)?.id || null;
         changed = true;
       }
       if (changed) await writeScopeState(dataDir, state);
@@ -337,11 +342,11 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
       const dismissed = new Set([...previous.dismissedTraceRunIds, ...removedRunIds]);
       for (const runId of nextRunIds) dismissed.delete(runId);
       const nextActiveSessionId = typeof activeSessionId === 'string'
-        && nextSessions.some(session => session.id === activeSessionId)
+        && nextSessions.some(session => session.id === activeSessionId && isActiveSession(session))
         ? activeSessionId
-        : previous.activeSessionId && nextSessions.some(session => session.id === previous.activeSessionId)
+        : previous.activeSessionId && nextSessions.some(session => session.id === previous.activeSessionId && isActiveSession(session))
           ? previous.activeSessionId
-          : nextSessions[0]?.id || null;
+          : nextSessions.find(isActiveSession)?.id || null;
       await writeScopeState(scope.dataDir, {
         ...previous,
         sessions: nextSessions,
@@ -361,8 +366,8 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
         .map(session => normalizeSession(session, scope.projectId))
         .filter(Boolean) as StoredSession[];
       state.sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-      if (!state.activeSessionId || !state.sessions.some(session => session.id === state.activeSessionId)) {
-        state.activeSessionId = state.sessions[0]?.id || null;
+      if (!state.activeSessionId || !state.sessions.some(session => session.id === state.activeSessionId && isActiveSession(session))) {
+        state.activeSessionId = state.sessions.find(isActiveSession)?.id || null;
       }
       await writeScopeState(scope.dataDir, state);
     });
