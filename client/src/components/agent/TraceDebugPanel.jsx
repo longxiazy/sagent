@@ -1,5 +1,6 @@
 import { Activity, BarChart3 } from 'lucide-react';
-import { formatDurationMs, formatTokenCount } from './trace-metrics.js';
+import { computeModelTraceMetrics, formatDurationMs, formatTokenCount } from './trace-metrics.js';
+import { getModelLabel } from './plan-stage.js';
 
 function formatRate(value) {
   if (value == null) return '--';
@@ -15,7 +16,9 @@ function MetricCell({ label, value, tone }) {
   );
 }
 
-export function TraceDebugPanel({ metrics, t }) {
+export function TraceDebugPanel({ metrics, trace = [], selectedModelId = 'all', modelList = [], t }) {
+  const modelMetrics = computeModelTraceMetrics(trace);
+  const selectedMetrics = selectedModelId === 'all' ? null : modelMetrics.find(item => item.modelId === selectedModelId);
   const steps = metrics.stepDurations || [];
   const visibleSteps = steps.slice(-12);
   const maxDuration = Math.max(1, ...visibleSteps.map(step => step.durationMs || 0));
@@ -43,6 +46,31 @@ export function TraceDebugPanel({ metrics, t }) {
         <MetricCell label={t('agentPanel.metricAvgStep')} value={formatDurationMs(metrics.avgStepMs)} />
         <MetricCell label={t('agentPanel.metricSlowestStep')} value={slowest ? `Step ${slowest.step} · ${formatDurationMs(slowest.durationMs)}` : '--'} tone={slowest?.status === 'failed' || slowest?.status === 'slow' ? 'warn' : ''} />
       </div>
+
+      {selectedMetrics ? (
+        <div className="trace-debug-model-section">
+          <strong>{getModelLabel(selectedMetrics.modelId, modelList)}</strong>
+          <div className="trace-debug-grid">
+            <MetricCell label={t('agentPanel.metricLlmCalls')} value={selectedMetrics.llmCalls} />
+            <MetricCell label={t('agentPanel.metricTokens')} value={formatTokenCount(selectedMetrics.totalTokens)} tone="tokens" />
+            <MetricCell label={t('agentPanel.metricWins')} value={selectedMetrics.wins} tone="ok" />
+            <MetricCell label={t('agentPanel.metricFailures')} value={selectedMetrics.failures} tone={selectedMetrics.failures ? 'warn' : ''} />
+            <MetricCell label={t('agentPanel.metricAvgDecision')} value={formatDurationMs(selectedMetrics.avgDurationMs)} />
+          </div>
+        </div>
+      ) : modelMetrics.length > 1 && (
+        <div className="trace-debug-model-list">
+          {modelMetrics.map(item => (
+            <div className="trace-debug-model-row" key={item.modelId}>
+              <strong>{getModelLabel(item.modelId, modelList)}</strong>
+              <span>{item.llmCalls} {t('agentPanel.callsShort')}</span>
+              <span>{formatTokenCount(item.totalTokens)} tok</span>
+              <span>{t('agentPanel.winsShort', { n: item.wins })}</span>
+              <span>{formatDurationMs(item.avgDurationMs)}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {visibleSteps.length > 0 && (
         <div className="trace-debug-bars" aria-label={t('agentPanel.stepLatency')}>

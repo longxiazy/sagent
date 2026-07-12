@@ -9,7 +9,7 @@ import { TerminalProcess } from './TerminalProcess.jsx';
 // 一个"按 step 分组"的展示块，让用户能看到同一步里不同模型如何竞争/投票。
 // events 是父组件预分组好的、仅属于本 step 的事件切片（避免每个 group 再各自
 // 遍历整条 trace —— 否则 S 步 × N 事件 = O(N²)）。agentFinished 由父组件统一判定。
-export function ModelPlanGroup({ events, step, models, modelList, agentFinished, cardsExpanded, onManualToggle, onRollback, rollbackLoading, openLightbox }) {
+export function ModelPlanGroup({ events, step, models, selectedModelId = 'all', modelList, agentFinished, cardsExpanded, onManualToggle, onRollback, rollbackLoading, openLightbox }) {
   const t = useT();
   let strategyMode = 'race';
   let consensusEvent = null;
@@ -49,8 +49,9 @@ export function ModelPlanGroup({ events, step, models, modelList, agentFinished,
     return ev;
   };
 
-  const visibleModels = models.filter(m => { const s = getEvent(m).stage; return s !== 'cancelled' && s !== 'failed' && s !== 'rate_limited'; });
-  const collapsedModels = models.filter(m => { const s = getEvent(m).stage; return s === 'cancelled' || s === 'failed' || s === 'rate_limited'; });
+  const filteredModels = selectedModelId === 'all' ? models : models.filter(m => m === selectedModelId);
+  const visibleModels = filteredModels.filter(m => { const s = getEvent(m).stage; return s !== 'cancelled' && s !== 'failed' && s !== 'rate_limited'; });
+  const collapsedModels = filteredModels.filter(m => { const s = getEvent(m).stage; return s === 'cancelled' || s === 'failed' || s === 'rate_limited'; });
 
   // 这步执行结果命中失败模式时整节点标红（与单模型 StepCard 一致；截图结果不判失败）
   const stepResultStatus = stepResultEvent?.resultStatus || stepResultEvent?.status;

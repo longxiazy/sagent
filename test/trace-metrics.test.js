@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeTraceMetrics, formatDurationMs } from '../client/src/components/agent/trace-metrics.js';
+import { computeModelTraceMetrics, computeTraceMetrics, formatDurationMs, traceModelIds } from '../client/src/components/agent/trace-metrics.js';
 
 describe('trace metrics', () => {
   it('keeps the existing model-plan token de-duplication while adding observability metrics', () => {
@@ -62,6 +62,22 @@ describe('trace metrics', () => {
     expect(metrics.stepDurations.map(step => [step.step, step.status])).toEqual([
       [1, 'fast'],
       [2, 'failed'],
+    ]);
+  });
+
+  it('collects models and keeps per-model decision metrics separate', () => {
+    const trace = [
+      { type: 'model_plan', step: 1, stage: 'start', models: ['m1', 'm2'] },
+      { type: 'model_plan', step: 1, stage: 'success', model: 'm1', duration_ms: 100, usage: { prompt_tokens: 10, completion_tokens: 2 }, action: { type: 'search' } },
+      { type: 'model_plan', step: 1, stage: 'failed', model: 'm2', duration_ms: 300, usage: { prompt_tokens: 20, completion_tokens: 3 } },
+      { type: 'model_plan', step: 1, stage: 'consensus', model: 'm1', consensus: { allResults: [{ model: 'm1' }, { model: 'm2' }] } },
+      { type: 'model_plan', step: 2, stage: 'winner', model: 'm2', duration_ms: 500, usage: { prompt_tokens: 5, completion_tokens: 5 } },
+    ];
+
+    expect(traceModelIds(trace)).toEqual(['m1', 'm2']);
+    expect(computeModelTraceMetrics(trace)).toEqual([
+      expect.objectContaining({ modelId: 'm1', llmCalls: 1, totalTokens: 12, wins: 1, failures: 0, avgDurationMs: 100 }),
+      expect.objectContaining({ modelId: 'm2', llmCalls: 2, totalTokens: 33, wins: 1, failures: 1, avgDurationMs: 400 }),
     ]);
   });
 });
