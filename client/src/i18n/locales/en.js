@@ -69,6 +69,9 @@ export const en = {
   'context.promptTitle': 'View first prompt',
   'context.promptMeta': '{model} · {used} tok',
   'context.promptTruncated': 'Prompt is long and was truncated; full length {chars} chars.',
+  'context.promptViewMode': 'Prompt view mode',
+  'context.promptSource': 'Source',
+  'context.promptMarkdown': 'Markdown',
 
   // Attachments (task text block + display)
   'attach.taskBlockHeader': '[Attachments]',

@@ -14,6 +14,7 @@ import { ResetDialog } from './components/dialogs/ResetDialog.jsx';
 import { ApprovalDialog } from './components/dialogs/ApprovalDialog.jsx';
 import { QuestionDialog } from './components/dialogs/QuestionDialog.jsx';
 import { SettingsDialog } from './components/dialogs/SettingsDialog.jsx';
+import { PromptPreviewDialog } from './components/dialogs/PromptPreviewDialog.jsx';
 import { SessionList } from './components/session/SessionList.jsx';
 import { AgentPanel } from './components/agent/AgentPanel.jsx';
 import { ModelSelector } from './components/ModelSelector.jsx';
@@ -172,6 +173,7 @@ export default function App() {
   const [agentMemory, setAgentMemory] = usePersistentState('agent_memory', true, booleanStorage);
   const [showReset, setShowReset] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showPromptPreview, setShowPromptPreview] = useState(false);
   const { showSessions, setShowSessions } = useResponsiveLayout({
     dockedBreakpoint: DOCKED_LAYOUT_BREAKPOINT,
     panelSizeKey: PANEL_SIZE_KEY,
@@ -948,7 +950,12 @@ export default function App() {
   const visibleContextEstimate = agentRunning && actualContextEstimate
     ? actualContextEstimate
     : contextEstimate;
-  const contextMeter = <ContextMeter estimate={visibleContextEstimate} />;
+  const contextMeter = (
+    <ContextMeter
+      estimate={visibleContextEstimate}
+      onOpenPrompt={() => setShowPromptPreview(true)}
+    />
+  );
   const sendButton = (
     <SendButton
       agentRunning={agentRunning}
@@ -1157,6 +1164,12 @@ export default function App() {
 
       {showReset && <ResetDialog onConfirm={handleReset} onCancel={() => setShowReset(false)} />}
       {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} agentMemory={agentMemory} setAgentMemory={setAgentMemory} />}
+      {showPromptPreview && visibleContextEstimate?.promptPreview?.text && (
+        <PromptPreviewDialog
+          estimate={visibleContextEstimate}
+          onClose={() => setShowPromptPreview(false)}
+        />
+      )}
     </div>
     </ErrorBoundary>
   );

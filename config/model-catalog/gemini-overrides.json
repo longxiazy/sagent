@@ -1,0 +1,60 @@
+{
+  "source": {
+    "catalog": "https://ai.google.dev/gemini-api/docs/pricing",
+    "note": "Locally verified Gemini API free-tier and Desktop Agent compatibility overrides. Keep separate from the provider model listing."
+  },
+  "models": {
+    "gemini-3-pro-preview": {
+      "agentCompatible": false,
+      "description": "Excluded from free-tier Agent runs because this alias resolves to a Gemini 3 Pro model whose free tier is unavailable."
+    },
+    "gemini-3.1-pro-preview": {
+      "agentCompatible": false,
+      "description": "Gemini API Free Tier is not available for this model."
+    },
+    "gemini-3.1-pro-preview-customtools": {
+      "agentCompatible": false,
+      "description": "Gemini API Free Tier is not available for this model."
+    },
+    "gemini-pro-latest": {
+      "agentCompatible": false,
+      "description": "Excluded from free-tier Agent runs because the moving alias can resolve to a paid-only Pro model."
+    },
+    "gemini-omni-flash-preview": {
+      "agentCompatible": false,
+      "description": "Gemini API Free Tier is not available for this model."
+    },
+    "gemini-2.5-computer-use-preview-10-2025": {
+      "agentCompatible": false,
+      "description": "Gemini API Free Tier is not available for this model."
+    },
+    "nano-banana-pro-preview": {
+      "agentCompatible": false,
+      "description": "Image generation model; excluded from Desktop Agent planning and free-tier smoke runs."
+    },
+    "lyria-3-clip-preview": {
+      "agentCompatible": false,
+      "description": "Music generation model; excluded from Desktop Agent planning."
+    },
+    "lyria-3-pro-preview": {
+      "agentCompatible": false,
+      "description": "Music generation model; excluded from Desktop Agent planning."
+    },
+    "antigravity-preview-05-2026": {
+      "agentCompatible": false,
+      "description": "Managed agent model; excluded from local Desktop Agent planning and free-tier smoke runs."
+    },
+    "deep-research-max-preview-04-2026": {
+      "agentCompatible": false,
+      "description": "Managed research agent; excluded from local Desktop Agent planning and free-tier smoke runs."
+    },
+    "deep-research-preview-04-2026": {
+      "agentCompatible": false,
+      "description": "Managed research agent; excluded from local Desktop Agent planning and free-tier smoke runs."
+    },
+    "deep-research-pro-preview-12-2025": {
+      "agentCompatible": false,
+      "description": "Managed research agent; excluded from local Desktop Agent planning and free-tier smoke runs."
+    }
+  }
+}

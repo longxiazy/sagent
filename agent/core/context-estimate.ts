@@ -1,9 +1,7 @@
 import {
-  buildDesktopAgentSystemPrompt,
-  buildGeminiTaskMessages,
+  buildGeminiAgentPromptPayload,
   buildNvidiaTaskMessages,
 } from './prompts.ts';
-import { createModelTools } from './tool-definitions.ts';
 
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const PROMPT_PREVIEW_CHAR_LIMIT = 60_000;
@@ -184,13 +182,7 @@ function buildPlanningPayload({
   };
 
   if (providerName === 'gemini') {
-    const { contents } = buildGeminiTaskMessages(baseContext);
-    return {
-      systemInstruction: buildDesktopAgentSystemPrompt(systemPrompt || '', 'full', baseContext),
-      contents,
-      tools: createModelTools(),
-      toolConfig: { functionCallingConfig: { mode: 'ANY' } },
-    };
+    return buildGeminiAgentPromptPayload(baseContext);
   }
 
   return {

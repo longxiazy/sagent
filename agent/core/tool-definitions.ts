@@ -21,7 +21,17 @@ const READONLY_TOOL_NAMES = new Set([
   'finish',
 ]);
 
-export function createModelTools({ mode = 'full' }: { mode?: 'full' | 'readonly' } = {}) {
+export function createModelTools({
+  mode = 'full',
+  includeIdeMcp = true,
+  includeChromeMcp = true,
+  includeToolNames,
+}: {
+  mode?: 'full' | 'readonly';
+  includeIdeMcp?: boolean;
+  includeChromeMcp?: boolean;
+  includeToolNames?: Iterable<string>;
+} = {}) {
   const tools: any[] = [
     {
       name: 'navigate',
@@ -80,6 +90,11 @@ export function createModelTools({ mode = 'full' }: { mode?: 'full' | 'readonly'
         },
         required: ['direction'],
       },
+    },
+    {
+      name: 'get_page_content',
+      description: '提取当前浏览器页面的正文文本和基础页面信息。',
+      input_schema: { type: 'object', properties: {} },
     },
     {
       name: 'list_dir',
@@ -356,7 +371,7 @@ export function createModelTools({ mode = 'full' }: { mode?: 'full' | 'readonly'
     },
   ];
 
-  if (isIdeMcpEnabled()) {
+  if (includeIdeMcp && isIdeMcpEnabled()) {
     tools.splice(tools.length - 1, 0,
       {
         name: 'ide_list_tools',
@@ -388,7 +403,7 @@ export function createModelTools({ mode = 'full' }: { mode?: 'full' | 'readonly'
     );
   }
 
-  if (isChromeMcpEnabled()) {
+  if (includeChromeMcp && isChromeMcpEnabled()) {
     tools.splice(tools.length - 1, 0,
       {
         name: 'chrome_list_tools',
@@ -420,7 +435,12 @@ export function createModelTools({ mode = 'full' }: { mode?: 'full' | 'readonly'
     );
   }
 
-  return mode === 'readonly' ? tools.filter(tool => READONLY_TOOL_NAMES.has(tool.name)) : tools;
+  let selected = mode === 'readonly' ? tools.filter(tool => READONLY_TOOL_NAMES.has(tool.name)) : tools;
+  if (includeToolNames) {
+    const allowed = new Set(includeToolNames);
+    selected = selected.filter(tool => allowed.has(tool.name));
+  }
+  return selected;
 }
 
 // Gemini FunctionDeclaration：name/description + parametersJsonSchema（标准 JSON Schema，
