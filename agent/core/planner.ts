@@ -2,7 +2,7 @@
  * Planner — NVIDIA (OpenAI-compatible) 模型的决策层
  *
  * 负责：调用 LLM API → 用 nvidia-response-parsers 工厂解析响应 → 返回标准化的 { rationale, action }
- * 如果解析失败，会带提示重试一次。
+ * 解析或动作校验失败时直接抛错，由上层决定结束单模型任务或标记多模型中的该模型失败。
  *
  * 调用场景：
  *   - agent/desktop/agent.js 的 singleModelPlan() 中通过 createJsonPlanner() 创建
@@ -160,7 +160,6 @@ export function createJsonPlanner({
     logLlmRequest(model, messages);
     let defaultedChatTemplateKwargs = builtRequest.defaultedChatTemplateKwargs;
     const reqOpts = signal ? { signal } : undefined;
-    let responseMaxTokens = requestMaxTokens;
     const retryContext = {
       operation: 'desktop.plan',
       phase: 'initial',
@@ -220,7 +219,6 @@ export function createJsonPlanner({
               retryOptions: { retryRateLimit: false },
               defaultedChatTemplateKwargs: compactDefaultedChatTemplateKwargs,
             });
-            responseMaxTokens = compactMaxTokens;
             createOpts.chat_template_kwargs = compactOpts.chat_template_kwargs;
             defaultedChatTemplateKwargs = compactDefaultedChatTemplateKwargs;
           } catch (compactErr) {
@@ -252,7 +250,6 @@ export function createJsonPlanner({
             retryOptions: { retryRateLimit: false },
             defaultedChatTemplateKwargs,
           });
-          responseMaxTokens = retryMaxTokens;
         } catch (retryErr) {
           logLlmError(model, retryErr, { ...retryContext, phase: 'initial-context-retry', max_tokens: retryMaxTokens });
           throw retryErr;
@@ -270,45 +267,14 @@ export function createJsonPlanner({
         const result = normalizeDecision(parsed, context);
         return { ...result, usage: parsed.usage, reasoning: parsed.reasoning || null };
       } catch (normalizeErr: any) {
-        log.warn(`[Planner] 动作校验失败，重试: ${normalizeErr.message}`);
-        const retryResult = await retryWithHint({
-          client,
-          model,
-          parser,
-          messages,
-          content: parsed.rawContent,
-          usage: parsed.usage,
-          context,
-          createOpts: { temperature, top_p: topP, max_tokens: responseMaxTokens, chat_template_kwargs: createOpts.chat_template_kwargs },
-          defaultedChatTemplateKwargs,
-          reqOpts,
-          normalizeDecision,
-          hint: `你的上一次 JSON 动作无法执行：${normalizeErr.message}。请只使用系统提示中列出的工具和动作名，不要编造工具/动作名。输出一个新的有效 JSON 动作。`,
-        });
-        if (retryResult) return retryResult;
+        log.warn(`[Planner] 动作校验失败，模型直接失败: ${normalizeErr.message}`);
         throw normalizeErr;
       }
     }
 
-    // Parse failed — retry with hint
+    // Parse failed — fail this model immediately. Multi-model orchestration can continue with peers.
     const content = parsed.rawContent;
-    log.warn(`[Planner] 输出无法解析，重试: ${cleanText(content, 120)}`);
-
-    const retryResult = await retryWithHint({
-      client,
-      model,
-      parser,
-      messages,
-      content,
-      usage: parsed.usage,
-      context,
-      createOpts: { temperature, top_p: topP, max_tokens: responseMaxTokens, chat_template_kwargs: createOpts.chat_template_kwargs },
-      defaultedChatTemplateKwargs,
-      reqOpts,
-      normalizeDecision,
-      hint: '你的上一次输出不是有效的 JSON 动作。请只输出一个 JSON 对象，格式如 {"rationale":"...","action":{"tool":"...","type":"...",...}} 或 {"type":"finish","answer":"..."}。不要输出任何解释文字。',
-    });
-    if (retryResult) return retryResult;
+    log.warn(`[Planner] 输出无法解析，模型直接失败: ${cleanText(content, 120)}`);
 
     const msg =
       typeof buildParserError === 'function'
@@ -316,70 +282,4 @@ export function createJsonPlanner({
         : '模型动作解析失败';
     throw new Error(`${msg}; 原始输出=${safeJson(cleanText(content, 10240))}`);
   };
-}
-
-async function retryWithHint({
-  client,
-  model,
-  parser,
-  messages,
-  content,
-  usage,
-  context,
-  createOpts,
-  defaultedChatTemplateKwargs,
-  reqOpts,
-  normalizeDecision,
-  hint,
-}) {
-  const retryMessages = [...messages, {
-    role: 'assistant',
-    content,
-  }, {
-    role: 'user',
-    content: hint,
-  }];
-
-  try {
-    const retryOpts = {
-      model,
-      ...createOpts,
-      messages: retryMessages,
-    };
-
-    const retryContext = {
-      operation: 'desktop.plan',
-      phase: 'parser-retry',
-      provider: 'openai-compatible',
-      model,
-      step: context.step,
-      message_count: retryMessages.length,
-      max_tokens: createOpts.max_tokens,
-    };
-    const retryResponse = await createChatCompletionWithTemplateFallback({
-      client,
-      request: retryOpts,
-      reqOpts,
-      retryContext,
-      retryOptions: { retryRateLimit: false },
-      defaultedChatTemplateKwargs,
-    });
-    const retryParsed = parser(retryResponse);
-
-    if (!retryParsed.parseFailed) {
-      const result = normalizeDecision(retryParsed, context);
-      return { ...result, usage: retryParsed.usage || usage, reasoning: retryParsed.reasoning || null };
-    }
-  } catch (retryErr) {
-    logLlmError(model, retryErr, {
-      operation: 'desktop.plan',
-      phase: 'parser-retry',
-      provider: 'openai-compatible',
-      model,
-      step: context.step,
-    });
-    log.warn(`[Planner] 重试也失败: ${retryErr.message}`);
-  }
-
-  return null;
 }

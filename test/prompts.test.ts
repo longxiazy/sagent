@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildGeminiAgentPromptPayload,
   buildGeminiTaskMessages,
+  buildNvidiaActionExampleLines,
   buildNvidiaTaskMessages,
   compactAgentHistory,
   sanitizeConversationHistory,
@@ -9,10 +10,51 @@ import {
 } from '../agent/core/prompts.ts';
 import { estimatePayloadTokens } from '../agent/core/context-estimate.ts';
 import { compactToolResult } from '../agent/core/result-extraction.ts';
+import { createModelTools } from '../agent/core/tool-definitions.ts';
 
 describe('agent prompts', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+  });
+
+  it('provides detailed, valid NVIDIA JSON examples for every built-in action', () => {
+    const lines = buildNvidiaActionExampleLines();
+    const schemas = new Map(createModelTools({ includeIdeMcp: false, includeChromeMcp: false })
+      .map(tool => [tool.name, tool.input_schema]));
+
+    expect(lines.length).toBeGreaterThanOrEqual(30);
+    for (const line of lines) {
+      const example = JSON.parse(line);
+      expect(example).toEqual(expect.objectContaining({
+        rationale: expect.any(String),
+        action: expect.any(Object),
+      }));
+      expect(example).not.toHaveProperty('rational');
+      const schema = schemas.get(example.action.type);
+      expect(schema, `missing tool schema for ${line}`).toBeDefined();
+      for (const required of schema.required || []) {
+        expect(Object.prototype.hasOwnProperty.call(example.action, required), `${line} is missing ${required}`).toBe(true);
+      }
+    }
+
+    const conditional = buildNvidiaActionExampleLines({ ideEnabled: true, chromeEnabled: true });
+    expect(lines.some(line => line.includes('ide_call_tool'))).toBe(false);
+    expect(lines.some(line => line.includes('chrome_call_tool'))).toBe(false);
+    expect(conditional.some(line => line.includes('ide_call_tool'))).toBe(true);
+    expect(conditional.some(line => line.includes('chrome_call_tool'))).toBe(true);
+
+    const readonlyTypes = buildNvidiaActionExampleLines({ readonly: true })
+      .map(line => JSON.parse(line).action.type);
+    expect(readonlyTypes.sort()).toEqual([
+      'codegraph_query',
+      'finish',
+      'get_file_info',
+      'image_analyze',
+      'list_dir',
+      'read_file',
+      'search_files',
+      'web_search',
+    ].sort());
   });
 
   it('adds a recent search hint for repeated or failed web_search queries', () => {
