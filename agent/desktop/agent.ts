@@ -46,7 +46,7 @@ import { observeDesktopAgent } from './observer.ts';
 import { createDesktopPlanner, DEFAULT_MODEL_TIMEOUT_MS } from './planner.ts';
 import { saveCheckpoint, saveHealthySnapshot } from '../core/checkpoint.ts';
 import { log } from '../../helpers/logger.ts';
-import { runtimeConfig } from '../core/runtime-config.ts';
+import { configStore } from '../core/config-store.ts';
 import type { ProviderRegistry } from '../core/providers/registry.ts';
 import type { ModelInfo } from '../core/providers/types.ts';
 import type {
@@ -91,9 +91,9 @@ export function createDesktopAgentRunner({
   const { ensureBrowserSession } = createSharedBrowserSessionManager();
 
   // Agent 行为参数每次 run 实时读取（前台改完无需重启即生效）；
-  // 构造参数（maxSteps 等）保留为兜底，运行时优先用 runtimeConfig。
+  // 构造参数（maxSteps 等）保留为兜底，运行时优先用 configStore。
   function liveConfig() {
-    const c = runtimeConfig.get();
+    const c = configStore.get();
     return {
       maxSteps: c.maxSteps,
       modelTimeoutMs: c.modelTimeoutSec * 1000,

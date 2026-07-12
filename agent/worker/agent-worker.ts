@@ -106,18 +106,18 @@ async function main() {
   const { createProviderRegistry } = await import('../core/providers/registry.ts');
   const { createDesktopAgentRunner } = await import('../desktop/agent.ts');
   const { initLlmLogger, flushLlmLogs } = await import('../core/llm-logger.ts');
-  const { runtimeConfig } = await import('../core/runtime-config.ts');
+  const { configStore } = await import('../core/config-store.ts');
   const { DEFAULT_VISION_MODEL } = await import('../tools/vision/execute.ts');
   flushLlmLogsBeforeExit = flushLlmLogs;
 
   const memoryDir = payload.memoryDir || process.env.MEMORY_DIR || 'data';
-  await runtimeConfig.init(memoryDir);
+  await configStore.init(memoryDir);
   initLlmLogger(memoryDir);
 
   const { openai_client, gemini_client } = createClients();
   const registry = createProviderRegistry({ openai_client, gemini_client });
   const modelConfig = Array.isArray(payload.modelConfig) ? payload.modelConfig : [];
-  const cfg = runtimeConfig.get();
+  const cfg = configStore.get();
   const runDesktopAgent = createDesktopAgentRunner({
     registry,
     openai_client,

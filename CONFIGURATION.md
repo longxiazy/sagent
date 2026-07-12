@@ -114,6 +114,8 @@ The Settings UI creates a versioned document at `data/config.json`:
 
 Values not present in the file use the canonical defaults defined by the backend schema.
 
+The schema lives in `agent/core/config-schema.ts`; loading, migration, source tracking and atomic persistence are handled by `agent/core/config-store.ts`.
+
 ## Profiles
 
 | Profile | Intended use |
@@ -136,6 +138,8 @@ built-in schema defaults
   < data/config.json
   < per-run request values
 ```
+
+The `execution` section is startup-only. Explicit startup environment values override stored execution preferences so commands and deployment manifests remain deterministic. In particular, `npm run sandbox` sets `AGENT_SANDBOXED_WORKERS=true` and always selects the worker runner for that server process.
 
 Provider keys and server deployment variables remain environment-only.
 

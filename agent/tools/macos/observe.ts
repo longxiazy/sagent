@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { getMacOSCapabilityReport } from './permissions.ts';
 import { invokeMacOSHelper, resolveMacOSBackend } from './helper-client.ts';
-import { runtimeConfig } from '../../core/runtime-config.ts';
+import { configStore } from '../../core/config-store.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCREENSHOT_DIR = path.resolve(__dirname, '../../../data/screenshots');
@@ -34,7 +34,7 @@ async function captureScreenshot(runId, signal?: AbortSignal) {
   const filePath = path.join(dirPath, `screen-${Date.now()}.png`);
   try {
     await execFileText('screencapture', ['-x', '-t', 'png', filePath], signal);
-    const redaction = runtimeConfig.tools().screenshots?.redaction || process.env.AGENT_SCREENSHOT_REDACTION || 'pixelate';
+    const redaction = configStore.tools().screenshots?.redaction || process.env.AGENT_SCREENSHOT_REDACTION || 'pixelate';
     if (redaction !== 'none') {
       try {
         await execFileText('sips', ['-z', '48', '72', filePath], signal);

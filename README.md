@@ -9,6 +9,8 @@
 > Chinese documentation: [README_ZH.md](README_ZH.md)
 >
 > Environment variables and runtime settings: [CONFIGURATION.md](CONFIGURATION.md)
+>
+> System design: [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## Overview
 
@@ -48,6 +50,8 @@ npm run sandbox
 Edit `.env` before starting if you have not added an API key yet. Open http://localhost:5173 when the dev server is ready.
 
 `npm run sandbox` starts the UI/API server normally and runs each Agent task in a short-lived macOS sandboxed worker. Use `npm run dev` only when you intentionally want the non-sandboxed development mode.
+
+After startup, use Settings to choose an Agent profile, edit basic or advanced runtime limits, and manage Chrome/JetBrains MCP connections. These values are stored locally in `data/config.json`; secrets remain in `.env`.
 
 ## Docker
 
@@ -135,3 +139,5 @@ client/     React/Vite frontend
 scripts/    Smoke tests, stop script, Chrome MCP bridge
 test/       Vitest and integration tests
 ```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the backend, Agent, worker, configuration and persistence flows, and [client/ARCHITECTURE.md](client/ARCHITECTURE.md) for the React client.

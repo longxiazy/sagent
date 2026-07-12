@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { log } from '../../../helpers/logger.ts';
-import { runtimeConfig } from '../../core/runtime-config.ts';
+import { configStore } from '../../core/config-store.ts';
 
 const DEFAULT_PROTOCOL_VERSIONS = ['2025-03-26', '2024-11-05'];
 const DEFAULT_SSE_HOST = '127.0.0.1';
@@ -165,7 +165,7 @@ function clientKey(config) {
 }
 
 export function isChromeMcpEnabled(env = process.env) {
-  const configured = runtimeConfig.mcpServers().chrome;
+  const configured = configStore.mcpServers().chrome;
   if (configured) return configured.enabled;
   // 显式开关优先；只要配置了任一连接参数，也视为用户想启用 Chrome MCP。
   if (envFlag(env.CHROME_MCP_ENABLED)) {
@@ -229,7 +229,7 @@ export function buildChromePromptLines(env = process.env) {
 }
 
 export function loadChromeMcpConfig(env = process.env) {
-  const configured = runtimeConfig.mcpServers().chrome;
+  const configured = configStore.mcpServers().chrome;
   if (configured) {
     const transport = configured.transport;
     return {

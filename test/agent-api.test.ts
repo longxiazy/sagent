@@ -39,7 +39,7 @@ beforeEach(async () => {
   const { createAgentRouter } = await import('../routes/agent.js');
   const { createAgentRunStore } = await import('../helpers/run-store.js');
   const { createApprovalStore } = await import('../agent/core/approval-store.js');
-  const { runtimeConfig } = await import('../agent/core/runtime-config.js');
+  const { configStore } = await import('../agent/core/config-store.js');
   const { createProjectStore } = await import('../agent/core/project-store.js');
 
   agentRunStore = createAgentRunStore();
@@ -57,7 +57,7 @@ beforeEach(async () => {
     domainRules: null,
     modelConfig: [{ id: 'test-model', label: 'test-model', provider: 'test' }],
     registry: mockRegistry,
-    runtimeConfig,
+    configStore,
     projectStore,
   });
 
@@ -237,7 +237,7 @@ describe('POST /api/agent', () => {
       domainRules: null,
       modelConfig: [{ id: 'test-model', provider: 'test' }],
       registry: mockRegistry,
-      runtimeConfig: {},
+      configStore: {},
       projectStore: {
         get() {
           throw new Error('project lookup failed');
