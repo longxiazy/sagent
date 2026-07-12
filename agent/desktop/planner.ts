@@ -235,15 +235,98 @@ export function createDesktopPlanner({
         onEvent?.({ type: 'model_plan', stage: 'thinking', model: candidate, step });
       }
 
-      const votePromise = Promise.allSettled(
-        activeModels.map((candidate: string) =>
-          planWithTimeout(candidate, planCtx, cancelSignal, undefined)
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        let completed = 0;
+        const successes: any[] = [];
+        const voteAc = new AbortController();
+
+        const cleanup = () => cancelSignal?.removeEventListener('abort', onCancel);
+        const onCancel = () => {
+          if (settled) return;
+          settled = true;
+          voteAc.abort(new Error('Agent 已取消'));
+          cleanup();
+          reject(new Error('Agent 已取消'));
+        };
+
+        const finishVote = () => {
+          if (settled || completed < activeModels.length) return;
+          settled = true;
+          cleanup();
+          if (successes.length === 0) {
+            reject(new Error(`所有模型均失败: ${activeModels.join(', ')}`));
+            return;
+          }
+
+          const aggregated = aggregateModelResults(successes);
+          if (aggregated.consensus) {
+            aggregated.consensus.total = activeModels.length;
+            aggregated.consensus.unanimous = aggregated.consensus.agreed === activeModels.length;
+          }
+          onEvent?.({
+            type: 'model_plan',
+            stage: 'consensus',
+            model: aggregated.model,
+            step,
+            rationale: aggregated.rationale,
+            action: aggregated.action,
+            consensus: aggregated.consensus,
+          });
+          log.info(
+            `[MultiModel] 投票结果: ${aggregated.consensus.agreed}/${aggregated.consensus.total} 一致 ` +
+            `(${aggregated.consensus.unanimous ? '全票' : '多数'}) → ${aggregated.model}`
+          );
+          resolve(aggregated);
+        };
+
+        if (cancelSignal?.aborted) {
+          onCancel();
+          return;
+        }
+        cancelSignal?.addEventListener('abort', onCancel, { once: true });
+
+        for (const candidate of activeModels) {
+          planWithTimeout(candidate, planCtx, cancelSignal, voteAc.signal)
             .then(result => {
+              if (settled) {
+                onEvent?.({ type: 'model_plan', stage: 'cancelled', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
+                return;
+              }
+
+              const enriched = { ...result, model: candidate };
               log.debug(`[MultiModel] step=${step} model=${candidate} succeeded: ${result.action?.tool}.${result.action?.type}`);
               onEvent?.({ type: 'model_plan', stage: 'success', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
-              return { ...result, model: candidate };
+
+              if (result.action?.type === 'finish') {
+                settled = true;
+                voteAc.abort(new DOMException('已有模型返回 finish', 'AbortError'));
+                cleanup();
+                log.info(`[MultiModel] ${candidate} 返回 finish，跳过汇总并立即结束`);
+                onEvent?.({
+                  type: 'model_plan',
+                  stage: 'winner',
+                  model: candidate,
+                  step,
+                  rationale: result.rationale,
+                  action: result.action,
+                  usage: result.usage,
+                  reasoning: result.reasoning,
+                  finishShortCircuit: true,
+                });
+                resolve(enriched);
+                return;
+              }
+
+              successes.push(enriched);
+              completed += 1;
+              finishVote();
             })
             .catch((err: any) => {
+              if (settled) {
+                onEvent?.({ type: 'model_plan', stage: 'cancelled', model: candidate, step });
+                return;
+              }
               if (isRateLimitError(err)) {
                 markModelRateLimited(candidate, err, onEvent, step);
               }
@@ -253,52 +336,11 @@ export function createDesktopPlanner({
               }
               log.debug(`[MultiModel] ${candidate} 失败: ${err.message.slice(0, 80)}`);
               onEvent?.({ type: 'model_plan', stage: 'failed', model: candidate, step, error: err.message.slice(0, 120) });
-              return null;
-            })
-        )
-      );
-
-      // Race the vote against cancel so we don't wait for all models to timeout
-      const cancelPromise = cancelSignal
-        ? new Promise<typeof votePromise>((_, reject) => {
-            if (cancelSignal.aborted) { reject(new Error('Agent 已取消')); return; }
-            const onAbort = () => { cancelSignal.removeEventListener('abort', onAbort); reject(new Error('Agent 已取消')); };
-            cancelSignal.addEventListener('abort', onAbort);
-            votePromise.finally(() => cancelSignal.removeEventListener('abort', onAbort));
-          })
-        : new Promise(() => {});
-
-      const settled = await Promise.race([votePromise, cancelPromise]) as PromiseSettledResult<any>[];
-
-      const successes = settled
-        .filter((result: any) => result.status === 'fulfilled' && result.value !== null)
-        .map((result: any) => result.value);
-
-      if (successes.length === 0) {
-        throw new Error(`所有模型均失败: ${activeModels.join(', ')}`);
-      }
-
-      const aggregated = aggregateModelResults(successes);
-      if (aggregated.consensus) {
-        aggregated.consensus.total = activeModels.length;
-        aggregated.consensus.unanimous = aggregated.consensus.agreed === activeModels.length;
-      }
-      onEvent?.({
-        type: 'model_plan',
-        stage: 'consensus',
-        model: aggregated.model,
-        step,
-        rationale: aggregated.rationale,
-        action: aggregated.action,
-        consensus: aggregated.consensus,
+              completed += 1;
+              finishVote();
+            });
+        }
       });
-
-      log.info(
-        `[MultiModel] 投票结果: ${aggregated.consensus.agreed}/${aggregated.consensus.total} 一致 ` +
-        `(${aggregated.consensus.unanimous ? '全票' : '多数'}) → ${aggregated.model}`
-      );
-
-      return aggregated;
     }
 
     if (strategy === 'progressive') {

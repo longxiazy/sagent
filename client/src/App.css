@@ -3816,6 +3816,96 @@ a.model-encyclopedia-field-value:hover {
 
 /* ── Trace Debug Panel ── */
 
+.agent-browser-health {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin-bottom: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-inline);
+  color: var(--c-text-secondary);
+  font-size: var(--f-micro);
+}
+
+.agent-browser-health-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--c-badge-done);
+}
+
+.agent-browser-health.navigating .agent-browser-health-dot,
+.agent-browser-health.starting .agent-browser-health-dot,
+.agent-browser-health.recovering .agent-browser-health-dot { background: var(--c-agent-timer); }
+.agent-browser-health.degraded .agent-browser-health-dot { background: var(--c-badge-error); }
+.agent-browser-health-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-browser-health > span:last-child { margin-left: auto; white-space: nowrap; }
+
+.agent-model-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--c-text-muted);
+}
+
+.agent-model-filter-chips {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.agent-model-filter-chips button {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  background: var(--c-surface);
+  color: var(--c-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.agent-model-filter-chips button.active {
+  border-color: var(--c-agent-tokens);
+  color: var(--c-text);
+  background: color-mix(in srgb, var(--c-agent-tokens) 12%, var(--c-surface));
+}
+
+.trace-debug-model-section,
+.trace-debug-model-list {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-border);
+}
+
+.trace-debug-model-section > strong { display: block; margin-bottom: 8px; }
+
+.trace-debug-model-list { display: grid; gap: 6px; }
+
+.trace-debug-model-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) repeat(4, auto);
+  gap: 12px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+
+.trace-debug-model-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-text);
+}
+
 .trace-debug-panel {
   margin: 8px 0 4px;
   border: 1px solid var(--c-border);

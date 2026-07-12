@@ -1,7 +1,8 @@
 import { buildIdePromptLines, isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
-import { buildChromePromptLines, isChromeMcpEnabled } from '../tools/chrome/mcp-client.ts';
+import { buildChromePromptLines, isChromeMcpAvailable } from '../tools/chrome/mcp-client.ts';
 import { configStore } from './config-store.ts';
 import { createModelTools, toolToGeminiTool } from './tool-definitions.ts';
+import { compactToolResult } from './result-extraction.ts';
 
 type PromptCapabilityContext = {
   task?: string;
@@ -33,6 +34,67 @@ const VISION_TOOL_NAMES = ['image_analyze'];
 const SPAWN_TOOL_NAMES = ['spawn'];
 const IDE_TOOL_NAMES = ['ide_list_tools', 'ide_call_tool'];
 const CHROME_TOOL_NAMES = ['chrome_list_tools', 'chrome_call_tool'];
+
+type NvidiaActionExample = {
+  rationale: string;
+  action: Record<string, unknown>;
+  readonly?: boolean;
+  capability?: 'ide' | 'chrome';
+};
+
+const NVIDIA_ACTION_EXAMPLES: NvidiaActionExample[] = [
+  { rationale: '打开网页', action: { tool: 'browser', type: 'navigate', url: 'https://example.com' } },
+  { rationale: '点击网页元素', action: { tool: 'browser', type: 'click', elementId: '3' } },
+  { rationale: '在网页输入框输入文字', action: { tool: 'browser', type: 'type', elementId: '3', text: 'hello', submit: true } },
+  { rationale: '等待网页加载', action: { tool: 'browser', type: 'wait', seconds: 2 } },
+  { rationale: '向下滚动页面', action: { tool: 'browser', type: 'scroll', direction: 'down', amount: 3 } },
+  { rationale: '获取浏览器当前页面文本内容', action: { tool: 'browser', type: 'get_page_content' } },
+  { rationale: '抓取网页内容', action: { tool: 'browser', type: 'http_fetch', url: 'https://example.com' } },
+  { rationale: '搜索并提取链接', action: { tool: 'browser', type: 'http_fetch', url: 'https://example.com/search?q=关键词', extractLinks: true } },
+  { rationale: '并发抓取多个页面', action: { tool: 'browser', type: 'parallel_fetch', urls: ['https://example.com/a', 'https://example.com/b'] } },
+  { rationale: '读取目录', action: { tool: 'fs', type: 'list_dir', path: '.' }, readonly: true },
+  { rationale: '查看文件大小和修改时间', action: { tool: 'fs', type: 'get_file_info', path: 'README.md' }, readonly: true },
+  { rationale: '读取文件', action: { tool: 'fs', type: 'read_file', path: 'README.md' }, readonly: true },
+  { rationale: '写文件', action: { tool: 'fs', type: 'write_file', path: 'notes.txt', content: '内容', append: false } },
+  { rationale: '搜索文件内容', action: { tool: 'fs', type: 'search_files', query: '关键词', path: '.', include: '*.js' }, readonly: true },
+  { rationale: '运行只读命令', action: { tool: 'terminal', type: 'run_safe', command: 'pwd' } },
+  { rationale: '运行需确认命令', action: { tool: 'terminal', type: 'run_confirmed', command: 'git status' } },
+  { rationale: '切换目录', action: { tool: 'terminal', type: 'run_review', command: 'cd /path/to/dir' } },
+  { rationale: '切换应用', action: { tool: 'macos', type: 'activate_app', app: 'Finder' } },
+  { rationale: '打开应用', action: { tool: 'macos', type: 'open_app', app: 'Google Chrome' } },
+  { rationale: '列出窗口', action: { tool: 'macos', type: 'list_windows' } },
+  { rationale: '屏幕截图', action: { tool: 'macos', type: 'capture_screen' } },
+  { rationale: '桌面输入文字', action: { tool: 'macos', type: 'type_text', text: 'hello' } },
+  { rationale: '桌面按键', action: { tool: 'macos', type: 'press_key', key: 'enter', modifiers: ['command'] } },
+  { rationale: '点击桌面坐标', action: { tool: 'macos', type: 'click_at', x: 640, y: 480 } },
+  { rationale: '网络搜索关键词', action: { tool: 'search', type: 'web_search', query: '2026 北京最低工资标准' }, readonly: true },
+  { rationale: '查询项目代码图谱定位相关模块', action: { tool: 'codegraph', type: 'codegraph_query', query: '记忆 memory' }, readonly: true },
+  { rationale: '分析图片内容', action: { tool: 'vision', type: 'image_analyze', image: '/abs/path/to/image.png', question: '图片里有什么内容？请详细描述。' }, readonly: true },
+  { rationale: '并行分析多个文件', action: { tool: 'spawn', type: 'spawn', tasks: ['分析 src/index.ts 的架构', '检查 test/ 目录的测试覆盖率', '搜索项目中的 TODO 注释'] } },
+  { rationale: '查看 IDE 可用工具', action: { tool: 'ide', type: 'ide_list_tools' }, capability: 'ide' },
+  { rationale: '调用 IDE 工具获取运行配置', action: { tool: 'ide', type: 'ide_call_tool', toolName: 'get_run_configurations', arguments: {} }, capability: 'ide' },
+  { rationale: '调用 Chrome 工具截图', action: { tool: 'chrome', type: 'chrome_call_tool', toolName: 'take_screenshot', arguments: {} }, capability: 'chrome' },
+  { rationale: '刷新 Chrome 工具列表（仅在工具缺失或调用失败时使用）', action: { tool: 'chrome', type: 'chrome_list_tools', refresh: true }, capability: 'chrome' },
+  { rationale: '向用户提问', action: { tool: 'core', type: 'ask_user', question: '你希望使用什么命名规范？' } },
+  { rationale: '发现重要问题需告知用户', action: { tool: 'core', type: 'notify_user', message: '发现 3 个硬编码 API 密钥', level: 'warning' } },
+  { rationale: '完成任务', action: { type: 'finish', answer: '最终结果' }, readonly: true },
+];
+
+export function buildNvidiaActionExampleLines({
+  ideEnabled = false,
+  chromeEnabled = false,
+  readonly = false,
+}: {
+  ideEnabled?: boolean;
+  chromeEnabled?: boolean;
+  readonly?: boolean;
+} = {}) {
+  return NVIDIA_ACTION_EXAMPLES
+    .filter(example => !readonly || example.readonly)
+    .filter(example => example.capability !== 'ide' || ideEnabled)
+    .filter(example => example.capability !== 'chrome' || chromeEnabled)
+    .map(({ rationale, action }) => JSON.stringify({ rationale, action }));
+}
 
 function historyUsesTool(history: any[] | undefined, tool: string) {
   return Array.isArray(history) && history.some(entry => entry?.action?.tool === tool);
@@ -144,7 +206,7 @@ export function shouldIncludeIdePromptDetails({ task = '', history = [] }: Promp
 }
 
 function chromePromptLines(context: PromptCapabilityContext) {
-  if (!isChromeMcpEnabled()) return [];
+  if (!isChromeMcpAvailable()) return [];
   if (shouldIncludeChromePromptDetails(context)) return buildChromePromptLines();
   if (context.includeInactiveCapabilityHints === false) return [];
   return [
@@ -239,7 +301,7 @@ function promptResultText(value: any) {
   }
 }
 
-export function compactAgentHistory(history: any[], maxEntries?: number, maxResultChars?: number) {
+export function compactAgentHistory(history: any[], maxEntries?: number, maxResultChars?: number, task = '') {
   if (!Array.isArray(history) || history.length === 0) return [];
   const config = configStore.get();
   const entryLimit = maxEntries ?? config.maxHistorySteps;
@@ -250,9 +312,7 @@ export function compactAgentHistory(history: any[], maxEntries?: number, maxResu
       step: entry?.step,
       rationale: entry?.rationale,
       action: entry?.action,
-      result: result.length > resultLimit
-        ? `${result.slice(0, resultLimit)}\n…[结果已截断，共 ${result.length} 字符]`
-        : result,
+      result: compactToolResult({ result, action: entry?.action, task, limit: resultLimit }),
       ...(entry?.resultStatus ? { resultStatus: entry.resultStatus } : {}),
     };
   });
@@ -346,7 +406,7 @@ export function buildGeminiTaskMessages({
   }
   const recentUrlsHint = buildRecentUrlsHint(history);
   const recentSearchesHint = buildRecentSearchesHint(history);
-  const promptHistory = compactAgentHistory(history);
+  const promptHistory = compactAgentHistory(history, undefined, undefined, task);
   contents.push({
     role: 'user',
     parts: [{ text: JSON.stringify({ task, step, history: promptHistory, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }) }],
@@ -404,7 +464,7 @@ export function buildNvidiaTaskMessages({
   const capabilityContext = { task, history, observation };
   const ideEnabled = isIdeMcpEnabled();
   const ideDetails = shouldIncludeIdePromptDetails(capabilityContext);
-  const chromeEnabled = isChromeMcpEnabled();
+  const chromeEnabled = isChromeMcpAvailable();
   const chromeDetails = shouldIncludeChromePromptDetails(capabilityContext);
   const sanitizedConversation = sanitizeConversationHistory(conversationHistory);
   const conversationSummary = sanitizedConversation.length
@@ -415,7 +475,7 @@ export function buildNvidiaTaskMessages({
 
   const recentUrlsHint = buildRecentUrlsHint(history);
   const recentSearchesHint = buildRecentSearchesHint(history);
-  const promptHistory = compactAgentHistory(history);
+  const promptHistory = compactAgentHistory(history, undefined, undefined, task);
 
   if (toolMode === 'readonly') {
     return [
@@ -424,12 +484,14 @@ export function buildNvidiaTaskMessages({
         content: [
           '每个步骤必须且只能输出一个 JSON 对象。',
           '可用动作只有：fs list_dir/read_file/get_file_info/search_files；search web_search；vision image_analyze；codegraph codegraph_query；core finish。',
+          '可用动作示例（字段名和层级必须严格照此填写）：',
+          ...buildNvidiaActionExampleLines({ readonly: true }),
           ...buildReadonlyAgentRuleLines(systemPrompt || null),
         ].filter(Boolean).join(' '),
       },
       {
         role: 'user',
-        content: JSON.stringify({ task, step, history: compactAgentHistory(history, compact ? 2 : 6), observation }),
+        content: JSON.stringify({ task, step, history: compactAgentHistory(history, compact ? 2 : 6, undefined, task), observation }),
       },
     ];
   }
@@ -449,7 +511,7 @@ export function buildNvidiaTaskMessages({
       },
       {
         role: 'user',
-        content: JSON.stringify({ task, step, history: compactAgentHistory(history, 2, 1500), observation }),
+        content: JSON.stringify({ task, step, history: compactAgentHistory(history, 2, 1500, task), observation }),
       },
     ];
   }
@@ -460,15 +522,15 @@ export function buildNvidiaTaskMessages({
       content: [
         '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。',
         '你只能输出一个 JSON 对象，不要输出 Markdown，不要解释。',
-        '输出格式固定为 {"rationale":"简短理由","action":{...}}。示例：',
-        '{"rationale":"搜索天气","action":{"tool":"search","type":"web_search","query":"杭州今日天气"}}',
-        '{"rationale":"任务完成","action":{"type":"finish","answer":"最终结果"}}',
+        '输出格式固定为 {"rationale":"简短理由","action":{...}}。',
+        '可用动作示例（字段名、字段层级、tool 和 type 必须严格照此填写；每一步只输出其中一个 JSON 对象）：',
+        ...buildNvidiaActionExampleLines({ ideEnabled, chromeEnabled }),
         '可用动作签名（括号内为主要参数）：',
         'browser: navigate(url), click(elementId), type(elementId,text), wait(seconds), scroll(direction,amount), get_page_content(), http_fetch(url,extractLinks?), parallel_fetch(urls)',
         'fs: list_dir(path), get_file_info(path), read_file(path), write_file(path,content,append), search_files(query,path,include?)',
         'terminal: run_safe(command), run_confirmed(command), run_review(command)',
         'macos: activate_app(app), open_app(app), list_windows(), capture_screen(), type_text(text), press_key(key,modifiers), click_at(x,y)',
-        'search: web_search(query,maxResults?)；codegraph: codegraph_query(query)；vision: image_analyze(image,question)；spawn: spawn(tasks)',
+        'search: web_search(query,maxResults?)；codegraph: codegraph_query(query)；vision: image_analyze(image,question)；spawn: spawn(tasks:string[])。spawn 的 tasks 必须是 1-5 个自然语言子任务字符串，不是工具动作对象；示例：{"tool":"spawn","type":"spawn","tasks":["抓取页面 A 并提取关键数据","抓取页面 B 并核对来源"]}',
         ...(ideEnabled && ideDetails ? ['ide: ide_list_tools(refresh?), ide_call_tool(toolName,arguments)'] : []),
         ...(chromeEnabled && chromeDetails ? ['chrome: chrome_list_tools(refresh?), chrome_call_tool(toolName,arguments,refreshTools?)'] : []),
         'core: ask_user(question), notify_user(message,level), finish(answer)',

@@ -37,6 +37,7 @@ import {
 } from "./checkpoint.js";
 import { assessResultQuality } from "./result-quality.ts";
 import { configStore } from "./config-store.ts";
+import { compactToolResult } from './result-extraction.ts';
 import type {
   AgentAction,
   AgentStep,
@@ -69,7 +70,7 @@ export function isTaskEchoFinish(task: string, action: AgentAction | undefined) 
   return normalizedTask.length > 0 && normalizedTask === normalizedAnswer;
 }
 
-function compressHistory(history: AgentStep[], maxSteps?: number) {
+function compressHistory(history: AgentStep[], task: string, maxSteps?: number) {
   // 历史截断预算每次从运行时配置读取，前台改完无需重启即生效
   const { maxHistorySteps, maxResultChars: MAX_RESULT_CHARS, maxParallelResultChars: MAX_PARALLEL_RESULT_CHARS } = configStore.get();
   if (maxSteps == null) maxSteps = maxHistorySteps;
@@ -87,7 +88,7 @@ function compressHistory(history: AgentStep[], maxSteps?: number) {
     }
     const str = h.result == null ? '' : String(h.result);
     if (str.length <= limit) return h;
-    return { ...h, result: str.slice(0, limit) + '…[truncated]' };
+    return { ...h, result: compactToolResult({ result: str, action: h.action, task, limit }) };
   };
 
   if (history.length <= maxSteps) {
@@ -372,7 +373,7 @@ export async function runAgentRuntime({
         observation,
       });
 
-      const compactHistory = compressHistory(history);
+      const compactHistory = compressHistory(history, task);
 
       // ---- 决策前再次检查取消 ----
       if (cancelled()) {

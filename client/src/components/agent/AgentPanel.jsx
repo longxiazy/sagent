@@ -8,7 +8,8 @@ import { ModelPlanGroup } from './ModelPlanGroup.jsx';
 import { ElapsedTimer } from './ElapsedTimer.jsx';
 import { TraceItem } from './TraceItem.jsx';
 import { StepCard } from './StepCard.jsx';
-import { computeTraceMetrics, formatDurationMs, formatTokenCount } from './trace-metrics.js';
+import { computeTraceMetrics, formatDurationMs, formatTokenCount, traceModelIds } from './trace-metrics.js';
+import { getModelLabel } from './plan-stage.js';
 import { TraceDebugPanel } from './TraceDebugPanel.jsx';
 import { useIsMobile } from '../../hooks/useIsMobile.js';
 import { useT } from '../../i18n/I18nProvider.jsx';
@@ -49,6 +50,7 @@ function runKey(run, index = 0) {
 
 function shouldHideTimelineEvent(event) {
   if (event.type === 'session_checkpoint') return true;
+  if (event.type === 'browser_session' && !['recovering', 'degraded'].includes(event.status)) return true;
   return event.type === 'status' && (event.status === 'starting' || event.status === 'browser_ready');
 }
 
@@ -64,6 +66,7 @@ function AgentTraceTimeline({
   t,
   bottomRef = null,
   history = false,
+  selectedModelId = 'all',
 }) {
   const metrics = useMemo(() => computeTraceMetrics(trace), [trace]);
   const agentFinished = useMemo(
@@ -111,6 +114,7 @@ function AgentTraceTimeline({
                 events={eventsByStep.get(event.step) || []}
                 step={event.step}
                 models={event.models}
+                selectedModelId={selectedModelId}
                 modelList={modelList}
                 agentFinished={agentFinished}
                 cardsExpanded={cardsExpanded}
@@ -129,6 +133,8 @@ function AgentTraceTimeline({
         if (event.type === 'step') {
           // 单模型：observe/action/result 合并成一张 StepCard，只在 observe 处渲染一次
           if (singleModelSteps.has(event.step)) {
+            const startEvent = (eventsByStep.get(event.step) || []).find(e => e.type === 'model_plan' && e.stage === 'start');
+            if (selectedModelId !== 'all' && !startEvent?.models?.includes(selectedModelId)) return null;
             return event.stage === 'observe' ? (
               <StepCard
                 key={`step-card-${event.step ?? index}`}
@@ -160,6 +166,7 @@ function AgentTraceTimeline({
           <TraceItem
             key={`${event.type}-${event.step ?? index}-${event.stage ?? index}-${index}`}
             event={event}
+            selectedModelId={selectedModelId}
             modelList={modelList}
             onRollback={onRollback}
             rollbackLoading={rollbackLoading}
@@ -185,6 +192,7 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
   const [historyTraceLoading, setHistoryTraceLoading] = useState(null);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [recentRunExpanded, setRecentRunExpanded] = useState(true);
+  const [selectedModelId, setSelectedModelId] = useState('all');
 
   // onRollback 来自上层且每次 render 是新引用；用 ref 包出稳定回调，
   // 这样 memo 化的 TraceItem 不会因为回调引用变化而整片重渲。
@@ -196,6 +204,14 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
   // 以下派生值原先每次 render（含每秒计时 tick）都对整条 trace 做 some/reduce/find，
   // 现在统一 memo 化，只在 trace/running 变化时重算。
   const metrics = useMemo(() => computeTraceMetrics(trace), [trace]);
+  const browserHealth = useMemo(() => {
+    const events = trace.filter(event => event.type === 'browser_session' || (event.type === 'status' && event.status === 'browser_ready'));
+    const latest = events.at(-1);
+    if (!latest) return null;
+    const recoveries = events.filter(event => event.type === 'browser_session' && event.status === 'recovering').length;
+    return { ...latest, status: latest.status === 'browser_ready' ? 'ready' : latest.status, recoveries };
+  }, [trace]);
+  const modelIds = useMemo(() => traceModelIds(trace), [trace]);
   const hasModelCards = useMemo(
     () => trace.some(e => e.type === 'model_plan' && e.stage === 'start' && e.models?.length > 0),
     [trace],
@@ -230,7 +246,12 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
 
   useEffect(() => {
     setRecentRunExpanded(true);
+    setSelectedModelId('all');
   }, [currentRunId]);
+
+  useEffect(() => {
+    if (selectedModelId !== 'all' && !modelIds.includes(selectedModelId)) setSelectedModelId('all');
+  }, [modelIds, selectedModelId]);
 
   const toggleHistoryRun = useCallback(async (run, index) => {
     const key = runKey(run, index);
@@ -377,7 +398,30 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
             </LastRunFrame>
           )}
 
-          {trace.length > 0 && showCurrentTrace && <TraceDebugPanel metrics={metrics} t={t} />}
+          {trace.length > 0 && showCurrentTrace && modelIds.length > 1 && (
+            <div className="agent-model-filter" aria-label={t('agentPanel.modelFilter')}>
+              <span>{t('agentPanel.modelFilter')}</span>
+              <div className="agent-model-filter-chips">
+                <button className={selectedModelId === 'all' ? 'active' : ''} onClick={() => setSelectedModelId('all')}>{t('agentPanel.allModels')}</button>
+                {modelIds.map(modelId => (
+                  <button key={modelId} className={selectedModelId === modelId ? 'active' : ''} onClick={() => setSelectedModelId(modelId)}>{getModelLabel(modelId, modelList)}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {trace.length > 0 && showCurrentTrace && browserHealth && (
+            <div className={`agent-browser-health ${browserHealth.status}`}>
+              <span className="agent-browser-health-dot" />
+              <strong>{t('agentPanel.browserHealth')}</strong>
+              <span>{t(`agentPanel.browserStatus.${browserHealth.status}`)}</span>
+              {browserHealth.url && <span className="agent-browser-health-url" title={browserHealth.url}>{browserHealth.url}</span>}
+              {browserHealth.sessionId && <span>Session #{browserHealth.sessionId}</span>}
+              {browserHealth.recoveries > 0 && <span>{t('agentPanel.browserRecoveries', { n: browserHealth.recoveries })}</span>}
+            </div>
+          )}
+
+          {trace.length > 0 && showCurrentTrace && <TraceDebugPanel metrics={metrics} trace={trace} selectedModelId={selectedModelId} modelList={modelList} t={t} />}
 
           {trace.length === 0 && running ? (
             <div className="agent-skeleton">
@@ -403,6 +447,7 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
               openLightbox={setLightboxSrc}
               t={t}
               bottomRef={traceBottomRef}
+              selectedModelId={selectedModelId}
             />
           ) : null}
             </>

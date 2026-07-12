@@ -12,6 +12,8 @@ export interface TokenUsage {
   completion_tokens: number;
   output_tokens?: number;
   total_tokens?: number;
+  prompt_tokens_details?: JsonObject | null;
+  completion_tokens_details?: JsonObject | null;
 }
 
 export type CoreAction =

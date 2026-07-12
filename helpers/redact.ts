@@ -1,5 +1,12 @@
 const REDACTED = '[REDACTED]';
 const SENSITIVE_KEY = /(authorization|api[-_]?key|token|secret|password|passwd|cookie|private[-_]?key|client[-_]?secret)/i;
+// Token usage/count fields are observability metrics, not credentials. Keep this
+// allowlist narrow so access_token, refresh_token, bearer_token, etc. remain redacted.
+const TOKEN_METRIC_KEY = /^(?:prompt_tokens|completion_tokens|total_tokens|input_tokens|output_tokens|cached_tokens|reasoning_tokens|audio_tokens|accepted_prediction_tokens|rejected_prediction_tokens|prompt_tokens_details|completion_tokens_details|max_tokens|max_output_tokens|context_tokens|token_count|promptTokenCount|candidatesTokenCount|totalTokenCount|cachedContentTokenCount|maxOutputTokens|inputTokenLimit|outputTokenLimit)$/i;
+
+function shouldRedactKey(key: string) {
+  return SENSITIVE_KEY.test(key) && !TOKEN_METRIC_KEY.test(key);
+}
 
 function configuredSecrets(): string[] {
   return Object.entries(process.env)
@@ -35,7 +42,7 @@ export function redactSensitiveData<T>(value: T, seen = new WeakSet<object>()): 
 
   const output: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    output[key] = SENSITIVE_KEY.test(key) && item != null
+    output[key] = shouldRedactKey(key) && item != null
       ? REDACTED
       : redactSensitiveData(item, seen);
   }

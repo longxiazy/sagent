@@ -66,4 +66,35 @@ describe('trace store', () => {
     expect(events[0].message).toContain('[REDACTED]');
     expect(events[0].message).not.toContain('super-secret-value');
   });
+
+  it('persists token usage metrics without redacting them', async () => {
+    const runId = 'run_trace_tokens';
+    const store = createAgentRunStore();
+    const run = store.createRun({}, 1, runId);
+    const send = createBaseEventSender(runId, store, tmpDir);
+
+    send({
+      type: 'model_plan',
+      stage: 'success',
+      model: 'test/model',
+      step: 1,
+      usage: {
+        prompt_tokens: 120,
+        completion_tokens: 30,
+        total_tokens: 150,
+        prompt_tokens_details: { cached_tokens: 80 },
+      },
+    });
+    await run.persistence?.flush();
+
+    const [event] = await readTraceEvents(tmpDir, runId);
+    expect(event.usage).toEqual({
+      prompt_tokens: 120,
+      completion_tokens: 30,
+      total_tokens: 150,
+      prompt_tokens_details: { cached_tokens: 80 },
+    });
+    expect(event.input_tokens).toBe(120);
+    expect(event.output_tokens).toBe(30);
+  });
 });

@@ -16,16 +16,11 @@ function completion(content: unknown) {
 }
 
 describe('createJsonPlanner', () => {
-  it('retries once when a valid JSON action fails normalization', async () => {
-    const create = vi.fn()
-      .mockResolvedValueOnce(completion({
-        rationale: '查看文件大小',
-        action: { tool: 'fs', type: 'made_up_file_info', path: 'README.md' },
-      }))
-      .mockResolvedValueOnce(completion({
-        rationale: '改用可用动作',
-        action: { tool: 'fs', type: 'get_file_info', path: 'README.md' },
-      }));
+  it('fails immediately when a valid JSON action fails normalization', async () => {
+    const create = vi.fn().mockResolvedValue(completion({
+      rationale: '查看文件大小',
+      action: { tool: 'fs', type: 'made_up_file_info', path: 'README.md' },
+    }));
 
     const planner = createJsonPlanner({
       client: { chat: { completions: { create } } },
@@ -33,21 +28,34 @@ describe('createJsonPlanner', () => {
       normalizeDecision: normalizeDesktopAgentDecision,
     });
 
-    const result = await planner({
+    await expect(planner({
       model: 'deepseek-ai/deepseek-v4-flash',
       task: 'inspect file',
       step: 1,
       history: [],
       observation: {},
+    })).rejects.toThrow();
+
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails immediately when model output cannot be parsed', async () => {
+    const create = vi.fn().mockResolvedValue(completion('I will inspect the file first.'));
+    const planner = createJsonPlanner({
+      client: { chat: { completions: { create } } },
+      buildMessages: () => [{ role: 'user', content: 'inspect file' }],
+      normalizeDecision: normalizeDesktopAgentDecision,
     });
 
-    expect(create).toHaveBeenCalledTimes(2);
-    expect(result.action).toEqual({
-      tool: 'fs',
-      type: 'get_file_info',
-      path: 'README.md',
-    });
-    expect(create.mock.calls[1][0].messages.at(-1).content).toContain('不要编造工具/动作名');
+    await expect(planner({
+      model: 'deepseek-ai/deepseek-v4-flash',
+      task: 'inspect file',
+      step: 1,
+      history: [],
+      observation: {},
+    })).rejects.toThrow('模型动作解析失败');
+
+    expect(create).toHaveBeenCalledTimes(1);
   });
 
   it('retries without default chat_template_kwargs when the provider rejects them', async () => {

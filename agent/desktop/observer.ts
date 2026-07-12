@@ -2,15 +2,15 @@ import { captureBrowserObservation, summarizeBrowserObservation } from '../tools
 import { observeMacOSDesktop } from '../tools/macos/observe.ts';
 
 export async function observeDesktopAgent(state: {
-  observeDesktop: boolean;
-  runId: string;
-  browserSession: any;
+  observeDesktop?: boolean;
+  runId?: string;
+  browserSession?: any;
   projectRoot?: string | null;
   cancelSignal?: AbortSignal;
 }) {
   const [desktop, browserRaw] = await Promise.all([
     state.observeDesktop
-      ? observeMacOSDesktop({ runId: state.runId, signal: state.cancelSignal })
+      ? observeMacOSDesktop({ runId: state.runId || 'unknown', signal: state.cancelSignal })
       : Promise.resolve({ frontmostApp: '', frontmostWindowTitle: '', windows: [] }),
     state.browserSession
       ? captureBrowserObservation(state.browserSession.view)

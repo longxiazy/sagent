@@ -1,5 +1,5 @@
 import { getWebView } from './webview-session.ts';
-import { isChromeMcpEnabled } from '../chrome/mcp-client.ts';
+import { isChromeMcpAvailable } from '../chrome/mcp-client.ts';
 import { log } from '../../../helpers/logger.ts';
 
 const ACTION_SETTLE_MS = 600;
@@ -7,7 +7,7 @@ const NAV_RETRY_MS = 500;
 const NAV_MAX_RETRIES = 3;
 const FETCH_TIMEOUT_MS = 15000;
 const FETCH_TIMEOUT_RETRY_MS = 25000;
-const FETCH_RETRY_BACKOFF_MS = 800;
+const BROWSER_SESSION_INVALID_CODE = 'BROWSER_SESSION_INVALID';
 
 const SEARCH_ENGINE_HOSTS = [
   /(^|\.)baidu\.com$/i,
@@ -19,9 +19,15 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function isTimeoutError(err) {
-  const msg = (err?.message || String(err || '')).toLowerCase();
-  return /超时|timeout|timed out|etimedout/.test(msg);
+function isClosedViewError(err) {
+  return err?.code === BROWSER_SESSION_INVALID_CODE
+    || /view is closed|invalid state.*webview/i.test(String(err?.message || err || ''));
+}
+
+function invalidBrowserSessionError(message) {
+  const err: any = new Error(message);
+  err.code = BROWSER_SESSION_INVALID_CODE;
+  return err;
 }
 
 function stopView(view) {
@@ -31,12 +37,12 @@ function stopView(view) {
   } catch {}
 }
 
-function withTimeout(promise, ms, message, onTimeout = null) {
+function withTimeout(promise, ms, message, onTimeout = null, invalidateSession = false) {
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => {
       try { onTimeout?.(); } catch {}
-      reject(new Error(message));
+      reject(invalidateSession ? invalidBrowserSessionError(message) : new Error(message));
     }, ms);
   });
   return Promise.race([promise, timeout]).finally(() => {
@@ -79,24 +85,17 @@ function failedResult(result, error = result) {
   };
 }
 
-// 浏览器冷启动期的偶发超时往往一次重试就成功（trace 中 fabiaoqing 连续两次超时第三次成功）
-// 仅对超时错误重试 1 次，证书/DNS/HTTP 错误不重试
-async function navigateWithRetry(view, url, firstTimeoutMs, retryTimeoutMs, errMessage) {
-  try {
-    return await withTimeout(safeNavigate(view, url), firstTimeoutMs, errMessage, () => stopView(view));
-  } catch (err) {
-    if (!isTimeoutError(err)) throw err;
-    await delay(FETCH_RETRY_BACKOFF_MS);
-    try {
-      const result = await withTimeout(safeNavigate(view, url), retryTimeoutMs, errMessage, () => stopView(view));
-      return result;
-    } catch (err2) {
-      if (isTimeoutError(err2)) {
-        throw new Error(`${err2.message} (已自动重试 1 次)`);
-      }
-      throw err2;
-    }
-  }
+// 导航超时会让当前 Bun.WebView 进入不可信状态。关闭并上抛会话失效，
+// 由 browser-session-manager 创建新实例；禁止在同一个已关闭实例上重试。
+async function navigateWithRecoveryTimeout(view, url, firstTimeoutMs, retryTimeoutMs, errMessage, recoveryAttempt = 0) {
+  const timeoutMs = recoveryAttempt > 0 ? retryTimeoutMs : firstTimeoutMs;
+  return withTimeout(
+    safeNavigate(view, url),
+    timeoutMs,
+    `${errMessage}${recoveryAttempt > 0 ? '（恢复会话后仍超时）' : ''}`,
+    () => stopView(view),
+    true,
+  );
 }
 
 export async function safeNavigate(view, url) {
@@ -184,7 +183,7 @@ function checkUnavailablePage(title, body) {
 }
 
 function blockedHint() {
-  if (!isChromeMcpEnabled()) return '';
+  if (!isChromeMcpAvailable()) return '';
   return '\n\n⚠️ 页面可能被反爬拦截，建议改用 Chrome MCP 工具（chrome_call_tool → navigate_page / take_snapshot）操作真实 Chrome 浏览器访问。';
 }
 
@@ -231,7 +230,7 @@ function queryElementScript(selector, body) {
   })()`;
 }
 
-export async function executeBrowserAction(view, action, opts: { signal?: AbortSignal } = {}) {
+export async function executeBrowserAction(view, action, opts: { signal?: AbortSignal; recoveryAttempt?: number } = {}) {
   const activeView = view || getWebView();
   const signal = opts.signal;
   if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error('Agent 已取消');
@@ -243,9 +242,9 @@ export async function executeBrowserAction(view, action, opts: { signal?: AbortS
   };
   signal?.addEventListener('abort', onAbort, { once: true });
   try {
-    if (!signal) return await _executeBrowserAction(activeView, action);
+    if (!signal) return await _executeBrowserAction(activeView, action, opts);
     return await Promise.race([
-      _executeBrowserAction(activeView, action),
+      _executeBrowserAction(activeView, action, opts),
       abortPromise,
     ]);
   } catch (err) {
@@ -262,7 +261,7 @@ export async function executeBrowserAction(view, action, opts: { signal?: AbortS
   }
 }
 
-async function _executeBrowserAction(view, action) {
+async function _executeBrowserAction(view, action, opts: { recoveryAttempt?: number } = {}) {
   if (action.type === 'navigate') {
     // 内置浏览器不支持 file:// 协议，拦截并给出可操作建议
     if (/^(file:\/\/|https?:\/\/file)/.test(action.url || '')) {
@@ -273,7 +272,9 @@ async function _executeBrowserAction(view, action) {
       return failedResult(blockedSearchEngineResult(action.url), '已阻止访问搜索引擎搜索页');
     }
     try {
-      await withTimeout(safeNavigate(view, action.url), FETCH_TIMEOUT_MS, `导航超时: ${action.url}`, () => stopView(view));
+      const firstTimeout = action.timeoutMs || FETCH_TIMEOUT_MS;
+      const retryTimeout = action.timeoutMs ? Math.max(firstTimeout, Math.round(firstTimeout * 1.7)) : FETCH_TIMEOUT_RETRY_MS;
+      await navigateWithRecoveryTimeout(view, action.url, firstTimeout, retryTimeout, `导航超时: ${action.url}`, opts.recoveryAttempt);
       await delay(ACTION_SETTLE_MS);
       try {
         const { title, url, body } = await detectBlockedPage(view);
@@ -283,6 +284,7 @@ async function _executeBrowserAction(view, action) {
       } catch { /* ignore detection failure */ }
       return `已打开 ${action.url}`;
     } catch (err) {
+      if (isClosedViewError(err)) throw err;
       return failedResult(`无法打开 ${action.url}: ${err.message?.slice(0, 150) || '连接失败'}。请尝试其他网址或使用 fetch 工具。`, err.message || '连接失败');
     }
   }
@@ -381,9 +383,12 @@ async function _executeBrowserAction(view, action) {
       return failedResult(blockedSearchEngineResult(url), '已阻止访问搜索引擎搜索页');
     }
     try {
-      await navigateWithRetry(view, url, FETCH_TIMEOUT_MS, FETCH_TIMEOUT_RETRY_MS, `访问超时: ${url}`);
+      const firstTimeout = action.timeoutMs || FETCH_TIMEOUT_MS;
+      const retryTimeout = action.timeoutMs ? Math.max(firstTimeout, Math.round(firstTimeout * 1.7)) : FETCH_TIMEOUT_RETRY_MS;
+      await navigateWithRecoveryTimeout(view, url, firstTimeout, retryTimeout, `访问超时: ${url}`, opts.recoveryAttempt);
       await delay(1000);
     } catch (err) {
+      if (isClosedViewError(err)) throw err;
       const error = (err.message || '').slice(0, 120);
       return failedResult(`http_fetch ${url}: 浏览器访问失败 (${error})。`, error);
     }
@@ -418,7 +423,9 @@ async function _executeBrowserAction(view, action) {
         continue;
       }
       try {
-        await navigateWithRetry(view, url, FETCH_TIMEOUT_MS, FETCH_TIMEOUT_RETRY_MS, `访问超时: ${url}`);
+        const firstTimeout = action.timeoutMs || FETCH_TIMEOUT_MS;
+        const retryTimeout = action.timeoutMs ? Math.max(firstTimeout, Math.round(firstTimeout * 1.7)) : FETCH_TIMEOUT_RETRY_MS;
+        await navigateWithRecoveryTimeout(view, url, firstTimeout, retryTimeout, `访问超时: ${url}`, opts.recoveryAttempt);
         await delay(1000);
         const pageInfo = await detectBlockedPage(view);
         if (checkBlocked(pageInfo.title, pageInfo.url, pageInfo.body)) {
@@ -440,6 +447,7 @@ async function _executeBrowserAction(view, action) {
           failures += 1;
         }
       } catch (err) {
+        if (isClosedViewError(err)) throw err;
         results.push(`http_fetch ${url}: 失败 (${(err.message || '').slice(0, 100)})`);
         failures += 1;
       }

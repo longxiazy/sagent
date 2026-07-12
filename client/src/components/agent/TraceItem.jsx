@@ -7,7 +7,7 @@ import { TerminalProcess } from './TerminalProcess.jsx';
 // 单条 trace 渲染。从 AgentPanel 平移而来并用 memo 包裹：trace 是 append-only 的，
 // 旧 event 对象引用不变，新事件到达时已渲染过的 item 不会重跑（尤其是 action 里的
 // JSON.stringify）。回调(onRollback/openLightbox)与 t 在上层均已稳定化，memo 才有效。
-export const TraceItem = memo(function TraceItem({ event, modelList, onRollback, rollbackLoading, openLightbox, t }) {
+export const TraceItem = memo(function TraceItem({ event, selectedModelId = 'all', modelList, onRollback, rollbackLoading, openLightbox, t }) {
   const [jsonOpen, setJsonOpen] = useState(false);
   const toggleJson = e => { e?.stopPropagation?.(); setJsonOpen(v => !v); };
 
@@ -23,7 +23,7 @@ export const TraceItem = memo(function TraceItem({ event, modelList, onRollback,
             </span>
             <span className="consensus-action">{event.consensus?.actionKey}</span>
             <div className="consensus-votes">
-              {event.consensus?.allResults?.map(r => (
+              {event.consensus?.allResults?.filter(r => selectedModelId === 'all' || r.model === selectedModelId).map(r => (
                 <span key={r.model} className={`consensus-vote ${r.actionKey === event.consensus?.actionKey ? 'agree' : 'dissent'}`}>
                   {getModelLabel(r.model, modelList)}: {r.actionKey}
                 </span>
@@ -42,6 +42,16 @@ export const TraceItem = memo(function TraceItem({ event, modelList, onRollback,
           <span className="agent-trace-badge">{t('agentPanel.badgeStatus')}</span>
           <div className="agent-trace-content">
             <strong>{event.message}</strong>
+          </div>
+        </>
+      )}
+
+      {event.type === 'browser_session' && (
+        <>
+          <span className={`agent-trace-badge ${event.status === 'degraded' ? 'error' : 'approval'}`}>{t('agentPanel.browserBadge')}</span>
+          <div className="agent-trace-content">
+            <strong>{t(`agentPanel.browserStatus.${event.status}`)}</strong>
+            <p>{event.url || event.reason || ''}{event.sessionId ? ` · Session #${event.sessionId}` : ''}</p>
           </div>
         </>
       )}

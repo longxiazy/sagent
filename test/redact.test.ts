@@ -31,6 +31,38 @@ describe('sensitive data redaction', () => {
     expect(source.headers.authorization).toBe('Bearer secret');
   });
 
+  it('preserves token usage metrics while still redacting credential tokens', () => {
+    const source = {
+      usage: {
+        prompt_tokens: 120,
+        completion_tokens: 30,
+        total_tokens: 150,
+        prompt_tokens_details: { cached_tokens: 80, audio_tokens: 0 },
+      },
+      input_tokens: 120,
+      output_tokens: 30,
+      max_tokens: 4096,
+      access_token: 'access-secret',
+      refresh_token: 'refresh-secret',
+      bearerToken: 'bearer-secret',
+    };
+
+    expect(redactSensitiveData(source)).toEqual({
+      usage: {
+        prompt_tokens: 120,
+        completion_tokens: 30,
+        total_tokens: 150,
+        prompt_tokens_details: { cached_tokens: 80, audio_tokens: 0 },
+      },
+      input_tokens: 120,
+      output_tokens: 30,
+      max_tokens: 4096,
+      access_token: '[REDACTED]',
+      refresh_token: '[REDACTED]',
+      bearerToken: '[REDACTED]',
+    });
+  });
+
   it('redacts credentials from persisted LLM logs', async () => {
     logRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sagent-llm-redact-'));
     initLlmLogger(logRoot);

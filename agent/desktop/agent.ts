@@ -88,7 +88,11 @@ export function createDesktopAgentRunner({
   batchSize = 1,
 }: DesktopAgentRunnerConfig): DesktopAgentRunner {
   const domainRules = createDomainRules(checkpointDir);
-  const { ensureBrowserSession } = createSharedBrowserSessionManager();
+  const {
+    cleanupBrowserSession,
+    serializeBrowserOperation,
+    withBrowserSessionRecovery,
+  } = createSharedBrowserSessionManager();
 
   // Agent 行为参数每次 run 实时读取（前台改完无需重启即生效）；
   // 构造参数（maxSteps 等）保留为兜底，运行时优先用 configStore。
@@ -223,9 +227,14 @@ export function createDesktopAgentRunner({
         }
         return action.answer || '任务已完成';
       },
-      browser: async (state, action) => {
-        const session = await ensureBrowserSession(state, state.onEvent);
-        return executeBrowserAction(session.view, action, { signal: state.cancelSignal });
+      browser: async (state, action, context) => {
+        return withBrowserSessionRecovery(state, state.onEvent, (session, recoveryAttempt) => (
+          executeBrowserAction(session.view, action, { signal: state.cancelSignal, recoveryAttempt })
+        ), {
+          step: context?.step,
+          actionType: action.type,
+          url: 'url' in action ? action.url : ('urls' in action ? action.urls?.[0] : null),
+        });
       },
       fs: async (state, action) => executeFsAction(action, { cwd: state.projectRoot, dataDir: state.dataDir, signal: state.cancelSignal }),
       search: async (state, action) => executeSearchAction(action, { signal: state.cancelSignal }),
@@ -355,7 +364,7 @@ export function createDesktopAgentRunner({
         projectRoot,
         dataDir,
       }),
-      observe: observeDesktopAgent,
+      observe: state => serializeBrowserOperation(() => observeDesktopAgent(state)),
       decide: async ({ task: currentTask, step, history, observation }) =>
         plan({
           model,
@@ -379,9 +388,7 @@ export function createDesktopAgentRunner({
       },
       execute: async (state, action, context) => routeAction(state, action, context),
       cleanup: async state => {
-        if (state.browserSession?.view) {
-          await state.browserSession.view.navigate('about:blank').catch(() => {});
-        }
+        await cleanupBrowserSession(state);
       },
     });
   }

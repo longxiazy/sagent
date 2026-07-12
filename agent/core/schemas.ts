@@ -340,6 +340,13 @@ function normalizeChromeAction(type: string, action: JsonObject): AgentAction {
 
 function normalizeSpawnAction(type: string, action: JsonObject): AgentAction {
   if (type === 'spawn') {
+    if (!Array.isArray(action.tasks)) {
+      throw new Error('spawn.tasks 必须是包含 1-5 个自然语言任务的字符串数组，例如：["抓取页面 A 并提取关键数据", "抓取页面 B 并核对来源"]');
+    }
+    const invalidTask = action.tasks.find(t => t != null && typeof t !== 'string');
+    if (invalidTask !== undefined) {
+      throw new Error('spawn.tasks 的每个元素必须是自然语言字符串，不能是 {tool,type,...} 工具动作对象；请把动作改写为任务描述，例如："抓取页面 A 并提取关键数据"');
+    }
     const tasks = Array.isArray(action.tasks)
       ? action.tasks
           .map(t => (typeof t === 'string' ? t.trim() : ''))
@@ -347,7 +354,7 @@ function normalizeSpawnAction(type: string, action: JsonObject): AgentAction {
           .slice(0, 5)
       : [];
     if (tasks.length === 0) {
-      throw new Error('spawn 缺少有效的 tasks 数组');
+      throw new Error('spawn.tasks 至少需要一个非空任务字符串，例如：["搜索并总结相关官方资料"]');
     }
     return {
       tool: 'spawn',

@@ -51,6 +51,62 @@ function actionIsToolCall(action) {
   return !['finish', 'ask_user', 'notify_user'].includes(action.type);
 }
 
+export function traceModelIds(trace) {
+  const ids = [];
+  const seen = new Set();
+  const add = id => {
+    if (typeof id !== 'string' || !id || seen.has(id)) return;
+    seen.add(id);
+    ids.push(id);
+  };
+  for (const event of trace || []) {
+    event.models?.forEach(add);
+    add(event.model);
+    event.consensus?.allResults?.forEach(result => add(result.model));
+  }
+  return ids;
+}
+
+export function computeModelTraceMetrics(trace) {
+  const metrics = new Map(traceModelIds(trace).map(modelId => [modelId, {
+    modelId, llmCalls: 0, totalTokens: 0, wins: 0, failures: 0,
+    totalDurationMs: 0, avgDurationMs: 0, decisions: [],
+  }]));
+  const finalStages = new Set(['success', 'winner', 'failed', 'cancelled', 'rate_limited']);
+
+  for (const event of trace || []) {
+    if (event.type !== 'model_plan' || !event.model || !finalStages.has(event.stage)) continue;
+    const metric = metrics.get(event.model);
+    if (!metric) continue;
+    const durationMs = Number.isFinite(event.duration_ms) ? Math.max(0, event.duration_ms) : 0;
+    const tokens = eventTokens(event.usage);
+    metric.llmCalls += 1;
+    metric.totalTokens += tokens;
+    metric.totalDurationMs += durationMs;
+    if (event.stage === 'failed' || event.stage === 'rate_limited') metric.failures += 1;
+    metric.decisions.push({
+      step: event.step,
+      actionKey: event.action?.type || event.action?.tool || '--',
+      tokens,
+      durationMs,
+      stage: event.stage,
+      winner: event.stage === 'winner',
+    });
+  }
+
+  for (const event of trace || []) {
+    if (event.type !== 'model_plan' || event.stage !== 'consensus' || !event.model) continue;
+    const metric = metrics.get(event.model);
+    if (metric) metric.wins += 1;
+  }
+  for (const metric of metrics.values()) {
+    const legacyWins = metric.decisions.filter(decision => decision.winner).length;
+    metric.wins = Math.max(metric.wins, legacyWins);
+    metric.avgDurationMs = metric.llmCalls > 0 ? Math.round(metric.totalDurationMs / metric.llmCalls) : 0;
+  }
+  return [...metrics.values()];
+}
+
 export function computeTraceMetrics(trace) {
   let lastStep = 0;
   let doneStepCount = null;

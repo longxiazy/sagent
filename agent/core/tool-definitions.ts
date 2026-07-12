@@ -8,7 +8,7 @@
  */
 
 import { isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
-import { isChromeMcpEnabled } from '../tools/chrome/mcp-client.ts';
+import { isChromeMcpAvailable } from '../tools/chrome/mcp-client.ts';
 
 const READONLY_TOOL_NAMES = new Set([
   'list_dir',
@@ -343,14 +343,14 @@ export function createModelTools({
     },
     {
       name: 'spawn',
-      description: '并行分发多个独立子任务给子 Agent 执行。适合同时分析多个文件、爬取多个页面、批量处理等独立任务。最多支持 5 个并行子任务，每个子任务返回独立结果后聚合。',
+      description: '并行分发多个独立的自然语言任务给只读子 Agent 执行。tasks 必须是字符串数组，不能填写 browser/http_fetch 等工具动作对象。适合同时分析多个文件、调研多个页面或批量处理独立任务，最多 5 个。',
       input_schema: {
         type: 'object',
         properties: {
           tasks: {
             type: 'array',
             items: { type: 'string' },
-            description: '子任务列表，每个元素是一个独立的任务描述（简体中文）',
+            description: '1-5 个自然语言子任务字符串，例如：["抓取页面 A 并提取关键数据", "抓取页面 B 并核对来源"]。元素不能是 {tool,type,...} 动作对象。',
             minItems: 1,
             maxItems: 5,
           },
@@ -403,7 +403,7 @@ export function createModelTools({
     );
   }
 
-  if (includeChromeMcp && isChromeMcpEnabled()) {
+  if (includeChromeMcp && isChromeMcpAvailable()) {
     tools.splice(tools.length - 1, 0,
       {
         name: 'chrome_list_tools',
