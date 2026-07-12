@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildGeminiTaskMessages, buildNvidiaTaskMessages, compactAgentHistory } from '../agent/core/prompts.ts';
+import {
+  buildGeminiAgentPromptPayload,
+  buildGeminiTaskMessages,
+  buildNvidiaTaskMessages,
+  compactAgentHistory,
+  selectGeminiToolNames,
+} from '../agent/core/prompts.ts';
 import { estimatePayloadTokens } from '../agent/core/context-estimate.ts';
 
 describe('agent prompts', () => {
@@ -96,6 +102,155 @@ describe('agent prompts', () => {
 
     expect(messages[0].content).toContain('Chrome DevTools 工具可用于');
     expect(messages[0].content).not.toContain('Chrome MCP 已启用但默认不展开');
+  });
+
+  it('omits inactive Chrome and IDE capabilities from Gemini prompts and tools', () => {
+    vi.stubEnv('CHROME_MCP_ENABLED', 'true');
+    vi.stubEnv('IDE_MCP_ENABLED', 'true');
+    const payload = buildGeminiAgentPromptPayload({
+      task: '杭州今天天气怎么样？',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+    const toolNames = payload.tools[0].functionDeclarations.map(tool => tool.name);
+
+    expect(payload.systemInstruction).not.toContain('Chrome MCP');
+    expect(payload.systemInstruction).not.toContain('IDE MCP');
+    expect(toolNames).not.toContain('chrome_list_tools');
+    expect(toolNames).not.toContain('chrome_call_tool');
+    expect(toolNames).not.toContain('ide_list_tools');
+    expect(toolNames).not.toContain('ide_call_tool');
+  });
+
+  it('loads Gemini Chrome and IDE capabilities when the task requires them', () => {
+    vi.stubEnv('CHROME_MCP_ENABLED', 'true');
+    vi.stubEnv('IDE_MCP_ENABLED', 'true');
+    const payload = buildGeminiAgentPromptPayload({
+      task: '用 Chrome DevTools 和 IntelliJ 检查页面及代码问题',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+    const toolNames = payload.tools[0].functionDeclarations.map(tool => tool.name);
+
+    expect(payload.systemInstruction).toContain('Chrome DevTools 工具可用于');
+    expect(payload.systemInstruction).toContain('当 IDE MCP 已启用时');
+    expect(toolNames).toContain('chrome_list_tools');
+    expect(toolNames).toContain('chrome_call_tool');
+    expect(toolNames).toContain('ide_list_tools');
+    expect(toolNames).toContain('ide_call_tool');
+  });
+
+  it('keeps shared Gemini and NVIDIA agent rules semantically identical', () => {
+    const context = {
+      task: '读取官网并总结内容',
+      systemPrompt: '[Agent 记忆]\n偏好：简洁回答',
+      step: 2,
+      history: [{
+        step: 1,
+        action: { tool: 'browser', type: 'navigate', url: 'https://example.com' },
+        result: '页面内容',
+      }],
+      observation: { browser: { text: 'Example page' } },
+      conversationHistory: [
+        { role: 'user', content: '先打开官网' },
+        { role: 'assistant', content: '好的' },
+      ],
+    };
+    const gemini = buildGeminiAgentPromptPayload(context);
+    const nvidia = buildNvidiaTaskMessages(context);
+    const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
+    const ruleSection = (value: string) => normalize(value.split('规则：')[1].split('附加约束：')[0]);
+
+    expect(ruleSection(gemini.systemInstruction)).toBe(ruleSection(nvidia[0].content));
+    expect(JSON.parse(gemini.contents.at(-1)!.parts[0].text)).toEqual(JSON.parse(nvidia[1].content));
+    expect(gemini.contents[0].parts[0].text).toBe('先打开官网');
+    expect(nvidia[0].content).toContain('用户: 先打开官网');
+    expect(gemini.systemInstruction).toContain('[Agent 记忆]');
+    expect(nvidia[0].content).toContain('[Agent 记忆]');
+  });
+
+  it('exposes the same browser wait and page-content capabilities to both providers', () => {
+    const gemini = buildGeminiAgentPromptPayload({
+      task: '检查当前网页',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+    const geminiToolNames = gemini.tools[0].functionDeclarations.map(tool => tool.name);
+    const nvidia = buildNvidiaTaskMessages({
+      task: '检查当前网页',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+
+    expect(geminiToolNames).toContain('wait');
+    expect(geminiToolNames).toContain('get_page_content');
+    expect(nvidia[0].content).toContain('wait(seconds)');
+    expect(nvidia[0].content).toContain('get_page_content()');
+  });
+
+  it('selects Gemini base tool schemas dynamically by task', () => {
+    const chatTools = selectGeminiToolNames({ task: '你好，介绍一下你自己' });
+    const webTools = selectGeminiToolNames({ task: '查询今天苏州天气' });
+    const codeTools = selectGeminiToolNames({ task: '检查项目代码并运行测试' });
+    const imageTools = selectGeminiToolNames({ task: '分析这张图片\n[附件]\n- 图片: /tmp/example.png' });
+    const desktopTools = selectGeminiToolNames({ task: '打开 macOS 应用并查看窗口' });
+    const gitTools = selectGeminiToolNames({ task: '拉取最新' });
+
+    expect([...chatTools].sort()).toEqual(['ask_user', 'finish', 'notify_user']);
+    expect(webTools.has('web_search')).toBe(true);
+    expect(webTools.has('navigate')).toBe(true);
+    expect(webTools.has('read_file')).toBe(false);
+    expect(codeTools.has('read_file')).toBe(true);
+    expect(codeTools.has('codegraph_query')).toBe(true);
+    expect(codeTools.has('run_safe')).toBe(true);
+    expect(codeTools.has('web_search')).toBe(false);
+    expect(imageTools.has('image_analyze')).toBe(true);
+    expect(imageTools.has('run_safe')).toBe(false);
+    expect(desktopTools.has('open_app')).toBe(true);
+    expect(desktopTools.has('image_analyze')).toBe(true);
+    expect(gitTools.has('run_safe')).toBe(true);
+    expect(gitTools.has('read_file')).toBe(false);
+    expect(gitTools.has('web_search')).toBe(false);
+  });
+
+  it('keeps Gemini tool groups loaded after they appear in execution history', () => {
+    const selected = selectGeminiToolNames({
+      task: '继续',
+      history: [
+        { action: { tool: 'browser', type: 'navigate' } },
+        { action: { tool: 'fs', type: 'read_file' } },
+      ],
+    });
+
+    expect(selected.has('navigate')).toBe(true);
+    expect(selected.has('web_search')).toBe(true);
+    expect(selected.has('read_file')).toBe(true);
+    expect(selected.has('codegraph_query')).toBe(true);
+  });
+
+  it('keeps the complete readonly Gemini tool set for delegated analysis', () => {
+    const payload = buildGeminiAgentPromptPayload({
+      task: '分析这个问题',
+      step: 1,
+      history: [],
+      observation: {},
+    }, 'readonly');
+    const names = payload.tools[0].functionDeclarations.map(tool => tool.name);
+
+    expect(names).toEqual(expect.arrayContaining([
+      'list_dir',
+      'read_file',
+      'get_file_info',
+      'search_files',
+      'web_search',
+      'image_analyze',
+      'codegraph_query',
+      'finish',
+    ]));
   });
 
   it('bounds prompt history count and individual result size', () => {

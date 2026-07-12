@@ -10,10 +10,8 @@
 
 import { GoogleGenAI } from '@google/genai';
 import {
-  buildDesktopAgentSystemPrompt,
-  buildGeminiTaskMessages,
+  buildGeminiAgentPromptPayload,
 } from '../prompts.ts';
-import { createModelTools, toolToGeminiTool } from '../tool-definitions.ts';
 import { normalizeDesktopAgentDecision } from '../schemas.ts';
 import { isChatCapableModel } from '../ai-client.ts';
 import { resolveAgentMaxTokens } from '../planner.ts';
@@ -22,6 +20,7 @@ import { initSse, writeSse, writeSseDone } from '../../../helpers/streaming.ts';
 import { retryAsync } from '../../../helpers/retry.ts';
 import { buildSummaryPrompt } from './summary-prompt.ts';
 import { extractModelMetadata } from './model-metadata.ts';
+import { getGeminiCatalogModelMetadata } from './gemini-catalog.ts';
 import { configStore } from '../config-store.ts';
 import type {
   LLMProvider,
@@ -114,9 +113,11 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
         if (!supportsGenerate) continue;
         if (!isChatCapableModel(id)) continue;
         if (/imagen|veo|embedding|aqa|tts|-image|image-|gemma-(?:2|3n)/i.test(id)) continue;
+        const catalogMetadata = getGeminiCatalogModelMetadata(id);
         models.push({
+          ...catalogMetadata,
           id,
-          label: (m as any).displayName || id,
+          label: catalogMetadata.label || (m as any).displayName || id,
           provider: 'gemini',
           ...extractModelMetadata(m),
         });
@@ -126,10 +127,12 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
 
     async agentPlan(opts: AgentPlanOpts): Promise<AgentPlanResult> {
       const { model, signal, systemPrompt, modelConfig, toolMode = 'full' } = opts;
-      const system = buildDesktopAgentSystemPrompt(systemPrompt, toolMode as 'full' | 'readonly', opts as any);
-      const { contents } = buildGeminiTaskMessages(opts as any);
-      const tools = [{ functionDeclarations: createModelTools({ mode: toolMode as 'full' | 'readonly' }).map(toolToGeminiTool) }];
-      const toolConfig = { functionCallingConfig: { mode: 'ANY' } };
+      const {
+        systemInstruction: system,
+        contents,
+        tools,
+        toolConfig,
+      } = buildGeminiAgentPromptPayload(opts, toolMode as 'full' | 'readonly');
       const maxOutputTokens = resolveAgentMaxTokens({
         model,
         modelConfig,
@@ -146,7 +149,11 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
       };
       if (signal) config.abortSignal = signal;
 
-      logLlmRequest(model, contents);
+      logLlmRequest(model, [
+        { role: 'system', content: system },
+        ...contents.map((message: any) => ({ role: message.role, content: message.parts })),
+        { role: 'tools', content: tools },
+      ]);
       const response = await retryAsync(() => client.models.generateContent({ model, contents, config } as any), undefined, undefined, { retryRateLimit: false });
       const usage = buildGeminiUsage((response as any).usageMetadata);
       logLlmResponse(model, { usage: { input_tokens: usage?.prompt_tokens, output_tokens: usage?.completion_tokens }, choices: [{ message: response }] });

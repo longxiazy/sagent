@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { useT } from '../i18n/I18nProvider.jsx';
+import { DialogShell } from './dialogs/DialogShell.jsx';
 
 export function ContextMeter({ estimate }) {
   const t = useT();
+  const [promptOpen, setPromptOpen] = useState(false);
   if (!estimate) return null;
 
   const percent = Math.max(0, Math.min(100, estimate.percent || 0));
@@ -23,16 +26,35 @@ export function ContextMeter({ estimate }) {
         <span className="context-meter-value">{estimate.usedLabel}</span>
       </div>
       {promptPreview?.text && (
-        <details className="context-prompt-details">
-          <summary className="context-prompt-summary" title={t('context.promptTitle')}>
+        <>
+          <button
+            type="button"
+            className="context-prompt-trigger"
+            title={t('context.promptTitle')}
+            onClick={() => setPromptOpen(true)}
+          >
             <span>{t('context.promptToggle')}</span>
             <span title={promptPreview.modelId || ''}>{t('context.promptMeta', {
               model: promptPreview.modelId || '-',
               used: estimate.usedLabel || promptPreview.usedTokens || '-',
             })}</span>
-          </summary>
-          <pre className="context-prompt-text">{promptText}</pre>
-        </details>
+          </button>
+          {promptOpen && (
+            <DialogShell
+              title={t('context.promptTitle')}
+              subtitle={t('context.promptMeta', {
+                model: promptPreview.modelId || '-',
+                used: estimate.usedLabel || promptPreview.usedTokens || '-',
+              })}
+              onClose={() => setPromptOpen(false)}
+              dialogClassName="settings-dialog"
+            >
+              <div className="prompt-preview-content">
+                <pre className="prompt-preview-text">{promptText}</pre>
+              </div>
+            </DialogShell>
+          )}
+        </>
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { extractModelMetadata } from '../agent/core/providers/model-metadata.ts';
 import { getNvidiaCatalogModelMetadata, hasNvidiaCatalogModel } from '../agent/core/providers/nvidia-catalog.ts';
+import { getGeminiCatalogModelMetadata } from '../agent/core/providers/gemini-catalog.ts';
 import { createGeminiProvider } from '../agent/core/providers/gemini.ts';
 import { createOpenAICompatProvider } from '../agent/core/providers/openai-compat.ts';
 
@@ -80,6 +81,16 @@ describe('model metadata', () => {
       supportedMessageRoles: ['user', 'assistant'],
     });
     expect(getNvidiaCatalogModelMetadata('deepseek-ai/deepseek-v4-pro')).not.toHaveProperty('supportedMessageRoles');
+  });
+
+  it('loads Gemini free-tier and Agent compatibility overrides', () => {
+    expect(getGeminiCatalogModelMetadata('gemini-3.1-pro-preview')).toMatchObject({
+      agentCompatible: false,
+    });
+    expect(getGeminiCatalogModelMetadata('GEMINI-3-PRO-PREVIEW')).toMatchObject({
+      agentCompatible: false,
+    });
+    expect(getGeminiCatalogModelMetadata('gemini-2.5-flash')).toEqual({});
   });
 
   it('only exposes official NVIDIA API models still present in the public catalog', async () => {
@@ -162,5 +173,23 @@ describe('model metadata', () => {
       maxOutputTokens: 65_536,
       supportedGenerationMethods: ['generateContent', 'countTokens'],
     }]);
+  });
+
+  it('enriches Gemini model listings from local overrides', async () => {
+    const provider = createGeminiProvider({
+      models: {
+        list: vi.fn().mockResolvedValue(asyncItems([{
+          name: 'models/gemini-3.1-pro-preview',
+          displayName: 'Gemini 3.1 Pro Preview',
+          supportedGenerationMethods: ['generateContent'],
+        }])),
+      },
+    } as any);
+
+    await expect(provider.listModels()).resolves.toEqual([expect.objectContaining({
+      id: 'gemini-3.1-pro-preview',
+      provider: 'gemini',
+      agentCompatible: false,
+    })]);
   });
 });

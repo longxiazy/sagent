@@ -1,19 +1,89 @@
 import { buildIdePromptLines, isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
 import { buildChromePromptLines, isChromeMcpEnabled } from '../tools/chrome/mcp-client.ts';
 import { configStore } from './config-store.ts';
+import { createModelTools, toolToGeminiTool } from './tool-definitions.ts';
 
 type PromptCapabilityContext = {
   task?: string;
   history?: any[];
   observation?: any;
+  conversationHistory?: Array<{ role?: string; content?: string }>;
+  includeInactiveCapabilityHints?: boolean;
 };
 
 const CHROME_TASK_RE = /\bchrome\b|devtools|开发者工具|真实浏览器|网络面板|performance|lighthouse|控制台|console/i;
 const IDE_TASK_RE = /\bide\b|jetbrains|intellij|webstorm|pycharm|goland|运行配置|重命名重构|代码检查/i;
 const BROWSER_BLOCK_RE = /captcha|cloudflare|403|forbidden|人机验证|反爬|访问受限|被拦截|blocked/i;
+const WEB_TASK_RE = /https?:\/\/|\bwww\.|\bweb\b|browser|website|search|news|weather|price|flight|hotel|online|网页|浏览器|网站|上网|搜索|查询|新闻|天气|实时|价格|机票|航班|酒店|电商|官网/i;
+const FILE_TASK_RE = /\b(project|repo|repository|code|source|file|folder|directory|path|config|dependency|readme)\b|项目|仓库|代码|源码|文件|文件夹|目录|路径|配置|依赖|模块|读取|写入|修改|编辑|创建|删除|重命名|查找|修复/i;
+const TERMINAL_TASK_RE = /\b(shell|terminal|command|npm|pnpm|yarn|bun|git|curl|build|test|lint|install|process|server|log|pull|push|commit|merge|branch|checkout|deploy)\b|命令|终端|运行|执行|构建|测试|安装|启动|停止|服务|进程|日志|拉取|提交|推送|合并|分支|部署/i;
+const MACOS_TASK_RE = /\b(mac(?:os)?|desktop|window|screen|keyboard|mouse|finder)\b|\b(?:open|launch|activate)\s+(?:the\s+)?app\b|桌面|窗口|屏幕|应用|软件|键盘|鼠标|点击坐标|按键|截屏|截个图/i;
+const VISION_TASK_RE = /\[附件\]|\.(?:png|jpe?g|gif|webp|bmp|heic)(?:\b|\?)|\b(image|photo|picture|screenshot|ocr|vision)\b|图片|图像|照片|截图|识图|看图|图里|图中/i;
+const SPAWN_TASK_RE = /\b(batch|parallel|multiple|each|compare)\b|批量|并行|同时|分别|多个|多份|每个|逐个|对比|比较/i;
+
+const CORE_TOOL_NAMES = ['ask_user', 'notify_user', 'finish'];
+const WEB_TOOL_NAMES = ['navigate', 'click', 'type', 'wait', 'scroll', 'get_page_content', 'http_fetch', 'parallel_fetch', 'web_search'];
+const FILE_TOOL_NAMES = ['list_dir', 'read_file', 'get_file_info', 'write_file', 'search_files', 'codegraph_query'];
+const TERMINAL_TOOL_NAMES = ['run_safe', 'run_confirmed', 'run_review'];
+const MACOS_TOOL_NAMES = ['open_app', 'activate_app', 'list_windows', 'capture_screen', 'type_text', 'press_key', 'click_at'];
+const VISION_TOOL_NAMES = ['image_analyze'];
+const SPAWN_TOOL_NAMES = ['spawn'];
+const IDE_TOOL_NAMES = ['ide_list_tools', 'ide_call_tool'];
+const CHROME_TOOL_NAMES = ['chrome_list_tools', 'chrome_call_tool'];
 
 function historyUsesTool(history: any[] | undefined, tool: string) {
   return Array.isArray(history) && history.some(entry => entry?.action?.tool === tool);
+}
+
+function capabilityText(context: PromptCapabilityContext) {
+  const conversation = Array.isArray(context.conversationHistory)
+    ? context.conversationHistory.slice(-8).map(message => message?.content || '').join('\n')
+    : '';
+  return `${context.task || ''}\n${conversation}`;
+}
+
+function addToolGroup(target: Set<string>, names: string[]) {
+  for (const name of names) target.add(name);
+}
+
+export function selectGeminiToolNames(context: PromptCapabilityContext = {}) {
+  const selected = new Set(CORE_TOOL_NAMES);
+  const text = capabilityText(context);
+  const history = Array.isArray(context.history) ? context.history : [];
+  const usedTools = new Set(history.map(entry => entry?.action?.tool).filter(Boolean));
+  const browserObserved = Boolean(
+    context.observation?.browser
+    || context.observation?.url
+    || context.observation?.elements?.length
+  );
+
+  const needsChrome = shouldIncludeChromePromptDetails(context);
+  const needsIde = shouldIncludeIdePromptDetails(context);
+  const needsWeb = WEB_TASK_RE.test(text)
+    || browserObserved
+    || needsChrome
+    || usedTools.has('browser')
+    || usedTools.has('search')
+    || usedTools.has('chrome');
+  const needsFiles = FILE_TASK_RE.test(text)
+    || needsIde
+    || usedTools.has('fs')
+    || usedTools.has('codegraph')
+    || usedTools.has('ide');
+  const needsTerminal = TERMINAL_TASK_RE.test(text) || usedTools.has('terminal');
+  const needsMacos = MACOS_TASK_RE.test(text) || usedTools.has('macos');
+  const needsVision = VISION_TASK_RE.test(text) || needsMacos || usedTools.has('vision');
+  const needsSpawn = SPAWN_TASK_RE.test(text) || usedTools.has('spawn');
+
+  if (needsWeb) addToolGroup(selected, WEB_TOOL_NAMES);
+  if (needsFiles) addToolGroup(selected, FILE_TOOL_NAMES);
+  if (needsTerminal) addToolGroup(selected, TERMINAL_TOOL_NAMES);
+  if (needsMacos) addToolGroup(selected, MACOS_TOOL_NAMES);
+  if (needsVision) addToolGroup(selected, VISION_TOOL_NAMES);
+  if (needsSpawn) addToolGroup(selected, SPAWN_TOOL_NAMES);
+  if (needsIde) addToolGroup(selected, IDE_TOOL_NAMES);
+  if (needsChrome) addToolGroup(selected, CHROME_TOOL_NAMES);
+  return selected;
 }
 
 function historyShowsBrowserBlock(history: any[] | undefined) {
@@ -38,6 +108,7 @@ export function shouldIncludeIdePromptDetails({ task = '', history = [] }: Promp
 function chromePromptLines(context: PromptCapabilityContext) {
   if (!isChromeMcpEnabled()) return [];
   if (shouldIncludeChromePromptDetails(context)) return buildChromePromptLines();
+  if (context.includeInactiveCapabilityHints === false) return [];
   return [
     'Chrome MCP 已启用但默认不展开。仅当任务明确要求 Chrome/DevTools，或内置浏览器遭遇 CAPTCHA、403、Cloudflare 等拦截时，调用 {"tool":"chrome","type":"chrome_list_tools"} 按需获取工具。',
   ];
@@ -46,6 +117,7 @@ function chromePromptLines(context: PromptCapabilityContext) {
 function idePromptLines(context: PromptCapabilityContext) {
   if (!isIdeMcpEnabled()) return [];
   if (shouldIncludeIdePromptDetails(context)) return buildIdePromptLines();
+  if (context.includeInactiveCapabilityHints === false) return [];
   return [
     'IDE MCP 已启用但默认不展开。仅当任务明确需要 JetBrains/IDE 能力时，调用 {"tool":"ide","type":"ide_list_tools"} 按需获取工具。',
   ];
@@ -148,6 +220,47 @@ export function compactAgentHistory(history: any[], maxEntries?: number, maxResu
   });
 }
 
+function buildSharedAgentRuleLines(capabilityContext: PromptCapabilityContext = {}) {
+  const ideLines = idePromptLines(capabilityContext);
+  const chromeDetails = shouldIncludeChromePromptDetails(capabilityContext);
+  const chromeLines = chromePromptLines(capabilityContext);
+  return [
+    '规则：',
+    '1. 只有 observation.browser.elements 中存在的 elementId 才能用于 browser.click / browser.type。',
+    '2. 优先使用已知信息，不要重复无意义截图或重复读同一文件。任务一旦完成，必须立即调用 finish，绝不能重复执行已成功的动作。',
+    '2.1 识别任务中的并行机会：当需要处理多个独立对象（多个文件、多个 URL、多个关键词）时，优先考虑用 spawn 并行处理而非串行逐个处理。',
+    '2.2 若任务是常识问答、闲聊，或依据已有知识即可直接回答（无需读取文件/网页/桌面/终端），直接用 finish 返回答案，不要为了「显得在执行」而调用 list_dir、read_file 等探索性工具。',
+    '3. 文件写入、终端确认命令、桌面键鼠输入可能需要用户批准，被拒绝后请尝试替代方案。',
+    '4. cd/pushd/popd 等目录切换命令使用 run_review，会触发用户审批。',
+    '5. answer 用简体中文，简洁直接。',
+    '6. 需要全网搜索关键词时，优先使用 web_search（DuckDuckGo，返回标题/URL/摘要），再用 http_fetch 抓具体页面。禁止直接 navigate 到 Google/Bing/百度搜索结果页，这些页面容易触发反爬。',
+    '7. http_fetch 和 navigate 都通过浏览器执行，可以处理需要 JS 渲染的页面。',
+    '8. 需要同时获取多个页面时，使用 parallel_fetch 并发抓取（最多 5 个 URL）。',
+    '9. 需要用户输入或确认偏好时使用 ask_user，不要自行假设。',
+    '10. 执行中发现重要信息或潜在问题时使用 notify_user 主动告知用户。',
+    '10.1 任务或附件中出现图片（本地路径或 http(s) URL，常见于任务文本中的“[附件]”块或截图）时，必须用 image_analyze 把图片交给多模态模型分析，不要凭文件名猜测内容。image 传图片路径/URL，question 用简体中文写清要从图里得到什么。',
+    '10.2 简单识图任务（例如“这是什么图/图里是什么”）在一次 image_analyze 已得到可用描述后，应立即 finish。若无法确认具体来源、游戏、人物、地点或品牌，必须说明“无法仅凭图片确认”，并给出可见证据和低置信猜测；不要反复调用同一张图来放大猜测。',
+    '10.3 对同一张图片最多连续调用 2 次 image_analyze；第二次只用于明确不同的问题（如 OCR、局部细节、真假核验）。不要编造图片中没有的 UI、文字、按钮、角色名、怪物、道具或数值。',
+    '11. 当任务涉及多个独立的子目标时（如分析多个文件、查询多个信息源、批量处理），自动使用 spawn 工具并行分发给子 Agent 执行，显著提升效率。最多支持 5 个并行任务。',
+    '12. 涉及医保、社保、签证、贷款、股票、基金、汇率、法律、法规、政策、许可、合规等高风险或合规性信息时，必须优先从官方来源核验；如果未能核验，finish 答案必须明确说明“未能完成官方核验”，不要把记忆或常识包装成已确认结论。',
+    '13. finish 之前自检：当任务要求基于网页/官网内容作答，但浏览操作没有真正取得目标页面的实质内容（如反复超时、只到达主页、被反爬挡住），不要用模型常识包装成“已确认结论”。要么继续尝试（换路径、换工具、换源站），要么在 answer 里明确说明“未能从目标页面取得信息，以下来自常识仅供参考”。',
+    '14. 查询酒店/机票/电商等实时价格时，优先用 web_search 获取价格区间或聚合报价；这类价格依赖具体入住/出行日期、常需登录且受反爬限制，难以直接抓取。若拿不到确切数字，直接 finish 给出区间与查询入口，并如实说明“未取得实时精确价”，不要在单个站点反复操作空转。',
+    '15. 浏览器/Chrome 操作要及时止损：对同一目标连续约 5 步仍未取得实质数据时，停止更换手段反复尝试，直接 finish 汇总已知信息并说明未能取得的部分。',
+    ...(chromeDetails ? ['16. 当内置浏览器被反爬拦截时，改用 Chrome MCP 操作真实浏览器访问同一页面。'] : []),
+    ...ideLines,
+    ...chromeLines,
+  ];
+}
+
+function buildReadonlyAgentRuleLines(systemPrompt: string | null) {
+  return [
+    '你是只读子 Agent，只负责分析并返回结果。',
+    '禁止写文件、运行终端、操作浏览器/Chrome/IDE/macOS、询问或通知用户、继续 spawn。',
+    '路径必须使用项目内相对路径。完成后立即调用 finish 返回简洁结果。',
+    systemPrompt ? `附加约束：${systemPrompt}` : '',
+  ].filter(Boolean);
+}
+
 export function buildDesktopAgentSystemPrompt(
   systemPrompt: string | null,
   toolMode: 'full' | 'readonly' = 'full',
@@ -155,40 +268,14 @@ export function buildDesktopAgentSystemPrompt(
 ) {
   if (toolMode === 'readonly') {
     return [
-      '你是只读子 Agent，只负责分析并返回结果。',
-      '只能使用当前提供的只读工具；禁止写文件、运行终端、操作浏览器/Chrome/IDE/macOS、询问或通知用户、继续 spawn。',
-      '路径必须使用项目内相对路径。完成后立即调用 finish 返回简洁结果。',
-      systemPrompt ? `附加约束：${systemPrompt}` : '',
+      '只能使用当前提供的只读工具。',
+      ...buildReadonlyAgentRuleLines(systemPrompt),
     ].filter(Boolean).join('\n');
   }
-  const ideLines = idePromptLines(capabilityContext);
-  const chromeDetails = shouldIncludeChromePromptDetails(capabilityContext);
-  const chromeLines = chromePromptLines(capabilityContext);
   return [
     '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。',
-    '通过工具调用完成任务，只能使用提供的工具，不要输出 JSON 以外的文本。',
-    '规则：',
-    '1. 只有 observation.browser.elements 中存在的 elementId 才能用于 click/type。',
-    '2. 优先使用已知信息，不要重复无意义截图或重复读同一文件。任务一旦完成，必须立即返回 {"action":{"tool":"core","type":"finish","answer":"结果"}}，绝不能重复执行已成功的动作。',
-    '2.1 识别任务中的并行机会：当需要处理多个独立对象（多个文件、多个 URL、多个关键词）时，优先考虑用 spawn 并行处理而非串行逐个处理。',
-    '2.2 若任务是常识问答、闲聊，或依据已有知识即可直接回答（无需读取文件/网页/桌面/终端），直接用 finish 返回答案，不要为了「显得在执行」而调用 list_dir、read_file 等探索性工具。',
-    '3. 文件写入、终端确认命令、桌面键鼠输入可能需要用户批准，被拒绝后请尝试替代方案。',
-    '4. cd/pushd/popd 等目录切换命令使用 run_review，需要用户审批。',
-    '5. answer 用简体中文，简洁直接。',
-    '6. 需要全网搜索关键词时，优先使用 web_search（DuckDuckGo，返回标题/URL/摘要），再用 http_fetch 抓具体页面。禁止直接 navigate 到 Google/Bing/百度搜索结果页，这些页面会触发反爬。',
-    '7. 需要用户输入或确认偏好时使用 ask_user，不要自行假设。',
-    '8. 执行中发现重要信息或潜在问题时使用 notify_user 主动告知用户。',
-    '8.1 任务或附件中出现图片（本地路径或 http(s) URL，常见于任务文本中的”[附件]”块或截图）时，必须用 image_analyze 工具把图片交给多模态模型分析，不要凭文件名猜测内容。',
-    '8.2 简单识图任务（例如“这是什么图/图里是什么”）在一次 image_analyze 已得到可用描述后，应立即 finish。若无法确认具体来源、游戏、人物、地点或品牌，必须说明“无法仅凭图片确认”，并给出可见证据和低置信猜测；不要反复调用同一张图来放大猜测。',
-    '8.3 对同一张图片最多连续调用 2 次 image_analyze；第二次只用于明确不同的问题（如 OCR、局部细节、真假核验）。不要编造图片中没有的 UI、文字、按钮、角色名、怪物、道具或数值。',
-    '9. 当任务涉及多个独立的子目标时（如分析多个文件、查询多个信息源、批量处理），自动使用 spawn 工具并行分发给子 Agent 执行，显著提升效率。最多支持 5 个并行任务。',
-    '10. 涉及医保、社保、签证、贷款、股票、基金、汇率、法律、法规、政策、许可、合规等高风险或合规性信息时，必须优先从官方来源核验；如果未能核验，finish 答案必须明确说明”未能完成官方核验”，不要把记忆或常识包装成已确认结论。',
-    '11. finish 之前自检：当任务要求基于网页/官网内容作答，但你的浏览操作（navigate/click/take_snapshot/http_fetch 等）没有真正取得目标页面的实质内容（如反复超时、只到达主页、被反爬挡住），不要用模型常识包装成”已确认结论”。要么继续尝试（换路径、换工具、换源站），要么在 answer 里明确说明”未能从目标页面取得信息，以下来自常识仅供参考”。',
-    '11.1 查询酒店/机票/电商等实时价格时，优先用 web_search 获取价格区间或聚合报价；这类价格依赖具体入住/出行日期、常需登录且受反爬限制，难以直接抓取。若拿不到确切数字，直接 finish 给出区间与查询入口、并如实说明「未取得实时精确价」，不要在单个站点反复 navigate/snapshot/click 空转。',
-    '11.2 浏览器/Chrome 操作要及时止损：对同一目标连续约 5 步（navigate/snapshot/click/evaluate 等）仍未取得实质数据时，停止更换手段反复尝试，直接 finish 汇总已知信息并说明未能取得的部分。',
-    ...(chromeDetails ? ['11. 当内置浏览器被反爬拦截时，改用 Chrome MCP 操作真实浏览器访问同一页面。'] : []),
-    ...ideLines,
-    ...chromeLines,
+    '每个步骤必须调用且只能调用一个当前提供的工具；任务完成时调用 finish。',
+    ...buildSharedAgentRuleLines(capabilityContext),
     systemPrompt ? `附加约束：${systemPrompt}` : '',
   ]
     .filter(Boolean)
@@ -226,6 +313,34 @@ export function buildGeminiTaskMessages({
   return { contents };
 }
 
+export function buildGeminiAgentPromptPayload(
+  context: any,
+  toolMode: 'full' | 'readonly' = 'full',
+) {
+  const capabilityContext = { ...context, includeInactiveCapabilityHints: false };
+  const systemInstruction = buildDesktopAgentSystemPrompt(
+    context.systemPrompt || '',
+    toolMode,
+    capabilityContext,
+  );
+  const { contents } = buildGeminiTaskMessages(context);
+  const includeToolNames = toolMode === 'readonly' ? undefined : selectGeminiToolNames(context);
+  const tools = [{
+    functionDeclarations: createModelTools({
+      mode: toolMode,
+      includeChromeMcp: shouldIncludeChromePromptDetails(context),
+      includeIdeMcp: shouldIncludeIdePromptDetails(context),
+      includeToolNames,
+    }).map(toolToGeminiTool),
+  }];
+  return {
+    systemInstruction,
+    contents,
+    tools,
+    toolConfig: { functionCallingConfig: { mode: 'ANY' } },
+  };
+}
+
 export function buildNvidiaTaskMessages({
   task,
   systemPrompt,
@@ -248,10 +363,8 @@ export function buildNvidiaTaskMessages({
   const capabilityContext = { task, history, observation };
   const ideEnabled = isIdeMcpEnabled();
   const ideDetails = shouldIncludeIdePromptDetails(capabilityContext);
-  const ideLines = idePromptLines(capabilityContext);
   const chromeEnabled = isChromeMcpEnabled();
   const chromeDetails = shouldIncludeChromePromptDetails(capabilityContext);
-  const chromeLines = chromePromptLines(capabilityContext);
   const conversationSummary = conversationHistory?.length
     ? '\n\n之前的对话（供参考）：\n' + conversationHistory
         .map(message => `${message.role === 'user' ? '用户' : '助手'}: ${message.content}`)
@@ -267,11 +380,9 @@ export function buildNvidiaTaskMessages({
       {
         role: 'system',
         content: [
-          '你是只读子 Agent，只能输出一个 JSON 对象。',
+          '每个步骤必须且只能输出一个 JSON 对象。',
           '可用动作只有：fs list_dir/read_file/get_file_info/search_files；search web_search；vision image_analyze；codegraph codegraph_query；core finish。',
-          '禁止写文件、运行终端、操作浏览器/Chrome/IDE/macOS、询问或通知用户、继续 spawn。',
-          '路径必须使用项目内相对路径。完成后立即 finish。',
-          systemPrompt ? `附加约束：${systemPrompt}` : '',
+          ...buildReadonlyAgentRuleLines(systemPrompt || null),
         ].filter(Boolean).join(' '),
       },
       {
@@ -311,7 +422,7 @@ export function buildNvidiaTaskMessages({
         '{"rationale":"搜索天气","action":{"tool":"search","type":"web_search","query":"杭州今日天气"}}',
         '{"rationale":"任务完成","action":{"type":"finish","answer":"最终结果"}}',
         '可用动作签名（括号内为主要参数）：',
-        'browser: navigate(url), click(elementId), type(elementId,text), scroll(direction,amount), get_page_content(), http_fetch(url,extractLinks?), parallel_fetch(urls)',
+        'browser: navigate(url), click(elementId), type(elementId,text), wait(seconds), scroll(direction,amount), get_page_content(), http_fetch(url,extractLinks?), parallel_fetch(urls)',
         'fs: list_dir(path), get_file_info(path), read_file(path), write_file(path,content,append), search_files(query,path,include?)',
         'terminal: run_safe(command), run_confirmed(command), run_review(command)',
         'macos: activate_app(app), open_app(app), list_windows(), capture_screen(), type_text(text), press_key(key,modifiers), click_at(x,y)',
@@ -320,29 +431,7 @@ export function buildNvidiaTaskMessages({
         ...(chromeEnabled && chromeDetails ? ['chrome: chrome_list_tools(refresh?), chrome_call_tool(toolName,arguments,refreshTools?)'] : []),
         'core: ask_user(question), notify_user(message,level), finish(answer)',
         '重要：每个步骤必须且只能输出一个 JSON 动作。如果你已经收集到足够信息并可以直接回答用户问题，请使用 finish 动作输出答案。绝对不要在 JSON 之外输出解释文字。',
-        '规则：',
-        '1. 只有 observation.browser.elements 中存在的 elementId 才能用于 browser.click / browser.type。',
-        '2. 优先使用已知信息，不要重复无意义截图或重复读同一文件。',
-        '2.1 识别任务中的并行机会：当需要处理多个独立对象（多个文件、多个 URL、多个关键词）时，优先考虑用 spawn 并行处理而非串行逐个处理。',
-        '2.2 若任务是常识问答、闲聊，或依据已有知识即可直接回答（无需读取文件/网页/桌面/终端），直接用 finish 返回答案，不要为了「显得在执行」而调用 list_dir、read_file 等探索性工具。',
-        '3. 文件写入、终端确认命令、桌面键鼠输入可能需要用户批准，被拒绝后请尝试替代方案。',
-        '4. cd/pushd/popd 等目录切换命令使用 run_review，会触发用户审批。',
-        '5. answer 用简体中文，简洁直接。',
-        '6. 需要全网搜索关键词时，优先使用 web_search（DuckDuckGo，返回标题/URL/摘要），再用 http_fetch 抓具体页面。禁止直接 navigate 到 Google/Bing/百度搜索结果页。',
-        '7. http_fetch 和 navigate 都通过浏览器执行，可以处理需要 JS 渲染的页面。',
-        '8. 需要同时获取多个页面时，使用 parallel_fetch 并发抓取（最多5个URL）。',
-        '9. 需要用户输入或确认偏好时使用 ask_user。',
-        '10. 发现重要信息或问题时使用 notify_user 主动告知用户。',
-        '10.1 任务或附件中出现图片（本地路径或 http(s) URL，常见于任务文本中的”[附件]”块或截图）时，必须用 image_analyze（tool=vision）把图片交给多模态模型分析，不要凭文件名猜测内容。image 传图片路径/URL，question 用简体中文写清要从图里得到什么。',
-        '10.2 简单识图任务（例如“这是什么图/图里是什么”）在一次 image_analyze 已得到可用描述后，应立即 finish。若无法确认具体来源、游戏、人物、地点或品牌，必须说明“无法仅凭图片确认”，并给出可见证据和低置信猜测；不要反复调用同一张图来放大猜测。',
-        '10.3 对同一张图片最多连续调用 2 次 image_analyze；第二次只用于明确不同的问题（如 OCR、局部细节、真假核验）。不要编造图片中没有的 UI、文字、按钮、角色名、怪物、道具或数值。',
-        '11. 当任务涉及多个独立的子目标时（如分析多个文件、查询多个信息源、批量处理），自动使用 spawn 工具并行分发给子 Agent 执行，显著提升效率。最多支持 5 个并行任务。',
-        '12. 涉及医保、社保、签证、贷款、股票、基金、汇率、法律、法规、政策、许可、合规等高风险或合规性信息时，必须优先从官方来源核验；如果未能核验，finish 答案必须明确说明”未能完成官方核验”，不要把记忆或常识包装成已确认结论。',
-        '13. 查询酒店/机票/电商等实时价格时，优先用 web_search 获取价格区间或聚合报价；这类价格依赖具体入住/出行日期、常需登录且受反爬限制，难以直接抓取。若拿不到确切数字，直接 finish 给出区间与查询入口、并如实说明「未取得实时精确价」，不要在单个站点反复 navigate/snapshot/click 空转。',
-        '14. 浏览器/Chrome 操作要及时止损：对同一目标连续约 5 步（navigate/snapshot/click/evaluate 等）仍未取得实质数据时，停止更换手段反复尝试，直接 finish 汇总已知信息并说明未能取得的部分。',
-        ...(chromeDetails ? ['15. 当内置浏览器被反爬拦截时，改用 Chrome MCP 操作真实浏览器。'] : []),
-        ...ideLines,
-        ...chromeLines,
+        ...buildSharedAgentRuleLines(capabilityContext),
         systemPrompt ? `附加约束：${systemPrompt}` : '',
         conversationSummary,
       ]
