@@ -4,6 +4,7 @@ import {
   buildGeminiTaskMessages,
   buildNvidiaTaskMessages,
   compactAgentHistory,
+  sanitizeConversationHistory,
   selectGeminiToolNames,
 } from '../agent/core/prompts.ts';
 import { estimatePayloadTokens } from '../agent/core/context-estimate.ts';
@@ -200,21 +201,78 @@ describe('agent prompts', () => {
     const desktopTools = selectGeminiToolNames({ task: '打开 macOS 应用并查看窗口' });
     const gitTools = selectGeminiToolNames({ task: '拉取最新' });
 
-    expect([...chatTools].sort()).toEqual(['ask_user', 'finish', 'notify_user']);
+    expect([...chatTools].sort()).toEqual(['ask_user', 'finish', 'notify_user', 'web_search']);
     expect(webTools.has('web_search')).toBe(true);
     expect(webTools.has('navigate')).toBe(true);
     expect(webTools.has('read_file')).toBe(false);
     expect(codeTools.has('read_file')).toBe(true);
     expect(codeTools.has('codegraph_query')).toBe(true);
     expect(codeTools.has('run_safe')).toBe(true);
-    expect(codeTools.has('web_search')).toBe(false);
+    expect(codeTools.has('web_search')).toBe(true);
+    expect(codeTools.has('navigate')).toBe(false);
     expect(imageTools.has('image_analyze')).toBe(true);
     expect(imageTools.has('run_safe')).toBe(false);
     expect(desktopTools.has('open_app')).toBe(true);
     expect(desktopTools.has('image_analyze')).toBe(true);
     expect(gitTools.has('run_safe')).toBe(true);
     expect(gitTools.has('read_file')).toBe(false);
-    expect(gitTools.has('web_search')).toBe(false);
+    expect(gitTools.has('web_search')).toBe(true);
+    expect(gitTools.has('navigate')).toBe(false);
+  });
+
+  it('keeps web_search as a lightweight fallback for uncategorized current-information questions', () => {
+    const tools = selectGeminiToolNames({ task: 'kimi为什么从英伟达模型nim里拿掉了' });
+
+    expect(tools.has('web_search')).toBe(true);
+    expect(tools.has('navigate')).toBe(false);
+    expect(tools.has('finish')).toBe(true);
+  });
+
+  it('removes corrupted assistant echoes and their dangling user turns from conversation history', () => {
+    const sanitized = sanitizeConversationHistory([
+      { role: 'user', content: 'kimi为什么从英伟达模型nim里拿掉了' },
+      { role: 'assistant', content: 'kimi为什么从英伟达模型nim里拿掉了' },
+      { role: 'assistant', content: 'kimi为什么从英伟达模型nim里拿掉了' },
+      { role: 'user', content: '保留这个有效问题' },
+      { role: 'assistant', content: '这是有效回答' },
+    ]);
+
+    expect(sanitized).toEqual([
+      { role: 'user', content: '保留这个有效问题' },
+      { role: 'assistant', content: '这是有效回答' },
+    ]);
+  });
+
+  it('keeps a new Gemini task isolated from corrupted previous turns', () => {
+    const payload = buildGeminiAgentPromptPayload({
+      task: '今天天气怎么样',
+      step: 1,
+      history: [],
+      observation: {},
+      conversationHistory: [
+        { role: 'user', content: 'kimi为什么从英伟达模型nim里拿掉了' },
+        { role: 'assistant', content: 'kimi为什么从英伟达模型nim里拿掉了' },
+        { role: 'assistant', content: 'kimi为什么从英伟达模型nim里拿掉了' },
+      ],
+    });
+    const taskPayload = JSON.parse(payload.contents.at(-1).parts[0].text);
+
+    expect(payload.contents).toHaveLength(1);
+    expect(taskPayload.task).toBe('今天天气怎么样');
+    expect(payload.systemInstruction).toContain('task 字段是本轮唯一执行目标');
+  });
+
+  it('does not let unrelated conversation history activate tools for a new explicit task', () => {
+    const tools = selectGeminiToolNames({
+      task: '你好',
+      conversationHistory: [
+        { role: 'user', content: '检查项目文件并运行测试' },
+        { role: 'assistant', content: '已完成' },
+      ],
+    });
+
+    expect(tools.has('read_file')).toBe(false);
+    expect(tools.has('run_safe')).toBe(false);
   });
 
   it('keeps Gemini tool groups loaded after they appear in execution history', () => {

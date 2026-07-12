@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -145,6 +145,38 @@ const events = () => {
 };
 
 describe('runtime: session checkpoint integration', () => {
+  it('rejects a finish answer that only echoes the task and retries the next step', async () => {
+    const cancelSignal = new AbortController().signal;
+    const execute = vi.fn((_state, action) => (
+      action.type === 'finish' ? action.answer : 'verified search result'
+    ));
+
+    const result = await runAgentRuntime({
+      task: 'kimi为什么从英伟达模型nim里拿掉了',
+      maxSteps: 3,
+      onEvent: noop,
+      cancelSignal,
+      initialize,
+      observe,
+      decide: ({ step }) => {
+        if (step === 1) return decision({ type: 'finish', answer: 'kimi为什么从英伟达模型nim里拿掉了' });
+        if (step === 2) return decision({ tool: 'search', type: 'web_search', query: 'Kimi NVIDIA NIM model removed' });
+        return decision({ type: 'finish', answer: 'Kimi 的 NIM 上架状态需要以 NVIDIA 当前模型目录为准。' });
+      },
+      authorize: approve,
+      execute,
+      cleanup: noop,
+    });
+
+    expect(result.steps[0]).toMatchObject({
+      action: { type: 'finish' },
+      resultStatus: 'failed',
+      resultError: 'finish answer echoed task',
+    });
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(result.answer).toBe('Kimi 的 NIM 上架状态需要以 NVIDIA 当前模型目录为准。');
+  });
+
   it('records action target URL in history instead of the previous observation URL', async () => {
     const cancelSignal = new AbortController().signal;
     const result = await runAgentRuntime({

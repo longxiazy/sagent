@@ -20,8 +20,11 @@ const TERMINAL_TASK_RE = /\b(shell|terminal|command|npm|pnpm|yarn|bun|git|curl|b
 const MACOS_TASK_RE = /\b(mac(?:os)?|desktop|window|screen|keyboard|mouse|finder)\b|\b(?:open|launch|activate)\s+(?:the\s+)?app\b|桌面|窗口|屏幕|应用|软件|键盘|鼠标|点击坐标|按键|截屏|截个图/i;
 const VISION_TASK_RE = /\[附件\]|\.(?:png|jpe?g|gif|webp|bmp|heic)(?:\b|\?)|\b(image|photo|picture|screenshot|ocr|vision)\b|图片|图像|照片|截图|识图|看图|图里|图中/i;
 const SPAWN_TASK_RE = /\b(batch|parallel|multiple|each|compare)\b|批量|并行|同时|分别|多个|多份|每个|逐个|对比|比较/i;
+const FOLLOWUP_TASK_RE = /^\s*(?:(?:继续|接着|重试|再试|这个|那个|上面|刚才|照旧)(?:\s|$)|(?:continue|retry|that|it)\b)/i;
 
-const CORE_TOOL_NAMES = ['ask_user', 'notify_user', 'finish'];
+// web_search 作为轻量信息查询兜底常驻，避免产品目录、模型上下线、版本变化等
+// 时效性问题未命中关键词分类后只剩 finish，导致模型把问题原样返回。
+const CORE_TOOL_NAMES = ['web_search', 'ask_user', 'notify_user', 'finish'];
 const WEB_TOOL_NAMES = ['navigate', 'click', 'type', 'wait', 'scroll', 'get_page_content', 'http_fetch', 'parallel_fetch', 'web_search'];
 const FILE_TOOL_NAMES = ['list_dir', 'read_file', 'get_file_info', 'write_file', 'search_files', 'codegraph_query'];
 const TERMINAL_TOOL_NAMES = ['run_safe', 'run_confirmed', 'run_review'];
@@ -36,14 +39,49 @@ function historyUsesTool(history: any[] | undefined, tool: string) {
 }
 
 function capabilityText(context: PromptCapabilityContext) {
-  const conversation = Array.isArray(context.conversationHistory)
-    ? context.conversationHistory.slice(-8).map(message => message?.content || '').join('\n')
+  const task = context.task || '';
+  const conversation = FOLLOWUP_TASK_RE.test(task)
+    ? sanitizeConversationHistory(context.conversationHistory).slice(-8).map(message => message.content).join('\n')
     : '';
-  return `${context.task || ''}\n${conversation}`;
+  return `${task}\n${conversation}`;
 }
 
 function addToolGroup(target: Set<string>, names: string[]) {
   for (const name of names) target.add(name);
+}
+
+function comparableConversationText(value: string) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]+/gu, '');
+}
+
+export function sanitizeConversationHistory(value: PromptCapabilityContext['conversationHistory']) {
+  if (!Array.isArray(value)) return [];
+  const sanitized: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  const rejectedEchoes = new Set<string>();
+
+  for (const message of value.slice(-10)) {
+    if (!message || (message.role !== 'user' && message.role !== 'assistant')) continue;
+    const content = typeof message.content === 'string' ? message.content.trim() : '';
+    if (!content) continue;
+    const comparable = comparableConversationText(content);
+
+    if (message.role === 'assistant') {
+      if (rejectedEchoes.has(comparable)) continue;
+      const previous = sanitized.at(-1);
+      if (previous?.role === 'user' && comparable && comparable === comparableConversationText(previous.content)) {
+        sanitized.pop();
+        rejectedEchoes.add(comparable);
+        continue;
+      }
+      if (previous?.role === 'assistant' && comparable === comparableConversationText(previous.content)) continue;
+    }
+
+    sanitized.push({ role: message.role, content });
+  }
+
+  return sanitized;
 }
 
 export function selectGeminiToolNames(context: PromptCapabilityContext = {}) {
@@ -226,6 +264,8 @@ function buildSharedAgentRuleLines(capabilityContext: PromptCapabilityContext = 
   const chromeLines = chromePromptLines(capabilityContext);
   return [
     '规则：',
+    '0. task 字段是本轮唯一执行目标，优先级高于 conversationHistory。历史对话只用于理解指代和上下文，禁止恢复、继续或切换到历史中的旧任务。',
+    '0.1 涉及产品能力、模型目录、版本变化、供应商上下线等可能随时间变化的信息时，优先使用 web_search 核验，不要仅凭记忆回答。',
     '1. 只有 observation.browser.elements 中存在的 elementId 才能用于 browser.click / browser.type。',
     '2. 优先使用已知信息，不要重复无意义截图或重复读同一文件。任务一旦完成，必须立即调用 finish，绝不能重复执行已成功的动作。',
     '2.1 识别任务中的并行机会：当需要处理多个独立对象（多个文件、多个 URL、多个关键词）时，优先考虑用 spawn 并行处理而非串行逐个处理。',
@@ -298,8 +338,9 @@ export function buildGeminiTaskMessages({
   conversationHistory?: Array<{ role: string; content: string }>;
 }) {
   const contents: any[] = [];
-  if (conversationHistory?.length) {
-    for (const msg of conversationHistory) {
+  const sanitizedConversation = sanitizeConversationHistory(conversationHistory);
+  if (sanitizedConversation.length) {
+    for (const msg of sanitizedConversation) {
       contents.push({ role: msg.role === 'assistant' ? 'model' : 'user', parts: [{ text: msg.content }] });
     }
   }
@@ -365,8 +406,9 @@ export function buildNvidiaTaskMessages({
   const ideDetails = shouldIncludeIdePromptDetails(capabilityContext);
   const chromeEnabled = isChromeMcpEnabled();
   const chromeDetails = shouldIncludeChromePromptDetails(capabilityContext);
-  const conversationSummary = conversationHistory?.length
-    ? '\n\n之前的对话（供参考）：\n' + conversationHistory
+  const sanitizedConversation = sanitizeConversationHistory(conversationHistory);
+  const conversationSummary = sanitizedConversation.length
+    ? '\n\n之前的对话（仅用于理解当前 task 的指代，不得继续旧任务）：\n' + sanitizedConversation
         .map(message => `${message.role === 'user' ? '用户' : '助手'}: ${message.content}`)
         .join('\n')
     : '';

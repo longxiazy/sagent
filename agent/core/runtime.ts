@@ -56,6 +56,19 @@ function observationText(observation: unknown, key: 'url' | 'title'): string | u
   return typeof value === 'string' ? value : undefined;
 }
 
+function comparableTaskText(value: unknown) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]+/gu, '');
+}
+
+export function isTaskEchoFinish(task: string, action: AgentAction | undefined) {
+  if (action?.type !== 'finish') return false;
+  const normalizedTask = comparableTaskText(task);
+  const normalizedAnswer = comparableTaskText(action.answer);
+  return normalizedTask.length > 0 && normalizedTask === normalizedAnswer;
+}
+
 function compressHistory(history: AgentStep[], maxSteps?: number) {
   // 历史截断预算每次从运行时配置读取，前台改完无需重启即生效
   const { maxHistorySteps, maxResultChars: MAX_RESULT_CHARS, maxParallelResultChars: MAX_PARALLEL_RESULT_CHARS } = configStore.get();
@@ -380,6 +393,39 @@ export async function runAgentRuntime({
 
       if (cancelled()) {
         throw new Error("Agent 已取消");
+      }
+
+      if (isTaskEchoFinish(task, decision.action)) {
+        const result = '无效 finish：answer 只是重复当前 task，没有回答问题。请重新分析当前 task，并选择合适工具或给出实质答案。';
+        const resultStatus = 'failed';
+        const resultError = 'finish answer echoed task';
+        onEvent?.({
+          type: "step",
+          step,
+          stage: "action",
+          rationale: decision.rationale,
+          action: decision.action,
+          usage: decision.usage || null,
+        });
+        history.push({
+          step,
+          rationale: decision.rationale,
+          action: decision.action,
+          result,
+          resultStatus,
+          resultError,
+          url: observationText(observation, 'url'),
+          title: observationText(observation, 'title'),
+        });
+        onEvent?.({
+          type: "step",
+          step,
+          stage: "result",
+          result,
+          resultStatus,
+          resultError,
+        });
+        continue;
       }
 
       const repeatedLoop = detectRepeatedActionLoop(history, decision.action);
