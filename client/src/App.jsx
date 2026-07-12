@@ -889,6 +889,18 @@ export default function App() {
     return shuffled(pool).slice(0, Math.min(8, pool.length));
   }, [activeSession.id, suggestionSeed, activeCategoryId, agentCategories]);
 
+  const recentModelUsage = useMemo(() => {
+    const usage = {};
+    for (const session of sessions) {
+      const timestamp = Number(session.updatedAt || session.createdAt) || 0;
+      const modelIds = uniqueModelIds([session.model, ...(Array.isArray(session.modelsUsed) ? session.modelsUsed : [])]);
+      for (const modelId of modelIds) {
+        usage[modelId] = Math.max(usage[modelId] || 0, timestamp);
+      }
+    }
+    return usage;
+  }, [sessions]);
+
   // 工具栏控件实例化一次，在 hero 和 layout header 中复用——
   // 行为/状态完全一致，没必要在两处分别构造。
   const modelSelect = (
@@ -899,6 +911,7 @@ export default function App() {
       agentStrategy={agentStrategy}
       setAgentStrategy={setAgentStrategy}
       sessionLocked={sessionLocked}
+      recentModelUsage={recentModelUsage}
     />
   );
   const contextInputText = useMemo(

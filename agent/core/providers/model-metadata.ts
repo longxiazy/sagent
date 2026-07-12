@@ -11,10 +11,24 @@ function finiteNumber(value: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function finiteNonNegativeNumber(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 function firstNumber(values: unknown[]): number | undefined {
   for (const value of values) {
     const n = finiteNumber(value);
     if (n) return n;
+  }
+  return undefined;
+}
+
+function firstNonNegativeNumber(values: unknown[]): number | undefined {
+  for (const value of values) {
+    const n = finiteNonNegativeNumber(value);
+    if (n != null) return n;
   }
   return undefined;
 }
@@ -120,6 +134,43 @@ export function extractModelMetadata(input: unknown): Partial<ModelInfo> {
     source.supportedParameters,
     source.supported_parameters,
   ]);
+  const pricing = asRecord(source.pricing);
+  const pricePerMillionTokens = firstNonNegativeNumber([
+    source.pricePerMillionTokens,
+    source.price_per_million_tokens,
+    source.price,
+    source.cost,
+  ]);
+  const inputPricePerMillionTokens = firstNonNegativeNumber([
+    source.inputPricePerMillionTokens,
+    source.input_price_per_million_tokens,
+    source.inputTokenPrice,
+    pricing.input,
+    pricing.prompt,
+  ]);
+  const outputPricePerMillionTokens = firstNonNegativeNumber([
+    source.outputPricePerMillionTokens,
+    source.output_price_per_million_tokens,
+    source.outputTokenPrice,
+    pricing.output,
+    pricing.completion,
+  ]);
+  const latencyMs = firstNumber([
+    source.latencyMs,
+    source.latency_ms,
+    source.averageLatencyMs,
+    source.average_latency_ms,
+    source.timeToFirstTokenMs,
+    source.time_to_first_token_ms,
+  ]);
+  const tokensPerSecond = firstNumber([
+    source.tokensPerSecond,
+    source.tokens_per_second,
+    source.throughput,
+    source.speed,
+  ]);
+  const recommendationScore = firstNumber([source.recommendationScore, source.recommendation_score]);
+  const qualityScore = firstNumber([source.qualityScore, source.quality_score]);
 
   const metadata: Partial<ModelInfo> = {};
   if (contextWindow) metadata.contextWindow = contextWindow;
@@ -132,5 +183,12 @@ export function extractModelMetadata(input: unknown): Partial<ModelInfo> {
   if (supportedMessageRoles) metadata.supportedMessageRoles = supportedMessageRoles;
   if (supportedMessageTypes) metadata.supportedMessageTypes = supportedMessageTypes;
   if (supportedParameters) metadata.supportedParameters = supportedParameters;
+  if (pricePerMillionTokens != null) metadata.pricePerMillionTokens = pricePerMillionTokens;
+  if (inputPricePerMillionTokens != null) metadata.inputPricePerMillionTokens = inputPricePerMillionTokens;
+  if (outputPricePerMillionTokens != null) metadata.outputPricePerMillionTokens = outputPricePerMillionTokens;
+  if (latencyMs) metadata.latencyMs = latencyMs;
+  if (tokensPerSecond) metadata.tokensPerSecond = tokensPerSecond;
+  if (recommendationScore) metadata.recommendationScore = recommendationScore;
+  if (qualityScore) metadata.qualityScore = qualityScore;
   return metadata;
 }

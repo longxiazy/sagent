@@ -21,6 +21,9 @@ describe('model metadata', () => {
       },
       supported_parameters: ['tools', 'response_format'],
       supported_message_roles: ['system', 'user', 'assistant'],
+      pricing: { input: 0, output: 2 },
+      time_to_first_token_ms: 240,
+      quality_score: 91,
     })).toEqual({
       contextWindow: 131_072,
       maxOutputTokens: 16_384,
@@ -28,6 +31,10 @@ describe('model metadata', () => {
       outputModalities: ['text'],
       supportedMessageRoles: ['system', 'user', 'assistant'],
       supportedParameters: ['tools', 'response_format'],
+      inputPricePerMillionTokens: 0,
+      outputPricePerMillionTokens: 2,
+      latencyMs: 240,
+      qualityScore: 91,
     });
   });
 
