@@ -3816,6 +3816,35 @@ a.model-encyclopedia-field-value:hover {
 
 /* ── Trace Debug Panel ── */
 
+.agent-browser-health {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin-bottom: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-inline);
+  color: var(--c-text-secondary);
+  font-size: var(--f-micro);
+}
+
+.agent-browser-health-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--c-badge-done);
+}
+
+.agent-browser-health.navigating .agent-browser-health-dot,
+.agent-browser-health.starting .agent-browser-health-dot,
+.agent-browser-health.recovering .agent-browser-health-dot { background: var(--c-agent-timer); }
+.agent-browser-health.degraded .agent-browser-health-dot { background: var(--c-badge-error); }
+.agent-browser-health-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-browser-health > span:last-child { margin-left: auto; white-space: nowrap; }
+
 .agent-model-filter {
   display: flex;
   align-items: center;

@@ -50,6 +50,7 @@ function runKey(run, index = 0) {
 
 function shouldHideTimelineEvent(event) {
   if (event.type === 'session_checkpoint') return true;
+  if (event.type === 'browser_session' && !['recovering', 'degraded'].includes(event.status)) return true;
   return event.type === 'status' && (event.status === 'starting' || event.status === 'browser_ready');
 }
 
@@ -203,6 +204,13 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
   // 以下派生值原先每次 render（含每秒计时 tick）都对整条 trace 做 some/reduce/find，
   // 现在统一 memo 化，只在 trace/running 变化时重算。
   const metrics = useMemo(() => computeTraceMetrics(trace), [trace]);
+  const browserHealth = useMemo(() => {
+    const events = trace.filter(event => event.type === 'browser_session' || (event.type === 'status' && event.status === 'browser_ready'));
+    const latest = events.at(-1);
+    if (!latest) return null;
+    const recoveries = events.filter(event => event.type === 'browser_session' && event.status === 'recovering').length;
+    return { ...latest, status: latest.status === 'browser_ready' ? 'ready' : latest.status, recoveries };
+  }, [trace]);
   const modelIds = useMemo(() => traceModelIds(trace), [trace]);
   const hasModelCards = useMemo(
     () => trace.some(e => e.type === 'model_plan' && e.stage === 'start' && e.models?.length > 0),
@@ -399,6 +407,17 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
                   <button key={modelId} className={selectedModelId === modelId ? 'active' : ''} onClick={() => setSelectedModelId(modelId)}>{getModelLabel(modelId, modelList)}</button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {trace.length > 0 && showCurrentTrace && browserHealth && (
+            <div className={`agent-browser-health ${browserHealth.status}`}>
+              <span className="agent-browser-health-dot" />
+              <strong>{t('agentPanel.browserHealth')}</strong>
+              <span>{t(`agentPanel.browserStatus.${browserHealth.status}`)}</span>
+              {browserHealth.url && <span className="agent-browser-health-url" title={browserHealth.url}>{browserHealth.url}</span>}
+              {browserHealth.sessionId && <span>Session #{browserHealth.sessionId}</span>}
+              {browserHealth.recoveries > 0 && <span>{t('agentPanel.browserRecoveries', { n: browserHealth.recoveries })}</span>}
             </div>
           )}
 

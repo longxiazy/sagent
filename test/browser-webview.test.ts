@@ -195,17 +195,22 @@ describe('Bun.WebView browser actions', () => {
 
     const manager = createSharedBrowserSessionManager();
     const state = { headless: true, browserSession: null };
-    const result = await manager.withBrowserSessionRecovery(state, undefined, session => (
+    const events: any[] = [];
+    const result = await manager.withBrowserSessionRecovery(state, event => events.push(event), session => (
       executeBrowserAction(session.view, {
         type: 'parallel_fetch',
         urls: ['https://example.com/report'],
         extractLinks: false,
       })
-    ));
+    ), { step: 2, url: 'https://example.com/report' });
 
     expect(result).toContain('页面正文');
     expect(created).toHaveLength(2);
     expect(state.browserSession?.view).toBe(created[1]);
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'browser_session', status: 'recovering', reason: 'view_closed', step: 2 }),
+      expect.objectContaining({ type: 'browser_session', status: 'ready', recreated: true, sessionId: 2 }),
+    ]));
   });
 
   it('keeps a core.finish result when WebView cleanup throws synchronously', async () => {

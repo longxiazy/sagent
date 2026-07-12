@@ -3,6 +3,11 @@ import { closeBrowserSession, createBrowserSession } from '../tools/browser/webv
 export function createSharedBrowserSessionManager() {
   let sharedBrowserSession: any = null;
   let sharedBrowserHeadless: boolean | null = null;
+  let nextSessionId = 1;
+
+  const emit = (onEvent: ((payload: any) => void) | undefined, status: string, session: any, extra: any = {}) => {
+    onEvent?.({ type: 'browser_session', status, sessionId: session?.sessionId || null, timestamp: Date.now(), ...extra });
+  };
 
   async function getSharedBrowserSession(headless: boolean, onEvent?: (payload: any) => void) {
     if (sharedBrowserSession && sharedBrowserHeadless === headless) {
@@ -12,13 +17,16 @@ export function createSharedBrowserSessionManager() {
       await closeBrowserSession(sharedBrowserSession);
       sharedBrowserSession = null;
     }
-    sharedBrowserSession = createBrowserSession();
+    onEvent?.({ type: 'browser_session', status: 'starting', sessionId: nextSessionId, timestamp: Date.now() });
+    sharedBrowserSession = { ...createBrowserSession(), sessionId: nextSessionId++ };
     sharedBrowserHeadless = headless;
     onEvent?.({
       type: 'status',
       status: 'browser_ready',
       message: 'Bun.WebView 浏览器已启动',
+      sessionId: sharedBrowserSession.sessionId,
     });
+    emit(onEvent, 'ready', sharedBrowserSession, { url: 'about:blank' });
     return sharedBrowserSession;
   }
 
@@ -35,6 +43,7 @@ export function createSharedBrowserSessionManager() {
         sharedBrowserSession = null;
         sharedBrowserHeadless = null;
       }
+      emit(onEvent, 'degraded', session, { reason: 'initialization_failed' });
       throw new Error('WebView 初始化失败');
     }
     state.browserSession = session;
@@ -66,17 +75,30 @@ export function createSharedBrowserSessionManager() {
     state: any,
     onEvent: ((payload: any) => void) | undefined,
     operation: (session: any) => Promise<any>,
+    context: any = {},
   ) {
     let session = await ensureBrowserSession(state, onEvent);
+    emit(onEvent, 'navigating', session, context);
     try {
-      return await operation(session);
+      const result = await operation(session);
+      emit(onEvent, 'ready', session, context);
+      return result;
     } catch (err: any) {
       if (!/view is closed|invalid state.*webview/i.test(String(err?.message || err))) {
+        emit(onEvent, 'degraded', session, { ...context, reason: String(err?.message || err).slice(0, 160) });
         throw err;
       }
+      emit(onEvent, 'recovering', session, { ...context, reason: 'view_closed', retry: 1 });
       await resetBrowserSession(state);
       session = await ensureBrowserSession(state, onEvent);
-      return operation(session);
+      try {
+        const result = await operation(session);
+        emit(onEvent, 'ready', session, { ...context, recreated: true, retry: 1 });
+        return result;
+      } catch (retryErr: any) {
+        emit(onEvent, 'degraded', session, { ...context, reason: String(retryErr?.message || retryErr).slice(0, 160), retry: 1 });
+        throw retryErr;
+      }
     }
   }
 

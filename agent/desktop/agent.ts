@@ -226,10 +226,14 @@ export function createDesktopAgentRunner({
         }
         return action.answer || '任务已完成';
       },
-      browser: async (state, action) => {
+      browser: async (state, action, context) => {
         return withBrowserSessionRecovery(state, state.onEvent, session => (
           executeBrowserAction(session.view, action, { signal: state.cancelSignal })
-        ));
+        ), {
+          step: context?.step,
+          actionType: action.type,
+          url: 'url' in action ? action.url : ('urls' in action ? action.urls?.[0] : null),
+        });
       },
       fs: async (state, action) => executeFsAction(action, { cwd: state.projectRoot, dataDir: state.dataDir, signal: state.cancelSignal }),
       search: async (state, action) => executeSearchAction(action, { signal: state.cancelSignal }),

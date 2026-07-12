@@ -46,6 +46,16 @@ export const TraceItem = memo(function TraceItem({ event, selectedModelId = 'all
         </>
       )}
 
+      {event.type === 'browser_session' && (
+        <>
+          <span className={`agent-trace-badge ${event.status === 'degraded' ? 'error' : 'approval'}`}>{t('agentPanel.browserBadge')}</span>
+          <div className="agent-trace-content">
+            <strong>{t(`agentPanel.browserStatus.${event.status}`)}</strong>
+            <p>{event.url || event.reason || ''}{event.sessionId ? ` · Session #${event.sessionId}` : ''}</p>
+          </div>
+        </>
+      )}
+
       {event.type === 'step' && event.stage === 'observe' && (
         <>
           <span className="agent-trace-badge">{t('agentPanel.badgeObserve')}</span>
