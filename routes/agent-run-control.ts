@@ -127,6 +127,9 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
       model: run.meta?.model,
       agentModels: run.meta?.agentModels,
       task: run.meta?.task,
+      sessionId: run.meta?.sessionId,
+      projectId: run.meta?.projectId ?? null,
+      strategy: run.meta?.strategy,
     })}\n\n`);
 
     let writer = null;

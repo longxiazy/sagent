@@ -2,6 +2,7 @@ import type { ProviderRegistry } from '../agent/core/providers/registry.ts';
 import type { ModelInfo } from '../agent/core/providers/types.ts';
 import type { ConfigStore } from '../agent/core/config-store.ts';
 import type { ProjectStore } from '../agent/core/project-store.ts';
+import type { SessionStore } from '../agent/core/session-store.ts';
 import type {
   AgentRunStore,
   ApprovalStore,
@@ -20,4 +21,5 @@ export interface AgentRouterContext {
   registry: ProviderRegistry;
   configStore: ConfigStore;
   projectStore: ProjectStore;
+  sessionStore: SessionStore;
 }

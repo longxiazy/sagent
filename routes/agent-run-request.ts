@@ -22,6 +22,7 @@ export function parseAgentRunRequest(reqBody: any) {
     messages: conversationHistory,
     fromCheckpoint,
     projectId,
+    sessionId,
   } = reqBody ?? {};
 
   if (typeof task !== 'string' || !task.trim()) {
@@ -51,6 +52,7 @@ export function parseAgentRunRequest(reqBody: any) {
     conversationHistory,
     fromCheckpoint,
     projectId: typeof projectId === 'string' && projectId.trim() ? projectId : null,
+    sessionId: typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null,
   };
 }
 

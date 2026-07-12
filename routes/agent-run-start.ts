@@ -20,6 +20,7 @@ export function createAgentRunStartRouter({
   modelConfig,
   registry,
   projectStore,
+  sessionStore,
 }: AgentRouterContext) {
   const router = Router();
 
@@ -32,7 +33,7 @@ export function createAgentRunStartRouter({
       if ('error' in parsed) {
         return res.status(400).json({ error: tReq(req, parsed.error) });
       }
-      const { task, model, agentModels, strategy, headless, useMemory, conversationHistory, fromCheckpoint, projectId } = parsed;
+      const { task, model, agentModels, strategy, headless, useMemory, conversationHistory, fromCheckpoint, projectId, sessionId } = parsed;
       const incompatibleModels = agentModels.filter(modelId => (
         modelConfig.find(item => item.id === modelId)?.agentCompatible === false
       ));
@@ -73,6 +74,7 @@ export function createAgentRunStartRouter({
         task: normalizedTask,
         // 项目信息盖到 run 记录上，供 trace/checkpoint 读取端点定位落盘目录
         projectId: resolvedProjectId,
+        sessionId,
         dataDir,
         projectRoot,
       }, startedAt, existingRunId, initialEventSeq);
@@ -89,10 +91,24 @@ export function createAgentRunStartRouter({
         model,
         agentHeadless,
         normalizedTask,
+        agentModels,
+        strategy,
+        sessionId,
+        projectId: resolvedProjectId,
         runId,
         startedAt,
         agentRunStore,
         memoryDir: dataDir,
+      });
+      await sessionStore.recordRunStart({
+        projectId: resolvedProjectId,
+        sessionId,
+        runId,
+        task: normalizedTask,
+        model,
+        models: agentModels,
+        startedAt,
+        retry: Boolean(fromCheckpoint),
       });
       agentRunStore.transitionRun(runId, 'running');
 
@@ -148,6 +164,20 @@ export function createAgentRunStartRouter({
         }
       }
       await runRecord.persistence?.flush();
+      const tracking = session.getTrackingState();
+      await sessionStore.recordRunTerminal({
+        projectId: resolvedProjectId,
+        sessionId,
+        runId,
+        task: normalizedTask,
+        answer: finalAnswer,
+        error: agentError?.message || null,
+        models: tracking.modelsUsed.length > 0 ? tracking.modelsUsed : agentModels,
+        status: finalStatus,
+        startedAt,
+        endedAt: Date.now(),
+        meta: { step_count: Math.max(tracking.completedStepCount, tracking.observedStepCount) },
+      });
       session.close({ finalAnswer, agentError, approvalStore });
       await cleanupAgentRun(runCheckpointDir, runId, agentRunStore, { finalStatus });
       return;

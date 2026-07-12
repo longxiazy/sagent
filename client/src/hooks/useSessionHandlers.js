@@ -66,14 +66,20 @@ export function useSessionHandlers({
 
     setChatState(prev => {
       const nextSessions = prev.sessions.filter(session => session.id !== sessionId);
-      const nextActiveSessionId =
-        sessionId === prev.activeSessionId
-          ? nextSessions[0]?.id || createSession({ projectId: activeProjectId }).id
-          : prev.activeSessionId;
+      if (sessionId !== prev.activeSessionId) {
+        return normalizeChatState({ sessions: nextSessions, activeSessionId: prev.activeSessionId });
+      }
+      const nextProjectSession = nextSessions.find(
+        session => (session.projectId ?? null) === (activeProjectId ?? null)
+      );
+      if (nextProjectSession) {
+        return normalizeChatState({ sessions: nextSessions, activeSessionId: nextProjectSession.id });
+      }
+      const blank = createSession({ projectId: activeProjectId });
 
       return normalizeChatState({
-        sessions: nextSessions,
-        activeSessionId: nextActiveSessionId,
+        sessions: [blank, ...nextSessions],
+        activeSessionId: blank.id,
       });
     });
     setInput('');
@@ -82,10 +88,19 @@ export function useSessionHandlers({
   };
 
   const handleClearAllSessions = () => {
-    if (sessionLocked || !window.confirm(tStatic('sessionOps.confirmClearAll'))) {
+    if (sessionLocked || !window.confirm(tStatic('sessionOps.confirmClearProject'))) {
       return;
     }
-    setChatState(normalizeChatState({ sessions: [], activeSessionId: null }));
+    setChatState(prev => {
+      const otherProjects = prev.sessions.filter(
+        session => (session.projectId ?? null) !== (activeProjectId ?? null)
+      );
+      const blank = createSession({ projectId: activeProjectId });
+      return normalizeChatState({
+        sessions: [blank, ...otherProjects],
+        activeSessionId: blank.id,
+      });
+    });
     setInput('');
     setShowReset(false);
     setShowSessions(false);

@@ -120,7 +120,7 @@ interface EventTraceFields {
 
 export type AgentEvent = EventTraceFields & (
   | { type: 'status'; status: string; message?: string }
-  | { type: 'run_meta'; startedAt: number; model?: string; agentModels?: string[]; task?: string }
+  | { type: 'run_meta'; startedAt: number; model?: string; agentModels?: string[]; task?: string; sessionId?: string; projectId?: string | null; strategy?: string }
   | { type: 'step'; step: number; stage: 'observe'; observation: unknown }
   | { type: 'step'; step: number; stage: 'action'; rationale?: string; action: AgentAction; usage?: TokenUsage | null }
   | { type: 'step'; step: number; stage: 'result'; result: unknown; resultStatus?: ActionResultStatus; resultError?: string | null }

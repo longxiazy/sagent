@@ -26,6 +26,10 @@ export function createAgentRunSession({
   model,
   agentHeadless,
   normalizedTask,
+  agentModels,
+  strategy,
+  sessionId,
+  projectId,
   runId,
   startedAt,
   agentRunStore,
@@ -36,6 +40,10 @@ export function createAgentRunSession({
   model: string;
   agentHeadless: boolean;
   normalizedTask: string;
+  agentModels: string[];
+  strategy: string;
+  sessionId: string | null;
+  projectId: string | null;
   runId: string;
   startedAt: number;
   agentRunStore: AgentRunStore;
@@ -101,6 +109,17 @@ export function createAgentRunSession({
     status: 'starting',
     runId,
     message: tReq(req, 'run.preparing'),
+  });
+  sendEvent({
+    type: 'run_meta',
+    runId,
+    startedAt,
+    model,
+    agentModels,
+    strategy,
+    task: normalizedTask,
+    sessionId: sessionId || undefined,
+    projectId,
   });
   log.debug(`[SSE] stream started, writableEnded=${res.writableEnded} writableFinished=${res.writableFinished}`);
 

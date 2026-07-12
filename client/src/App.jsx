@@ -110,6 +110,7 @@ export default function App() {
     activeSession,
     messages,
     updateSession,
+    sessionsLoading,
   } = useChatSessions();
   const {
     projects,
@@ -281,6 +282,7 @@ export default function App() {
   // 2. 再订阅 /api/agent/stream/:runId
   // 3. 同时把 UI 切回 Agent 模式，并用占位消息保住聊天视图连续性
   useEffect(() => {
+    if (sessionsLoading) return undefined;
     const controller = new AbortController();
     let aborted = false;
 
@@ -541,7 +543,7 @@ export default function App() {
     };
   // 这段只负责页面首次加载后的运行态接回；依赖更新不应该重新订阅同一个 run。
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sessionsLoading]);
 
   // 手机后台/切 tab 时浏览器会冻结 JS、节流网络，SSE reader 可能在后台错过
   // done/error 事件；切回前台时如果前端还以为任务在跑，就调一次持久化的 trace
@@ -771,7 +773,7 @@ export default function App() {
   // 一次性执行；之后的切换走 handleActivateProject，选择会话只在本项目内。
   const projectsReconciledRef = useRef(false);
   useEffect(() => {
-    if (projectsLoading || projectsReconciledRef.current) return;
+    if (projectsLoading || sessionsLoading || projectsReconciledRef.current) return;
     projectsReconciledRef.current = true;
     setChatState(prev => {
       const cur = prev.sessions.find(s => s.id === prev.activeSessionId);
@@ -785,7 +787,7 @@ export default function App() {
       const blank = createSession({ projectId: activeProjectId });
       return normalizeChatState({ sessions: [blank, ...prev.sessions], activeSessionId: blank.id });
     });
-  }, [projectsLoading, activeProjectId, setChatState]);
+  }, [projectsLoading, sessionsLoading, activeProjectId, setChatState]);
 
   const { sendAgentTask, stopAgent, handleRollback, handleApprovalDecision } = useAgentTransport({
     activeSession,
