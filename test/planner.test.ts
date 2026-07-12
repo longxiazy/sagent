@@ -83,6 +83,38 @@ describe('createJsonPlanner', () => {
     expect(create.mock.calls[1][0]).not.toHaveProperty('chat_template_kwargs');
   });
 
+  it('proactively folds system instructions for models whose metadata excludes the system role', async () => {
+    const create = vi.fn().mockResolvedValue(completion({
+      rationale: '完成',
+      action: { type: 'finish', answer: 'ok' },
+    }));
+    const planner = createJsonPlanner({
+      client: { chat: { completions: { create } } },
+      buildMessages: () => [
+        { role: 'system', content: 'Only return JSON.' },
+        { role: 'user', content: 'finish' },
+      ],
+      normalizeDecision: normalizeDesktopAgentDecision,
+    });
+
+    const result = await planner({
+      model: 'google/gemma-2-2b-it',
+      modelConfig: [{
+        id: 'google/gemma-2-2b-it',
+        supportedMessageRoles: ['user', 'assistant'],
+      }],
+      task: 'finish',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+
+    expect(result.action).toEqual({ tool: 'core', type: 'finish', answer: 'ok' });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0].messages).toHaveLength(1);
+    expect(create.mock.calls[0][0].messages[0].content).toContain('Only return JSON.');
+  });
+
   it('caps agent output tokens to fit small context windows', async () => {
     const create = vi.fn().mockResolvedValue(completion({
       rationale: '完成',

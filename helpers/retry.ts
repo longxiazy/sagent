@@ -61,6 +61,9 @@ export function formatErrorDiagnostics(err) {
 function isRetryableError(err) {
   const msg = err?.message || '';
   const status = err?.status || err?.statusCode || 0;
+  if (/system role not supported|system message not supported|does not support system|unsupported role:\s*system/i.test(msg)) {
+    return false;
+  }
   if (status === 429 || status >= 500) return true;
   if (/rate.?limit|overloaded|timeout|ECONNRESET|ECONNREFUSED|ETIMEDOUT|socket hang up|fetch failed/i.test(msg)) return true;
   return false;

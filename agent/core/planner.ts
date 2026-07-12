@@ -117,6 +117,9 @@ export function createJsonPlanner({
   buildParserError = null,
 }) {
   return async ({ model, signal = null, ...context }) => {
+    const supportedMessageRoles = Array.isArray(context.modelConfig)
+      ? context.modelConfig.find((item: any) => item?.id === model)?.supportedMessageRoles
+      : undefined;
     let messages = buildMessages(context);
     const configuredMaxTokens = Number(context.maxOutputTokens)
       || configStore.get().maxOutputTokens
@@ -145,16 +148,16 @@ export function createJsonPlanner({
       }
     }
 
-    logLlmRequest(model, messages);
-
     const builtRequest = buildChatCompletionRequest({
       model,
       temperature,
       top_p: topP,
       max_tokens: requestMaxTokens,
       messages,
-    }, { defaultThinking: true });
+    }, { defaultThinking: true, supportedMessageRoles });
     const createOpts = builtRequest.request;
+    messages = createOpts.messages;
+    logLlmRequest(model, messages);
     let defaultedChatTemplateKwargs = builtRequest.defaultedChatTemplateKwargs;
     const reqOpts = signal ? { signal } : undefined;
     let responseMaxTokens = requestMaxTokens;
@@ -206,7 +209,8 @@ export function createJsonPlanner({
             top_p: topP,
             max_tokens: compactMaxTokens,
             messages,
-          }, { defaultThinking: true });
+          }, { defaultThinking: true, supportedMessageRoles });
+          messages = compactOpts.messages;
           try {
             response = await createChatCompletionWithTemplateFallback({
               client,

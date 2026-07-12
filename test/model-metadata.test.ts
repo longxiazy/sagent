@@ -74,6 +74,14 @@ describe('model metadata', () => {
     expect(hasNvidiaCatalogModel('moonshotai/kimi-k2.6')).toBe(false);
   });
 
+  it('only exposes message roles backed by a local verified override', () => {
+    expect(getNvidiaCatalogModelMetadata('google/gemma-2-2b-it')).toMatchObject({
+      agentCompatible: false,
+      supportedMessageRoles: ['user', 'assistant'],
+    });
+    expect(getNvidiaCatalogModelMetadata('deepseek-ai/deepseek-v4-pro')).not.toHaveProperty('supportedMessageRoles');
+  });
+
   it('only exposes official NVIDIA API models still present in the public catalog', async () => {
     const provider = createOpenAICompatProvider({
       chat: { completions: { create: vi.fn() } },

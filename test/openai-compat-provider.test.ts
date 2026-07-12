@@ -177,4 +177,64 @@ describe('OpenAICompatProvider reasoning content preservation', () => {
     expect(create.mock.calls[0][0]).toHaveProperty('chat_template_kwargs');
     expect(create.mock.calls[1][0]).not.toHaveProperty('chat_template_kwargs');
   });
+
+  it('retries non-streaming requests with system instructions folded into user content', async () => {
+    const err: any = new Error('500 "System role not supported"');
+    err.status = 500;
+    const create = vi.fn()
+      .mockRejectedValueOnce(err)
+      .mockResolvedValueOnce({ choices: [{ message: { content: 'ok' } }] });
+    const provider = createOpenAICompatProvider({
+      chat: { completions: { create } },
+      models: { list: vi.fn() },
+    });
+
+    await provider.completionJson({
+      model: 'google/gemma-2-2b-it',
+      messages: [
+        { role: 'system', content: 'Follow the rules.' },
+        { role: 'user', content: 'Say OK.' },
+      ],
+      temperature: 0.1,
+      top_p: 1,
+      max_tokens: 16,
+    });
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1][0].messages).toHaveLength(1);
+    expect(create.mock.calls[1][0].messages[0]).toMatchObject({ role: 'user' });
+    expect(create.mock.calls[1][0].messages[0].content).toContain('Follow the rules.');
+    expect(create.mock.calls[1][0].messages[0].content).toContain('Say OK.');
+  });
+
+  it('retries streaming requests without a system role', async () => {
+    const err: any = new Error('System message not supported');
+    err.status = 400;
+    const create = vi.fn()
+      .mockRejectedValueOnce(err)
+      .mockResolvedValueOnce(streamChunks([
+        { choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }] },
+      ]));
+    const provider = createOpenAICompatProvider({
+      chat: { completions: { create } },
+      models: { list: vi.fn() },
+    });
+    const res = createMockRes();
+
+    await provider.completionStream({
+      model: 'google/gemma-2-2b-it',
+      messages: [
+        { role: 'system', content: 'Follow the rules.' },
+        { role: 'user', content: 'Say OK.' },
+      ],
+      temperature: 0.1,
+      top_p: 1,
+      max_tokens: 16,
+      res: res as any,
+    });
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1][0].messages.every((message: any) => message.role !== 'system')).toBe(true);
+    expect(res.writes.at(-1)).toBe('data: [DONE]\n\n');
+  });
 });

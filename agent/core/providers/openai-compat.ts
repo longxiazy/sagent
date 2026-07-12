@@ -14,7 +14,9 @@ import {
   buildChatCompletionRequest,
   createChatCompletionWithTemplateFallback,
   isUnsupportedChatTemplateKwargsError,
+  isUnsupportedSystemRoleError,
   withoutChatTemplateKwargs,
+  withoutSystemRole,
 } from '../openai-compatible-request.ts';
 import {
   createStreamingCompletionFactory,
@@ -209,14 +211,37 @@ export function createOpenAICompatProvider(
         defaultThinking: shouldPreserveReasoning,
       });
       let completion;
-      try {
-        completion = await createStreamingCompletion(request, { includeUsage: true });
-      } catch (err) {
-        if (!defaultedChatTemplateKwargs || !request.chat_template_kwargs || !isUnsupportedChatTemplateKwargsError(err)) {
+      let activeRequest = request;
+      let templateFallbackUsed = false;
+      let systemRoleFallbackUsed = false;
+      for (;;) {
+        try {
+          completion = await createStreamingCompletion(activeRequest, { includeUsage: true });
+          break;
+        } catch (err) {
+          if (
+            !templateFallbackUsed
+            && defaultedChatTemplateKwargs
+            && activeRequest.chat_template_kwargs
+            && isUnsupportedChatTemplateKwargsError(err)
+          ) {
+            templateFallbackUsed = true;
+            log.warn('chat_template_kwargs 不受支持，改为关闭 thinking 参数重试:', err.message);
+            activeRequest = withoutChatTemplateKwargs(activeRequest);
+            continue;
+          }
+          if (
+            !systemRoleFallbackUsed
+            && activeRequest.messages?.some?.((message: any) => message?.role === 'system')
+            && isUnsupportedSystemRoleError(err)
+          ) {
+            systemRoleFallbackUsed = true;
+            log.warn('system role 不受支持，合并到首条 user 消息后重试:', err.message);
+            activeRequest = withoutSystemRole(activeRequest);
+            continue;
+          }
           throw err;
         }
-        log.warn('chat_template_kwargs 不受支持，改为关闭 thinking 参数重试:', err.message);
-        completion = await createStreamingCompletion(withoutChatTemplateKwargs(request), { includeUsage: true });
       }
       initSse(res);
       const stream = shouldPreserveReasoning ? preserveReasoningContentStream(completion) : completion;

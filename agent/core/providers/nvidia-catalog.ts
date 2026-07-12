@@ -5,8 +5,10 @@ import type { ModelInfo } from './types.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CATALOG_PATH = path.resolve(__dirname, '../../../config/model-catalog/nvidia.json');
+const OVERRIDES_PATH = path.resolve(__dirname, '../../../config/model-catalog/nvidia-overrides.json');
 
 let cachedCatalog: Map<string, Partial<ModelInfo>> | null = null;
+let cachedOverrides: Map<string, Partial<ModelInfo>> | null = null;
 
 function normalizeAlias(value: string) {
   return String(value || '').trim().replace(/_/g, '.').toLowerCase();
@@ -27,6 +29,7 @@ function sanitizeCatalogModel(model: any): Partial<ModelInfo> {
   if (Array.isArray(model?.supportedMessageRoles)) out.supportedMessageRoles = model.supportedMessageRoles;
   if (Array.isArray(model?.supportedMessageTypes)) out.supportedMessageTypes = model.supportedMessageTypes;
   if (Array.isArray(model?.supportedParameters)) out.supportedParameters = model.supportedParameters;
+  if (typeof model?.agentCompatible === 'boolean') out.agentCompatible = model.agentCompatible;
   return out;
 }
 
@@ -49,8 +52,25 @@ function loadCatalog() {
   return cachedCatalog;
 }
 
+function loadOverrides() {
+  if (cachedOverrides) return cachedOverrides;
+  cachedOverrides = new Map();
+  if (!fs.existsSync(OVERRIDES_PATH)) return cachedOverrides;
+
+  const payload = JSON.parse(fs.readFileSync(OVERRIDES_PATH, 'utf8'));
+  const models = payload?.models && typeof payload.models === 'object' ? payload.models : {};
+  for (const [id, model] of Object.entries(models) as Array<[string, any]>) {
+    cachedOverrides.set(normalizeAlias(id), sanitizeCatalogModel(model));
+  }
+  return cachedOverrides;
+}
+
 export function getNvidiaCatalogModelMetadata(modelId: string): Partial<ModelInfo> {
-  return loadCatalog().get(normalizeAlias(modelId)) || {};
+  const alias = normalizeAlias(modelId);
+  return {
+    ...(loadCatalog().get(alias) || {}),
+    ...(loadOverrides().get(alias) || {}),
+  };
 }
 
 export function hasNvidiaCatalogModel(modelId: string): boolean {

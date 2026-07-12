@@ -205,7 +205,6 @@ function parseDetail(markdown, item) {
     inputModalities: inputModalities.length ? inputModalities : undefined,
     outputModalities: outputModalities.length ? outputModalities : undefined,
     supportedGenerationMethods: capabilities,
-    supportedMessageRoles: ['system', 'user', 'assistant'],
     supportedMessageTypes: inputModalities.length ? inputModalities : undefined,
     supportedParameters: params,
     updated: frontmatter.updated,

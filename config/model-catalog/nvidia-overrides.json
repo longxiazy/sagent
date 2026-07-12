@@ -1,0 +1,14 @@
+{
+  "source": {
+    "note": "Locally verified NVIDIA model capability overrides. Keep separate from the generated catalog."
+  },
+  "models": {
+    "google/gemma-2-2b-it": {
+      "agentCompatible": false,
+      "supportedMessageRoles": [
+        "user",
+        "assistant"
+      ]
+    }
+  }
+}
