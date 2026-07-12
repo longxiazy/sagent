@@ -1059,29 +1059,6 @@ select,
   background: var(--c-surface-inline);
 }
 
-.session-clear-all-btn {
-  border: none;
-  background: none;
-  color: var(--c-danger);
-  font-size: var(--f-xs);
-  font-weight: 600;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  transition: background 0.15s;
-  text-align: center;
-  width: 100%;
-}
-
-.session-clear-all-btn:hover:not(:disabled) {
-  background: var(--c-danger-bg);
-}
-
-.session-clear-all-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 .session-list {
   flex: 1;
   min-height: 0;
@@ -1462,6 +1439,31 @@ select,
 .session-delete-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.session-card--archived {
+  opacity: 0.82;
+}
+
+.session-main--static {
+  cursor: default;
+}
+
+.session-archive-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 5px;
+}
+
+.session-archive-actions .session-delete-btn {
+  position: static;
+  opacity: 1;
+}
+
+.session-archive-actions .session-delete-btn:not(.danger):hover:not(:disabled) {
+  color: var(--c-primary);
+  background: var(--c-primary-bg);
 }
 
 .main-area {
@@ -7367,8 +7369,7 @@ textarea:focus-visible,
   .agent-stop-btn:hover:not(:disabled),
   .send-btn:hover:not(:disabled),
   .session-card:hover,
-  .session-delete-btn:hover:not(:disabled),
-  .session-clear-all-btn:hover:not(:disabled) {
+  .session-delete-btn:hover:not(:disabled) {
     transform: none;
     box-shadow: none;
   }
@@ -7392,7 +7393,6 @@ textarea:focus-visible,
   .send-btn:active:not(:disabled),
   .session-main:active:not(:disabled),
   .session-delete-btn:active:not(:disabled),
-  .session-clear-all-btn:active:not(:disabled),
   .session-group-header:active {
     filter: brightness(0.96);
   }

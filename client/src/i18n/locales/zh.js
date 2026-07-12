@@ -292,7 +292,10 @@ export const zh = {
   'session.title': '会话',
   'session.unknownModel': '未知模型',
   'session.messageCount': '{n} 条',
-  'session.deleteTitle': '删除会话',
+  'session.archiveTitle': '存档会话',
+  'session.archived': '已存档',
+  'session.restoreTitle': '恢复会话',
+  'session.deletePermanentlyTitle': '永久删除',
   'session.viewMemory': '查看记忆',
   'session.viewAgentStats': '查看 Agent 统计',
   'session.searchPlaceholder': '搜索会话…',
@@ -475,6 +478,7 @@ export const zh = {
   // 会话操作
   'session.newChat': '新对话',
   'sessionOps.confirmDelete': '删除这个会话？此操作不可撤销。',
+  'sessionOps.confirmDeleteArchived': '永久删除这个已存档会话？此操作不可撤销。',
   'sessionOps.confirmClearAll': '清空所有会话？此操作不可撤销。',
   'sessionOps.confirmClearProject': '清空当前项目的所有会话？其他项目不会受影响。此操作不可撤销。',
 };

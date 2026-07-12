@@ -102,6 +102,7 @@ export function createSession({
   agentMeta = null,
   agentRuns = [],
   projectId = null,
+  archivedAt = null,
   createdAt = Date.now(),
   updatedAt = Date.now(),
 } = {}) {
@@ -116,6 +117,7 @@ export function createSession({
     agentRuns: normalizeAgentRuns(agentRuns),
     // 会话归属的项目；null = 无项目（全局态，向后兼容旧会话）。
     projectId: typeof projectId === 'string' && projectId ? projectId : null,
+    archivedAt: Number.isFinite(archivedAt) ? archivedAt : null,
     createdAt,
     updatedAt,
   };
@@ -158,6 +160,7 @@ export function normalizeChatState(rawState) {
             agentMeta: session.agentMeta,
             agentRuns: session.agentRuns,
             projectId: session.projectId,
+            archivedAt: session.archivedAt,
             createdAt: Number.isFinite(session.createdAt) ? session.createdAt : Date.now(),
             updatedAt: Number.isFinite(session.updatedAt) ? session.updatedAt : Date.now(),
           });

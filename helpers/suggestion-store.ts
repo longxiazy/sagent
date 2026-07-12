@@ -24,6 +24,7 @@ const RECENT_LIMIT = 12;
 const SAVE_DEBOUNCE_MS = 2000;
 
 type HistoryEntry = {
+  projectId: string | null;
   title: string;
   text: string;
   uses: number;
@@ -65,6 +66,7 @@ export function createSuggestionStore(dir: string) {
               .map((e: any) => ({
                 title: String(e.title ?? '').slice(0, 32),
                 text: String(e.text),
+                projectId: typeof e.projectId === 'string' && e.projectId.trim() ? e.projectId : null,
                 uses: Number.isFinite(e.uses) ? Math.max(0, Math.floor(e.uses)) : 0,
                 lastUsedAt: typeof e.lastUsedAt === 'string' ? e.lastUsedAt : '',
               }))
@@ -103,21 +105,24 @@ export function createSuggestionStore(dir: string) {
   }
 
   return {
-    async getMerged(locale: SuggestionLocale = 'zh'): Promise<MergedSuggestions> {
+    async getMerged(locale: SuggestionLocale = 'zh', projectId: string | null = null): Promise<MergedSuggestions> {
       const data = await load();
       const defaults = getSuggestionDefaults(locale);
-      const recent = buildRecent(data.history, locale);
+      const recent = buildRecent(
+        data.history.filter(entry => entry.projectId === projectId),
+        locale,
+      );
       const agent = recent ? [recent, ...defaults.agent] : [...defaults.agent];
       return {
         agent,
       };
     },
 
-    async recordUse({ title, text }: { title: string; text: string }): Promise<void> {
+    async recordUse({ title, text, projectId = null }: { title: string; text: string; projectId?: string | null }): Promise<void> {
       const trimmed = text.trim();
       if (!trimmed) return;
       const data = await load();
-      const existing = data.history.find(e => e.text === trimmed);
+      const existing = data.history.find(e => e.projectId === projectId && e.text === trimmed);
       const now = new Date().toISOString();
       if (existing) {
         existing.uses += 1;
@@ -125,6 +130,7 @@ export function createSuggestionStore(dir: string) {
         if (title && !existing.title) existing.title = title;
       } else {
         data.history.push({
+          projectId,
           title: title || trimmed.slice(0, 12),
           text: trimmed,
           uses: 1,
