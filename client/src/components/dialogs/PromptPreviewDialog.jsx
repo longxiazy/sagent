@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useT } from '../../i18n/I18nProvider.jsx';
 import { MarkdownBlock } from '../markdown/MarkdownBlock.jsx';
 import { DialogShell } from './DialogShell.jsx';
@@ -27,10 +27,7 @@ export function PromptPreviewDialog({
   ), [estimate, preview?.chars, t]);
   const [mode, setMode] = useState(initialMode);
   const [draft, setDraft] = useState(value ?? sourceText);
-
-  useEffect(() => {
-    setDraft(value ?? sourceText);
-  }, [sourceText, value]);
+  const displayedValue = editable ? (value ?? draft) : sourceText;
 
   if (!preview?.text) return null;
 
@@ -71,14 +68,14 @@ export function PromptPreviewDialog({
         {mode === 'source' && editable ? (
           <textarea
             className="prompt-preview-editor"
-            value={draft}
+            value={displayedValue}
             onChange={event => updateDraft(event.target.value)}
             spellCheck={false}
           />
         ) : mode === 'source' ? (
-          <pre className="prompt-preview-text">{draft}</pre>
+          <pre className="prompt-preview-text">{displayedValue}</pre>
         ) : (
-          <MarkdownBlock content={draft} className="prompt-preview-markdown" />
+          <MarkdownBlock content={displayedValue} className="prompt-preview-markdown" />
         )}
       </div>
     </DialogShell>
