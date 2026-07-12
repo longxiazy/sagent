@@ -21,22 +21,29 @@ import { createAgentUploadsRouter } from './agent-uploads.ts';
 import { createAgentProjectsRouter } from './agent-projects.ts';
 import { createAgentCodegraphRouter } from './agent-codegraph.ts';
 import { createAgentContextRouter } from './agent-context.ts';
+import { createAgentSessionsRouter } from './agent-sessions.ts';
+import { createSessionStore } from '../agent/core/session-store.ts';
 import type { AgentRouterContext } from './agent-types.ts';
 
-export function createAgentRouter(context: AgentRouterContext) {
+export function createAgentRouter(context: Omit<AgentRouterContext, 'sessionStore'> & { sessionStore?: AgentRouterContext['sessionStore'] }) {
   const router = Router();
+  const fullContext: AgentRouterContext = {
+    ...context,
+    sessionStore: context.sessionStore || createSessionStore({ memoryDir: context.memoryDir, projectStore: context.projectStore }),
+  };
 
-  router.use(createAgentRunRouter(context));
-  router.use(createAgentApprovalRouter(context));
-  router.use(createAgentFetchRulesRouter(context));
-  router.use(createAgentConfigRouter(context));
-  router.use(createAgentMemoryRouter(context));
-  router.use(createAgentCheckpointRouter(context));
-  router.use(createAgentTraceRouter(context));
-  router.use(createAgentUploadsRouter(context));
-  router.use(createAgentProjectsRouter(context));
-  router.use(createAgentCodegraphRouter(context));
-  router.use(createAgentContextRouter(context));
+  router.use(createAgentRunRouter(fullContext));
+  router.use(createAgentApprovalRouter(fullContext));
+  router.use(createAgentFetchRulesRouter(fullContext));
+  router.use(createAgentConfigRouter(fullContext));
+  router.use(createAgentMemoryRouter(fullContext));
+  router.use(createAgentCheckpointRouter(fullContext));
+  router.use(createAgentTraceRouter(fullContext));
+  router.use(createAgentUploadsRouter(fullContext));
+  router.use(createAgentProjectsRouter(fullContext));
+  router.use(createAgentCodegraphRouter(fullContext));
+  router.use(createAgentContextRouter(fullContext));
+  router.use(createAgentSessionsRouter(fullContext));
 
   return router;
 }

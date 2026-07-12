@@ -476,4 +476,5 @@ export const zh = {
   'session.newChat': '新对话',
   'sessionOps.confirmDelete': '删除这个会话？此操作不可撤销。',
   'sessionOps.confirmClearAll': '清空所有会话？此操作不可撤销。',
+  'sessionOps.confirmClearProject': '清空当前项目的所有会话？其他项目不会受影响。此操作不可撤销。',
 };

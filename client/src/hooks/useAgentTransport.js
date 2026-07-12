@@ -147,6 +147,7 @@ export function useAgentTransport({
         memory: agentMemory,
         // 当前会话归属的项目，后端据此隔离记忆/文件根/trace/checkpoint。
         projectId: activeSession.projectId ?? null,
+        sessionId,
         signal: controller.signal,
         messages: isRetry ? [] : messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
         ...extraBody,

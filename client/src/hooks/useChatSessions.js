@@ -1,11 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { tStatic } from '../i18n/locale.js';
 import { normalizeAgentMeta } from '../utils/agent-stats.js';
+import { apiFetch } from '../api/http.js';
 
-const LEGACY_MESSAGES_KEY = 'nvidia_chat_messages';
-const LEGACY_MODEL_KEY = 'nvidia_chat_model';
-const SESSIONS_KEY = 'nvidia_chat_sessions';
-const ACTIVE_SESSION_KEY = 'nvidia_chat_active_session';
 const MAX_AGENT_RUN_HISTORY = 30;
 
 function generateSessionId() {
@@ -176,37 +173,6 @@ export function normalizeChatState(rawState) {
   return { sessions: nextSessions, activeSessionId };
 }
 
-function loadChatState() {
-  try {
-    const storedSessions = JSON.parse(localStorage.getItem(SESSIONS_KEY) || 'null');
-    if (Array.isArray(storedSessions) && storedSessions.length > 0) {
-      return normalizeChatState({
-        sessions: storedSessions,
-        activeSessionId: localStorage.getItem(ACTIVE_SESSION_KEY),
-      });
-    }
-  } catch {
-    // ignore malformed storage and fall back to migration/default state
-  }
-
-  let legacyMessages = [];
-  try {
-    legacyMessages = JSON.parse(localStorage.getItem(LEGACY_MESSAGES_KEY) || '[]');
-  } catch {
-    legacyMessages = [];
-  }
-
-  const migratedSession = createSession({
-    messages: legacyMessages,
-    model: localStorage.getItem(LEGACY_MODEL_KEY),
-  });
-
-  return normalizeChatState({
-    sessions: [migratedSession],
-    activeSessionId: migratedSession.id,
-  });
-}
-
 export function touchSession(session, patch = {}) {
   return {
     ...session,
@@ -223,15 +189,6 @@ export function getSessionTitle(messages) {
 
   const text = firstUserMessage.content.replace(/\s+/g, ' ').trim();
   return text.length > 20 ? `${text.slice(0, 20)}…` : text;
-}
-
-function isQuotaError(err) {
-  // 浏览器之间 name/code 不一致，这里多覆盖几种。
-  if (!err) return false;
-  return err.name === 'QuotaExceededError'
-    || err.name === 'NS_ERROR_DOM_QUOTA_REACHED'
-    || err.code === 22
-    || err.code === 1014;
 }
 
 function stripAgentRunTraces(agentRuns) {
@@ -255,39 +212,64 @@ function stripAgentTrace(sessions) {
   });
 }
 
-function persistSessions(sessions) {
-  try {
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(stripAgentTrace(sessions)));
-  } catch (err) {
-    if (!isQuotaError(err)) throw err;
-    // 已经只存元数据还撞配额，说明会话条数太多；保留最近 20 条试一次再吞错。
-    try {
-      const trimmed = stripAgentTrace(sessions)
-        .slice()
-        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-        .slice(0, 20);
-      localStorage.setItem(SESSIONS_KEY, JSON.stringify(trimmed));
-    } catch (err2) {
-      if (!isQuotaError(err2)) throw err2;
-      console.warn('[useChatSessions] localStorage quota exceeded, sessions not persisted', err2);
-    }
-  }
-}
-
 export function useChatSessions() {
-  const [chatState, setChatState] = useState(loadChatState);
+  const [chatState, setChatState] = useState(() => normalizeChatState({ sessions: [], activeSessionId: null }));
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsError, setSessionsError] = useState(null);
+  const hydratedRef = useRef(false);
+  const persistChainRef = useRef(Promise.resolve());
   const { sessions, activeSessionId } = chatState;
   const activeSession = sessions.find(session => session.id === activeSessionId) || sessions[0];
 
   useEffect(() => {
-    persistSessions(sessions);
-    try {
-      localStorage.setItem(ACTIVE_SESSION_KEY, activeSession.id);
-      localStorage.removeItem(LEGACY_MESSAGES_KEY);
-      localStorage.removeItem(LEGACY_MODEL_KEY);
-    } catch (err) {
-      if (!isQuotaError(err)) throw err;
-    }
+    const controller = new AbortController();
+    apiFetch('/api/sessions', { signal: controller.signal })
+      .then(async response => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        if (controller.signal.aborted) return;
+        setChatState(normalizeChatState({
+          sessions: data.sessions,
+          activeSessionId: data.activeSessionId,
+        }));
+        hydratedRef.current = true;
+        setSessionsError(null);
+        setSessionsLoading(false);
+      })
+      .catch(err => {
+        if (controller.signal.aborted) return;
+        setSessionsError(err?.message || String(err));
+        setSessionsLoading(false);
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (!hydratedRef.current) return undefined;
+    const payload = {
+      sessions: stripAgentTrace(sessions),
+      activeSessionId: activeSession.id,
+    };
+    const timer = setTimeout(() => {
+      persistChainRef.current = persistChainRef.current
+        .catch(() => {})
+        .then(async () => {
+          const response = await apiFetch('/api/sessions', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${response.status}`);
+          }
+        })
+        .catch(err => {
+          console.warn('[useChatSessions] backend persistence failed', err);
+          setSessionsError(err?.message || String(err));
+        });
+    }, 300);
+    return () => clearTimeout(timer);
   }, [activeSession.id, sessions]);
 
   const updateSession = useCallback((sessionId, updater) => {
@@ -306,5 +288,7 @@ export function useChatSessions() {
     activeSession,
     messages: activeSession.messages,
     updateSession,
+    sessionsLoading,
+    sessionsError,
   };
 }

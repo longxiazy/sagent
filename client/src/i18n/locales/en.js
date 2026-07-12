@@ -475,4 +475,5 @@ export const en = {
   'session.newChat': 'New chat',
   'sessionOps.confirmDelete': 'Delete this session? This cannot be undone.',
   'sessionOps.confirmClearAll': 'Clear all sessions? This cannot be undone.',
+  'sessionOps.confirmClearProject': 'Clear all sessions in the current project? Other projects will not be affected. This cannot be undone.',
 };
