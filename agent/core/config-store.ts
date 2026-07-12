@@ -1,5 +1,5 @@
 /**
- * Runtime Config — 集中的运行时配置层（单一数据源 + 落盘）
+ * Config Store — 集中的结构化配置仓库（单一数据源 + 落盘）
  *
  * 把原先散落在 server.ts / runtime.ts / memory.ts 里、启动时从 process.env
  * 冻结的 Agent 行为参数收敛到这里。消费点改为每次读 get()，因此前台改完
@@ -184,7 +184,7 @@ export function normalizeConfigDocument(value: any): SagentConfigDocument {
   } as SagentConfigDocument;
 }
 
-export const runtimeConfig = {
+export const configStore = {
   /** 启动时调用一次：设定落盘目录并加载 json 覆盖。 */
   async init(persistDir: string): Promise<RuntimeConfig> {
     envState = configDefaultsFromEnv();
@@ -249,12 +249,18 @@ export const runtimeConfig = {
     return JSON.parse(JSON.stringify(document.tools || {}));
   },
 
-  execution() {
+  execution(env: Record<string, string | undefined> = process.env) {
     const stored = document.execution || {};
+    const envBool = (name: string, fallback: boolean) => {
+      const raw = env[name];
+      if (raw == null || String(raw).trim() === '') return fallback;
+      return ['1', 'true', 'yes', 'on'].includes(String(raw).trim().toLowerCase());
+    };
     return {
-      resume: stored.resume ?? process.env.AGENT_RESUME !== 'false',
-      sandboxedWorkers: stored.sandboxedWorkers ?? process.env.AGENT_SANDBOXED_WORKERS === 'true',
-      workerSandbox: stored.workerSandbox ?? process.env.AGENT_WORKER_SANDBOX !== 'false',
+      resume: envBool('AGENT_RESUME', stored.resume ?? true),
+      // execution 是启动期部署选择；显式环境变量优先，确保 npm run sandbox 语义稳定。
+      sandboxedWorkers: envBool('AGENT_SANDBOXED_WORKERS', stored.sandboxedWorkers ?? false),
+      workerSandbox: envBool('AGENT_WORKER_SANDBOX', stored.workerSandbox ?? true),
     };
   },
 
@@ -311,4 +317,4 @@ export const runtimeConfig = {
   },
 };
 
-export type RuntimeConfigStore = typeof runtimeConfig;
+export type ConfigStore = typeof configStore;

@@ -1,6 +1,6 @@
 import { buildIdePromptLines, isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
 import { buildChromePromptLines, isChromeMcpEnabled } from '../tools/chrome/mcp-client.ts';
-import { runtimeConfig } from './runtime-config.ts';
+import { configStore } from './config-store.ts';
 
 type PromptCapabilityContext = {
   task?: string;
@@ -131,7 +131,7 @@ function promptResultText(value: any) {
 
 export function compactAgentHistory(history: any[], maxEntries?: number, maxResultChars?: number) {
   if (!Array.isArray(history) || history.length === 0) return [];
-  const config = runtimeConfig.get();
+  const config = configStore.get();
   const entryLimit = maxEntries ?? config.maxHistorySteps;
   const resultLimit = maxResultChars ?? config.maxResultChars;
   return history.slice(-entryLimit).map(entry => {

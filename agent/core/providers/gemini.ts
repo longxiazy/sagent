@@ -22,7 +22,7 @@ import { initSse, writeSse, writeSseDone } from '../../../helpers/streaming.ts';
 import { retryAsync } from '../../../helpers/retry.ts';
 import { buildSummaryPrompt } from './summary-prompt.ts';
 import { extractModelMetadata } from './model-metadata.ts';
-import { runtimeConfig } from '../runtime-config.ts';
+import { configStore } from '../config-store.ts';
 import type {
   LLMProvider,
   ModelInfo,
@@ -133,7 +133,7 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
       const maxOutputTokens = resolveAgentMaxTokens({
         model,
         modelConfig,
-        requestedMaxTokens: runtimeConfig.get().maxOutputTokens,
+        requestedMaxTokens: configStore.get().maxOutputTokens,
         promptPayload: { systemInstruction: system, contents, tools, toolConfig },
       });
 

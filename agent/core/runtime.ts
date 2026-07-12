@@ -36,7 +36,7 @@ import {
   HEALTH_CHECKPOINT_INTERVAL,
 } from "./checkpoint.js";
 import { assessResultQuality } from "./result-quality.ts";
-import { runtimeConfig } from "./runtime-config.ts";
+import { configStore } from "./config-store.ts";
 import type {
   AgentAction,
   AgentStep,
@@ -58,7 +58,7 @@ function observationText(observation: unknown, key: 'url' | 'title'): string | u
 
 function compressHistory(history: AgentStep[], maxSteps?: number) {
   // 历史截断预算每次从运行时配置读取，前台改完无需重启即生效
-  const { maxHistorySteps, maxResultChars: MAX_RESULT_CHARS, maxParallelResultChars: MAX_PARALLEL_RESULT_CHARS } = runtimeConfig.get();
+  const { maxHistorySteps, maxResultChars: MAX_RESULT_CHARS, maxParallelResultChars: MAX_PARALLEL_RESULT_CHARS } = configStore.get();
   if (maxSteps == null) maxSteps = maxHistorySteps;
   // Progressive truncation: recent steps keep more context, old steps get shorter results
   const truncateEntry = (h, remaining) => {

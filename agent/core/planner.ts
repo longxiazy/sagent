@@ -19,7 +19,7 @@ import {
   buildChatCompletionRequest,
   createChatCompletionWithTemplateFallback,
 } from './openai-compatible-request.ts';
-import { runtimeConfig } from './runtime-config.ts';
+import { configStore } from './config-store.ts';
 
 // 每一步只需产出一个结构化动作；过大的输出预算会放大推理延迟和供应商超时风险。
 const DEFAULT_AGENT_MAX_TOKENS = 4_096;
@@ -119,7 +119,7 @@ export function createJsonPlanner({
   return async ({ model, signal = null, ...context }) => {
     let messages = buildMessages(context);
     const configuredMaxTokens = Number(context.maxOutputTokens)
-      || runtimeConfig.get().maxOutputTokens
+      || configStore.get().maxOutputTokens
       || maxTokens;
     let requestMaxTokens = resolveAgentMaxTokens({
       model,

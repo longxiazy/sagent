@@ -9,6 +9,8 @@
 > 英文版：[README.md](README.md)
 >
 > 环境变量和运行时配置：[CONFIGURATION.md](CONFIGURATION.md)
+>
+> 系统架构：[ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## 项目简介
 
@@ -49,6 +51,8 @@ npm run sandbox
 
 `npm run sandbox` 会正常启动 UI/API server，并让每次 Agent 任务在 macOS 沙盒 worker 中执行。只有明确需要无沙盒调试时，才使用 `npm run dev`。
 
+启动后可在设置页选择 Agent Profile、调整基础/高级运行参数，并管理 Chrome 与 JetBrains MCP 连接。这些值保存在本地 `data/config.json`，密钥仍保留在 `.env`。
+
 ## Docker 运行
 
 Docker 会构建前端，并用一个 Bun 进程提供 UI/API 服务。它适合分发 server/UI 包；依赖桌面、系统 WebView 或宿主浏览器控制的 Agent 能力，仍建议在 macOS 上原生运行。
@@ -75,11 +79,20 @@ Agent 等待审批时，sagent 会显示页面内审批面板，并发送浏览�
 
 ## 多设备查看
 
-局域网内其他设备可以打开 `http://<Mac-IP>:5173` 实时查看当前 Agent 运行。
+开发服务默认只监听 `127.0.0.1`。需要在局域网访问时，先在 `.env` 设置至少 16 位的 `SAGENT_API_TOKEN`，再显式暴露 Vite：
+
+```bash
+openssl rand -hex 24
+# 把输出填入 .env 的 SAGENT_API_TOKEN=
+VITE_HOST=0.0.0.0 npm run sandbox
+```
+
+局域网设备随后可打开 `http://<Mac-IP>:5173`，首次受保护请求会要求输入 Token。独立部署前端时，还需通过 `SAGENT_CORS_ORIGINS` 配置精确来源。
 
 - Agent 运行中，其他设备展示执行流程，并在完成后收到最终结果。
 - 聊天历史保存在各自浏览器里，不跨设备共享。
 - 同一时间只能运行一个 Agent，新的任务请求会收到 409。
+- 配置 Token 后，API、OpenAI 兼容 `/v1` 和截图接口都需要认证；后端监听非 loopback 地址时，没有合规 Token 将拒绝启动。
 
 ## 核心工作流
 
@@ -124,3 +137,5 @@ client/     React/Vite 前端
 scripts/    冒烟测试、停止脚本、Chrome MCP bridge
 test/       Vitest 和集成测试
 ```
+
+后端、Agent、worker、配置和持久化流程见 [ARCHITECTURE.md](ARCHITECTURE.md)，React 前端细节见 [client/ARCHITECTURE.md](client/ARCHITECTURE.md)。
