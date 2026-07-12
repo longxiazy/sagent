@@ -5082,7 +5082,15 @@ a.model-encyclopedia-field-value:hover {
   background: var(--c-surface-dim);
 }
 
-.prompt-preview-text {
+.prompt-preview-mode .settings-segment-btn {
+  height: 26px;
+  padding: 0 9px;
+  font-size: var(--f-xs);
+}
+
+.prompt-preview-text,
+.prompt-preview-editor,
+.prompt-preview-markdown {
   margin: 0;
   min-height: 100%;
   padding: 14px 16px;
@@ -5092,8 +5100,37 @@ a.model-encyclopedia-field-value:hover {
   color: var(--c-text);
   font-size: var(--f-xs);
   line-height: 1.6;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+.prompt-preview-text {
+  white-space: pre-wrap;
+}
+
+.prompt-preview-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  resize: none;
+  font-family: var(--font-mono, 'SF Mono', Menlo, monospace);
+  outline: none;
+}
+
+.prompt-preview-editor:focus {
+  border-color: var(--c-primary-light);
+  box-shadow: 0 0 0 3px var(--c-primary-bg);
+}
+
+.prompt-preview-markdown {
+  font-size: var(--f-sm);
+}
+
+.prompt-preview-markdown > :first-child {
+  margin-top: 0;
+}
+
+.prompt-preview-markdown > :last-child {
+  margin-bottom: 0;
 }
 
 .toolbar-chip {

@@ -70,6 +70,9 @@ export const zh = {
   'context.promptTitle': '查看首轮提示词',
   'context.promptMeta': '{model} · {used} tok',
   'context.promptTruncated': '提示词过长，已截断；完整长度 {chars} 字符。',
+  'context.promptViewMode': '提示词查看方式',
+  'context.promptSource': '原文',
+  'context.promptMarkdown': 'Markdown',
 
   // 附件（任务文本块 + 展示）
   'attach.taskBlockHeader': '[附件]',
