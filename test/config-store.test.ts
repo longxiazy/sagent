@@ -30,15 +30,22 @@ describe('structured configuration store', () => {
       enabled: true,
       transport: { type: 'stdio', command: 'npx', args: ['-y', '@jetbrains/mcp-proxy'] },
       projectPath: '.',
+      toolTimeoutMs: 600000,
+    });
+    await configStore.updateMcpServer('codex', {
+      enabled: true,
+      transport: { type: 'stdio', command: 'codex', args: ['mcp-server'] },
     });
 
     expect(configStore.mcpServers()).toMatchObject({
       chrome: { enabled: true, transport: { type: 'sse' } },
       jetbrains: { enabled: true, transport: { type: 'stdio' } },
+      codex: { enabled: true, transport: { type: 'stdio' }, toolTimeoutMs: 600000 },
     });
     const saved = JSON.parse(await readFile(path.join(dir, 'config.json'), 'utf8'));
     expect(saved.mcpServers.chrome.transport.url).toBe('http://127.0.0.1:3099/sse');
     expect(saved.mcpServers.jetbrains.transport.command).toBe('npx');
+    expect(saved.mcpServers.jetbrains.toolTimeoutMs).toBe(600000);
   });
 
   it('resets a profile durably while preserving other config sections', async () => {

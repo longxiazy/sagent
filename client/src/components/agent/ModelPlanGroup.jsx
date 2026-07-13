@@ -4,6 +4,7 @@ import { ResultSummary } from './ResultSummary.jsx';
 import { isFailureResult, resultScreenshot } from './result-status.js';
 import { useT } from '../../i18n/I18nProvider.jsx';
 import { TerminalProcess } from './TerminalProcess.jsx';
+import { McpProcess } from './McpProcess.jsx';
 
 // 多模型一步会产生多条 model_plan 事件。这个组件负责把零散事件重新聚合成
 // 一个"按 step 分组"的展示块，让用户能看到同一步里不同模型如何竞争/投票。
@@ -18,6 +19,7 @@ export function ModelPlanGroup({ events, step, models, selectedModelId = 'all', 
   let stepResultEvent = null;
   let observation = null;
   const terminalEvents = [];
+  const mcpEvents = [];
 
   for (const e of events) {
     if (e.type === 'model_plan') {
@@ -37,6 +39,8 @@ export function ModelPlanGroup({ events, step, models, selectedModelId = 'all', 
       observation = e.observation;
     } else if (e.type === 'terminal_output') {
       terminalEvents.push(e);
+    } else if (e.type === 'mcp_output') {
+      mcpEvents.push(e);
     }
   }
 
@@ -100,6 +104,7 @@ export function ModelPlanGroup({ events, step, models, selectedModelId = 'all', 
         {/* 观察概要：放在模型行之后、结果之前（与单模型 StepCard 的 head→observe 顺序一致） */}
         <ObserveSummary observation={observation} openLightbox={openLightbox} t={t} />
         <TerminalProcess events={terminalEvents} running={!agentFinished && !stepResult} t={t} />
+        <McpProcess events={mcpEvents} running={!agentFinished && !stepResult} t={t} />
         {/* 执行结果：节点底部统一展示（winner 的结果），与单模型 StepCard 口径一致 */}
         <ResultSummary result={stepResult} resultStatus={stepResultStatus} openLightbox={openLightbox} forceExpanded={cardsExpanded} onManualToggle={onManualToggle} t={t} />
       </div>

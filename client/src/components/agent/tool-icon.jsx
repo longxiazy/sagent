@@ -9,6 +9,7 @@ const TOOL_ICONS = {
   terminal: Terminal,
   macos: Monitor,
   ide: Code,
+  mcp: Wrench,
   search: Search,
   vision: Eye,
   spawn: Bot,

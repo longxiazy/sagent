@@ -259,6 +259,20 @@ export function classifyAgentAction(action) {
     };
   }
 
+  if (tool === 'mcp' && (type === 'mcp_list_servers' || type === 'mcp_list_tools')) {
+    return {
+      level: 'safe',
+      reason: '只读取通用 MCP server 与工具元数据',
+    };
+  }
+
+  if (tool === 'mcp' && type === 'mcp_call_tool') {
+    return {
+      level: 'confirm',
+      reason: `即将调用 MCP 工具: ${String(action.serverName || '').trim()}/${String(action.toolName || '').trim()}`,
+    };
+  }
+
   return {
     level: 'blocked',
     reason: `策略未允许该动作: ${tool}.${type}`,

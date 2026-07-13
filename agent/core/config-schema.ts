@@ -21,6 +21,7 @@ export type ConfigProfile = 'fast' | 'balanced' | 'deep' | 'safe' | 'custom';
 
 export type McpTransportConfig =
   | { type: 'sse'; url: string; messagesUrl?: string }
+  | { type: 'http'; url: string }
   | { type: 'stdio'; command: string; args?: string[]; cwd?: string };
 
 export interface McpServerConfig {

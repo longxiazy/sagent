@@ -112,7 +112,7 @@ sagent stores project experience under the configured data directory. Memory inc
 
 ### IDE And Browser Integrations
 
-JetBrains IDE MCP adds `ide_list_tools` and `ide_call_tool` to the Agent. Chrome DevTools MCP adds browser inspection and control through `chrome_list_tools` and `chrome_call_tool`. Both integrations are optional and documented in [CONFIGURATION.md](CONFIGURATION.md).
+JetBrains IDE MCP adds `ide_list_tools` and `ide_call_tool` to the Agent. Chrome DevTools MCP adds browser inspection and control through `chrome_list_tools` and `chrome_call_tool`. Generic MCP servers (including `codex mcp-server`) are exposed through `mcp_list_servers`, `mcp_list_tools`, and `mcp_call_tool`. All integrations are optional and documented in [CONFIGURATION.md](CONFIGURATION.md).
 
 ## Common Commands
 

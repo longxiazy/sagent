@@ -24,6 +24,10 @@ export function agentTraceEventKey(event) {
     ].join(':');
   }
 
+  if (event.type === 'mcp_output') {
+    return `${event.type}:${event.step ?? ''}:${event.sequence ?? event.phase}:${compactChunk(event.message || '')}`;
+  }
+
   return `${event.type}:${event.step ?? ''}:${event.stage ?? ''}:${event.model ?? ''}`;
 }
 

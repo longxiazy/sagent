@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Palette, SlidersHorizontal, Brain, KeyRound, Minus, Plus, Plug, ChevronDown, ChevronRight } from 'lucide-react';
-import { fetchConfig, saveConfig, resetConfig, applyConfigProfile, saveMcpServer, testMcpServer } from '../../api/config.js';
+import { Palette, SlidersHorizontal, Brain, KeyRound, Minus, Plus, Plug, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
+import { fetchConfig, saveConfig, resetConfig, applyConfigProfile, saveMcpServer, deleteMcpServer, testMcpServer } from '../../api/config.js';
 import { useTheme } from '../../theme/ThemeProvider.jsx';
 import { useI18n, useT } from '../../i18n/I18nProvider.jsx';
 import { DialogShell } from './DialogShell.jsx';
@@ -54,6 +54,12 @@ const DEFAULT_MCP_SERVERS = {
     projectPath: '.',
     promptMode: 'lazy',
   },
+  codex: {
+    enabled: false,
+    transport: { type: 'stdio', command: 'codex', args: ['mcp-server'], cwd: '.' },
+    promptMode: 'lazy',
+    toolTimeoutMs: 600000,
+  },
 };
 
 // 设置分组：左侧导航 → 右侧内容。
@@ -81,6 +87,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
   const [mcpServers, setMcpServers] = useState(DEFAULT_MCP_SERVERS);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [mcpStatus, setMcpStatus] = useState({});
+  const [newMcpName, setNewMcpName] = useState('');
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -95,8 +102,10 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
     if (data.profiles) setProfiles(data.profiles);
     if (data.mcpServers) {
       setMcpServers({
+        ...data.mcpServers,
         chrome: data.mcpServers.chrome || DEFAULT_MCP_SERVERS.chrome,
         jetbrains: data.mcpServers.jetbrains || DEFAULT_MCP_SERVERS.jetbrains,
+        codex: data.mcpServers.codex || DEFAULT_MCP_SERVERS.codex,
       });
     }
   };
@@ -217,6 +226,29 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
     }
   };
 
+  const handleAddMcp = () => {
+    const name = newMcpName.trim();
+    if (!name || mcpServers[name]) return;
+    setMcpServers(current => ({
+      ...current,
+      [name]: { enabled: false, transport: { type: 'stdio', command: '', args: [], cwd: '.' }, promptMode: 'lazy' },
+    }));
+    setNewMcpName('');
+  };
+
+  const handleDeleteMcp = async name => {
+    try {
+      await deleteMcpServer(name);
+      setMcpServers(current => {
+        const next = { ...current };
+        delete next[name];
+        return next;
+      });
+    } catch (e) {
+      setMcpStatus(current => ({ ...current, [name]: { ok: false, message: e.message } }));
+    }
+  };
+
   const numberField = (key, labelKey) => {
     const limit = numberFieldLimit(key);
     const value = Number(agent[key]);
@@ -264,13 +296,16 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
   };
 
   const renderMcpServer = name => {
-    const server = mcpServers[name] || DEFAULT_MCP_SERVERS[name];
-    const transport = server.transport || DEFAULT_MCP_SERVERS[name].transport;
+    const fallback = DEFAULT_MCP_SERVERS[name] || { enabled: false, transport: { type: 'stdio', command: '', args: [], cwd: '.' } };
+    const server = mcpServers[name] || fallback;
+    const transport = server.transport || fallback.transport;
     const status = mcpStatus[name];
+    const builtin = name === 'chrome' || name === 'jetbrains';
+    const title = name === 'chrome' ? 'Chrome DevTools' : name === 'jetbrains' ? 'JetBrains IDE' : name === 'codex' ? 'Codex CLI' : name;
     return (
       <div key={name} className="settings-mcp-card">
         <div className="settings-mcp-heading">
-          <strong>{name === 'chrome' ? 'Chrome DevTools' : 'JetBrains IDE'}</strong>
+          <strong>{title}</strong>
           <label className="settings-mcp-enabled">
             <span>{t('settings.mcpEnabled')}</span>
             <input
@@ -289,21 +324,24 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
                 ...current,
                 transport: e.target.value === 'stdio'
                   ? { type: 'stdio', command: 'npx', args: [] }
-                  : { type: 'sse', url: name === 'chrome' ? 'http://127.0.0.1:3099/sse' : 'http://127.0.0.1:6365/sse' },
+                  : e.target.value === 'http'
+                    ? { type: 'http', url: 'http://127.0.0.1:3000/mcp' }
+                    : { type: 'sse', url: name === 'chrome' ? 'http://127.0.0.1:3099/sse' : 'http://127.0.0.1:6365/sse' },
               }))}
             >
               <option value="sse">SSE</option>
+              {!builtin && <option value="http">Streamable HTTP</option>}
               {name !== 'chrome' && <option value="stdio">stdio</option>}
             </select>
           </label>
-          {transport.type === 'sse' ? (
+          {transport.type === 'sse' || transport.type === 'http' ? (
             <label className="settings-field settings-mcp-wide">
               <span>URL</span>
               <input
                 value={transport.url || ''}
                 onChange={e => updateMcp(name, current => ({
                   ...current,
-                  transport: { ...current.transport, type: 'sse', url: e.target.value },
+                  transport: { ...current.transport, type: transport.type, url: e.target.value },
                 }))}
               />
             </label>
@@ -329,6 +367,16 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
                   }))}
                 />
               </label>
+              <label className="settings-field settings-mcp-wide">
+                <span>CWD</span>
+                <input
+                  value={transport.cwd || '.'}
+                  onChange={e => updateMcp(name, current => ({
+                    ...current,
+                    transport: { ...current.transport, type: 'stdio', cwd: e.target.value },
+                  }))}
+                />
+              </label>
             </>
           )}
           {name === 'jetbrains' && (
@@ -340,10 +388,29 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
               />
             </label>
           )}
+          <label className="settings-field">
+            <span>{t('settings.mcpToolTimeoutSec')}</span>
+            <input
+              type="number"
+              min="1"
+              max="3600"
+              step="1"
+              value={Math.round((server.toolTimeoutMs || (name === 'codex' ? 600000 : 60000)) / 1000)}
+              onChange={e => updateMcp(name, current => ({
+                ...current,
+                toolTimeoutMs: Math.max(1000, Math.min(3600000, (Number(e.target.value) || 1) * 1000)),
+              }))}
+            />
+          </label>
         </div>
         <div className="settings-mcp-actions">
           <button type="button" className="dialog-btn" onClick={() => handleSaveMcp(name)} disabled={status?.loading}>{t('common.save')}</button>
           <button type="button" className="dialog-btn primary" onClick={() => handleTestMcp(name)} disabled={status?.loading || !server.enabled}>{t('settings.mcpTest')}</button>
+          {!builtin && name !== 'codex' && (
+            <button type="button" className="dialog-btn" onClick={() => handleDeleteMcp(name)} disabled={status?.loading} title={t('settings.mcpDelete')}>
+              <Trash2 size={15} />
+            </button>
+          )}
           {status?.message && <span className={status.ok ? 'settings-ok' : 'settings-error'}>{status.message}</span>}
         </div>
       </div>
@@ -486,6 +553,22 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
             <div className="settings-mcp-list">
               {renderMcpServer('chrome')}
               {renderMcpServer('jetbrains')}
+              {renderMcpServer('codex')}
+              {Object.keys(mcpServers)
+                .filter(name => !['chrome', 'jetbrains', 'codex'].includes(name))
+                .sort()
+                .map(renderMcpServer)}
+              <div className="settings-mcp-card">
+                <div className="settings-mcp-actions">
+                  <input
+                    value={newMcpName}
+                    onChange={e => setNewMcpName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddMcp(); }}
+                    placeholder={t('settings.mcpNamePlaceholder')}
+                  />
+                  <button type="button" className="dialog-btn" onClick={handleAddMcp} disabled={!newMcpName.trim() || !!mcpServers[newMcpName.trim()]}>{t('settings.mcpAdd')}</button>
+                </div>
+              </div>
             </div>
           )}
         </div>

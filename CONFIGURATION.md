@@ -174,7 +174,46 @@ stdio transport:
 }
 ```
 
-The Settings UI can save and test the built-in `chrome` and `jetbrains` connections. Chrome currently uses SSE; JetBrains supports SSE and stdio.
+Streamable HTTP transport uses the same URL shape with `"type": "http"`:
+
+```json
+{
+  "enabled": true,
+  "transport": {
+    "type": "http",
+    "url": "https://example.com/mcp"
+  }
+}
+```
+
+The Settings UI can save and test the built-in `chrome` and `jetbrains` connections, plus arbitrary generic MCP servers. Chrome currently uses SSE; JetBrains supports SSE and stdio; generic servers support stdio, SSE, and Streamable HTTP.
+
+Codex CLI can be registered as a generic stdio MCP server and used as a coding expert inside an sagent workflow:
+
+```json
+{
+  "mcpServers": {
+    "codex": {
+      "enabled": true,
+      "transport": {
+        "type": "stdio",
+        "command": "codex",
+        "args": ["mcp-server"],
+        "cwd": "."
+      },
+      "toolTimeoutMs": 600000
+    }
+  }
+}
+```
+
+When at least one generic server is enabled, the Agent receives three adapter tools:
+
+- `mcp_list_servers`
+- `mcp_list_tools(serverName)`
+- `mcp_call_tool(serverName, toolName, arguments)`
+
+Listing server/tool metadata is read-only. Generic tool calls require the normal sagent approval flow because an arbitrary MCP tool may modify files or external state.
 
 ## Migration from legacy configuration
 

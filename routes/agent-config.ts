@@ -54,7 +54,14 @@ async function testMcpConnection(name: string) {
       await client.close().catch(() => {});
     }
   }
-  throw new Error(`暂不支持测试 MCP server: ${name}`);
+  const { createGenericMcpClient, getGenericMcpServer } = await import('../agent/tools/mcp/client.ts');
+  const client = createGenericMcpClient(name, getGenericMcpServer(name));
+  try {
+    const tools = await client.listTools({ refresh: true });
+    return { ok: true, toolCount: tools.length };
+  } finally {
+    await client.close().catch(() => {});
+  }
 }
 
 function effectiveMcpServers(configStore: AgentRouterContext['configStore']) {

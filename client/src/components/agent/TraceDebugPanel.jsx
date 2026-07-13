@@ -1,4 +1,4 @@
-import { Activity, BarChart3 } from 'lucide-react';
+import { BarChart3 } from 'lucide-react';
 import { computeModelTraceMetrics, formatDurationMs, formatTokenCount } from './trace-metrics.js';
 import { getModelLabel } from './plan-stage.js';
 
@@ -24,21 +24,10 @@ export function TraceDebugPanel({ metrics, trace = [], selectedModelId = 'all', 
   const maxDuration = Math.max(1, ...visibleSteps.map(step => step.durationMs || 0));
   const slowest = metrics.slowestStep;
 
-  return (
-    <details className="trace-debug-panel">
-      <summary className="trace-debug-summary">
-        <span className="trace-debug-title">
-          <Activity size={13} />
-          {t('agentPanel.traceDebug')}
-        </span>
-        <span className="trace-debug-summary-meta">
-          {t('agentPanel.traceDebugMeta', {
-            llm: metrics.llmCalls,
-            tools: metrics.completedToolCalls,
-          })}
-        </span>
-      </summary>
+  const visibleModelMetrics = selectedMetrics ? [selectedMetrics] : modelMetrics;
 
+  return (
+    <div className="trace-debug-panel trace-debug-panel--dialog">
       <div className="trace-debug-grid">
         <MetricCell label={t('agentPanel.metricLlmCalls')} value={metrics.llmCalls} />
         <MetricCell label={t('agentPanel.metricTokens')} value={formatTokenCount(metrics.totalTokens)} tone="tokens" />
@@ -47,26 +36,18 @@ export function TraceDebugPanel({ metrics, trace = [], selectedModelId = 'all', 
         <MetricCell label={t('agentPanel.metricSlowestStep')} value={slowest ? `Step ${slowest.step} · ${formatDurationMs(slowest.durationMs)}` : '--'} tone={slowest?.status === 'failed' || slowest?.status === 'slow' ? 'warn' : ''} />
       </div>
 
-      {selectedMetrics ? (
-        <div className="trace-debug-model-section">
-          <strong>{getModelLabel(selectedMetrics.modelId, modelList)}</strong>
-          <div className="trace-debug-grid">
-            <MetricCell label={t('agentPanel.metricLlmCalls')} value={selectedMetrics.llmCalls} />
-            <MetricCell label={t('agentPanel.metricTokens')} value={formatTokenCount(selectedMetrics.totalTokens)} tone="tokens" />
-            <MetricCell label={t('agentPanel.metricWins')} value={selectedMetrics.wins} tone="ok" />
-            <MetricCell label={t('agentPanel.metricFailures')} value={selectedMetrics.failures} tone={selectedMetrics.failures ? 'warn' : ''} />
-            <MetricCell label={t('agentPanel.metricAvgDecision')} value={formatDurationMs(selectedMetrics.avgDurationMs)} />
-          </div>
-        </div>
-      ) : modelMetrics.length > 1 && (
+      {visibleModelMetrics.length > 0 && (
         <div className="trace-debug-model-list">
-          {modelMetrics.map(item => (
-            <div className="trace-debug-model-row" key={item.modelId}>
+          {visibleModelMetrics.map(item => (
+            <div className="trace-debug-model-section" key={item.modelId}>
               <strong>{getModelLabel(item.modelId, modelList)}</strong>
-              <span>{item.llmCalls} {t('agentPanel.callsShort')}</span>
-              <span>{formatTokenCount(item.totalTokens)} tok</span>
-              <span>{t('agentPanel.winsShort', { n: item.wins })}</span>
-              <span>{formatDurationMs(item.avgDurationMs)}</span>
+              <div className="trace-debug-grid">
+                <MetricCell label={t('agentPanel.metricLlmCalls')} value={item.llmCalls} />
+                <MetricCell label={t('agentPanel.metricTokens')} value={formatTokenCount(item.totalTokens)} tone="tokens" />
+                <MetricCell label={t('agentPanel.metricWins')} value={item.wins} tone="ok" />
+                <MetricCell label={t('agentPanel.metricFailures')} value={item.failures} tone={item.failures ? 'warn' : ''} />
+                <MetricCell label={t('agentPanel.metricAvgDecision')} value={formatDurationMs(item.avgDurationMs)} />
+              </div>
             </div>
           ))}
         </div>
@@ -96,6 +77,6 @@ export function TraceDebugPanel({ metrics, trace = [], selectedModelId = 'all', 
           ))}
         </div>
       )}
-    </details>
+    </div>
   );
 }

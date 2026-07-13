@@ -110,7 +110,7 @@ sagent 会在配置的数据目录下保存项目经验，包括近期任务摘�
 
 ### IDE 与浏览器集成
 
-JetBrains IDE MCP 会给 Agent 增加 `ide_list_tools` 和 `ide_call_tool`。Chrome DevTools MCP 会增加 `chrome_list_tools` 和 `chrome_call_tool`。两者都是可选能力，配置方式见 [CONFIGURATION.md](CONFIGURATION.md)。
+JetBrains IDE MCP 会给 Agent 增加 `ide_list_tools` 和 `ide_call_tool`。Chrome DevTools MCP 会增加 `chrome_list_tools` 和 `chrome_call_tool`。包括 `codex mcp-server` 在内的通用 MCP server 会通过 `mcp_list_servers`、`mcp_list_tools` 和 `mcp_call_tool` 接入。所有集成都是可选能力，配置方式见 [CONFIGURATION.md](CONFIGURATION.md)。
 
 ## 常用命令
 

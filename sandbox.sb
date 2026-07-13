@@ -43,6 +43,11 @@
 (allow file-write*
   (subpath (param "MEMORY_DIR")))
 
+;; ── Codex MCP 运行状态 ───────────────────────────
+;; codex mcp-server 启动和执行任务时需要更新 ~/.codex 下的会话、日志与缓存。
+(allow file-write*
+  (subpath (string-append (param "HOME") "/.codex")))
+
 ;; ── Bun.WebView 临时目录 & Socket ──────────────
 (allow file-read* file-write*
   (subpath "/private/var/folders"))

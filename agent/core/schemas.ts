@@ -338,6 +338,29 @@ function normalizeChromeAction(type: string, action: JsonObject): AgentAction {
   throw new Error(`不支持的 Chrome 动作: ${type}`);
 }
 
+function normalizeMcpAction(type: string, action: JsonObject): AgentAction {
+  if (type === 'mcp_list_servers') return { tool: 'mcp', type };
+  if (type === 'mcp_list_tools') {
+    return {
+      tool: 'mcp',
+      type,
+      serverName: typeof action.serverName === 'string' ? action.serverName.trim() : '',
+      refresh: Boolean(action.refresh),
+    };
+  }
+  if (type === 'mcp_call_tool') {
+    return {
+      tool: 'mcp',
+      type,
+      serverName: typeof action.serverName === 'string' ? action.serverName.trim() : '',
+      toolName: typeof action.toolName === 'string' ? action.toolName.trim() : '',
+      arguments: isRecord(action.arguments) ? action.arguments : {},
+      refreshTools: Boolean(action.refreshTools),
+    };
+  }
+  throw new Error(`不支持的通用 MCP 动作: ${type}`);
+}
+
 function normalizeSpawnAction(type: string, action: JsonObject): AgentAction {
   if (type === 'spawn') {
     if (!Array.isArray(action.tasks)) {
@@ -438,6 +461,8 @@ export function normalizeDesktopAgentDecision(payload: unknown): AgentDecision {
     normalizedAction = normalizeIdeAction(type, action);
   } else if (tool === 'chrome') {
     normalizedAction = normalizeChromeAction(type, action);
+  } else if (tool === 'mcp') {
+    normalizedAction = normalizeMcpAction(type, action);
   } else if (tool === 'spawn') {
     normalizedAction = normalizeSpawnAction(type, action);
   } else if (tool === 'core') {

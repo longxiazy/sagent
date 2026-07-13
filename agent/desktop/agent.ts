@@ -39,6 +39,7 @@ import { executeSpawnAction } from '../tools/spawn/execute.ts';
 import { createDomainRules } from '../tools/fetch/domain-rules.ts';
 import { executeIdeAction } from '../tools/ide/execute.ts';
 import { executeChromeAction } from '../tools/chrome/execute.ts';
+import { executeGenericMcpAction } from '../tools/mcp/execute.ts';
 import { executeMacOSAction } from '../tools/macos/execute.ts';
 import { executeTerminalAction } from '../tools/terminal/run.ts';
 import { createSharedBrowserSessionManager } from './browser-session-manager.ts';
@@ -252,6 +253,20 @@ export function createDesktopAgentRunner({
       }),
       ide: async (state, action) => executeIdeAction(action, { signal: state.cancelSignal }),
       chrome: async (state, action) => executeChromeAction(action, { signal: state.cancelSignal }),
+      mcp: async (state, action, context) => {
+        let sequence = 0;
+        return executeGenericMcpAction(action, {
+          signal: state.cancelSignal,
+          cwd: state.projectRoot,
+          onOutput: event => state.onEvent?.({
+            type: 'mcp_output',
+            step: context?.step,
+            serverName: 'serverName' in action ? action.serverName : '',
+            sequence: sequence++,
+            ...event,
+          }),
+        });
+      },
       terminal: async (state, action, context) => executeTerminalAction(action, {
         cwd: state.projectRoot,
         signal: state.cancelSignal,
