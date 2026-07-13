@@ -5,7 +5,7 @@
  * router 根据 tool 名分发到对应 handler（如 browser handler 调用 Playwright）。
  *
  * 调用场景：
- *   - agent/desktop/agent.js 中 createActionRouter({ core, browser, fs, fetch, terminal, macos })
+ *   - agent/desktop/agent.js 中 createActionRouter({ core, browser, fs, fetch, terminal, ide, mcp })
  *   - runtime.js 的 execute 步骤调用 routeAction(state, action, context)
  *
  * handlers 结构示例：

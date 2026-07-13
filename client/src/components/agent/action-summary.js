@@ -23,7 +23,7 @@ export function summarizeAction(action) {
   if (!action || typeof action !== 'object') return '';
   const head = actionTitle(action);
 
-  // 坐标类动作（如 macos.click_at）单独处理。
+  // 坐标类动作单独处理（兼容历史 trace）。
   if (action.x != null && action.y != null) return `${head} (${action.x}, ${action.y})`;
 
   for (const key of PARAM_PRIORITY) {

@@ -6,8 +6,6 @@ export function getMacOSCapabilityReport() {
     backend: backend.type,
     helperPath: backend.helperPath || '',
     helperAvailable: Boolean(backend.helperPath),
-    features: backend.type === 'helper'
-      ? ['observe', 'open_app', 'activate_app', 'type_text', 'press_key', 'click_at']
-      : ['observe', 'open_app', 'activate_app'],
+    features: ['observe'],
   };
 }

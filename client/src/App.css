@@ -79,7 +79,7 @@
   --c-badge-consensus: #166534;
 
   /* 工具语义色：按领域分组，时间线圆点 + 工具图标据此着色，让「这步在用哪类工具」一眼可辨。
-     网络蓝青(browser/chrome/search) · 文件命令暖色(fs/terminal) · 桌面紫靛(macos/ide) · 智能粉玫(vision/spawn) · 控制灰(core) */
+     网络蓝青(browser/chrome/search) · 文件命令暖色(fs/terminal) · 桌面紫靛(macos/ide) · 智能粉玫(vision) · 控制灰(core) */
   --c-tool-browser:  #2563eb;
   --c-tool-chrome:   #0891b2;
   --c-tool-search:   #0d9488;
@@ -89,7 +89,6 @@
   --c-tool-ide:      #4f46e5;
   --c-tool-mcp:      #7c3aed;
   --c-tool-vision:   #c026d3;
-  --c-tool-spawn:    #e11d48;
   --c-tool-core:     #64748b;
 
   /* observe 节点专属色：多模型场景下单独渲染的「观察」节点，柔和蓝灰——中性、明确区别于动作的鲜艳工具色 */
@@ -254,7 +253,6 @@
   --c-tool-ide:      #818cf8;
   --c-tool-mcp:      #a78bfa;
   --c-tool-vision:   #e879f9;
-  --c-tool-spawn:    #fb7185;
   --c-tool-core:     #94a3b8;
 
   /* observe 节点专属色（暗版：提亮的柔和蓝灰） */
@@ -4185,7 +4183,6 @@ a.model-encyclopedia-field-value:hover {
 [data-tool="ide"]      { --tool-c: var(--c-tool-ide); }
 [data-tool="mcp"]      { --tool-c: var(--c-tool-mcp); }
 [data-tool="vision"]   { --tool-c: var(--c-tool-vision); }
-[data-tool="spawn"]    { --tool-c: var(--c-tool-spawn); }
 [data-tool="core"]     { --tool-c: var(--c-tool-core); }
 
 /* 圆点状态色：动作类节点用工具色（--tool-c），其余事件沿用原语义映射 */

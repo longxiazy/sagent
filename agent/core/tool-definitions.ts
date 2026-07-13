@@ -1,7 +1,7 @@
 /**
  * Tool Definitions — Agent 可用的所有工具 schema 定义
  *
- * 定义了 DesktopAgent 能调用的全部工具（浏览器、文件系统、终端、macOS 桌面、HTTP 抓取、核心动作）。
+ * 定义了 DesktopAgent 能调用的全部工具（浏览器、文件系统、终端、HTTP 抓取、核心动作）。
  *
  * 调用场景：
  *   - 各 provider 的 agentPlan() 将工具列表传给对应模型 API
@@ -158,22 +158,6 @@ export function createModelTools({
       },
     },
     {
-      name: 'parallel_fetch',
-      description: '用浏览器依次打开多个 URL 并提取内容。适合需要获取多个页面信息的场景。',
-      input_schema: {
-        type: 'object',
-        properties: {
-          urls: {
-            type: 'array',
-            items: { type: 'string' },
-            description: '要抓取的 URL 列表（最多 5 个）',
-          },
-          extractLinks: { type: 'boolean', description: '是否提取页面链接列表' },
-        },
-        required: ['urls'],
-      },
-    },
-    {
       name: 'web_search',
       description: '用 DuckDuckGo 搜索网络（无需 API key），返回标题/URL/摘要列表。优先用它定位资料，再用 http_fetch 抓取具体页面。比直接打开 Google/Bing 更稳，不会触发反爬。',
       input_schema: {
@@ -255,73 +239,6 @@ export function createModelTools({
       },
     },
     {
-      name: 'open_app',
-      description: '打开 macOS 应用',
-      input_schema: {
-        type: 'object',
-        properties: {
-          app: { type: 'string', description: '应用名称（如 "Google Chrome"）' },
-        },
-        required: ['app'],
-      },
-    },
-    {
-      name: 'activate_app',
-      description: '激活（切换到）macOS 应用',
-      input_schema: {
-        type: 'object',
-        properties: {
-          app: { type: 'string', description: '应用名称' },
-        },
-        required: ['app'],
-      },
-    },
-    {
-      name: 'list_windows',
-      description: '列出所有窗口',
-      input_schema: { type: 'object', properties: {} },
-    },
-    {
-      name: 'capture_screen',
-      description: '截取屏幕截图',
-      input_schema: { type: 'object', properties: {} },
-    },
-    {
-      name: 'type_text',
-      description: '在桌面输入文字',
-      input_schema: {
-        type: 'object',
-        properties: {
-          text: { type: 'string', description: '要输入的文字' },
-        },
-        required: ['text'],
-      },
-    },
-    {
-      name: 'press_key',
-      description: '按下键盘按键',
-      input_schema: {
-        type: 'object',
-        properties: {
-          key: { type: 'string', description: '按键名称（如 enter, escape）' },
-          modifiers: { type: 'array', items: { type: 'string' }, description: '修饰键（command, shift, control, option）' },
-        },
-        required: ['key'],
-      },
-    },
-    {
-      name: 'click_at',
-      description: '点击桌面坐标',
-      input_schema: {
-        type: 'object',
-        properties: {
-          x: { type: 'number', description: 'X 坐标' },
-          y: { type: 'number', description: 'Y 坐标' },
-        },
-        required: ['x', 'y'],
-      },
-    },
-    {
       name: 'ask_user',
       description: '向用户提出开放式问题并等待回答。当需要用户输入或确认偏好时使用。',
       input_schema: {
@@ -342,23 +259,6 @@ export function createModelTools({
           level: { type: 'string', enum: ['info', 'warning', 'discovery'], description: '通知级别' },
         },
         required: ['message'],
-      },
-    },
-    {
-      name: 'spawn',
-      description: '并行分发多个独立的自然语言任务给只读子 Agent 执行。tasks 必须是字符串数组，不能填写 browser/http_fetch 等工具动作对象。适合同时分析多个文件、调研多个页面或批量处理独立任务，最多 5 个。',
-      input_schema: {
-        type: 'object',
-        properties: {
-          tasks: {
-            type: 'array',
-            items: { type: 'string' },
-            description: '1-5 个自然语言子任务字符串，例如：["抓取页面 A 并提取关键数据", "抓取页面 B 并核对来源"]。元素不能是 {tool,type,...} 动作对象。',
-            minItems: 1,
-            maxItems: 5,
-          },
-        },
-        required: ['tasks'],
       },
     },
     {

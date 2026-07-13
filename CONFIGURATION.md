@@ -75,7 +75,6 @@ The Settings UI creates a versioned document at `data/config.json`:
     "maxOutputTokens": 4096,
     "maxHistorySteps": 6,
     "maxResultChars": 4000,
-    "maxParallelResultChars": 32000,
     "memoryMaxEntries": 20,
     "autoModelRouting": false
   },

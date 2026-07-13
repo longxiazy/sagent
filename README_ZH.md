@@ -21,7 +21,7 @@ sagent 把 React Web UI、Bun/Express 后端和可调用工具的 Agent runtime 
 ## 核心特性
 
 - 多模型聊天和 Agent 模式，支持竞速与汇总策略。
-- macOS 桌面控制、截图、浏览器自动化，以及可选的 Chrome DevTools MCP 集成。
+- macOS 桌面观察、截图、浏览器自动化，以及可选的 Chrome DevTools MCP 集成。
 - 文件、终端、搜索、视觉、IDE MCP、浏览器等工具统一接入 Agent runtime。
 - 使用 `npm run sandbox` 时，每次 Agent 任务都会进入短生命周期沙盒 worker。
 - 项目级记忆、trace、上传文件、checkpoint 和中断恢复。

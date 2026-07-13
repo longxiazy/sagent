@@ -113,17 +113,6 @@ function normalizeBrowserAction(type: string, action: JsonObject): AgentAction {
     };
   }
 
-  if (type === 'parallel_fetch') {
-    const urls = Array.isArray(action.urls) ? action.urls.map(u => typeof u === 'string' ? u.trim() : '').filter(Boolean) : [];
-    if (urls.length === 0) throw new Error('parallel_fetch 缺少 urls');
-    return {
-      tool: 'browser',
-      type,
-      urls: urls.map(u => /^https?:\/\//i.test(u) ? u : `https://${u}`),
-      extractLinks: Boolean(action.extractLinks),
-    };
-  }
-
   throw new Error(`不支持的浏览器动作: ${type}`);
 }
 
@@ -236,58 +225,6 @@ function normalizeTerminalAction(type: string, action: JsonObject): AgentAction 
   throw new Error(`不支持的终端动作: ${type}`);
 }
 
-function normalizeMacOsAction(type: string, action: JsonObject): AgentAction {
-  if (type === 'open_app' || type === 'activate_app') {
-    return {
-      tool: 'macos',
-      type,
-      app: typeof action.app === 'string' ? action.app.trim() : '',
-    };
-  }
-
-  if (type === 'list_windows' || type === 'capture_screen') {
-    return {
-      tool: 'macos',
-      type,
-    };
-  }
-
-  if (type === 'type_text') {
-    return {
-      tool: 'macos',
-      type,
-      text: typeof action.text === 'string' ? action.text : '',
-    };
-  }
-
-  if (type === 'press_key') {
-    const modifiers = Array.isArray(action.modifiers)
-      ? action.modifiers
-          .map(item => String(item || '').trim().toLowerCase())
-          .filter(Boolean)
-          .slice(0, 4)
-      : [];
-
-    return {
-      tool: 'macos',
-      type,
-      key: typeof action.key === 'string' ? action.key.trim().toLowerCase() : '',
-      modifiers,
-    };
-  }
-
-  if (type === 'click_at') {
-    return {
-      tool: 'macos',
-      type,
-      x: Number(action.x),
-      y: Number(action.y),
-    };
-  }
-
-  throw new Error(`不支持的 macOS 动作: ${type}`);
-}
-
 function normalizeIdeAction(type: string, action: JsonObject): AgentAction {
   if (type === 'ide_list_tools' || type === 'list_tools') {
     return {
@@ -361,33 +298,6 @@ function normalizeMcpAction(type: string, action: JsonObject): AgentAction {
   throw new Error(`不支持的通用 MCP 动作: ${type}`);
 }
 
-function normalizeSpawnAction(type: string, action: JsonObject): AgentAction {
-  if (type === 'spawn') {
-    if (!Array.isArray(action.tasks)) {
-      throw new Error('spawn.tasks 必须是包含 1-5 个自然语言任务的字符串数组，例如：["抓取页面 A 并提取关键数据", "抓取页面 B 并核对来源"]');
-    }
-    const invalidTask = action.tasks.find(t => t != null && typeof t !== 'string');
-    if (invalidTask !== undefined) {
-      throw new Error('spawn.tasks 的每个元素必须是自然语言字符串，不能是 {tool,type,...} 工具动作对象；请把动作改写为任务描述，例如："抓取页面 A 并提取关键数据"');
-    }
-    const tasks = Array.isArray(action.tasks)
-      ? action.tasks
-          .map(t => (typeof t === 'string' ? t.trim() : ''))
-          .filter(Boolean)
-          .slice(0, 5)
-      : [];
-    if (tasks.length === 0) {
-      throw new Error('spawn.tasks 至少需要一个非空任务字符串，例如：["搜索并总结相关官方资料"]');
-    }
-    return {
-      tool: 'spawn',
-      type,
-      tasks,
-    };
-  }
-  throw new Error(`不支持的 spawn 动作: ${type}`);
-}
-
 function normalizeCoreAction(type: string, action: JsonObject): AgentAction {
   if (type === 'finish' || type === 'answer' || type === 'final' || type === 'final_answer' || type === 'done') {
     const answer = typeof action.answer === 'string'
@@ -455,16 +365,12 @@ export function normalizeDesktopAgentDecision(payload: unknown): AgentDecision {
     normalizedAction = normalizeVisionAction(type, action);
   } else if (tool === 'terminal') {
     normalizedAction = normalizeTerminalAction(type, action);
-  } else if (tool === 'macos') {
-    normalizedAction = normalizeMacOsAction(type, action);
   } else if (tool === 'ide') {
     normalizedAction = normalizeIdeAction(type, action);
   } else if (tool === 'chrome') {
     normalizedAction = normalizeChromeAction(type, action);
   } else if (tool === 'mcp') {
     normalizedAction = normalizeMcpAction(type, action);
-  } else if (tool === 'spawn') {
-    normalizedAction = normalizeSpawnAction(type, action);
   } else if (tool === 'core') {
     normalizedAction = normalizeCoreAction(type, action);
   } else {

@@ -41,7 +41,7 @@ function blockedSearchEngineResult(url) {
   return [
     `已阻止访问搜索引擎搜索页: ${url}`,
     'Google、百度、Bing 等搜索页容易触发反爬/验证码，且通常不是可靠的一手来源。',
-    '请直接抓取目标站点 URL；如果需要多源搜索，请使用 browser.parallel_fetch 抓取多个候选来源页面。',
+    '请直接抓取目标站点 URL；如果需要多源搜索，请先筛选候选来源，再逐个使用 browser.http_fetch。',
   ].join('\n');
 }
 

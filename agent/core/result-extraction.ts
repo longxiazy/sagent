@@ -118,7 +118,7 @@ export function compactToolResult({
   const text = normalizeText(result);
   if (text.length <= limit) return text;
 
-  const isParallel = action?.type === 'parallel_fetch' || PARALLEL_SEPARATOR.test(text);
+  const isParallel = PARALLEL_SEPARATOR.test(text);
   PARALLEL_SEPARATOR.lastIndex = 0;
   if (!isParallel) {
     const marker = `[提取摘要：原始 ${text.length} 字符]`;

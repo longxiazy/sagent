@@ -8,22 +8,6 @@ import type {
   ApprovalStore,
 } from '../core/contracts.ts';
 
-export function createReadOnlyAuthorizer() {
-  return async (_state: unknown, action: AgentAction, _context: AgentExecutionContext): Promise<AgentAuthorization> => {
-    const policy = classifyAgentAction(action);
-
-    if (policy.level === 'safe') {
-      return { status: 'approved' };
-    }
-
-    // Sub-agents auto-reject any confirm or blocked actions
-    return {
-      status: 'rejected',
-      message: `子 Agent 不支持需要确认的操作: ${policy.reason}`,
-    };
-  };
-}
-
 export function createAgentAuthorizer({
   runId,
   approvalStore,

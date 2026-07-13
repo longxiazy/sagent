@@ -2,7 +2,7 @@
  * Action Type → Tool 映射表
  *
  * 用途：当模型返回的 action 只有 type（如 "navigate"）但没有显式的 tool 字段时，
- * 通过 inferTool(type) 查表推断它属于哪个工具（browser / fs / terminal / macos / fetch / core）。
+ * 通过 inferTool(type) 查表推断它属于哪个工具（browser / fs / terminal / fetch / core）。
  *
  * 调用场景：
  *   - schemas.js 的 normalizeDesktopAgentDecision() 中：模型输出的 action 可能缺少 tool 字段，
@@ -20,7 +20,6 @@ export const ACTION_TYPE_TO_TOOL = {
   scroll: 'browser',
   get_page_content: 'browser',
   http_fetch: 'browser',
-  parallel_fetch: 'browser',
   // search
   web_search: 'search',
   // codegraph
@@ -37,14 +36,6 @@ export const ACTION_TYPE_TO_TOOL = {
   run_safe: 'terminal',
   run_confirmed: 'terminal',
   run_review: 'terminal',
-  // macos
-  open_app: 'macos',
-  activate_app: 'macos',
-  list_windows: 'macos',
-  capture_screen: 'macos',
-  type_text: 'macos',
-  press_key: 'macos',
-  click_at: 'macos',
   // ide
   ide_list_tools: 'ide',
   ide_call_tool: 'ide',
@@ -59,8 +50,6 @@ export const ACTION_TYPE_TO_TOOL = {
   mcp_list_servers: 'mcp',
   mcp_list_tools: 'mcp',
   mcp_call_tool: 'mcp',
-  // spawn
-  spawn: 'spawn',
   // core
   finish: 'core',
   answer: 'core',

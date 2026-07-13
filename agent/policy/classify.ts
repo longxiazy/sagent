@@ -126,12 +126,6 @@ export function classifyAgentAction(action) {
     };
   }
 
-  if (tool === 'spawn' && type === 'spawn') {
-    return {
-      level: 'safe',
-      reason: '并行子任务分发（子 Agent 受独立策略约束）',
-    };
-  }
 
   if (tool === 'fs' && ['list_dir', 'get_file_info', 'read_file', 'search_files'].includes(type)) {
     return {
@@ -140,7 +134,7 @@ export function classifyAgentAction(action) {
     };
   }
 
-  if (tool === 'fetch' && ['http_fetch', 'parallel_fetch'].includes(type)) {
+  if (tool === 'fetch' && type === 'http_fetch') {
     return {
       level: 'safe',
       reason: '只读网页抓取',
@@ -194,20 +188,6 @@ export function classifyAgentAction(action) {
     return {
       level: 'confirm',
       reason: `即将执行需审批的终端命令: ${action.command}`,
-    };
-  }
-
-  if (tool === 'macos' && ['open_app', 'activate_app', 'list_windows', 'capture_screen'].includes(type)) {
-    return {
-      level: 'safe',
-      reason: '桌面观察/切换动作默认直接执行',
-    };
-  }
-
-  if (tool === 'macos' && ['type_text', 'press_key', 'click_at'].includes(type)) {
-    return {
-      level: 'confirm',
-      reason: `即将执行桌面输入动作: ${type}`,
     };
   }
 

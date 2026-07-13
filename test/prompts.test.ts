@@ -22,7 +22,7 @@ describe('agent prompts', () => {
     const schemas = new Map(createModelTools({ includeIdeMcp: false, includeChromeMcp: false })
       .map(tool => [tool.name, tool.input_schema]));
 
-    expect(lines.length).toBeGreaterThanOrEqual(30);
+    expect(lines.length).toBeGreaterThanOrEqual(schemas.size);
     for (const line of lines) {
       const example = JSON.parse(line);
       expect(example).toEqual(expect.objectContaining({
@@ -241,7 +241,6 @@ describe('agent prompts', () => {
     const webTools = selectGeminiToolNames({ task: '查询今天苏州天气' });
     const codeTools = selectGeminiToolNames({ task: '检查项目代码并运行测试' });
     const imageTools = selectGeminiToolNames({ task: '分析这张图片\n[附件]\n- 图片: /tmp/example.png' });
-    const desktopTools = selectGeminiToolNames({ task: '打开 macOS 应用并查看窗口' });
     const gitTools = selectGeminiToolNames({ task: '拉取最新' });
 
     expect([...chatTools].sort()).toEqual(['ask_user', 'finish', 'notify_user', 'web_search']);
@@ -255,8 +254,6 @@ describe('agent prompts', () => {
     expect(codeTools.has('navigate')).toBe(false);
     expect(imageTools.has('image_analyze')).toBe(true);
     expect(imageTools.has('run_safe')).toBe(false);
-    expect(desktopTools.has('open_app')).toBe(true);
-    expect(desktopTools.has('image_analyze')).toBe(true);
     expect(gitTools.has('run_safe')).toBe(true);
     expect(gitTools.has('read_file')).toBe(false);
     expect(gitTools.has('web_search')).toBe(true);
@@ -370,7 +367,7 @@ describe('agent prompts', () => {
     expect(compacted[0].result.length).toBeLessThan(4100);
   });
 
-  it('extracts task-relevant evidence from every parallel_fetch source', () => {
+  it('extracts task-relevant evidence from every joined source', () => {
     const result = [
       `http_fetch https://example.com/a:\n${'导航文本。'.repeat(200)}2022年 Alpha 指标达到100亿元，同比增长5%。`,
       `http_fetch https://example.com/b:\n${'页面说明。'.repeat(200)}2023年 Beta 指标达到220亿元，同比增长8%。`,
@@ -379,7 +376,7 @@ describe('agent prompts', () => {
 
     const compacted = compactToolResult({
       result,
-      action: { tool: 'browser', type: 'parallel_fetch' },
+      action: { tool: 'browser', type: 'http_fetch', url: 'https://example.com/a' },
       task: '比较 Alpha、Beta、Gamma 近三年指标增长情况',
       limit: 1500,
     });
@@ -403,7 +400,7 @@ describe('agent prompts', () => {
       step: 2,
       history: [{
         step: 1,
-        action: { tool: 'browser', type: 'parallel_fetch', urls: ['https://example.com/first', 'https://example.com/second'] },
+        action: { tool: 'browser', type: 'http_fetch', url: 'https://example.com/first' },
         result: longResult,
       }],
       observation: {},
