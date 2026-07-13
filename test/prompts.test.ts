@@ -106,6 +106,28 @@ describe('agent prompts', () => {
     expect(compact[0].content).not.toContain('Desktop Agent 失败');
   });
 
+  it('keeps NVIDIA action examples scoped to the current task', () => {
+    const casual = buildNvidiaTaskMessages({
+      task: '你好，介绍一下你自己',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+    const code = buildNvidiaTaskMessages({
+      task: '检查项目代码并运行测试',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+
+    expect(casual[0].content).not.toContain('run_safe(command)');
+    expect(casual[0].content).not.toContain('read_file(path)');
+    expect(code[0].content).toContain('run_safe(command)');
+    expect(code[0].content).toContain('read_file(path)');
+    expect(estimatePayloadTokens(casual)).toBeLessThan(900);
+    expect(estimatePayloadTokens(code)).toBeLessThan(1200);
+  });
+
   it('keeps Chrome and IDE MCP details lazy for unrelated tasks', () => {
     vi.stubEnv('CHROME_MCP_ENABLED', 'true');
     vi.stubEnv('IDE_MCP_ENABLED', 'true');
@@ -299,7 +321,7 @@ describe('agent prompts', () => {
 
     expect(payload.contents).toHaveLength(1);
     expect(taskPayload.task).toBe('今天天气怎么样');
-    expect(payload.systemInstruction).toContain('task 字段是本轮唯一执行目标');
+    expect(payload.systemInstruction).toContain('task 是本轮唯一目标');
   });
 
   it('does not let unrelated conversation history activate tools for a new explicit task', () => {

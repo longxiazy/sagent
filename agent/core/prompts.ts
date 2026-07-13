@@ -78,18 +78,38 @@ export function buildNvidiaActionExampleLines({
   chromeEnabled = false,
   mcpEnabled = false,
   readonly = false,
+  includeToolNames,
 }: {
   ideEnabled?: boolean;
   chromeEnabled?: boolean;
   mcpEnabled?: boolean;
   readonly?: boolean;
+  includeToolNames?: Iterable<string>;
 } = {}) {
+  const allowed = includeToolNames ? new Set(includeToolNames) : null;
   return NVIDIA_ACTION_EXAMPLES
     .filter(example => !readonly || example.readonly)
+    .filter(example => !allowed || allowed.has(String(example.action.type || '')))
     .filter(example => example.capability !== 'ide' || ideEnabled)
     .filter(example => example.capability !== 'chrome' || chromeEnabled)
     .filter(example => example.capability !== 'mcp' || mcpEnabled)
     .map(({ rationale, action }) => JSON.stringify({ rationale, action }));
+}
+
+function buildNvidiaToolSignatureLines(toolNames: Iterable<string>) {
+  const names = new Set(toolNames);
+  const hasAny = (items: string[]) => items.some(name => names.has(name));
+  return [
+    hasAny(WEB_TOOL_NAMES) ? 'browser: navigate(url), click(elementId), type(elementId,text), wait(seconds), scroll(direction,amount), get_page_content(), http_fetch(url,extractLinks?)' : '',
+    hasAny(FILE_TOOL_NAMES) ? 'fs: list_dir(path), get_file_info(path), read_file(path), write_file(path,content,append), search_files(query,path,include?)；codegraph: codegraph_query(query)' : '',
+    hasAny(TERMINAL_TOOL_NAMES) ? 'terminal: run_safe(command), run_confirmed(command), run_review(command)' : '',
+    names.has('web_search') ? 'search: web_search(query,maxResults?)' : '',
+    names.has('image_analyze') ? 'vision: image_analyze(image,question)' : '',
+    hasAny(IDE_TOOL_NAMES) ? 'ide: ide_list_tools(refresh?), ide_call_tool(toolName,arguments)' : '',
+    hasAny(CHROME_TOOL_NAMES) ? 'chrome: chrome_list_tools(refresh?), chrome_call_tool(toolName,arguments,refreshTools?)' : '',
+    hasAny(MCP_TOOL_NAMES) ? 'mcp: mcp_list_servers(), mcp_list_tools(serverName,refresh?), mcp_call_tool(serverName,toolName,arguments,refreshTools?)' : '',
+    'core: ask_user(question), notify_user(message,level), finish(answer)',
+  ].filter(Boolean);
 }
 
 function historyUsesTool(history: any[] | undefined, tool: string) {
@@ -333,27 +353,16 @@ function buildSharedAgentRuleLines(capabilityContext: PromptCapabilityContext = 
   const mcpLines = genericMcpPromptLines(capabilityContext);
   return [
     '规则：',
-    '0. task 字段是本轮唯一执行目标，优先级高于 conversationHistory。历史对话只用于理解指代和上下文，禁止恢复、继续或切换到历史中的旧任务。',
-    '0.1 涉及产品能力、模型目录、版本变化、供应商上下线等可能随时间变化的信息时，优先使用 web_search 核验，不要仅凭记忆回答。',
-    '1. 只有 observation.browser.elements 中存在的 elementId 才能用于 browser.click / browser.type。',
-    '2. 优先使用已知信息，不要重复无意义截图或重复读同一文件。任务一旦完成，必须立即调用 finish，绝不能重复执行已成功的动作。',
-    '2.2 若任务是常识问答、闲聊，或依据已有知识即可直接回答（无需读取文件/网页/桌面/终端），直接用 finish 返回答案，不要为了「显得在执行」而调用 list_dir、read_file 等探索性工具。',
-    '3. 文件写入、终端确认命令、桌面键鼠输入可能需要用户批准，被拒绝后请尝试替代方案。',
-    '4. cd/pushd/popd 等目录切换命令使用 run_review，会触发用户审批。',
-    '5. answer 用简体中文，简洁直接。',
-    '6. 需要全网搜索关键词时，优先使用 web_search（DuckDuckGo，返回标题/URL/摘要），再用 http_fetch 抓具体页面。禁止直接 navigate 到 Google/Bing/百度搜索结果页，这些页面容易触发反爬。',
-    '7. http_fetch 和 navigate 都通过浏览器执行，可以处理需要 JS 渲染的页面。',
-    '8. 需要获取多个页面时，逐个使用 http_fetch 抓取，优先选择最相关、最权威的来源。',
-    '9. 需要用户输入或确认偏好时使用 ask_user，不要自行假设。',
-    '10. 执行中发现重要信息或潜在问题时使用 notify_user 主动告知用户。',
-    '10.1 任务或附件中出现图片（本地路径或 http(s) URL，常见于任务文本中的“[附件]”块或截图）时，必须用 image_analyze 把图片交给多模态模型分析，不要凭文件名猜测内容。image 传图片路径/URL，question 用简体中文写清要从图里得到什么。',
-    '10.2 简单识图任务（例如“这是什么图/图里是什么”）在一次 image_analyze 已得到可用描述后，应立即 finish。若无法确认具体来源、游戏、人物、地点或品牌，必须说明“无法仅凭图片确认”，并给出可见证据和低置信猜测；不要反复调用同一张图来放大猜测。',
-    '10.3 对同一张图片最多连续调用 2 次 image_analyze；第二次只用于明确不同的问题（如 OCR、局部细节、真假核验）。不要编造图片中没有的 UI、文字、按钮、角色名、怪物、道具或数值。',
-    '12. 涉及医保、社保、签证、贷款、股票、基金、汇率、法律、法规、政策、许可、合规等高风险或合规性信息时，必须优先从官方来源核验；如果未能核验，finish 答案必须明确说明“未能完成官方核验”，不要把记忆或常识包装成已确认结论。',
-    '13. finish 之前自检：当任务要求基于网页/官网内容作答，但浏览操作没有真正取得目标页面的实质内容（如反复超时、只到达主页、被反爬挡住），不要用模型常识包装成“已确认结论”。要么继续尝试（换路径、换工具、换源站），要么在 answer 里明确说明“未能从目标页面取得信息，以下来自常识仅供参考”。',
-    '14. 查询酒店/机票/电商等实时价格时，优先用 web_search 获取价格区间或聚合报价；这类价格依赖具体入住/出行日期、常需登录且受反爬限制，难以直接抓取。若拿不到确切数字，直接 finish 给出区间与查询入口，并如实说明“未取得实时精确价”，不要在单个站点反复操作空转。',
-    '15. 浏览器/Chrome 操作要及时止损：对同一目标连续约 5 步仍未取得实质数据时，停止更换手段反复尝试，直接 finish 汇总已知信息并说明未能取得的部分。',
-    ...(chromeDetails ? ['16. 当内置浏览器被反爬拦截时，改用 Chrome MCP 操作真实浏览器访问同一页面。'] : []),
+    '1. task 是本轮唯一目标；conversationHistory 只用于理解指代，不得恢复或切换到旧任务。',
+    '2. 决策顺序：已有信息足够则立即 finish；缺少用户才能决定的信息则 ask_user；否则选择完成目标所需的最少工具。不要为了显得在执行而探索。',
+    '3. 不要重复已成功或无新目的的动作。同一目标连续约 5 步仍无实质进展时停止尝试，finish 汇总已知信息并说明限制。',
+    '4. 文件写入和终端确认命令可能需要审批；cd/pushd/popd 使用 run_review。被拒绝后改用安全替代方案。',
+    '5. browser.click/type 只能使用 observation.browser.elements 中存在的 elementId。搜索先用 web_search 定位来源，再逐个 http_fetch 权威页面；不要 navigate 到搜索引擎结果页。',
+    '6. 不得编造工具结果。时效产品信息和医保、签证、金融、法律、政策等高风险信息优先核验官方来源；未核验或未取得目标网页正文时必须明确说明。',
+    '7. 图片任务必须使用 image_analyze，不得凭文件名猜测。简单识图得到可用结果后立即 finish；同一图片最多连续分析 2 次，无法确认具体来源时区分可见事实与低置信猜测。',
+    '8. 酒店、机票、电商等实时价格优先用 web_search 获取区间；拿不到精确数字时给出查询入口并说明未取得实时精确价。',
+    '9. 重要发现可用 notify_user。finish 的 answer 使用简体中文，简洁直接。',
+    ...(chromeDetails ? ['10. 内置浏览器被 CAPTCHA、403 或 Cloudflare 拦截时，改用 Chrome MCP 访问同一目标。'] : []),
     ...ideLines,
     ...chromeLines,
     ...mcpLines,
@@ -470,7 +479,7 @@ export function buildNvidiaTaskMessages({
   compact?: boolean;
   toolMode?: 'full' | 'readonly';
 }) {
-  const capabilityContext = { task, history, observation };
+  const capabilityContext = { task, history, observation, conversationHistory };
   const ideEnabled = isIdeMcpEnabled();
   const ideDetails = shouldIncludeIdePromptDetails(capabilityContext);
   const chromeEnabled = isChromeMcpAvailable();
@@ -487,6 +496,7 @@ export function buildNvidiaTaskMessages({
   const recentUrlsHint = buildRecentUrlsHint(history);
   const recentSearchesHint = buildRecentSearchesHint(history);
   const promptHistory = compactAgentHistory(history, undefined, undefined, task);
+  const selectedToolNames = selectGeminiToolNames(capabilityContext);
 
   if (toolMode === 'readonly') {
     return [
@@ -535,16 +545,14 @@ export function buildNvidiaTaskMessages({
         '你只能输出一个 JSON 对象，不要输出 Markdown，不要解释。',
         '输出格式固定为 {"rationale":"简短理由","action":{...}}。',
         '可用动作示例（字段名、字段层级、tool 和 type 必须严格照此填写；每一步只输出其中一个 JSON 对象）：',
-        ...buildNvidiaActionExampleLines({ ideEnabled, chromeEnabled, mcpEnabled: mcpEnabled && mcpDetails }),
+        ...buildNvidiaActionExampleLines({
+          ideEnabled,
+          chromeEnabled,
+          mcpEnabled: mcpEnabled && mcpDetails,
+          includeToolNames: selectedToolNames,
+        }),
         '可用动作签名（括号内为主要参数）：',
-        'browser: navigate(url), click(elementId), type(elementId,text), wait(seconds), scroll(direction,amount), get_page_content(), http_fetch(url,extractLinks?)',
-        'fs: list_dir(path), get_file_info(path), read_file(path), write_file(path,content,append), search_files(query,path,include?)',
-        'terminal: run_safe(command), run_confirmed(command), run_review(command)',
-        'search: web_search(query,maxResults?)；codegraph: codegraph_query(query)；vision: image_analyze(image,question)',
-        ...(ideEnabled && ideDetails ? ['ide: ide_list_tools(refresh?), ide_call_tool(toolName,arguments)'] : []),
-        ...(chromeEnabled && chromeDetails ? ['chrome: chrome_list_tools(refresh?), chrome_call_tool(toolName,arguments,refreshTools?)'] : []),
-        ...(mcpEnabled && mcpDetails ? ['mcp: mcp_list_servers(), mcp_list_tools(serverName,refresh?), mcp_call_tool(serverName,toolName,arguments,refreshTools?)'] : []),
-        'core: ask_user(question), notify_user(message,level), finish(answer)',
+        ...buildNvidiaToolSignatureLines(selectedToolNames),
         '重要：每个步骤必须且只能输出一个 JSON 动作。如果你已经收集到足够信息并可以直接回答用户问题，请使用 finish 动作输出答案。绝对不要在 JSON 之外输出解释文字。',
         ...buildSharedAgentRuleLines(capabilityContext),
         systemPrompt ? `附加约束：${systemPrompt}` : '',

@@ -97,9 +97,8 @@ export const zh = {
   'settings.batchSize': '每批启动模型数',
   'settings.maxHistorySteps': '最大历史步数',
   'settings.maxResultChars': '每步结果最大字符数',
-  'settings.memoryMaxEntries': '记忆压缩阈值',
   'settings.memoryEnabled': '启用记忆',
-  'settings.memoryDesc': 'Agent 是否使用历史记忆辅助任务（前端偏好，即时生效）。',
+  'settings.memoryDesc': 'Agent 是否使用项目知识和代码图谱辅助任务（前端偏好，即时生效）。',
   'settings.observeDesktop': '观测 macOS 桌面',
   'settings.autoModelRouting': '动态模型路由',
   'settings.profile': '运行配置',
@@ -314,6 +313,8 @@ export const zh = {
   'session.noMatch': '未找到匹配的会话',
   'session.empty': '暂无会话',
   'session.closeSidebar': '关闭会话列表',
+  'session.pinSidebar': '固定侧边栏',
+  'session.unpinSidebar': '取消固定侧边栏',
   // 项目
   'project.label': '项目',
   'project.none': '无项目（全局）',
@@ -340,22 +341,14 @@ export const zh = {
 
   // 记忆面板
   'memory.confirmClear': '确定要清空吗？此操作不可撤销。',
-  'memory.tabConversation': '对话 ({n})',
   'memory.tabKnowledge': '知识 ({n})',
-  'memory.historySummary': '历史摘要',
-  'memory.compactedAt': ' · 压缩于 {time}',
-  'memory.noConversation': '暂无对话记录',
   'memory.projectStructure': '项目结构',
   'memory.commonPaths': '常用路径',
   'memory.preferences': '偏好',
   'memory.learnings': '经验',
   'memory.noKnowledge': '暂无项目知识',
-  'memory.compactModelTitle': '选择压缩模型',
-  'memory.compacting': '压缩中…',
-  'memory.compactHistory': '压缩历史',
-  'memory.clearKnowledgeTitle': '清空项目知识，保留对话',
+  'memory.clearKnowledgeTitle': '清空项目知识',
   'memory.clearKnowledge': '清空知识',
-  'memory.clearAllTitle': '清空全部记忆',
 
   // 代码图谱 Code Graph
   'codegraph.tab': '代码图谱',

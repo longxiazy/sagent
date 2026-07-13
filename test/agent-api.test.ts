@@ -84,66 +84,12 @@ describe('POST /api/agent model compatibility', () => {
   });
 });
 
-describe('POST /api/agent/compact', () => {
-  it('returns 200 and compacts memory', async () => {
-    // Write some memory entries
-    const { loadMemory, saveMemory } = await import('../agent/core/memory.js');
-    const mem = await loadMemory(tmpDir);
-    for (let i = 0; i < 25; i++) {
-      mem.conversation.push({ task: `task ${i}`, summary: `result ${i}`, timestamp: new Date().toISOString(), model: 'test', filesTouched: [], toolsUsed: [] });
-    }
-    await saveMemory(tmpDir, mem);
-
-    const res = await request(app)
-      .post('/api/agent/compact')
-      .send({ model: 'test-model' });
-    expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.message).toMatch(/保留 \d+ 条/);
-  });
-
-  it('returns ok:false when no memory', async () => {
-    // loadMemory returns empty memory which is truthy, so this tests the compact of empty data
-    const res = await request(app)
-      .post('/api/agent/compact')
-      .send({ model: 'test-model' });
-    expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.message).toContain('0');
-  });
-
-  it('requires an explicit compact model', async () => {
-    const res = await request(app).post('/api/agent/compact');
-    expect(res.status).toBe(400);
-    expect(res.body.ok).toBe(false);
-    expect(res.body.error).toContain('model');
-  });
-});
-
 describe('GET /api/agent/memory', () => {
-  it('returns counts for empty memory', async () => {
+  it('returns project knowledge only', async () => {
     const res = await request(app).get('/api/agent/memory');
     expect(res.status).toBe(200);
-    expect(res.body.conversationCount).toBe(0);
-    expect(res.body.summaryLength).toBe(0);
-    expect(res.body.conversation).toEqual([]);
-    expect(res.body.conversationSummary).toBe('');
     expect(res.body.projectKnowledge).toBeDefined();
-  });
-
-  it('returns counts after saving memory', async () => {
-    const { loadMemory, saveMemory } = await import('../agent/core/memory.js');
-    const mem = await loadMemory(tmpDir);
-    mem.conversation.push({ task: 'test', summary: 'done', timestamp: new Date().toISOString(), model: 'test', filesTouched: [], toolsUsed: [] });
-    await saveMemory(tmpDir, mem);
-
-    const res = await request(app).get('/api/agent/memory');
-    expect(res.status).toBe(200);
-    expect(res.body.conversationCount).toBe(1);
-    expect(res.body.summaryLength).toBe(0);
-    expect(res.body.conversation).toHaveLength(1);
-    expect(res.body.conversation[0].task).toBe('test');
-    expect(res.body.projectKnowledge).toBeDefined();
+    expect(res.body.conversation).toBeUndefined();
   });
 });
 

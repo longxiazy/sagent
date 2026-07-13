@@ -191,7 +191,7 @@ client/src/
 - **会话切换同步 trace**：切到另一个会话时，把那个会话的 agentTrace 拉出来（去重后写入），并把"上次 agent 任务原文"记到 ref 里供 rollback 重试用。
 - **快捷键**：`Cmd/Ctrl+Shift+E` 折叠面板、`Cmd/Ctrl+Shift+M` 切记忆面板。
 - **自动滚动**：`messages / activeSession.id / agentTrace` 变化时滚到底。
-- **建议数据刷新**：从后端拉取推荐任务；提交任务后刷新"最近使用"。
+- **建议数据刷新**：启动时从后端拉取推荐任务；“换一组”仅重新随机抽取当前分类。
 - **textarea 自适应高度**：根据 `input` 长度计算，最高 144px。
 
 ### ⑦ 卸载清理

@@ -39,7 +39,7 @@ import { useAgentTransport } from './hooks/useAgentTransport.js';
 import { useQuestionSubmit } from './hooks/useQuestionSubmit.js';
 import { useAttachments } from './hooks/useAttachments.js';
 import { EMPTY_SUGGESTIONS } from './data/suggestions.js';
-import { fetchSuggestions, recordSuggestionUse } from './api/suggestions.js';
+import { fetchSuggestions } from './api/suggestions.js';
 import { apiFetch } from './api/http.js';
 import {
   TABLET_BREAKPOINT,
@@ -135,8 +135,6 @@ export default function App() {
   const [suggestionSeed, setSuggestionSeed] = useState(0);
   const [suggestionData, setSuggestionData] = useState(EMPTY_SUGGESTIONS);
   const [activeCategoryId, setActiveCategoryId] = useState(null);
-  // 卡片点击时把标题暂存,handleSubmit 时上报给后端;手动输入则降级到 text 前 12 字
-  const pendingTitleRef = useRef(null);
   const {
     agentRunning,
     setAgentRunning,
@@ -175,10 +173,21 @@ export default function App() {
   const [showReset, setShowReset] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showPromptPreview, setShowPromptPreview] = useState(false);
+  const [sidebarPinned, setSidebarPinned] = usePersistentState('session_sidebar_pinned', false, booleanStorage);
   const { showSessions, setShowSessions } = useResponsiveLayout({
     dockedBreakpoint: DOCKED_LAYOUT_BREAKPOINT,
     panelSizeKey: PANEL_SIZE_KEY,
+    sidebarPinned,
   });
+
+  useEffect(() => {
+    const revealFromLeftEdge = event => {
+      if (window.innerWidth < DOCKED_LAYOUT_BREAKPOINT || sidebarPinned) return;
+      if (event.clientX <= window.innerWidth * 0.1) setShowSessions(true);
+    };
+    window.addEventListener('mousemove', revealFromLeftEdge);
+    return () => window.removeEventListener('mousemove', revealFromLeftEdge);
+  }, [sidebarPinned, setShowSessions]);
   // Agent 的多模型选择与策略「按项目」存储:useProjectScopedState 内部按 activeProjectId 分桶,
   // 切项目时派生值自动跟着变；memory 仍是应用级偏好。
   const [selectedAgentModels, setSelectedAgentModels] = useProjectScopedState('agent_models_by_project', activeProjectId, EMPTY_AGENT_MODELS);
@@ -701,10 +710,10 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, activeSession.id, agentTrace]);
 
-  // 建议数据从后端拉取;suggestionSeed 触发(刷新按钮 / 提交后)也会重新拉,让"最近使用"即时反映
+  // 建议数据从后端拉取；换一组只改变本地随机种子。
   useEffect(() => {
     let cancelled = false;
-    fetchSuggestions(activeProjectId)
+    fetchSuggestions()
       .then(data => {
         if (cancelled) return;
         setSuggestionData(data);
@@ -712,7 +721,7 @@ export default function App() {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [suggestionSeed, activeProjectId]);
+  }, []);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -856,15 +865,6 @@ export default function App() {
       return;
     }
 
-    // 把这次发送累计到后端使用记录；标题用原始用户输入(userText),避免被附件提示污染。
-    const titleSource = userText || readyAttachments[0]?.name || t('attach.taskFallback');
-    const title = pendingTitleRef.current
-      || (titleSource.length > 12 ? titleSource.slice(0, 12) + '…' : titleSource);
-    pendingTitleRef.current = null;
-    recordSuggestionUse({ title, text, projectId: activeSession.projectId ?? null });
-    // 下次返回 hero 时能看到新的"最近使用"
-    setSuggestionSeed(v => v + 1);
-
     await sendAgentTask(text);
     clearAttachments();
   };
@@ -885,10 +885,6 @@ export default function App() {
     void suggestionSeed;
     const cat = agentCategories.find(c => c.id === activeCategoryId) ?? agentCategories[0];
     const pool = cat?.items ?? [];
-    // "最近使用"已按最近请求时间倒序,保持顺序;其它分类随机抽样
-    if (cat?.id === 'recent') {
-      return pool.slice(0, Math.min(8, pool.length));
-    }
     return shuffled(pool).slice(0, Math.min(8, pool.length));
   }, [activeSession.id, suggestionSeed, activeCategoryId, agentCategories]);
 
@@ -1015,7 +1011,7 @@ export default function App() {
   return (
     <ErrorBoundary>
     <div className="app-shell">
-      <SessionSidebar open={showSessions} onClose={() => setShowSessions(false)}>
+      <SessionSidebar open={showSessions} pinned={sidebarPinned} onClose={() => setShowSessions(false)}>
         <SessionList
           sessions={sessions}
           activeSessionId={activeSession.id}
@@ -1027,6 +1023,12 @@ export default function App() {
           locked={sessionLocked}
           showMemoryPanel={showMemoryPanel}
           onToggleMemory={() => setShowMemoryPanel(v => !v)}
+          sidebarPinned={sidebarPinned}
+          onToggleSidebarPin={() => {
+            const nextPinned = !sidebarPinned;
+            setSidebarPinned(nextPinned);
+            setShowSessions(nextPinned);
+          }}
           projects={projects}
           activeProjectId={activeProjectId}
           onActivateProject={handleActivateProject}
@@ -1051,7 +1053,7 @@ export default function App() {
       )}
       {showHero && (
         <div className="hero-corner-actions">
-          <button className="session-toggle-btn" onClick={() => setShowSessions(v => !v)} title={t('header.sessionList')}>
+          <button className="session-toggle-btn" onClick={() => sidebarPinned ? setSidebarPinned(false) : setShowSessions(v => !v)} title={t('header.sessionList')}>
             <Menu size={16} />
           </button>
           <button className="session-toggle-btn" onClick={() => setShowSettings(true)} title={t('header.settings')}>
@@ -1074,13 +1076,11 @@ export default function App() {
           activeCategoryId={activeCategoryId}
           onSelectCategory={setActiveCategoryId}
           onShuffle={() => setSuggestionSeed(v => v + 1)}
-          onPickSuggestion={(text, title) => {
-            pendingTitleRef.current = title ?? null;
+          onPickSuggestion={(text) => {
             setInput(text);
             textareaRef.current?.focus();
           }}
-          onSubmitSuggestion={(text, title) => {
-            pendingTitleRef.current = title ?? null;
+          onSubmitSuggestion={(text) => {
             setInput(text);
             setTimeout(() => handleSubmit(), 0);
           }}
@@ -1097,7 +1097,7 @@ export default function App() {
             sessionLocked={sessionLocked}
             messagesLength={messages.length}
             modelSelect={modelSelect}
-            onToggleSessions={() => setShowSessions(v => !v)}
+            onToggleSessions={() => sidebarPinned ? setSidebarPinned(false) : setShowSessions(v => !v)}
             onCreateSession={handleCreateSession}
             onReset={() => setShowReset(true)}
             onOpenSettings={() => setShowSettings(true)}

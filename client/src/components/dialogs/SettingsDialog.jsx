@@ -6,7 +6,7 @@ import { useI18n, useT } from '../../i18n/I18nProvider.jsx';
 import { DialogShell } from './DialogShell.jsx';
 
 // Agent 行为参数（可写，热生效）。单位与 .env 一致，换算放后端消费点。
-// label 改为 i18n key，渲染时经 t() 取文案。memoryMaxEntries 归到「记忆」组。
+// label 改为 i18n key，渲染时经 t() 取文案。
 const BASIC_AGENT_FIELDS = [
   { key: 'maxSteps', labelKey: 'settings.maxSteps' },
   { key: 'modelTimeoutSec', labelKey: 'settings.modelTimeoutSec' },
@@ -536,7 +536,6 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
                 onChange={e => setAgentMemory(e.target.checked)}
               />
             </label>
-            {renderBackendGuard() || numberField('memoryMaxEntries', 'settings.memoryMaxEntries')}
           </div>
         </div>
       );

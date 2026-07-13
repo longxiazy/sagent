@@ -10,8 +10,6 @@ export type Locale = 'zh' | 'en';
 const MESSAGES: Record<Locale, Record<string, string>> = {
   zh: {
     'trace.notFound': 'trace 不存在',
-    'memory.compacted': '已压缩，保留 {n} 条',
-    'memory.noData': '无记忆数据',
     'config.validationFailed': '配置校验失败',
     'run.taskEmpty': 'task 不能为空',
     'run.modelRequired': '请先选择至少一个模型',
@@ -29,13 +27,9 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'checkpoint.rollbackInProgress': '已有回滚请求处理中',
     'fetchRules.notEnabled': 'Domain rules 未启用',
     'fetchRules.domainEmpty': 'domain 不能为空',
-    'suggestions.textEmpty': 'text 不能为空',
-    'suggestions.recent': '最近使用',
   },
   en: {
     'trace.notFound': 'trace not found',
-    'memory.compacted': 'Compacted, kept {n} entries',
-    'memory.noData': 'No memory data',
     'config.validationFailed': 'Config validation failed',
     'run.taskEmpty': 'task cannot be empty',
     'run.modelRequired': 'Select at least one model first',
@@ -53,8 +47,6 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'checkpoint.rollbackInProgress': 'A rollback request is already in progress',
     'fetchRules.notEnabled': 'Domain rules are not enabled',
     'fetchRules.domainEmpty': 'domain cannot be empty',
-    'suggestions.textEmpty': 'text cannot be empty',
-    'suggestions.recent': 'Recent',
   },
 };
 
