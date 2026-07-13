@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Archive, ArchiveRestore, BarChart3, Brain, ChevronDown, Search, Trash2, X } from 'lucide-react';
+import { Archive, ArchiveRestore, BarChart3, Brain, ChevronDown, Pin, PinOff, Search, Trash2, X } from 'lucide-react';
 import { getSessionTitle } from '../../hooks/useChatSessions.js';
 import { usePersistentState, jsonStorage } from '../../hooks/usePersistentState.js';
 import { formatRelativeTime, formatShortTime, formatFullTime } from '../../utils/format.js';
@@ -119,6 +119,8 @@ export function SessionList({
   locked,
   showMemoryPanel,
   onToggleMemory,
+  sidebarPinned = false,
+  onToggleSidebarPin,
   // project
   projects = [],
   activeProjectId = null,
@@ -164,6 +166,13 @@ export function SessionList({
       <div className="session-panel-header">
         <h2 className="session-panel-title">{t('session.title')}</h2>
         <div className="session-panel-actions">
+          <button
+            className={`session-icon-btn ${sidebarPinned ? 'active' : ''}`}
+            onClick={onToggleSidebarPin}
+            title={t(sidebarPinned ? 'session.unpinSidebar' : 'session.pinSidebar')}
+          >
+            {sidebarPinned ? <PinOff size={13} /> : <Pin size={13} />}
+          </button>
           <button
             className={`session-icon-btn ${statsPanelOpen ? 'active' : ''}`}
             onClick={() => {

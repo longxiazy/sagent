@@ -248,7 +248,6 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
   ${row('AGENT_MODEL_TIMEOUT', `${cfg.modelTimeoutSec}s`)}
   ${row('AGENT_STAGGER_DELAY', `${cfg.staggerDelaySec}s`)}
   ${row('AGENT_BATCH_SIZE', cfg.batchSize)}
-  ${row('AGENT_MEMORY_MAX_ENTRIES', cfg.memoryMaxEntries)}
   ${hLine}
   ${row('AGENT_OBSERVE_DESKTOP', cfg.observeDesktop)}
   ${row('AGENT_RESUME', AGENT_RESUME)}

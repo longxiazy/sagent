@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "stop": "node scripts/stop.js",
     "smoke": "node scripts/smoke-test.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prompt:bench": "bun scripts/prompt-benchmark.ts"
   },
   "dependencies": {
     "@google/genai": "^2.7.0",

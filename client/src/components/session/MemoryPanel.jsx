@@ -9,9 +9,7 @@ export function MemoryPanel({ onClose, activeProjectId = null, modelList = [] })
   const t = useT();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [compacting, setCompacting] = useState(false);
-  const [compactModel, setCompactModel] = useState('');
-  const [tab, setTab] = useState('conversation');
+  const [tab, setTab] = useState('knowledge');
 
   // 记忆按项目隔离：所有请求带上当前项目 id（无项目则查全局）。
   const qs = activeProjectId ? `?projectId=${encodeURIComponent(activeProjectId)}` : '';
@@ -23,31 +21,6 @@ export function MemoryPanel({ onClose, activeProjectId = null, modelList = [] })
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
   }, [qs]);
-
-  useEffect(() => {
-    if (compactModel && !modelList.some(item => item.id === compactModel)) {
-      setCompactModel('');
-    }
-  }, [compactModel, modelList]);
-
-  const handleCompact = async () => {
-    if (!compactModel) return;
-    setCompacting(true);
-    try {
-      const r = await apiFetch(`/api/agent/compact${qs}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: compactModel }),
-      });
-      const result = await r.json();
-      if (result.ok) {
-        const r2 = await apiFetch(`/api/agent/memory${qs}`);
-        setData(await r2.json());
-      }
-    } finally {
-      setCompacting(false);
-    }
-  };
 
   const handleClear = async (path) => {
     if (!confirm(t('memory.confirmClear'))) return;
@@ -67,9 +40,6 @@ export function MemoryPanel({ onClose, activeProjectId = null, modelList = [] })
     <div className="memory-panel">
       <div className="memory-panel-head">
         <div className="memory-panel-tabs">
-          <button className={`memory-tab ${tab === 'conversation' ? 'active' : ''}`} onClick={() => setTab('conversation')}>
-            {t('memory.tabConversation', { n: data?.conversationCount ?? 0 })}
-          </button>
           <button className={`memory-tab ${tab === 'knowledge' ? 'active' : ''}`} onClick={() => setTab('knowledge')}>
             {t('memory.tabKnowledge', { n: (pk.structure?.length || 0) + Object.keys(pk.paths || {}).length + (pk.preferences?.length || 0) + (pk.learnings?.length || 0) })}
           </button>
@@ -84,35 +54,6 @@ export function MemoryPanel({ onClose, activeProjectId = null, modelList = [] })
           <CodeGraphTab activeProjectId={activeProjectId} modelList={modelList} />
         ) : loading ? (
           <div className="memory-loading">{t('common.loading')}</div>
-        ) : tab === 'conversation' ? (
-          <>
-            {data?.conversationSummary && (
-              <div className="memory-section">
-                <p className="memory-section-title">{t('memory.historySummary')}{data.lastCompactedAt ? t('memory.compactedAt', { time: new Date(data.lastCompactedAt).toLocaleString() }) : ''}</p>
-                <p className="memory-summary-text">{data.conversationSummary}</p>
-              </div>
-            )}
-            {(data?.conversation || []).length === 0 ? (
-              <div className="memory-empty">{t('memory.noConversation')}</div>
-            ) : (
-              <div className="memory-conversation-list">
-                {[...(data.conversation || [])].reverse().map((entry, i) => (
-                  <div key={i} className="memory-conv-item">
-                    <div className="memory-conv-task">{entry.task}</div>
-                    <div className="memory-conv-summary">{entry.summary}</div>
-                    <div className="memory-conv-meta">
-                      {entry.models?.length > 0 ? (
-                        entry.models.map(m => <span key={m} className="memory-conv-model">{m.split('/').pop()}</span>)
-                      ) : entry.model ? (
-                        <span className="memory-conv-model">{entry.model.split('/').pop()}</span>
-                      ) : null}
-                      {entry.timestamp && <span className="memory-conv-time">{new Date(entry.timestamp).toLocaleString()}</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
         ) : (
           <>
             {pk.structure?.length > 0 && (
@@ -145,29 +86,11 @@ export function MemoryPanel({ onClose, activeProjectId = null, modelList = [] })
           </>
         )}
       </div>
-      {tab !== 'codegraph' && (
+      {tab === 'knowledge' && (
         <div className="memory-panel-footer">
-          <div className="memory-compact-group">
-            <SingleModelSelector
-              className="memory-compact-model"
-              availableModels={modelList}
-              value={compactModel}
-              onChange={setCompactModel}
-              disabled={compacting || modelList.length === 0}
-              title={t('memory.compactModelTitle')}
-              placeholder={modelList.length === 0 ? t('codegraph.noModel') : t('modelSelector.selectModel')}
-              dialogTitle={t('memory.compactModelTitle')}
-            />
-            <button className="memory-compact-btn" onClick={handleCompact} disabled={compacting || !compactModel}>
-              {compacting ? t('memory.compacting') : t('memory.compactHistory')}
-            </button>
-          </div>
           <div className="memory-clear-group">
-            <button className="memory-clear-btn" onClick={() => handleClear('/api/agent/memory/knowledge')} title={t('memory.clearKnowledgeTitle')}>
+            <button className="memory-clear-btn danger" onClick={() => handleClear('/api/agent/memory')} title={t('memory.clearKnowledgeTitle')}>
               {t('memory.clearKnowledge')}
-            </button>
-            <button className="memory-clear-btn danger" onClick={() => handleClear('/api/agent/memory')} title={t('memory.clearAllTitle')}>
-              {t('common.clearAll')}
             </button>
           </div>
         </div>

@@ -1,41 +1,20 @@
 /**
- * Suggestions API — 主页"试试这些任务/问题"建议数据 + 使用记录
+ * Suggestions API — 主页"试试这些任务/问题"建议数据
  *
- * GET  /api/suggestions?projectId=... → { chat, agent } (agent 顶部带项目内"最近使用"分类)
- * POST /api/suggestions/use      → { ok: true },累计 uses + lastUsedAt
+ * GET /api/suggestions → { agent }
  */
 
 import { Router } from 'express';
 import type { SuggestionStore } from '../helpers/suggestion-store.ts';
-import { pickLocale, tReq } from '../helpers/i18n.ts';
+import { pickLocale } from '../helpers/i18n.ts';
 
 export function createSuggestionsRouter({ store }: { store: SuggestionStore }) {
   const router = Router();
 
   router.get('/api/suggestions', async (req, res) => {
     try {
-      const projectId = typeof req.query.projectId === 'string' && req.query.projectId.trim()
-        ? req.query.projectId
-        : null;
-      const data = await store.getMerged(pickLocale(req), projectId);
+      const data = await store.get(pickLocale(req));
       res.json(data);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  router.post('/api/suggestions/use', async (req, res) => {
-    const { title, text, projectId } = req.body ?? {};
-    if (typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({ error: tReq(req, 'suggestions.textEmpty') });
-    }
-    try {
-      await store.recordUse({
-        title: String(title ?? '').slice(0, 32),
-        text,
-        projectId: typeof projectId === 'string' && projectId.trim() ? projectId : null,
-      });
-      res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

@@ -14,22 +14,27 @@ afterEach(async () => {
 });
 
 describe('recovered run memory', () => {
-  it('records the completed recovered task in project memory', async () => {
+  it('extracts knowledge without storing the recovered conversation', async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sagent-recovered-memory-'));
     const registry = { resolve() { throw new Error('summary model should not be used'); } } as unknown as ProviderRegistry;
 
     await persistRecoveredAgentRunMemory({
       memoryDir: tmpDir,
       task: '恢复后的项目任务',
-      result: { answer: '恢复完成', steps: [] },
+      result: { answer: '已更新 src/index.ts 的恢复逻辑', steps: [
+        {
+          step: 1,
+          rationale: '读取入口文件',
+          action: { tool: 'fs', type: 'read_file', path: '/src/index.ts', maxBytes: 1000 },
+          result: 'file contents',
+        },
+      ] },
       model: 'test-model',
       registry,
     });
 
     const memory = await loadMemory(tmpDir);
-    expect(memory.conversation.at(-1)).toMatchObject({
-      task: '恢复后的项目任务',
-      summary: '恢复完成',
-    });
+    expect('conversation' in memory).toBe(false);
+    expect(memory.projectKnowledge.paths.index).toBe('/src/index.ts');
   });
 });

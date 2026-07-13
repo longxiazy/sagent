@@ -96,9 +96,8 @@ export const en = {
   'settings.batchSize': 'Models launched per batch',
   'settings.maxHistorySteps': 'Max history steps',
   'settings.maxResultChars': 'Max chars per step result',
-  'settings.memoryMaxEntries': 'Memory compaction threshold',
   'settings.memoryEnabled': 'Enable memory',
-  'settings.memoryDesc': 'Whether the agent uses history memory to assist tasks (frontend preference, applies immediately).',
+  'settings.memoryDesc': 'Whether the agent uses project knowledge and the code graph to assist tasks (frontend preference, applies immediately).',
   'settings.observeDesktop': 'Observe macOS desktop',
   'settings.autoModelRouting': 'Dynamic model routing',
   'settings.profile': 'Execution profile',
@@ -313,6 +312,8 @@ export const en = {
   'session.noMatch': 'No matching sessions',
   'session.empty': 'No sessions yet',
   'session.closeSidebar': 'Close session list',
+  'session.pinSidebar': 'Pin sidebar',
+  'session.unpinSidebar': 'Unpin sidebar',
   // Project
   'project.label': 'Project',
   'project.none': 'No project (global)',
@@ -339,22 +340,14 @@ export const en = {
 
   // Memory panel
   'memory.confirmClear': 'Are you sure you want to clear? This cannot be undone.',
-  'memory.tabConversation': 'Chats ({n})',
   'memory.tabKnowledge': 'Knowledge ({n})',
-  'memory.historySummary': 'History summary',
-  'memory.compactedAt': ' · compacted at {time}',
-  'memory.noConversation': 'No conversation history',
   'memory.projectStructure': 'Project structure',
   'memory.commonPaths': 'Common paths',
   'memory.preferences': 'Preferences',
   'memory.learnings': 'Learnings',
   'memory.noKnowledge': 'No project knowledge',
-  'memory.compactModelTitle': 'Select compaction model',
-  'memory.compacting': 'Compacting…',
-  'memory.compactHistory': 'Compact history',
-  'memory.clearKnowledgeTitle': 'Clear project knowledge, keep chats',
+  'memory.clearKnowledgeTitle': 'Clear project knowledge',
   'memory.clearKnowledge': 'Clear knowledge',
-  'memory.clearAllTitle': 'Clear all memory',
 
   // Code Graph
   'codegraph.tab': 'Code Graph',

@@ -13,7 +13,6 @@ describe('config validation and effective defaults', () => {
       observeDesktop: false,
       maxHistorySteps: 6,
       maxResultChars: 4000,
-      memoryMaxEntries: 20,
       autoModelRouting: false,
     });
   });

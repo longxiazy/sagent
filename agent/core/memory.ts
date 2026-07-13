@@ -2,42 +2,27 @@
  * Memory — Agent 跨会话记忆系统 / Cross-session memory system
  *
  * 让 Agent 积累项目经验和用户偏好，跨会话持久化。
- * Persists project knowledge and conversation history across sessions.
+ * Persists project knowledge across sessions.
  *
  * 存储内容 / Storage:
- *   - conversation: 最近 N 次任务的摘要（任务 → 结果 / task → result）
- *     每条记录包含 task, summary, models（该任务各步使用的模型列表）, timestamp
- *   - conversationSummary: LLM 提炼的历史摘要（去重合并）
- *     LLM-distilled summary with deduplication and merging
  *   - projectKnowledge: 项目结构、常用路径、用户偏好、经验积累
- *   - lastCompactedAt: 上次压缩时间
- *
- * 压缩机制 / Compaction:
- *   - 当 conversation 超过 AGENT_MEMORY_MAX_ENTRIES（默认 20）时触发
- *   - 将全部历史条目交给 LLM 提炼为摘要（去重合并），而非简单拼接
- *   - 异步执行，不阻塞 Agent 响应（routes/agent.js res.end() 之后）
- *   - 回退：LLM 不可用时退化为文本拼接
  *
  * 注入方式 / Injection:
  *   buildMemoryPrompt() 将记忆注入 Agent 的 systemPrompt（上限 3000 字）
  *
  * 调用场景 / Callers:
  *   - routes/agent.js POST /api/agent 开始前: loadMemory → buildMemoryPrompt
- *   - routes/agent.js 任务完成后: extractConversationEntry → extractProjectKnowledge → async compactConversationMemory → saveMemory
- *   - routes/agent.js POST /api/agent/compact: 手动触发压缩
+ *   - routes/agent.js 任务完成后: extractProjectKnowledge → saveMemory
  *   - routes/agent.js GET /api/agent/memory: 返回完整记忆数据供前端展示
  *
  * 存储位置: {MEMORY_DIR}/agent-memory.json
  *
- * TODO / 拆分建议 Refactor suggestions:
- *   - 将 buildMemoryPrompt 拆到 agent/core/memory-prompt.js（prompt 构建与存储逻辑分离）
- *   - 将 extractProjectKnowledge 拆到 agent/core/knowledge-extractor.js（知识提取独立为可插拔模块）
+ * TODO: 将知识提取拆为可插拔模块。
  */
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cleanText } from './utils.ts';
-import { configStore } from './config-store.ts';
 
 const MEMORY_FILE = 'agent-memory.json';
 const MAX_CHARS = 3000;
@@ -46,9 +31,6 @@ const MAX_KNOWLEDGE_PER_CATEGORY = 50;
 function emptyMemory() {
   return {
     version: 1,
-    conversation: [],
-    conversationSummary: '',
-    lastCompactedAt: '',
     projectKnowledge: {
       structure: [],
       paths: {},
@@ -65,7 +47,6 @@ export async function loadMemory(dir) {
     const parsed = JSON.parse(raw);
     return {
       ...emptyMemory(),
-      ...parsed,
       projectKnowledge: {
         ...emptyMemory().projectKnowledge,
         ...(parsed.projectKnowledge || {}),
@@ -84,37 +65,8 @@ export async function saveMemory(dir, memory) {
   await fs.rename(tmpPath, filePath);
 }
 
-function formatTimeAgo(timestamp) {
-  if (!timestamp) return '';
-  const diff = Date.now() - new Date(timestamp).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes}分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}小时前`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}天前`;
-  return `${Math.floor(days / 30)}月前`;
-}
-
 export function buildMemoryPrompt(memory, { maxChars = MAX_CHARS } = {}) {
   const parts = [];
-
-  // Conversation memory
-  const convLines = [];
-  if (memory.conversationSummary) {
-    convLines.push(`(早期) ${memory.conversationSummary}`);
-  }
-  const recent = memory.conversation.slice(-8);
-  for (const entry of recent) {
-    const taskShort = cleanText(entry.task || '', 60);
-    const summaryShort = cleanText(entry.summary || '', 80);
-    const ago = formatTimeAgo(entry.timestamp);
-    convLines.push(`- ${taskShort} → ${summaryShort} (${ago})`);
-  }
-  if (convLines.length > 0) {
-    parts.push(`最近的任务:\n${convLines.join('\n')}`);
-  }
 
   // Project knowledge
   const pk = memory.projectKnowledge || {};
@@ -155,48 +107,6 @@ export function buildMemoryPrompt(memory, { maxChars = MAX_CHARS } = {}) {
   }
 
   return result;
-}
-
-export function extractConversationEntry({ task, result, model, stepModels }) {
-  const steps = result?.steps || [];
-  const filesTouched = [];
-  const toolsUsed = new Set();
-  const usedModels = new Set();
-
-  for (const step of steps) {
-    const action = step.action;
-    if (!action) continue;
-    toolsUsed.add(action.type || '?');
-    if (action.tool === 'fs' && action.path) {
-      filesTouched.push(action.path);
-    }
-    if (action.tool === 'terminal' && action.command) {
-      const fileHints = action.command.match(/[\w./-]+\.\w+/g);
-      if (fileHints) {
-        filesTouched.push(...fileHints);
-      }
-    }
-    if (stepModels && step.step != null && stepModels[step.step]) {
-      usedModels.add(stepModels[step.step]);
-    }
-  }
-
-  // Also extract models from stepModels directly (covers case where steps is empty)
-  if (stepModels) {
-    for (const m of Object.values(stepModels)) {
-      usedModels.add(m);
-    }
-  }
-
-  return {
-    task: cleanText(task || '', 80),
-    summary: cleanText(result?.answer || '', 120),
-    filesTouched: [...new Set(filesTouched)].slice(0, 10),
-    toolsUsed: [...toolsUsed],
-    models: [...usedModels],
-    model: model || '',
-    timestamp: new Date().toISOString(),
-  };
 }
 
 export function extractProjectKnowledge(memory, { task: _task, result }) {
@@ -253,35 +163,6 @@ export function extractProjectKnowledge(memory, { task: _task, result }) {
       }
     }
   }
-}
-
-export async function compactConversationMemory(memory, { maxEntries, summarizeFn }: { maxEntries?: number; summarizeFn?: (text: string) => Promise<string> } = {}) {
-  if (maxEntries == null) maxEntries = configStore.get().memoryMaxEntries;
-  const conv = memory.conversation;
-  if (conv.length <= maxEntries) {
-    return;
-  }
-
-  const allText = conv
-    .map(e => `${cleanText(e.task || '', 60)} → ${cleanText(e.summary || '', 80)}`)
-    .join('\n');
-
-  const input = memory.conversationSummary
-    ? `${memory.conversationSummary}\n\n--- 历史记录 ---\n${allText}`
-    : allText;
-
-  if (summarizeFn) {
-    try {
-      memory.conversationSummary = await summarizeFn(input);
-    } catch {
-      memory.conversationSummary = input.replace(/\n/g, '; ').slice(0, 2000);
-    }
-  } else {
-    memory.conversationSummary = input.replace(/\n/g, '; ').slice(0, 2000);
-  }
-
-  memory.conversation = conv.slice(-maxEntries);
-  memory.lastCompactedAt = new Date().toISOString();
 }
 
 export async function clearMemory(dir) {
