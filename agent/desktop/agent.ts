@@ -19,7 +19,6 @@
  * 调用场景 / Callers:
  *   - server.js 启动时: createDesktopAgentRunner() 工厂创建 runDesktopAgent 函数
  *   - routes/agent.js POST /api/agent: runDesktopAgent() 执行任务
- *   - server.js resumeFromCheckpoint(): 恢复断点继续执行
  *
  * TODO / 拆分建议 Refactor suggestions:
  *   - 将 multi-model 竞速逻辑（buildDesktopPlanner / aggregateResults）拆到 agent/core/multi-model.js

@@ -106,7 +106,16 @@ export function ModelPlanGroup({ events, step, models, selectedModelId = 'all', 
         <TerminalProcess events={terminalEvents} running={!agentFinished && !stepResult} t={t} />
         <McpProcess events={mcpEvents} running={!agentFinished && !stepResult} t={t} />
         {/* 执行结果：节点底部统一展示（winner 的结果），与单模型 StepCard 口径一致 */}
-        <ResultSummary result={stepResult} resultStatus={stepResultStatus} openLightbox={openLightbox} forceExpanded={cardsExpanded} onManualToggle={onManualToggle} t={t} />
+        <ResultSummary
+          result={stepResult}
+          resultStatus={stepResultStatus}
+          failureCategory={stepResultEvent?.failureCategory}
+          failureRecovery={stepResultEvent?.failureRecovery}
+          openLightbox={openLightbox}
+          forceExpanded={cardsExpanded}
+          onManualToggle={onManualToggle}
+          t={t}
+        />
       </div>
     </div>
   );

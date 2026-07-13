@@ -45,7 +45,6 @@ import { log } from './helpers/logger.ts';
 import { configStore } from './agent/core/config-store.ts';
 import { createApiAuth, createCorsOptions, createOriginGuard, loadServerSecurityConfig } from './helpers/security.ts';
 import { flushAllPersistenceTasks } from './helpers/persistence-queue.ts';
-import { persistRecoveredAgentRunMemory } from './routes/agent-run-memory-persist.ts';
 import { warnLegacyConfiguration } from './helpers/config-deprecations.ts';
 
 const securityConfig = loadServerSecurityConfig();
@@ -75,7 +74,6 @@ initWebViewDataStore(MEMORY_DIR);
 await configStore.init(MEMORY_DIR);
 warnLegacyConfiguration(configStore);
 const executionConfig = configStore.execution();
-const AGENT_RESUME = executionConfig.resume;
 
 // 项目注册表：每个项目隔离记忆/trace/checkpoint/uploads 与文件工具根。
 // 注册表为空时为「无项目」全局态，行为与引入项目概念前一致。
@@ -147,83 +145,12 @@ function defaultShutdownGraceMs() {
   return terminateAfterMs + killAfterMs + 1000;
 }
 
-async function resumeFromCheckpoint(cp) {
-  const { runId, task, model, headless, history, step, maxSteps: _maxSteps, startedAt } = cp;
-  // checkpoint 自带项目落盘目录与项目根；旧 checkpoint（无项目）回退全局 MEMORY_DIR / process.cwd()。
-  const dataDir = cp.dataDir || MEMORY_DIR;
-  const projectRoot = cp.projectRoot || null;
-  log.info(`[Resume] 恢复运行 run_id=${runId} step=${step} task=${task.slice(0, 60)}…`);
-
-  const sendEventWithTrace = createBaseEventSender(runId, agentRunStore, dataDir);
-
-  const { systemPrompt } = await loadMemoryForPrompt(dataDir);
-
-  // 旧 checkpoint 可能没有 trace；仅在 trace 缺失时重建历史，避免恢复时重复写入旧步骤。
-  const existingTraceEvents = await readTraceEvents(dataDir, runId);
-  if (existingTraceEvents.length === 0) {
-    sendEventWithTrace({ type: 'status', status: 'starting', runId, message: '准备启动桌面 Agent' });
-    for (const h of history) {
-      sendEventWithTrace({ type: 'step', step: h.step, stage: 'action', rationale: h.rationale, action: h.action });
-      sendEventWithTrace({ type: 'step', step: h.step, stage: 'result', result: h.result });
-    }
-  }
-  sendEventWithTrace({ type: 'status', status: 'resuming', runId, message: `从断点恢复：从第 ${step + 1} 步继续执行任务「${task.slice(0, 60)}」` });
-
-  try {
-    const runRecord = agentRunStore.getRun(runId);
-    const result = await runDesktopAgent({
-      task,
-      model,
-      models: cp.agentModels,
-      strategy: cp.strategy || 'race',
-      systemPrompt,
-      headless,
-      runId,
-      runRecord,
-      startedAt,
-      initialStep: step + 1,
-      initialHistory: history,
-      conversationHistory: cp.conversationHistory || [],
-      memory: cp.memory !== false,
-      onEvent: sendEventWithTrace,
-      cancelSignal: runRecord?.cancelAc?.signal || new AbortController().signal,
-      projectRoot,
-      dataDir,
-    });
-    sendEventWithTrace({ type: 'done', runId, answer: result.answer, steps: result.steps, meta: { elapsed_ms: Date.now() - startedAt, step_count: result.steps.length } });
-    if (cp.memory !== false) {
-      try {
-        const runRecord = agentRunStore.getRun(runId);
-        const persistMemory = () => persistRecoveredAgentRunMemory({
-          memoryDir: dataDir,
-          task,
-          result,
-          model,
-          registry,
-        });
-        if (runRecord?.persistence) await runRecord.persistence.enqueue(persistMemory);
-        else await persistMemory();
-      } catch (err: any) {
-        log.warn('[Resume] Memory save failed:', err.message);
-      }
-    }
-  } catch (err: any) {
-    log.error(`[Resume] 失败 run_id=${runId}:`, err.message);
-    sendEventWithTrace({ type: 'error', runId, error: err.message });
-  } finally {
-    await cleanupAgentRun(dataDir, runId, agentRunStore);
-  }
-}
-
-/** 跨「全局 + 各项目」目录收集所有未完成 checkpoint，附带各自所在目录，按 startedAt 升序 */
 async function collectAllCheckpoints() {
-  const dirs = [MEMORY_DIR, ...projectStore.list().projects.map((p: any) => projectDataDir(MEMORY_DIR, p.projectId))];
-  const all: { cp: any; dir: string }[] = [];
+  const dirs = [MEMORY_DIR, ...projectStore.list().projects.map((project: any) => projectDataDir(MEMORY_DIR, project.projectId))];
+  const all: Array<{ cp: any; dir: string }> = [];
   for (const dir of dirs) {
-    const cps = await listCheckpoints(dir);
-    for (const cp of cps) all.push({ cp, dir });
+    for (const cp of await listCheckpoints(dir)) all.push({ cp, dir });
   }
-  all.sort((a, b) => (a.cp.startedAt || 0) - (b.cp.startedAt || 0));
   return all;
 }
 
@@ -250,7 +177,6 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
   ${row('AGENT_BATCH_SIZE', cfg.batchSize)}
   ${hLine}
   ${row('AGENT_OBSERVE_DESKTOP', cfg.observeDesktop)}
-  ${row('AGENT_RESUME', AGENT_RESUME)}
   ${row('AGENT_WORKERS', AGENT_SANDBOXED_WORKERS ? (AGENT_WORKER_SANDBOX ? 'sandboxed' : 'plain') : 'disabled')}
   ${row('CHROME_PATH', process.env.AGENT_BROWSER_PATH || 'auto')}
   ${ideConfig.enabled ? row('IDE_MCP', `${ideConfig.transport} @ ${ideConfig.transport === 'stdio' ? ideConfig.command : (ideConfig.url || `${ideConfig.host}:${ideConfig.port}${ideConfig.ssePath}`)}`) : row('IDE_MCP', 'disabled')}
@@ -264,50 +190,10 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
   ╚${dLine.slice(2)}╝
   `);
 
-  if (AGENT_RESUME) {
-    const found = await collectAllCheckpoints();
-    if (found.length > 0) {
-      const { cp } = found[found.length - 1];
-      // 模型所属 provider 未配置（缺对应 API key）时跳过恢复
-      let providerAvailable = true;
-      try {
-        providerAvailable = Boolean(registry.resolve(cp.model, modelConfig)?.client);
-      } catch {
-        providerAvailable = false;
-      }
-      if (!providerAvailable) {
-        console.log(`[Resume] 跳过: ${cp.runId} 所需供应商未配置 API key，清理全部 checkpoint`);
-        for (const d of new Set(found.map(f => f.dir))) await clearCheckpoints(d);
-      } else if (cp.history?.some(h => h.action?.type === 'finish')) {
-        console.log(`[Resume] ${cp.runId} 已完成（含 finish 动作），跳过恢复，清理全部 checkpoint`);
-        for (const d of new Set(found.map(f => f.dir))) await clearCheckpoints(d);
-      } else {
-        console.log(`[Resume] 发现 ${found.length} 个未完成任务，恢复最后一个: ${cp.runId}`);
-        const resumeDataDir = cp.dataDir || MEMORY_DIR;
-        const existingTraceEvents = await readTraceEvents(resumeDataDir, cp.runId);
-        const initialEventSeq = existingTraceEvents.reduce(
-          (next: number, event: any, index: number) => Number.isFinite(event?.seq)
-            ? Math.max(next, Number(event.seq) + 1)
-            : Math.max(next, index + 2),
-          1,
-        );
-        agentRunStore.createRun({ model: cp.model, task: cp.task, projectId: cp.dataDir ? undefined : null, dataDir: resumeDataDir, projectRoot: cp.projectRoot || null }, cp.startedAt, cp.runId, initialEventSeq);
-        resumeFromCheckpoint(cp).catch(err => {
-          log.error(`[Resume] 恢复失败 run_id=${cp.runId}:`, err.message);
-        });
-        for (const other of found.slice(0, -1)) {
-          removeCheckpoint(other.dir, other.cp.runId).catch(() => {});
-        }
-      }
-    }
-  } else {
-    const remaining = await collectAllCheckpoints();
-    if (remaining.length > 0) {
-      console.log(`[Resume] AGENT_RESUME=false，清理 ${remaining.length} 个残留 checkpoint`);
-      for (const { dir } of remaining) {
-        await clearCheckpoints(dir);
-      }
-    }
+  const staleCheckpoints = await collectAllCheckpoints();
+  if (staleCheckpoints.length > 0) {
+    console.log(`[Checkpoint] 清理 ${staleCheckpoints.length} 个重启前遗留的 checkpoint`);
+    for (const dir of new Set(staleCheckpoints.map(item => item.dir))) await clearCheckpoints(dir);
   }
 });
 

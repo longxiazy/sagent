@@ -269,7 +269,6 @@ export const configStore = {
       return ['1', 'true', 'yes', 'on'].includes(String(raw).trim().toLowerCase());
     };
     return {
-      resume: envBool('AGENT_RESUME', stored.resume ?? true),
       // execution 是启动期部署选择；显式环境变量优先，确保 npm run sandbox 语义稳定。
       sandboxedWorkers: envBool('AGENT_SANDBOXED_WORKERS', stored.sandboxedWorkers ?? false),
       workerSandbox: envBool('AGENT_WORKER_SANDBOX', stored.workerSandbox ?? true),

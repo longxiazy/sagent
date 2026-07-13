@@ -117,7 +117,16 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
         <McpProcess events={mcpEvents} running={active && !result} t={t} />
 
         {/* 执行结果（与多模型卡组共用同一组件，口径一致） */}
-        <ResultSummary result={result} resultStatus={resultStatus} openLightbox={openLightbox} forceExpanded={forceExpanded} onManualToggle={onManualToggle} t={t} />
+        <ResultSummary
+          result={result}
+          resultStatus={resultStatus}
+          failureCategory={resultEvent?.failureCategory}
+          failureRecovery={resultEvent?.failureRecovery}
+          openLightbox={openLightbox}
+          forceExpanded={forceExpanded}
+          onManualToggle={onManualToggle}
+          t={t}
+        />
       </div>
     </div>
   );

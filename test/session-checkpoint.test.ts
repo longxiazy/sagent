@@ -288,6 +288,30 @@ describe('runtime: session checkpoint integration', () => {
     expect(evtLog.some(e => e.type === 'notification' && e.level === 'warning')).toBe(true);
   });
 
+  it('allows one same-action retry for a transient failure, then stops', async () => {
+    const cancelSignal = new AbortController().signal;
+    let executeCalls = 0;
+
+    const result = await runAgentRuntime({
+      task: 'fetch temporary service',
+      maxSteps: 5,
+      cancelSignal,
+      initialize,
+      observe,
+      decide: () => decision({ tool: 'search', type: 'web_search', query: 'temporary service', maxResults: 5 }, 'retry temporary failure'),
+      authorize: approve,
+      execute: () => {
+        executeCalls += 1;
+        throw new Error('request timeout');
+      },
+      cleanup: noop,
+    });
+
+    expect(executeCalls).toBe(2);
+    expect(result.steps[0]).toMatchObject({ failureCategory: 'transient', failureRecovery: 'retry_same' });
+    expect(result.answer).toContain('刚失败的同一动作');
+  });
+
   it('saves snapshots at interval steps', async () => {
     const runId = 'run_rt2';
     const runRecord = { runId, pendingRollback: null };

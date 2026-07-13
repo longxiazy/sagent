@@ -218,6 +218,8 @@ export async function saveHealthySnapshot({
       result: typeof h.result === 'string' ? h.result.slice(0, 2000) : '',
       resultStatus: h.resultStatus,
       resultError: h.resultError,
+      failureCategory: h.failureCategory,
+      failureRecovery: h.failureRecovery,
       url: h.url,
       title: h.title,
       observation: h.observation ? { url: h.observation.url, title: h.observation.title, text: typeof h.observation.text === 'string' ? h.observation.text.slice(0, 500) : undefined } : undefined,

@@ -83,6 +83,7 @@ export interface AgentDecision {
 }
 
 export type ActionResultStatus = 'success' | 'failed' | 'rejected';
+export type { ToolFailureCategory, ToolFailureRecovery } from './tool-failure.ts';
 
 export interface AgentStep {
   step: number;
@@ -91,6 +92,8 @@ export interface AgentStep {
   result: unknown;
   resultStatus?: ActionResultStatus;
   resultError?: string | null;
+  failureCategory?: import('./tool-failure.ts').ToolFailureCategory;
+  failureRecovery?: import('./tool-failure.ts').ToolFailureRecovery;
   url?: string;
   title?: string;
   observation?: JsonObject;
@@ -119,7 +122,7 @@ export type AgentEvent = EventTraceFields & (
   | { type: 'run_meta'; startedAt: number; model?: string; agentModels?: string[]; task?: string; sessionId?: string; projectId?: string | null; strategy?: string }
   | { type: 'step'; step: number; stage: 'observe'; observation: unknown }
   | { type: 'step'; step: number; stage: 'action'; rationale?: string; action: AgentAction; usage?: TokenUsage | null }
-  | { type: 'step'; step: number; stage: 'result'; result: unknown; resultStatus?: ActionResultStatus; resultError?: string | null }
+  | { type: 'step'; step: number; stage: 'result'; result: unknown; resultStatus?: ActionResultStatus; resultError?: string | null; failureCategory?: import('./tool-failure.ts').ToolFailureCategory; failureRecovery?: import('./tool-failure.ts').ToolFailureRecovery }
   | { type: 'model_plan'; stage: 'start' | 'thinking' | 'success' | 'winner' | 'failed' | 'cancelled' | 'pending' | 'rate_limited' | 'consensus'; step?: number; model?: string; models?: string[]; action?: AgentAction; rationale?: string; reasoning?: string | null; usage?: TokenUsage | null; error?: string; delay?: number; cooldown_ms?: number; routing?: unknown; consensus?: unknown }
   | { type: 'terminal_output'; step?: number; phase: 'start' | 'stdout' | 'stderr' | 'exit' | 'error' | 'timeout'; command?: string; cwd?: string; sequence?: number; chunk?: string; exitCode?: number | null; elapsedMs?: number; message?: string }
   | { type: 'mcp_output'; step?: number; phase: 'connecting' | 'connected' | 'discovering' | 'calling' | 'waiting' | 'progress' | 'completed' | 'error'; serverName: string; toolName?: string; sequence?: number; message?: string; progress?: number; total?: number }

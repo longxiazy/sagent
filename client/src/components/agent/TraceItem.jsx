@@ -2,6 +2,7 @@ import { memo, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { getModelLabel } from './plan-stage.js';
 import { ActionDetails } from './ActionDetails.jsx';
+import { FailureRecovery } from './FailureRecovery.jsx';
 import { TerminalProcess } from './TerminalProcess.jsx';
 import { McpProcess } from './McpProcess.jsx';
 
@@ -149,9 +150,10 @@ export const TraceItem = memo(function TraceItem({ event, selectedModelId = 'all
         return (
           <>
             <span className="agent-trace-badge result">{t('agentPanel.badgeResult')}</span>
-            <div className="agent-trace-content">
-              <strong>Step {event.step}</strong>
-              <p>{event.result}</p>
+              <div className="agent-trace-content">
+                <strong>Step {event.step}</strong>
+                <FailureRecovery category={event.failureCategory} recovery={event.failureRecovery} t={t} />
+                <p>{event.result}</p>
             </div>
           </>
         );

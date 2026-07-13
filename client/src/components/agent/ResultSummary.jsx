@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CornerDownRight } from 'lucide-react';
 import { resultScreenshot, splitFailureHighlights } from './result-status.js';
+import { FailureRecovery } from './FailureRecovery.jsx';
 
 // 执行结果概要：截图走缩略图（点开放大），纯文本以 ↳ 锚点引出、超长截断可展开。
 // 单模型 StepCard 与多模型决策卡组的节点底部共用，保证「执行结果」展示口径一致。
@@ -10,7 +11,7 @@ import { resultScreenshot, splitFailureHighlights } from './result-status.js';
 
 const CLAMP_THRESHOLD = 80; // 超过该长度才显示「展开/收起」
 
-export function ResultSummary({ result, resultStatus, openLightbox, forceExpanded, onManualToggle, t }) {
+export function ResultSummary({ result, resultStatus, failureCategory, failureRecovery, openLightbox, forceExpanded, onManualToggle, t }) {
   const [open, setOpen] = useState(false);
   const eff = forceExpanded != null ? forceExpanded : open;
   if (!result) return null;
@@ -31,6 +32,7 @@ export function ResultSummary({ result, resultStatus, openLightbox, forceExpande
   return (
     <div className="step-card-result">
       <div className="tool-result-label">{t('agentPanel.requestResult')}</div>
+      <FailureRecovery category={failureCategory} recovery={failureRecovery} t={t} />
       <div className="step-card-result-body">
         <CornerDownRight size={12} className="step-card-result-icon" />
         <p className={eff ? '' : 'clamp-2'}>

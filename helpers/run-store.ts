@@ -6,7 +6,6 @@
  *   - 传入 routes/agent.js 使用
  *   - POST /api/agent → createRun → 整个运行周期 → closeRun
  *   - POST /api/agent/cancel → cancelRun
- *   - GET /api/agent/active → getActiveRun（前端刷新后检测是否有进行中的任务）
  *   - GET /api/agent/stream/:runId → getRun（SSE 重连回放事件）
  *
  * 生命周期：
@@ -115,7 +114,7 @@ export function createAgentRunStore({
 
     /**
      * 获取当前占用运行锁的 Agent（包括 waiting_approval / cancelling）
-     * 调用时机：GET /api/agent/active 前端刷新后检测是否有进行中的任务
+     * 供新任务并发检查使用。
      */
     getActiveRun,
 

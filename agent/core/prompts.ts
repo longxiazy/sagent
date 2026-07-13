@@ -342,6 +342,8 @@ export function compactAgentHistory(history: any[], maxEntries?: number, maxResu
       action: entry?.action,
       result: compactToolResult({ result, action: entry?.action, task, limit: resultLimit }),
       ...(entry?.resultStatus ? { resultStatus: entry.resultStatus } : {}),
+      ...(entry?.failureCategory ? { failureCategory: entry.failureCategory } : {}),
+      ...(entry?.failureRecovery ? { failureRecovery: entry.failureRecovery } : {}),
     };
   });
 }
@@ -355,7 +357,7 @@ function buildSharedAgentRuleLines(capabilityContext: PromptCapabilityContext = 
     '规则：',
     '1. task 是本轮唯一目标；conversationHistory 只用于理解指代，不得恢复或切换到旧任务。',
     '2. 决策顺序：已有信息足够则立即 finish；缺少用户才能决定的信息则 ask_user；否则选择完成目标所需的最少工具。不要为了显得在执行而探索。',
-    '3. 不要重复已成功或无新目的的动作。同一目标连续约 5 步仍无实质进展时停止尝试，finish 汇总已知信息并说明限制。',
+    '3. 工具失败时根据 history 中的 failureCategory/failureRecovery 处理：retry_same 可原样重试一次，reconnect_then_retry 先重连，revise_action 修改参数，switch_tool 换工具，stop 停止。不要重复已成功或无新目的的动作。',
     '4. 文件写入和终端确认命令可能需要审批；cd/pushd/popd 使用 run_review。被拒绝后改用安全替代方案。',
     '5. browser.click/type 只能使用 observation.browser.elements 中存在的 elementId。搜索先用 web_search 定位来源，再逐个 http_fetch 权威页面；不要 navigate 到搜索引擎结果页。',
     '6. 不得编造工具结果。时效产品信息和医保、签证、金融、法律、政策等高风险信息优先核验官方来源；未核验或未取得目标网页正文时必须明确说明。',

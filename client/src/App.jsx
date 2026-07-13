@@ -141,8 +141,6 @@ export default function App() {
     agentStopping,
     setAgentStopping,
     setAgentRunId,
-    reconnectedRun,
-    setReconnectedRun,
     agentTrace,
     setAgentTrace,
     pendingApproval,
@@ -166,7 +164,6 @@ export default function App() {
     approvalRequestRef,
     questionRequestRef,
     touchStartRef,
-    reconnectTaskRef,
     lastAgentTaskRef,
   } = useAgentRun();
   const [agentMemory, setAgentMemory] = usePersistentState('agent_memory', true, booleanStorage);
@@ -285,274 +282,6 @@ export default function App() {
   const { resolvedTheme } = useTheme();
   const t = useT();
   useThemeColorSync({ mode, agentMobileTab, showSessions, resolvedTheme });
-
-  // 页面刷新后，如果后端还有运行中的 agent，这里会尝试“接回去”：
-  // 1. 先查 /api/agent/active
-  // 2. 再订阅 /api/agent/stream/:runId
-  // 3. 同时把 UI 切回 Agent 模式，并用占位消息保住聊天视图连续性
-  useEffect(() => {
-    if (sessionsLoading) return undefined;
-    const controller = new AbortController();
-    let aborted = false;
-
-    // 订阅回调可能在很久之后才触发，不能依赖闭包里的 activeSession。
-    // 每次都从最新 chatState 里拿 activeSessionId，避免事件写错会话。
-    const updateActiveSession = updater => {
-      setChatState(prev => {
-        const sid = prev.activeSessionId;
-        const sessions = prev.sessions.map(session => {
-          if (session.id === sid) return updater(session);
-          return session;
-        });
-        return normalizeChatState({ ...prev, sessions });
-      });
-    };
-
-    const restorePendingEvent = event => {
-      if (!event || typeof event !== 'object') return;
-      if (event.type === 'approval_required') {
-        approvalRequestRef.current = { ...event, resolve: () => {} };
-        setPendingApproval(event);
-      } else if (event.type === 'question_required') {
-        questionRequestRef.current = { ...event, resolve: () => {} };
-        setPendingQuestion(event);
-      }
-    };
-
-    (async () => {
-      try {
-        const res = await apiFetch('/api/agent/active', { signal: controller.signal });
-        if (aborted) return;
-        const data = await res.json();
-        if (!data.active || aborted) return;
-
-        setAgentRunning(true);
-        setAgentTrace([]);
-        setReconnectedRun(true);
-        setAgentStartedAt(data.startedAt || null);
-        setAgentRunId(data.runId);
-        agentRunIdRef.current = data.runId;
-        agentAbortRef.current = controller;
-        restorePendingEvent(data.pendingApproval);
-        restorePendingEvent(data.pendingQuestion);
-
-        // 刷新重连时，如果当前会话看起来不是这次 Agent 任务对应的会话，
-        // 就临时创建一个“占位会话”承接运行态，避免把其他历史会话的消息替换掉。
-        const task = data.task || t('agent.taskFallback');
-        const activeRunModels = uniqueModelIds(data.meta?.agentModels);
-        const activeRunPrimaryModel = activeRunModels[0] || data.model || undefined;
-        setChatState(prev => {
-          const cur = prev.sessions.find(s => s.id === prev.activeSessionId);
-          const firstUser = cur?.messages?.find(m => m.role === 'user');
-          if (firstUser && firstUser.content === task) {
-            const sessions = prev.sessions.map(session => {
-              if (session.id !== prev.activeSessionId) return session;
-              const messages = session.messages.map(message => {
-                const isRunUser = message.role === 'user' && message.content === task;
-                const isPendingAssistant = message.role === 'assistant' && message.pending === 'run';
-                if (!isRunUser && !isPendingAssistant) return message;
-                return {
-                  ...message,
-                  ...(activeRunPrimaryModel && !message.model ? { model: activeRunPrimaryModel } : {}),
-                  ...(activeRunModels.length > 0 && !message.modelsUsed ? { modelsUsed: activeRunModels } : {}),
-                };
-              });
-              return touchSession(session, {
-                messages,
-                ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}),
-                ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}),
-                agentRunId: data.runId,
-                agentMeta: null,
-              });
-            });
-            return normalizeChatState({ ...prev, sessions });
-          }
-          const cleanSession = createSession({
-            messages: [
-              { role: 'user', content: task, ts: data.startedAt || Date.now(), ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}), ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}) },
-              { role: 'assistant', content: t('agent.running'), pending: 'run', ts: Date.now(), ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}), ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}) },
-            ],
-            model: activeRunPrimaryModel,
-            modelsUsed: activeRunModels,
-            agentRunId: data.runId,
-          });
-          return normalizeChatState({
-            sessions: [cleanSession, ...prev.sessions],
-            activeSessionId: cleanSession.id,
-          });
-        });
-
-        const response = await apiFetch(`/api/agent/stream/${encodeURIComponent(data.runId)}?cursor=0${data.meta?.projectId ? `&projectId=${encodeURIComponent(data.meta.projectId)}` : ''}`, { signal: controller.signal });
-        if (!response.ok || aborted) {
-          setAgentRunning(false);
-          return;
-        }
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (!aborted) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            const dataLine = line.replace(/^data:\s*/, '');
-            if (!dataLine || dataLine === '[DONE]') continue;
-            try {
-              const event = JSON.parse(dataLine);
-
-              if (event.type === 'run_meta') {
-                setAgentStartedAt(event.startedAt || null);
-                if (event.task) reconnectTaskRef.current = event.task;
-                const metaModels = uniqueModelIds(event.agentModels);
-                if (metaModels.length > 0) {
-                  updateActiveSession(session => touchSession(session, {
-                    model: metaModels[0],
-                    modelsUsed: metaModels,
-                    agentRunId: event.runId || data.runId,
-                  }));
-                }
-                continue;
-              }
-
-              // SSE 重连时同一批事件可能会回放两次；这里按关键字段去重，
-              // 否则 trace 面板会出现重复步骤。
-              setAgentTrace(prev => {
-                return appendUniqueTraceEvent(prev, event);
-              });
-
-              if (event.type === 'approval_required') {
-                approvalRequestRef.current = { ...event, resolve: () => {} };
-                setPendingApproval(event);
-              }
-
-              if (event.type === 'question_required') {
-                questionRequestRef.current = { ...event, resolve: () => {} };
-                setPendingQuestion(event);
-              }
-
-              if (event.type === 'user_response') {
-                setPendingApproval(null);
-                setPendingQuestion(null);
-                approvalRequestRef.current = null;
-                questionRequestRef.current = null;
-              }
-
-              if (event.type === 'approval_result') {
-                setPendingApproval(null);
-                approvalRequestRef.current = null;
-              }
-
-              if (event.type === 'rollback') {
-                setAgentTrace(prev => {
-                  const target = event.targetStep;
-                  return prev.filter(e => (e.step == null && e.type !== 'done' && e.type !== 'error') || e.step < target);
-                });
-              }
-
-              if (event.type === 'done') {
-                setAgentRunning(false);
-                const modelsUsed = uniqueModelIds(event.meta?.models_used);
-                const primaryDoneModel = modelsUsed[0] || activeRunPrimaryModel;
-                setAgentTrace(prevTrace => {
-                  const nextTrace = appendUniqueTraceEvent(prevTrace, event);
-                  updateActiveSession(session => {
-                    const msgs = [...session.messages];
-                    const idx = (() => { for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'assistant' && msgs[i].pending === 'run') return i; } return -1; })();
-                    if (idx >= 0) {
-                      msgs[idx] = { role: 'assistant', content: event.answer || t('agent.done'), ts: Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) };
-                    } else if (!msgs.some(m => m.role === 'assistant' && m.content === (event.answer || ''))) {
-                      msgs.push({ role: 'user', content: reconnectTaskRef.current || data.task || t('agent.taskFallback'), ts: data.startedAt || Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) });
-                      msgs.push({ role: 'assistant', content: event.answer || t('agent.done'), ts: Date.now(), ...(primaryDoneModel ? { model: primaryDoneModel } : {}), ...(modelsUsed.length > 0 ? { modelsUsed } : {}) });
-                    }
-                    const nextSession = {
-                      ...session,
-                      messages: msgs,
-                      ...(modelsUsed.length > 0 ? { model: modelsUsed[0], modelsUsed } : {}),
-                      agentRunId: data.runId,
-                      agentTrace: nextTrace,
-                    };
-                    const agentMeta = buildAgentMetaFromSession(nextSession, nextTrace, {
-                      task: reconnectTaskRef.current || data.task || t('agent.taskFallback'),
-                      startedAt: data.startedAt,
-                      models: modelsUsed,
-                      status: event.quality?.status || event.meta?.status || 'done',
-                      runId: data.runId,
-                    });
-                    return touchSession(upsertAgentRun({
-                      ...nextSession,
-                      agentMeta,
-                    }, {
-                      runId: data.runId,
-                      trace: nextTrace,
-                      meta: agentMeta,
-                    }));
-                  });
-                  return nextTrace;
-                });
-              }
-
-              if (event.type === 'error') {
-                setAgentRunning(false);
-                setAgentTrace(prevTrace => {
-                  const nextTrace = appendUniqueTraceEvent(prevTrace, event);
-                  updateActiveSession(session => {
-                    const msgs = [...session.messages];
-                    const idx = (() => { for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'assistant' && msgs[i].pending === 'run') return i; } return -1; })();
-                    const content = t('agent.failed', { error: event.error || t('common.unknownError') });
-                    if (idx >= 0) {
-                      msgs[idx] = { role: 'assistant', content, ts: Date.now(), ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}), ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}) };
-                    } else if (!msgs.some(m => m.role === 'assistant' && m.content === content)) {
-                      msgs.push({ role: 'assistant', content, ts: Date.now(), ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}), ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}) });
-                    }
-                    const nextSession = {
-                      ...session,
-                      messages: msgs,
-                      ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}),
-                      ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}),
-                      agentRunId: data.runId,
-                      agentTrace: nextTrace,
-                    };
-                    const agentMeta = buildAgentMetaFromSession(nextSession, nextTrace, {
-                      task: reconnectTaskRef.current || data.task || t('agent.taskFallback'),
-                      startedAt: data.startedAt,
-                      models: activeRunModels,
-                      status: event.error === 'Agent 已取消' ? 'cancelled' : 'error',
-                      runId: data.runId,
-                    });
-                    return touchSession(upsertAgentRun({
-                      ...nextSession,
-                      agentMeta,
-                    }, {
-                      runId: data.runId,
-                      trace: nextTrace,
-                      meta: agentMeta,
-                    }));
-                  });
-                  return nextTrace;
-                });
-              }
-            } catch { /* skip malformed SSE lines */ }
-          }
-        }
-        setAgentRunning(false);
-      } catch (err) {
-        if (err.name === 'AbortError') {
-          setAgentRunning(false);
-        }
-      }
-    })();
-
-    return () => {
-      aborted = true;
-      controller.abort();
-    };
-  // 这段只负责页面首次加载后的运行态接回；依赖更新不应该重新订阅同一个 run。
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionsLoading]);
 
   // 手机后台/切 tab 时浏览器会冻结 JS、节流网络，SSE reader 可能在后台错过
   // done/error 事件；切回前台时如果前端还以为任务在跑，就调一次持久化的 trace
@@ -821,7 +550,6 @@ export default function App() {
     setAgentStartedAt,
     setPendingApproval,
     setPendingQuestion,
-    setReconnectedRun,
     setRollbackLoading,
     setAgentMobileTab,
     setAgentRunId,
@@ -1087,11 +815,6 @@ export default function App() {
         />
       ) : (
         <div className="layout">
-          {reconnectedRun && agentRunning && (
-            <div className="reconnect-banner">
-              {t('agent.reconnectBanner')}
-            </div>
-          )}
           <AppHeader
             sessionTitle={getSessionTitle(messages)}
             sessionLocked={sessionLocked}

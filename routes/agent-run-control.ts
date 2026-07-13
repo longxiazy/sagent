@@ -67,24 +67,6 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
     return res.json({ ok: true });
   });
 
-  router.get('/api/agent/active', (_req, res) => {
-    const run = agentRunStore.getActiveRun();
-    if (!run) {
-      return res.json({ active: false });
-    }
-    const pending = pendingApprovalState(approvalStore, run.runId);
-    return res.json({
-      active: true,
-      runId: run.runId,
-      startedAt: run.startedAt,
-      model: run.meta?.model,
-      task: run.meta?.task,
-      meta: run.meta,
-      pendingApproval: pending.pendingApproval,
-      pendingQuestion: pending.pendingQuestion,
-    });
-  });
-
   router.get('/api/agent/stream/:runId', (req, res) => {
     (async () => {
     const { runId } = req.params;

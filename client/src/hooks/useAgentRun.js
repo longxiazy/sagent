@@ -4,7 +4,6 @@ export function useAgentRun() {
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentStopping, setAgentStopping] = useState(false);
   const [_agentRunId, setAgentRunId] = useState(null);
-  const [reconnectedRun, setReconnectedRun] = useState(false);
   const [agentTrace, setAgentTrace] = useState([]);
   const [pendingApproval, setPendingApproval] = useState(null);
   const [approvalSubmitting, setApprovalSubmitting] = useState(false);
@@ -20,7 +19,6 @@ export function useAgentRun() {
   const approvalRequestRef = useRef(null);
   const questionRequestRef = useRef(null);
   const touchStartRef = useRef(null);
-  const reconnectTaskRef = useRef(null);
   const lastAgentTaskRef = useRef(null);
 
   return {
@@ -30,8 +28,6 @@ export function useAgentRun() {
     setAgentStopping,
     _agentRunId,
     setAgentRunId,
-    reconnectedRun,
-    setReconnectedRun,
     agentTrace,
     setAgentTrace,
     pendingApproval,
@@ -55,7 +51,6 @@ export function useAgentRun() {
     approvalRequestRef,
     questionRequestRef,
     touchStartRef,
-    reconnectTaskRef,
     lastAgentTaskRef,
   };
 }

@@ -1608,15 +1608,6 @@ select,
   }
 }
 
-.reconnect-banner {
-  padding: 8px 16px;
-  background: var(--c-warning-bg);
-  color: var(--c-warning-text);
-  font-size: var(--f-sm);
-  text-align: center;
-  flex-shrink: 0;
-}
-
 .header {
   display: flex;
   align-items: center;
@@ -4225,6 +4216,37 @@ a.model-encyclopedia-field-value:hover {
 /* 失败步：圆点 + ↳ 图标转红做状态指示；结果正文不再整段标红，改为只高亮命中的关键词 */
 .agent-trace-item.result-failed .step-card-result-icon,
 .model-plan-group.result-failed .step-card-result-icon { color: var(--c-badge-error); }
+
+.failure-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 5px 0 6px;
+}
+
+.failure-recovery-category,
+.failure-recovery-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 21px;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  font-size: var(--f-micro);
+  font-weight: 600;
+}
+
+.failure-recovery-category {
+  color: var(--c-danger);
+  background: var(--c-danger-bg);
+  border: 1px solid color-mix(in srgb, var(--c-danger) 24%, transparent);
+}
+
+.failure-recovery-action {
+  color: var(--c-badge-rollback);
+  background: color-mix(in srgb, var(--c-badge-rollback) 10%, var(--c-surface));
+  border: 1px solid color-mix(in srgb, var(--c-badge-rollback) 24%, transparent);
+}
 
 .mcp-process {
   margin-top: 8px;

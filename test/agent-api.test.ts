@@ -93,38 +93,6 @@ describe('GET /api/agent/memory', () => {
   });
 });
 
-describe('GET /api/agent/active', () => {
-  it('returns pending approval details for a reconnected run', async () => {
-    const run = agentRunStore.createRun({
-      model: 'test-model',
-      task: 'needs approval',
-    });
-    approvalStore.request({
-      type: 'approval_required',
-      runId: run.runId,
-      step: 3,
-      action: { tool: 'terminal', type: 'run', command: 'npm test' },
-      message: '命令需要确认',
-    }, 'approval_reconnect_1');
-
-    const res = await request(app).get('/api/agent/active');
-    expect(res.status).toBe(200);
-    expect(res.body.active).toBe(true);
-    expect(res.body.runId).toBe(run.runId);
-    expect(res.body.pendingApproval).toMatchObject({
-      type: 'approval_required',
-      runId: run.runId,
-      approvalId: 'approval_reconnect_1',
-      step: 3,
-      message: '命令需要确认',
-      action: { tool: 'terminal', type: 'run', command: 'npm test' },
-    });
-    expect(res.body.pendingQuestion).toBeNull();
-
-    approvalStore.rejectAll();
-  });
-});
-
 describe('approval ownership', () => {
   it('rejects approval decisions submitted with another run id', async () => {
     approvalStore.request({

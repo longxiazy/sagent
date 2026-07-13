@@ -37,6 +37,7 @@ import {
 import { assessResultQuality } from "./result-quality.ts";
 import { configStore } from "./config-store.ts";
 import { compactToolResult } from './result-extraction.ts';
+import { classifyToolFailure } from './tool-failure.ts';
 import type {
   AgentAction,
   AgentStep,
@@ -232,7 +233,11 @@ function detectRepeatedActionLoop(history: AgentStep[], action: AgentAction) {
     count += 1;
   }
 
-  if (count >= 1 && allFailed) return { count, key, result: fingerprint || '', failed: true };
+  if (count >= 1 && allFailed) {
+    const last = history[history.length - 1];
+    if (count === 1 && last?.failureRecovery === 'retry_same') return null;
+    return { count, key, result: fingerprint || '', failed: true };
+  }
   if (count < LOOP_REPEAT_THRESHOLD) return null;
   return { count, key, result: fingerprint || '', failed: false };
 }
@@ -497,6 +502,9 @@ export async function runAgentRuntime({
       let result;
       let resultStatus: 'success' | 'failed' | 'rejected' = "success";
       let resultError = null;
+      let failureCategory;
+      let failureRecovery;
+      let failureInput;
       try {
         const rawResult = await execute(state, decision.action, {
           task,
@@ -505,12 +513,24 @@ export async function runAgentRuntime({
           observation,
           authorization,
         });
+        failureInput = rawResult;
         ({ result, resultStatus, resultError } = normalizeActionResult(rawResult));
       } catch (execErr) {
+        failureInput = execErr;
         resultStatus = "failed";
         resultError = execErr.message;
         result = `执行失败: ${execErr.message}`;
         log.error(`[Runtime] step ${step} execute error: ${execErr.message}`);
+      }
+
+      if (resultStatus === 'failed') {
+        const failure = await classifyToolFailure({
+          action: decision.action,
+          error: failureInput || resultError,
+          result,
+        });
+        failureCategory = failure.category;
+        failureRecovery = failure.recovery;
       }
 
       if (cancelled()) {
@@ -524,6 +544,8 @@ export async function runAgentRuntime({
         result,
         resultStatus,
         resultError,
+        failureCategory,
+        failureRecovery,
         url: actionTargetUrl(decision.action) || observationText(observation, 'url'),
         title: observationText(observation, 'title'),
       });
@@ -536,6 +558,8 @@ export async function runAgentRuntime({
           result,
           resultStatus,
           resultError,
+          failureCategory,
+          failureRecovery,
         });
       }
 
