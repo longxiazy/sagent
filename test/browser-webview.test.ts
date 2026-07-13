@@ -114,7 +114,7 @@ describe('Bun.WebView browser session adapter', () => {
     expect(created.closed).toBe(true);
   });
 
-  it('throws a clear runtime error when Bun.WebView is unavailable', () => {
+  it.skipIf(process.platform === 'win32')('throws a clear runtime error when Bun.WebView is unavailable', () => {
     resetWebViewFactoryForTests();
     const originalBun = globalThis.Bun;
 
@@ -143,6 +143,36 @@ describe('Bun.WebView browser observation', () => {
 });
 
 describe('Bun.WebView browser actions', () => {
+  it('preserves the original WebView initialization error', async () => {
+    const originalError = new Error('Chrome WebSocket closed (code 1006)');
+    setWebViewFactoryForTests(options => {
+      const view = new FakeWebView(options);
+      view.navigate = async () => {
+        throw originalError;
+      };
+      return view;
+    });
+    const manager = createSharedBrowserSessionManager();
+    const state = { headless: true, browserSession: null };
+    const events: any[] = [];
+
+    try {
+      await manager.ensureBrowserSession(state, event => events.push(event));
+      throw new Error('预期 WebView 初始化失败');
+    } catch (err: any) {
+      expect(err.message).toBe('WebView 初始化失败: Chrome WebSocket closed (code 1006)');
+      expect(err.cause).toBe(originalError);
+    }
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'browser_session',
+        status: 'degraded',
+        reason: 'initialization_failed',
+        error: 'Chrome WebSocket closed (code 1006)',
+      }),
+    ]));
+  });
+
   it('executes navigation, click, typing, scroll, content, and search actions through WebView', async () => {
     const view = new FakeWebView();
 
