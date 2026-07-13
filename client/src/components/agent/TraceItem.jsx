@@ -3,6 +3,7 @@ import { RotateCcw } from 'lucide-react';
 import { getModelLabel } from './plan-stage.js';
 import { ActionDetails } from './ActionDetails.jsx';
 import { TerminalProcess } from './TerminalProcess.jsx';
+import { McpProcess } from './McpProcess.jsx';
 
 // 单条 trace 渲染。从 AgentPanel 平移而来并用 memo 包裹：trace 是 append-only 的，
 // 旧 event 对象引用不变，新事件到达时已渲染过的 item 不会重跑（尤其是 action 里的
@@ -233,6 +234,12 @@ export const TraceItem = memo(function TraceItem({ event, selectedModelId = 'all
             <TerminalProcess events={[event]} running={event.phase !== 'exit'} t={t} />
           </div>
         </>
+      )}
+
+      {event.type === 'mcp_output' && (
+        <div className="agent-trace-content">
+          <McpProcess events={[event]} running={event.phase !== 'completed' && event.phase !== 'error'} t={t} />
+        </div>
       )}
 
       {event.type === 'error' && (

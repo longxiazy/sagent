@@ -118,7 +118,7 @@ export function assessResultQuality({ task, steps = [], answer = '' }: { task: s
     // MCP 工具列表的结果会原样回显其它工具的参数名（包含 timeout 等），
     // 不应被当作失败步骤。
     const actionType = step?.action?.type;
-    if (actionType === 'chrome_list_tools' || actionType === 'ide_list_tools') return false;
+    if (['chrome_list_tools', 'ide_list_tools', 'mcp_list_servers', 'mcp_list_tools'].includes(actionType)) return false;
     return stepFailed(step);
   });
   const officialSourceSteps = steps.filter(resultHasUsableOfficialContent);

@@ -55,6 +55,10 @@ export const ACTION_TYPE_TO_TOOL = {
   chrome_call_tool: 'chrome',
   chrome_list: 'chrome',
   chrome_call: 'chrome',
+  // generic MCP
+  mcp_list_servers: 'mcp',
+  mcp_list_tools: 'mcp',
+  mcp_call_tool: 'mcp',
   // spawn
   spawn: 'spawn',
   // core

@@ -9,6 +9,7 @@
 
 import { isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
 import { isChromeMcpAvailable } from '../tools/chrome/mcp-client.ts';
+import { isGenericMcpEnabled } from '../tools/mcp/client.ts';
 
 const READONLY_TOOL_NAMES = new Set([
   'list_dir',
@@ -25,11 +26,13 @@ export function createModelTools({
   mode = 'full',
   includeIdeMcp = true,
   includeChromeMcp = true,
+  includeGenericMcp = true,
   includeToolNames,
 }: {
   mode?: 'full' | 'readonly';
   includeIdeMcp?: boolean;
   includeChromeMcp?: boolean;
+  includeGenericMcp?: boolean;
   includeToolNames?: Iterable<string>;
 } = {}) {
   const tools: any[] = [
@@ -430,6 +433,42 @@ export function createModelTools({
             refreshTools: { type: 'boolean', description: '调用前是否刷新一次 Chrome 工具列表' },
           },
           required: ['toolName'],
+        },
+      }
+    );
+  }
+
+  if (includeGenericMcp && isGenericMcpEnabled()) {
+    tools.splice(tools.length - 1, 0,
+      {
+        name: 'mcp_list_servers',
+        description: '列出 sagent 中已启用的通用 MCP server。Chrome 与 JetBrains 使用各自的专用工具，不在此列表中。',
+        input_schema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'mcp_list_tools',
+        description: '列出指定通用 MCP server 暴露的工具、参数和安全注解。',
+        input_schema: {
+          type: 'object',
+          properties: {
+            serverName: { type: 'string', description: 'MCP server 名称，来自 mcp_list_servers' },
+            refresh: { type: 'boolean', description: '是否强制刷新工具列表' },
+          },
+          required: ['serverName'],
+        },
+      },
+      {
+        name: 'mcp_call_tool',
+        description: '调用指定通用 MCP server 的某个工具。调用前先用 mcp_list_tools 获取准确的工具名与参数。',
+        input_schema: {
+          type: 'object',
+          properties: {
+            serverName: { type: 'string', description: 'MCP server 名称' },
+            toolName: { type: 'string', description: '该 server 暴露的工具名称' },
+            arguments: { type: 'object', description: '传给 MCP 工具的参数对象', additionalProperties: true },
+            refreshTools: { type: 'boolean', description: '调用前是否刷新工具列表' },
+          },
+          required: ['serverName', 'toolName'],
         },
       }
     );

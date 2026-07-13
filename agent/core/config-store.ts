@@ -123,11 +123,15 @@ function normalizeMcpServers(value: any): Record<string, McpServerConfig> {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
     const server = raw as any;
     const transport = server.transport;
+    const toolTimeoutMs = Number.isFinite(Number(server.toolTimeoutMs))
+      ? Math.max(1_000, Math.min(3_600_000, Math.round(Number(server.toolTimeoutMs))))
+      : undefined;
     if (!transport || typeof transport !== 'object') continue;
     if (transport.type === 'sse' && typeof transport.url === 'string' && transport.url.trim()) {
       servers[name] = {
         ...server,
         enabled: server.enabled !== false,
+        toolTimeoutMs: toolTimeoutMs ?? (name === 'codex' ? 600_000 : undefined),
         transport: {
           type: 'sse',
           url: transport.url.trim(),
@@ -136,10 +140,18 @@ function normalizeMcpServers(value: any): Record<string, McpServerConfig> {
             : {}),
         },
       };
+    } else if (transport.type === 'http' && typeof transport.url === 'string' && transport.url.trim()) {
+      servers[name] = {
+        ...server,
+        enabled: server.enabled !== false,
+        toolTimeoutMs: toolTimeoutMs ?? (name === 'codex' ? 600_000 : undefined),
+        transport: { type: 'http', url: transport.url.trim() },
+      };
     } else if (transport.type === 'stdio' && typeof transport.command === 'string' && transport.command.trim()) {
       servers[name] = {
         ...server,
         enabled: server.enabled !== false,
+        toolTimeoutMs: toolTimeoutMs ?? (name === 'codex' ? 600_000 : undefined),
         transport: {
           type: 'stdio',
           command: transport.command.trim(),

@@ -61,6 +61,11 @@ export type ChromeAction =
   | { tool: 'chrome'; type: 'chrome_list_tools'; refresh: boolean }
   | { tool: 'chrome'; type: 'chrome_call_tool'; toolName: string; arguments: JsonObject; refreshTools: boolean };
 
+export type McpAction =
+  | { tool: 'mcp'; type: 'mcp_list_servers' }
+  | { tool: 'mcp'; type: 'mcp_list_tools'; serverName: string; refresh: boolean }
+  | { tool: 'mcp'; type: 'mcp_call_tool'; serverName: string; toolName: string; arguments: JsonObject; refreshTools: boolean };
+
 export type AgentAction =
   | CoreAction
   | BrowserAction
@@ -69,6 +74,7 @@ export type AgentAction =
   | MacOSAction
   | IdeAction
   | ChromeAction
+  | McpAction
   | { tool: 'search'; type: 'web_search'; query: string; maxResults: number }
   | { tool: 'codegraph'; type: 'codegraph_query'; query: string }
   | { tool: 'vision'; type: 'image_analyze'; image: string; question: string }
@@ -126,6 +132,7 @@ export type AgentEvent = EventTraceFields & (
   | { type: 'step'; step: number; stage: 'result'; result: unknown; resultStatus?: ActionResultStatus; resultError?: string | null }
   | { type: 'model_plan'; stage: 'start' | 'thinking' | 'success' | 'winner' | 'failed' | 'cancelled' | 'pending' | 'rate_limited' | 'consensus'; step?: number; model?: string; models?: string[]; action?: AgentAction; rationale?: string; reasoning?: string | null; usage?: TokenUsage | null; error?: string; delay?: number; cooldown_ms?: number; routing?: unknown; consensus?: unknown }
   | { type: 'terminal_output'; step?: number; phase: 'start' | 'stdout' | 'stderr' | 'exit' | 'error' | 'timeout'; command?: string; cwd?: string; sequence?: number; chunk?: string; exitCode?: number | null; elapsedMs?: number; message?: string }
+  | { type: 'mcp_output'; step?: number; phase: 'connecting' | 'connected' | 'discovering' | 'calling' | 'waiting' | 'progress' | 'completed' | 'error'; serverName: string; toolName?: string; sequence?: number; message?: string; progress?: number; total?: number }
   | { type: 'session_checkpoint'; step: number; message: string }
   | { type: 'rollback'; targetStep: number; message: string }
   | { type: 'notification'; level: 'info' | 'warning' | 'discovery'; step?: number; message: string }

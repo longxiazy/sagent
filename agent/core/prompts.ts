@@ -1,5 +1,6 @@
 import { buildIdePromptLines, isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
 import { buildChromePromptLines, isChromeMcpAvailable } from '../tools/chrome/mcp-client.ts';
+import { isGenericMcpEnabled, listGenericMcpServers } from '../tools/mcp/client.ts';
 import { configStore } from './config-store.ts';
 import { createModelTools, toolToGeminiTool } from './tool-definitions.ts';
 import { compactToolResult } from './result-extraction.ts';
@@ -14,6 +15,7 @@ type PromptCapabilityContext = {
 
 const CHROME_TASK_RE = /\bchrome\b|devtools|开发者工具|真实浏览器|网络面板|performance|lighthouse|控制台|console/i;
 const IDE_TASK_RE = /\bide\b|jetbrains|intellij|webstorm|pycharm|goland|运行配置|重命名重构|代码检查/i;
+const GENERIC_MCP_TASK_RE = /\bmcp\b|codex|编码专家|coding expert|外部工具|工具服务器/i;
 const BROWSER_BLOCK_RE = /captcha|cloudflare|403|forbidden|人机验证|反爬|访问受限|被拦截|blocked/i;
 const WEB_TASK_RE = /https?:\/\/|\bwww\.|\bweb\b|browser|website|search|news|weather|price|flight|hotel|online|网页|浏览器|网站|上网|搜索|查询|新闻|天气|实时|价格|机票|航班|酒店|电商|官网/i;
 const FILE_TASK_RE = /\b(project|repo|repository|code|source|file|folder|directory|path|config|dependency|readme)\b|项目|仓库|代码|源码|文件|文件夹|目录|路径|配置|依赖|模块|读取|写入|修改|编辑|创建|删除|重命名|查找|修复/i;
@@ -34,12 +36,13 @@ const VISION_TOOL_NAMES = ['image_analyze'];
 const SPAWN_TOOL_NAMES = ['spawn'];
 const IDE_TOOL_NAMES = ['ide_list_tools', 'ide_call_tool'];
 const CHROME_TOOL_NAMES = ['chrome_list_tools', 'chrome_call_tool'];
+const MCP_TOOL_NAMES = ['mcp_list_servers', 'mcp_list_tools', 'mcp_call_tool'];
 
 type NvidiaActionExample = {
   rationale: string;
   action: Record<string, unknown>;
   readonly?: boolean;
-  capability?: 'ide' | 'chrome';
+  capability?: 'ide' | 'chrome' | 'mcp';
 };
 
 const NVIDIA_ACTION_EXAMPLES: NvidiaActionExample[] = [
@@ -75,6 +78,9 @@ const NVIDIA_ACTION_EXAMPLES: NvidiaActionExample[] = [
   { rationale: '调用 IDE 工具获取运行配置', action: { tool: 'ide', type: 'ide_call_tool', toolName: 'get_run_configurations', arguments: {} }, capability: 'ide' },
   { rationale: '调用 Chrome 工具截图', action: { tool: 'chrome', type: 'chrome_call_tool', toolName: 'take_screenshot', arguments: {} }, capability: 'chrome' },
   { rationale: '刷新 Chrome 工具列表（仅在工具缺失或调用失败时使用）', action: { tool: 'chrome', type: 'chrome_list_tools', refresh: true }, capability: 'chrome' },
+  { rationale: '查看通用 MCP server', action: { tool: 'mcp', type: 'mcp_list_servers' }, capability: 'mcp' },
+  { rationale: '查看 Codex MCP 工具', action: { tool: 'mcp', type: 'mcp_list_tools', serverName: 'codex' }, capability: 'mcp' },
+  { rationale: '调用 Codex 编码工具', action: { tool: 'mcp', type: 'mcp_call_tool', serverName: 'codex', toolName: 'codex', arguments: { prompt: '检查并修复测试失败' } }, capability: 'mcp' },
   { rationale: '向用户提问', action: { tool: 'core', type: 'ask_user', question: '你希望使用什么命名规范？' } },
   { rationale: '发现重要问题需告知用户', action: { tool: 'core', type: 'notify_user', message: '发现 3 个硬编码 API 密钥', level: 'warning' } },
   { rationale: '完成任务', action: { type: 'finish', answer: '最终结果' }, readonly: true },
@@ -83,16 +89,19 @@ const NVIDIA_ACTION_EXAMPLES: NvidiaActionExample[] = [
 export function buildNvidiaActionExampleLines({
   ideEnabled = false,
   chromeEnabled = false,
+  mcpEnabled = false,
   readonly = false,
 }: {
   ideEnabled?: boolean;
   chromeEnabled?: boolean;
+  mcpEnabled?: boolean;
   readonly?: boolean;
 } = {}) {
   return NVIDIA_ACTION_EXAMPLES
     .filter(example => !readonly || example.readonly)
     .filter(example => example.capability !== 'ide' || ideEnabled)
     .filter(example => example.capability !== 'chrome' || chromeEnabled)
+    .filter(example => example.capability !== 'mcp' || mcpEnabled)
     .map(({ rationale, action }) => JSON.stringify({ rationale, action }));
 }
 
@@ -159,6 +168,7 @@ export function selectGeminiToolNames(context: PromptCapabilityContext = {}) {
 
   const needsChrome = shouldIncludeChromePromptDetails(context);
   const needsIde = shouldIncludeIdePromptDetails(context);
+  const needsMcp = shouldIncludeGenericMcpDetails(context);
   const needsWeb = WEB_TASK_RE.test(text)
     || browserObserved
     || needsChrome
@@ -183,6 +193,7 @@ export function selectGeminiToolNames(context: PromptCapabilityContext = {}) {
   if (needsSpawn) addToolGroup(selected, SPAWN_TOOL_NAMES);
   if (needsIde) addToolGroup(selected, IDE_TOOL_NAMES);
   if (needsChrome) addToolGroup(selected, CHROME_TOOL_NAMES);
+  if (needsMcp) addToolGroup(selected, MCP_TOOL_NAMES);
   return selected;
 }
 
@@ -203,6 +214,20 @@ export function shouldIncludeChromePromptDetails({ task = '', history = [], obse
 
 export function shouldIncludeIdePromptDetails({ task = '', history = [] }: PromptCapabilityContext = {}) {
   return IDE_TASK_RE.test(task) || historyUsesTool(history, 'ide');
+}
+
+export function shouldIncludeGenericMcpDetails({ task = '', history = [] }: PromptCapabilityContext = {}) {
+  return isGenericMcpEnabled() && (GENERIC_MCP_TASK_RE.test(task) || historyUsesTool(history, 'mcp'));
+}
+
+function genericMcpPromptLines(context: PromptCapabilityContext) {
+  if (!isGenericMcpEnabled()) return [];
+  const names = listGenericMcpServers().map(server => server.name).join(', ');
+  if (shouldIncludeGenericMcpDetails(context)) {
+    return [`通用 MCP 已启用（${names}）。先调用 mcp_list_servers / mcp_list_tools 发现能力，再用 mcp_call_tool 调用；所有通用工具调用默认需要用户确认。`];
+  }
+  if (context.includeInactiveCapabilityHints === false) return [];
+  return [`通用 MCP server 已启用（${names}），仅在任务明确要求 MCP、Codex 或外部专家能力时使用。`];
 }
 
 function chromePromptLines(context: PromptCapabilityContext) {
@@ -322,6 +347,7 @@ function buildSharedAgentRuleLines(capabilityContext: PromptCapabilityContext = 
   const ideLines = idePromptLines(capabilityContext);
   const chromeDetails = shouldIncludeChromePromptDetails(capabilityContext);
   const chromeLines = chromePromptLines(capabilityContext);
+  const mcpLines = genericMcpPromptLines(capabilityContext);
   return [
     '规则：',
     '0. task 字段是本轮唯一执行目标，优先级高于 conversationHistory。历史对话只用于理解指代和上下文，禁止恢复、继续或切换到历史中的旧任务。',
@@ -349,6 +375,7 @@ function buildSharedAgentRuleLines(capabilityContext: PromptCapabilityContext = 
     ...(chromeDetails ? ['16. 当内置浏览器被反爬拦截时，改用 Chrome MCP 操作真实浏览器访问同一页面。'] : []),
     ...ideLines,
     ...chromeLines,
+    ...mcpLines,
   ];
 }
 
@@ -431,6 +458,7 @@ export function buildGeminiAgentPromptPayload(
       mode: toolMode,
       includeChromeMcp: shouldIncludeChromePromptDetails(context),
       includeIdeMcp: shouldIncludeIdePromptDetails(context),
+      includeGenericMcp: shouldIncludeGenericMcpDetails(context),
       includeToolNames,
     }).map(toolToGeminiTool),
   }];
@@ -466,6 +494,8 @@ export function buildNvidiaTaskMessages({
   const ideDetails = shouldIncludeIdePromptDetails(capabilityContext);
   const chromeEnabled = isChromeMcpAvailable();
   const chromeDetails = shouldIncludeChromePromptDetails(capabilityContext);
+  const mcpEnabled = isGenericMcpEnabled();
+  const mcpDetails = shouldIncludeGenericMcpDetails(capabilityContext);
   const sanitizedConversation = sanitizeConversationHistory(conversationHistory);
   const conversationSummary = sanitizedConversation.length
     ? '\n\n之前的对话（仅用于理解当前 task 的指代，不得继续旧任务）：\n' + sanitizedConversation
@@ -524,7 +554,7 @@ export function buildNvidiaTaskMessages({
         '你只能输出一个 JSON 对象，不要输出 Markdown，不要解释。',
         '输出格式固定为 {"rationale":"简短理由","action":{...}}。',
         '可用动作示例（字段名、字段层级、tool 和 type 必须严格照此填写；每一步只输出其中一个 JSON 对象）：',
-        ...buildNvidiaActionExampleLines({ ideEnabled, chromeEnabled }),
+        ...buildNvidiaActionExampleLines({ ideEnabled, chromeEnabled, mcpEnabled: mcpEnabled && mcpDetails }),
         '可用动作签名（括号内为主要参数）：',
         'browser: navigate(url), click(elementId), type(elementId,text), wait(seconds), scroll(direction,amount), get_page_content(), http_fetch(url,extractLinks?), parallel_fetch(urls)',
         'fs: list_dir(path), get_file_info(path), read_file(path), write_file(path,content,append), search_files(query,path,include?)',
@@ -533,6 +563,7 @@ export function buildNvidiaTaskMessages({
         'search: web_search(query,maxResults?)；codegraph: codegraph_query(query)；vision: image_analyze(image,question)；spawn: spawn(tasks:string[])。spawn 的 tasks 必须是 1-5 个自然语言子任务字符串，不是工具动作对象；示例：{"tool":"spawn","type":"spawn","tasks":["抓取页面 A 并提取关键数据","抓取页面 B 并核对来源"]}',
         ...(ideEnabled && ideDetails ? ['ide: ide_list_tools(refresh?), ide_call_tool(toolName,arguments)'] : []),
         ...(chromeEnabled && chromeDetails ? ['chrome: chrome_list_tools(refresh?), chrome_call_tool(toolName,arguments,refreshTools?)'] : []),
+        ...(mcpEnabled && mcpDetails ? ['mcp: mcp_list_servers(), mcp_list_tools(serverName,refresh?), mcp_call_tool(serverName,toolName,arguments,refreshTools?)'] : []),
         'core: ask_user(question), notify_user(message,level), finish(answer)',
         '重要：每个步骤必须且只能输出一个 JSON 动作。如果你已经收集到足够信息并可以直接回答用户问题，请使用 finish 动作输出答案。绝对不要在 JSON 之外输出解释文字。',
         ...buildSharedAgentRuleLines(capabilityContext),

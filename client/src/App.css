@@ -87,6 +87,7 @@
   --c-tool-terminal: #16a34a;
   --c-tool-macos:    #7c3aed;
   --c-tool-ide:      #4f46e5;
+  --c-tool-mcp:      #7c3aed;
   --c-tool-vision:   #c026d3;
   --c-tool-spawn:    #e11d48;
   --c-tool-core:     #64748b;
@@ -251,6 +252,7 @@
   --c-tool-terminal: #4ade80;
   --c-tool-macos:    #a78bfa;
   --c-tool-ide:      #818cf8;
+  --c-tool-mcp:      #a78bfa;
   --c-tool-vision:   #e879f9;
   --c-tool-spawn:    #fb7185;
   --c-tool-core:     #94a3b8;
@@ -3916,6 +3918,45 @@ a.model-encyclopedia-field-value:hover {
   overflow: hidden;
 }
 
+.trace-debug-panel--dialog {
+  margin: 0;
+  overflow: visible;
+}
+
+.trace-debug-dialog {
+  width: min(920px, calc(100vw - 32px));
+  max-height: min(780px, calc(100vh - 32px));
+}
+
+.trace-debug-dialog-body {
+  padding: 18px 20px 22px;
+  overflow: auto;
+}
+
+.trace-debug-model-filter {
+  margin: 0 0 12px;
+}
+
+.trace-debug-dialog .trace-debug-model-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trace-debug-dialog .trace-debug-model-section {
+  min-width: 0;
+  margin-top: 0;
+  padding: 12px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+}
+
+.trace-debug-dialog .trace-debug-model-section .trace-debug-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--c-border);
+}
+
 .trace-debug-summary {
   display: flex;
   align-items: center;
@@ -4057,6 +4098,7 @@ a.model-encyclopedia-field-value:hover {
   }
 
   .trace-debug-tokens { display: none; }
+  .trace-debug-dialog .trace-debug-model-list { grid-template-columns: 1fr; }
 }
 
 /* ── Agent Trace ── */
@@ -4141,6 +4183,7 @@ a.model-encyclopedia-field-value:hover {
 [data-tool="terminal"] { --tool-c: var(--c-tool-terminal); }
 [data-tool="macos"]    { --tool-c: var(--c-tool-macos); }
 [data-tool="ide"]      { --tool-c: var(--c-tool-ide); }
+[data-tool="mcp"]      { --tool-c: var(--c-tool-mcp); }
 [data-tool="vision"]   { --tool-c: var(--c-tool-vision); }
 [data-tool="spawn"]    { --tool-c: var(--c-tool-spawn); }
 [data-tool="core"]     { --tool-c: var(--c-tool-core); }
@@ -4171,6 +4214,46 @@ a.model-encyclopedia-field-value:hover {
 /* 失败步：圆点 + ↳ 图标转红做状态指示；结果正文不再整段标红，改为只高亮命中的关键词 */
 .agent-trace-item.result-failed .step-card-result-icon,
 .model-plan-group.result-failed .step-card-result-icon { color: var(--c-badge-error); }
+
+.mcp-process {
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--c-tool-mcp) 30%, var(--c-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--c-tool-mcp) 7%, var(--c-surface));
+}
+
+.mcp-process.error {
+  border-color: color-mix(in srgb, var(--c-danger) 35%, var(--c-border));
+  background: var(--c-danger-bg);
+}
+
+.mcp-process-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--c-text-muted);
+  font-size: var(--f-xs);
+}
+
+.mcp-process-head strong {
+  color: var(--c-text);
+}
+
+.mcp-process-percent {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.mcp-process p {
+  margin: 5px 0 0;
+  color: var(--c-text-muted);
+  font-size: var(--f-xs);
+}
+
+.mcp-process-spinner {
+  animation: spin 1s linear infinite;
+}
 
 /* 命中失败模式的关键词高亮（红字 + 淡红底），结果主体文字保持正常可读 */
 .result-keyword {

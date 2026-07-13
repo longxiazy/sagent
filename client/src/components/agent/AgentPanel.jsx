@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Square, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp,
-  Monitor, Loader2, Bot, Clock3, Coins, ListChecks, Trophy, History,
+  Monitor, Loader2, Bot, Clock3, Coins, ListChecks, Trophy, History, Activity,
 } from 'lucide-react';
 import { PHONE_BREAKPOINT } from '../../utils/constants.js';
 import { ModelPlanGroup } from './ModelPlanGroup.jsx';
@@ -49,6 +49,7 @@ function runKey(run, index = 0) {
 }
 
 function shouldHideTimelineEvent(event) {
+  if (event.type === 'run_meta') return true;
   if (event.type === 'session_checkpoint') return true;
   if (event.type === 'browser_session' && !['recovering', 'degraded'].includes(event.status)) return true;
   return event.type === 'status' && (event.status === 'starting' || event.status === 'browser_ready');
@@ -157,7 +158,7 @@ function AgentTraceTimeline({
           }
         }
 
-        if (event.type === 'terminal_output' && (singleModelSteps.has(event.step) || multiModelSteps.has(event.step))) {
+        if ((event.type === 'terminal_output' || event.type === 'mcp_output') && (singleModelSteps.has(event.step) || multiModelSteps.has(event.step))) {
           return null;
         }
 
@@ -191,6 +192,8 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
   const [historyTraceCache, setHistoryTraceCache] = useState({});
   const [historyTraceLoading, setHistoryTraceLoading] = useState(null);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [traceDebugOpen, setTraceDebugOpen] = useState(false);
+  const [traceDebugModelId, setTraceDebugModelId] = useState('all');
   const [recentRunExpanded, setRecentRunExpanded] = useState(true);
   const [selectedModelId, setSelectedModelId] = useState('all');
 
@@ -318,6 +321,16 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
             </button>
           )}
           <div className="agent-head-actions">
+            {trace.length > 0 && (
+              <button
+                className="agent-collapse-btn"
+                onClick={e => { e.stopPropagation(); setTraceDebugOpen(true); }}
+                title={t('agentPanel.traceDebug')}
+              >
+                <Activity size={12} />
+                <span>{t('agentPanel.traceDebug')}</span>
+              </button>
+            )}
             {historyRuns.length > 0 && (
               <button
                 className="agent-collapse-btn agent-history-btn"
@@ -421,8 +434,6 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
             </div>
           )}
 
-          {trace.length > 0 && showCurrentTrace && <TraceDebugPanel metrics={metrics} trace={trace} selectedModelId={selectedModelId} modelList={modelList} t={t} />}
-
           {trace.length === 0 && running ? (
             <div className="agent-skeleton">
               <div className="agent-skeleton-line agent-skeleton-line--w60" />
@@ -453,6 +464,29 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
             </>
       </div>
     </section>
+    {traceDebugOpen && (
+      <DialogShell
+        title={t('agentPanel.traceDebug')}
+        subtitle={t('agentPanel.traceDebugMeta', { llm: metrics.llmCalls, tools: metrics.completedToolCalls })}
+        onClose={() => setTraceDebugOpen(false)}
+        dialogClassName="settings-dialog trace-debug-dialog"
+      >
+        <div className="trace-debug-dialog-body">
+          {modelIds.length > 1 && (
+            <div className="agent-model-filter trace-debug-model-filter" aria-label={t('agentPanel.modelFilter')}>
+              <span>{t('agentPanel.modelFilter')}</span>
+              <div className="agent-model-filter-chips">
+                <button className={traceDebugModelId === 'all' ? 'active' : ''} onClick={() => setTraceDebugModelId('all')}>{t('agentPanel.allModels')}</button>
+                {modelIds.map(modelId => (
+                  <button key={modelId} className={traceDebugModelId === modelId ? 'active' : ''} onClick={() => setTraceDebugModelId(modelId)}>{getModelLabel(modelId, modelList)}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          <TraceDebugPanel metrics={metrics} trace={trace} selectedModelId={traceDebugModelId} modelList={modelList} t={t} />
+        </div>
+      </DialogShell>
+    )}
     {historyDialogOpen && (
       <DialogShell
         title={t('agentPanel.previousRuns')}
