@@ -29,7 +29,6 @@ export type BrowserAction =
   | { tool: 'browser'; type: 'scroll'; direction: 'up' | 'down'; amount: number }
   | { tool: 'browser'; type: 'get_page_content' }
   | { tool: 'browser'; type: 'http_fetch'; url: string; extractLinks: boolean }
-  | { tool: 'browser'; type: 'parallel_fetch'; urls: string[]; extractLinks: boolean };
 
 export type FsAction =
   | { tool: 'fs'; type: 'list_dir'; path: string }
@@ -45,13 +44,6 @@ export type TerminalAction = {
   cwd: string;
   timeoutMs: number;
 };
-
-export type MacOSAction =
-  | { tool: 'macos'; type: 'open_app' | 'activate_app'; app: string }
-  | { tool: 'macos'; type: 'list_windows' | 'capture_screen' }
-  | { tool: 'macos'; type: 'type_text'; text: string }
-  | { tool: 'macos'; type: 'press_key'; key: string; modifiers: string[] }
-  | { tool: 'macos'; type: 'click_at'; x: number; y: number };
 
 export type IdeAction =
   | { tool: 'ide'; type: 'ide_list_tools'; refresh: boolean }
@@ -71,14 +63,12 @@ export type AgentAction =
   | BrowserAction
   | FsAction
   | TerminalAction
-  | MacOSAction
   | IdeAction
   | ChromeAction
   | McpAction
   | { tool: 'search'; type: 'web_search'; query: string; maxResults: number }
   | { tool: 'codegraph'; type: 'codegraph_query'; query: string }
-  | { tool: 'vision'; type: 'image_analyze'; image: string; question: string }
-  | { tool: 'spawn'; type: 'spawn'; tasks: string[] };
+  | { tool: 'vision'; type: 'image_analyze'; image: string; question: string };
 
 export type AgentTool = AgentAction['tool'];
 export type ActionForTool<T extends AgentTool> = Extract<AgentAction, { tool: T }>;

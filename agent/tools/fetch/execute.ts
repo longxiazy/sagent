@@ -5,7 +5,6 @@
  *   1. 已知需要浏览器的域名（domain-rules.js）→ 直接走 fetchWithBrowser
  *   2. 其余域名 → 先 curl，检测反爬响应 → fallback 到浏览器
  *   3. 浏览器也触发反爬 → 返回明确错误，提示 agent 换方式
- *   4. parallel_fetch：多个 URL 并发抓取，结果用 --- 分隔
  *
  * 反爬检测（domain-rules.js BOT_SIGNALS）：
  *   curl 和浏览器返回的内容都经 detectBotResponse 检测，
@@ -244,15 +243,5 @@ async function executeSingleFetch(action, browserSession, domainRules) {
 }
 
 export async function executeFetchAction(action, browserSession, domainRules) {
-  if (action.type === 'parallel_fetch' && Array.isArray(action.urls)) {
-    const results = await Promise.all(
-      action.urls.map(url =>
-        executeSingleFetch({ ...action, type: 'http_fetch', url }, browserSession, domainRules)
-          .catch(err => `http_fetch ${url}: 失败 (${err.message.slice(0, 80)})`)
-      )
-    );
-    return results.join('\n\n---\n\n');
-  }
-
   return executeSingleFetch(action, browserSession, domainRules);
 }

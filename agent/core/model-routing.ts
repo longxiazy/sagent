@@ -26,8 +26,6 @@ const MUTATING_ACTIONS = new Set([
   'browser.press',
   'chrome.chrome_call_tool',
   'ide.ide_call_tool',
-  'macos.click',
-  'macos.type',
 ]);
 
 function uniqueModelIds(models: string[]) {

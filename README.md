@@ -21,7 +21,7 @@ The project is designed for local use: you choose a project workspace, start an 
 ## Highlights
 
 - Multi-model chat and Agent mode with race or vote strategies.
-- macOS desktop control, screenshots, browser automation, and optional Chrome DevTools MCP integration.
+- macOS desktop observation, screenshots, browser automation, and optional Chrome DevTools MCP integration.
 - File, terminal, search, vision, IDE MCP, and browser tools behind an approval-aware runtime.
 - Sandboxed Agent workers when launched with `npm run sandbox`.
 - Project-scoped memory, traces, uploads, checkpoints, and run recovery.

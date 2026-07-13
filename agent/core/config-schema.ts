@@ -10,7 +10,6 @@ export interface RuntimeConfig {
   observeDesktop: boolean;
   maxHistorySteps: number;
   maxResultChars: number;
-  maxParallelResultChars: number;
   memoryMaxEntries: number;
   autoModelRouting: boolean;
 }
@@ -71,7 +70,6 @@ export const AGENT_CONFIG_SCHEMA: Record<RuntimeConfigKey, ConfigFieldSpec> = {
   observeDesktop: { env: 'AGENT_OBSERVE_DESKTOP', type: 'bool', default: false, group: 'execution', advanced: true, restartRequired: false },
   maxHistorySteps: { env: 'AGENT_MAX_HISTORY_STEPS', type: 'int', default: 6, min: 1, max: 200, group: 'context', advanced: true, restartRequired: false },
   maxResultChars: { env: 'AGENT_MAX_RESULT_CHARS', type: 'int', default: 4000, min: 100, max: 200000, group: 'context', advanced: true, restartRequired: false },
-  maxParallelResultChars: { env: 'AGENT_MAX_PARALLEL_RESULT_CHARS', type: 'int', default: 32000, min: 100, max: 1000000, group: 'context', advanced: true, restartRequired: false },
   memoryMaxEntries: { env: 'AGENT_MEMORY_MAX_ENTRIES', type: 'int', default: 20, min: 1, max: 1000, group: 'memory', advanced: false, restartRequired: false },
   autoModelRouting: { env: 'AGENT_AUTO_MODEL_ROUTING', type: 'bool', default: false, group: 'routing', advanced: false, restartRequired: false },
 };

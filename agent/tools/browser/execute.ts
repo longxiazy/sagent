@@ -73,7 +73,7 @@ function blockedSearchEngineResult(url) {
   return [
     `已阻止访问搜索引擎搜索页: ${url}`,
     'Google、百度、Bing 等搜索页容易触发反爬/验证码，且通常不是可靠的一手来源。',
-    '请直接抓取目标站点 URL；如果需要多源搜索，请使用 parallel_fetch 抓取多个候选来源页面。',
+    '请直接抓取目标站点 URL；如果需要多源搜索，请先筛选候选来源，再逐个使用 http_fetch。',
   ].join('\n');
 }
 
@@ -408,55 +408,6 @@ async function _executeBrowserAction(view, action, opts: { recoveryAttempt?: num
       return failedResult(`http_fetch ${url}: 页面内容为空。`, '页面内容为空');
     }
     return content;
-  }
-
-  if (action.type === 'parallel_fetch') {
-    const urls = Array.isArray(action.urls) ? action.urls : [];
-    if (urls.length === 0) throw new Error('parallel_fetch 缺少 urls');
-    const results = [];
-    let failures = 0;
-    for (const u of urls.slice(0, 5)) {
-      const url = normalizeHttpUrl(u);
-      if (isBlockedSearchEngineUrl(url)) {
-        results.push(blockedSearchEngineResult(url));
-        failures += 1;
-        continue;
-      }
-      try {
-        const firstTimeout = action.timeoutMs || FETCH_TIMEOUT_MS;
-        const retryTimeout = action.timeoutMs ? Math.max(firstTimeout, Math.round(firstTimeout * 1.7)) : FETCH_TIMEOUT_RETRY_MS;
-        await navigateWithRecoveryTimeout(view, url, firstTimeout, retryTimeout, `访问超时: ${url}`, opts.recoveryAttempt);
-        await delay(1000);
-        const pageInfo = await detectBlockedPage(view);
-        if (checkBlocked(pageInfo.title, pageInfo.url, pageInfo.body)) {
-          results.push(`http_fetch ${url} 被反爬拦截（标题: ${pageInfo.title.slice(0, 80)}）。${blockedHint()}`);
-          failures += 1;
-          continue;
-        }
-        if (checkUnavailablePage(pageInfo.title, pageInfo.body)) {
-          const body = String(pageInfo.body || '').replace(/\s+/g, ' ').trim().slice(0, 160);
-          results.push(`http_fetch ${url}: 页面不可用（标题: ${pageInfo.title.slice(0, 80)}）。${body}`);
-          failures += 1;
-          continue;
-        }
-        const content = await extractPageTextOrLinks(view, url, action.extractLinks);
-        if (content) {
-          results.push(`http_fetch ${url}:\n${content}`);
-        } else {
-          results.push(`http_fetch ${url}: 页面内容为空`);
-          failures += 1;
-        }
-      } catch (err) {
-        if (isClosedViewError(err)) throw err;
-        results.push(`http_fetch ${url}: 失败 (${(err.message || '').slice(0, 100)})`);
-        failures += 1;
-      }
-    }
-    const result = results.join('\n\n---\n\n');
-    if (results.length > 0 && failures === results.length) {
-      return failedResult(result, 'parallel_fetch 所有 URL 均失败');
-    }
-    return result;
   }
 
   throw new Error(`不支持的动作类型: ${action.type}`);

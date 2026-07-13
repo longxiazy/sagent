@@ -205,7 +205,7 @@ describe('Bun.WebView browser actions', () => {
     expect(result.result).toContain('页面不可用');
   });
 
-  it('recreates a closed WebView and retries parallel_fetch once', async () => {
+  it('recreates a closed WebView and retries http_fetch once', async () => {
     const created: FakeWebView[] = [];
     setWebViewFactoryForTests(options => {
       const view = new FakeWebView(options);
@@ -228,8 +228,8 @@ describe('Bun.WebView browser actions', () => {
     const events: any[] = [];
     const result = await manager.withBrowserSessionRecovery(state, event => events.push(event), session => (
       executeBrowserAction(session.view, {
-        type: 'parallel_fetch',
-        urls: ['https://example.com/report'],
+        type: 'http_fetch',
+        url: 'https://example.com/report',
         extractLinks: false,
       })
     ), { step: 2, url: 'https://example.com/report' });

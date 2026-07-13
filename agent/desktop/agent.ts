@@ -1,6 +1,6 @@
 /**
  * Desktop Agent — 浏览器/桌面/文件/终端多工具协同的 Agent 运行器
- * Desktop Agent runtime — orchestrates browser, macOS desktop, filesystem, and terminal tools
+ * Desktop Agent runtime — orchestrates browser, filesystem, terminal, IDE, and MCP tools
  *
  * 核心流程 / Core loop:
  *   initialize → (observe → decide → authorize → execute) × N → cleanup
@@ -29,18 +29,16 @@
 
 import { createActionRouter } from '../core/router.ts';
 import { runAgentRuntime } from '../core/runtime.ts';
-import { createAgentAuthorizer, createReadOnlyAuthorizer } from '../policy/approvals.ts';
+import { createAgentAuthorizer } from '../policy/approvals.ts';
 import { executeBrowserAction } from '../tools/browser/execute.ts';
 import { executeFsAction } from '../tools/fs/execute.ts';
 import { executeSearchAction } from '../tools/search/execute.ts';
 import { executeCodegraphQueryAction } from '../tools/codegraph/execute.ts';
 import { executeVisionAction } from '../tools/vision/execute.ts';
-import { executeSpawnAction } from '../tools/spawn/execute.ts';
 import { createDomainRules } from '../tools/fetch/domain-rules.ts';
 import { executeIdeAction } from '../tools/ide/execute.ts';
 import { executeChromeAction } from '../tools/chrome/execute.ts';
 import { executeGenericMcpAction } from '../tools/mcp/execute.ts';
-import { executeMacOSAction } from '../tools/macos/execute.ts';
 import { executeTerminalAction } from '../tools/terminal/run.ts';
 import { createSharedBrowserSessionManager } from './browser-session-manager.ts';
 import { observeDesktopAgent } from './observer.ts';
@@ -109,108 +107,6 @@ export function createDesktopAgentRunner({
     };
   }
 
-  // Sub-agent runner factory: creates isolated runners for parallel execution
-  function createSubAgentRunner(parentRunId: string, parentModel: string, parentAgentModels: string[], parentStrategy: string, parentSystemPrompt: string | null, parentCancelSignal: AbortSignal, parentProjectRoot: string | null = null, parentDataDir: string | null = null) {
-    return async (task: string, subIndex: number, subSignal: AbortSignal = parentCancelSignal) => {
-      const subRunId = `${parentRunId}::sub${subIndex}`;
-      const { maxSteps, modelTimeoutMs, staggerDelayMs, batchSize, autoModelRouting } = liveConfig();
-      log.info(`[SubAgent] 启动子任务 ${subIndex}: ${task.slice(0, 60)}...`);
-
-      const subBlacklistedModels = new Set();
-      const subPlan = createDesktopPlanner({
-        registry,
-        modelConfig,
-        blacklistedModels: subBlacklistedModels,
-        modelTimeoutMs,
-        staggerDelayMs,
-        batchSize,
-        autoModelRouting,
-      });
-
-      const subAuthorize = createReadOnlyAuthorizer();
-
-      // Sub-agent action router without spawn support
-      const subRouteAction = createActionRouter(
-        {
-          core: async (_state, action) => {
-            if (action.type !== 'finish') throw new Error(`子 Agent 禁止执行 core.${action.type}`);
-            return action.answer || '任务已完成';
-          },
-          fs: async (state, action) => {
-            if (action.type === 'write_file') throw new Error('子 Agent 禁止写文件');
-            return executeFsAction(action, { cwd: parentProjectRoot, dataDir: parentDataDir, signal: state.cancelSignal });
-          },
-          search: async (state, action) => executeSearchAction(action, { signal: state.cancelSignal }),
-          codegraph: async (state, action) => executeCodegraphQueryAction(action, { dataDir: parentDataDir, signal: state.cancelSignal }),
-          vision: async (_state, action) => executeVisionAction(action, {
-            registry,
-            openai_client,
-            modelConfig,
-            visionModel,
-            model: parentModel,
-            agentModels: parentAgentModels,
-            signal: _state.cancelSignal,
-            projectRoot: parentProjectRoot,
-            dataDir: parentDataDir,
-          }),
-        },
-        { defaultTool: 'core' }
-      );
-
-      const subSystemPrompt = [
-        '你是一个子 Agent，负责完成主 Agent 分配的独立子任务。',
-        '你只能使用只读工具（浏览器、搜索、文件读取等），不能执行需要用户确认的操作。',
-        '完成任务后必须通过 finish 动作返回结果。',
-        parentSystemPrompt ? `主 Agent 的约束: ${parentSystemPrompt}` : '',
-      ].filter(Boolean).join('\n');
-
-      const result = await runAgentRuntime({
-        task,
-        maxSteps: Math.min(6, maxSteps),
-        onEvent: undefined, // Sub-agents don't emit events to parent stream
-        cancelSignal: subSignal,
-        initialStep: 1,
-        initialHistory: [],
-        sessionCheckpointDir: null, // No checkpoints for sub-agents
-        runRecord: null,
-        onCheckpoint: null,
-        initialize: async () => ({
-          runId: subRunId,
-          onEvent: undefined,
-          headless: true,
-          browserSession: null,
-          observeDesktop: false,
-        }),
-        observe: observeDesktopAgent,
-        decide: async ({ task: currentTask, step, history, observation }) =>
-          subPlan({
-            model: parentModel,
-            agentModels: parentAgentModels,
-            strategy: parentStrategy,
-            onEvent: undefined,
-            cancelSignal: subSignal,
-            task: currentTask,
-            systemPrompt: subSystemPrompt,
-            step,
-            history,
-            observation,
-            conversationHistory: [],
-            toolMode: 'readonly',
-          }),
-        authorize: subAuthorize,
-        shouldObserve: (lastAction) => {
-          if (!lastAction) return false;
-          return lastAction.tool !== 'fs' && lastAction.tool !== 'codegraph';
-        },
-        execute: async (state, action, context) => subRouteAction(state, action, context),
-        cleanup: async () => {},
-      });
-
-      log.info(`[SubAgent] 完成子任务 ${subIndex}: ${result.steps.length} 步`);
-      return result;
-    };
-  }
-
   const routeAction = createActionRouter(
     {
       core: async (state, action, context) => {
@@ -276,25 +172,6 @@ export function createDesktopAgentRunner({
           ...event,
         }),
       }),
-      macos: async (state, action) =>
-        executeMacOSAction(action, {
-          runId: state.runId,
-          signal: state.cancelSignal,
-        }),
-      spawn: async (state, action) => {
-        // Inject runSubAgent for the spawn handler
-        const runSubAgent = createSubAgentRunner(
-          state.runId,
-          state.model,
-          state.agentModels,
-          state.strategy,
-          state.systemPrompt,
-          state.cancelSignal,
-          state.projectRoot,
-          state.dataDir
-        );
-        return executeSpawnAction(action, { runSubAgent, signal: state.cancelSignal });
-      },
     },
     { defaultTool: 'core' }
   );

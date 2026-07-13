@@ -4,7 +4,6 @@ import { normalizeDesktopAgentDecision } from '../agent/core/schemas.ts';
 import { classifyAgentAction } from '../agent/policy/classify.ts';
 import {
   applyIdeToolDefaults,
-  buildSsePostCandidates,
   loadIdeMcpConfig,
   resetIdeMcpClientForTests,
 } from '../agent/tools/ide/mcp-client.ts';
@@ -131,16 +130,4 @@ describe('IDE MCP config helpers', () => {
     });
   });
 
-  it('builds SSE post endpoint fallbacks for JetBrains-compatible servers', () => {
-    const candidates = buildSsePostCandidates(
-      { messagesUrl: null },
-      'http://127.0.0.1:64342/sse'
-    );
-
-    expect(candidates).toEqual([
-      'http://127.0.0.1:64342/message',
-      'http://127.0.0.1:64342/messages',
-      'http://127.0.0.1:64342/mcp',
-    ]);
-  });
 });

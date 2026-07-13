@@ -20,20 +20,16 @@ const BROWSER_BLOCK_RE = /captcha|cloudflare|403|forbidden|人机验证|反爬|�
 const WEB_TASK_RE = /https?:\/\/|\bwww\.|\bweb\b|browser|website|search|news|weather|price|flight|hotel|online|网页|浏览器|网站|上网|搜索|查询|新闻|天气|实时|价格|机票|航班|酒店|电商|官网/i;
 const FILE_TASK_RE = /\b(project|repo|repository|code|source|file|folder|directory|path|config|dependency|readme)\b|项目|仓库|代码|源码|文件|文件夹|目录|路径|配置|依赖|模块|读取|写入|修改|编辑|创建|删除|重命名|查找|修复/i;
 const TERMINAL_TASK_RE = /\b(shell|terminal|command|npm|pnpm|yarn|bun|git|curl|build|test|lint|install|process|server|log|pull|push|commit|merge|branch|checkout|deploy)\b|命令|终端|运行|执行|构建|测试|安装|启动|停止|服务|进程|日志|拉取|提交|推送|合并|分支|部署/i;
-const MACOS_TASK_RE = /\b(mac(?:os)?|desktop|window|screen|keyboard|mouse|finder)\b|\b(?:open|launch|activate)\s+(?:the\s+)?app\b|桌面|窗口|屏幕|应用|软件|键盘|鼠标|点击坐标|按键|截屏|截个图/i;
 const VISION_TASK_RE = /\[附件\]|\.(?:png|jpe?g|gif|webp|bmp|heic)(?:\b|\?)|\b(image|photo|picture|screenshot|ocr|vision)\b|图片|图像|照片|截图|识图|看图|图里|图中/i;
-const SPAWN_TASK_RE = /\b(batch|parallel|multiple|each|compare)\b|批量|并行|同时|分别|多个|多份|每个|逐个|对比|比较/i;
 const FOLLOWUP_TASK_RE = /^\s*(?:(?:继续|接着|重试|再试|这个|那个|上面|刚才|照旧)(?:\s|$)|(?:continue|retry|that|it)\b)/i;
 
 // web_search 作为轻量信息查询兜底常驻，避免产品目录、模型上下线、版本变化等
 // 时效性问题未命中关键词分类后只剩 finish，导致模型把问题原样返回。
 const CORE_TOOL_NAMES = ['web_search', 'ask_user', 'notify_user', 'finish'];
-const WEB_TOOL_NAMES = ['navigate', 'click', 'type', 'wait', 'scroll', 'get_page_content', 'http_fetch', 'parallel_fetch', 'web_search'];
+const WEB_TOOL_NAMES = ['navigate', 'click', 'type', 'wait', 'scroll', 'get_page_content', 'http_fetch', 'web_search'];
 const FILE_TOOL_NAMES = ['list_dir', 'read_file', 'get_file_info', 'write_file', 'search_files', 'codegraph_query'];
 const TERMINAL_TOOL_NAMES = ['run_safe', 'run_confirmed', 'run_review'];
-const MACOS_TOOL_NAMES = ['open_app', 'activate_app', 'list_windows', 'capture_screen', 'type_text', 'press_key', 'click_at'];
 const VISION_TOOL_NAMES = ['image_analyze'];
-const SPAWN_TOOL_NAMES = ['spawn'];
 const IDE_TOOL_NAMES = ['ide_list_tools', 'ide_call_tool'];
 const CHROME_TOOL_NAMES = ['chrome_list_tools', 'chrome_call_tool'];
 const MCP_TOOL_NAMES = ['mcp_list_servers', 'mcp_list_tools', 'mcp_call_tool'];
@@ -54,7 +50,6 @@ const NVIDIA_ACTION_EXAMPLES: NvidiaActionExample[] = [
   { rationale: '获取浏览器当前页面文本内容', action: { tool: 'browser', type: 'get_page_content' } },
   { rationale: '抓取网页内容', action: { tool: 'browser', type: 'http_fetch', url: 'https://example.com' } },
   { rationale: '搜索并提取链接', action: { tool: 'browser', type: 'http_fetch', url: 'https://example.com/search?q=关键词', extractLinks: true } },
-  { rationale: '并发抓取多个页面', action: { tool: 'browser', type: 'parallel_fetch', urls: ['https://example.com/a', 'https://example.com/b'] } },
   { rationale: '读取目录', action: { tool: 'fs', type: 'list_dir', path: '.' }, readonly: true },
   { rationale: '查看文件大小和修改时间', action: { tool: 'fs', type: 'get_file_info', path: 'README.md' }, readonly: true },
   { rationale: '读取文件', action: { tool: 'fs', type: 'read_file', path: 'README.md' }, readonly: true },
@@ -63,17 +58,9 @@ const NVIDIA_ACTION_EXAMPLES: NvidiaActionExample[] = [
   { rationale: '运行只读命令', action: { tool: 'terminal', type: 'run_safe', command: 'pwd' } },
   { rationale: '运行需确认命令', action: { tool: 'terminal', type: 'run_confirmed', command: 'git status' } },
   { rationale: '切换目录', action: { tool: 'terminal', type: 'run_review', command: 'cd /path/to/dir' } },
-  { rationale: '切换应用', action: { tool: 'macos', type: 'activate_app', app: 'Finder' } },
-  { rationale: '打开应用', action: { tool: 'macos', type: 'open_app', app: 'Google Chrome' } },
-  { rationale: '列出窗口', action: { tool: 'macos', type: 'list_windows' } },
-  { rationale: '屏幕截图', action: { tool: 'macos', type: 'capture_screen' } },
-  { rationale: '桌面输入文字', action: { tool: 'macos', type: 'type_text', text: 'hello' } },
-  { rationale: '桌面按键', action: { tool: 'macos', type: 'press_key', key: 'enter', modifiers: ['command'] } },
-  { rationale: '点击桌面坐标', action: { tool: 'macos', type: 'click_at', x: 640, y: 480 } },
   { rationale: '网络搜索关键词', action: { tool: 'search', type: 'web_search', query: '2026 北京最低工资标准' }, readonly: true },
   { rationale: '查询项目代码图谱定位相关模块', action: { tool: 'codegraph', type: 'codegraph_query', query: '记忆 memory' }, readonly: true },
   { rationale: '分析图片内容', action: { tool: 'vision', type: 'image_analyze', image: '/abs/path/to/image.png', question: '图片里有什么内容？请详细描述。' }, readonly: true },
-  { rationale: '并行分析多个文件', action: { tool: 'spawn', type: 'spawn', tasks: ['分析 src/index.ts 的架构', '检查 test/ 目录的测试覆盖率', '搜索项目中的 TODO 注释'] } },
   { rationale: '查看 IDE 可用工具', action: { tool: 'ide', type: 'ide_list_tools' }, capability: 'ide' },
   { rationale: '调用 IDE 工具获取运行配置', action: { tool: 'ide', type: 'ide_call_tool', toolName: 'get_run_configurations', arguments: {} }, capability: 'ide' },
   { rationale: '调用 Chrome 工具截图', action: { tool: 'chrome', type: 'chrome_call_tool', toolName: 'take_screenshot', arguments: {} }, capability: 'chrome' },
@@ -181,16 +168,12 @@ export function selectGeminiToolNames(context: PromptCapabilityContext = {}) {
     || usedTools.has('codegraph')
     || usedTools.has('ide');
   const needsTerminal = TERMINAL_TASK_RE.test(text) || usedTools.has('terminal');
-  const needsMacos = MACOS_TASK_RE.test(text) || usedTools.has('macos');
-  const needsVision = VISION_TASK_RE.test(text) || needsMacos || usedTools.has('vision');
-  const needsSpawn = SPAWN_TASK_RE.test(text) || usedTools.has('spawn');
+  const needsVision = VISION_TASK_RE.test(text) || usedTools.has('vision');
 
   if (needsWeb) addToolGroup(selected, WEB_TOOL_NAMES);
   if (needsFiles) addToolGroup(selected, FILE_TOOL_NAMES);
   if (needsTerminal) addToolGroup(selected, TERMINAL_TOOL_NAMES);
-  if (needsMacos) addToolGroup(selected, MACOS_TOOL_NAMES);
   if (needsVision) addToolGroup(selected, VISION_TOOL_NAMES);
-  if (needsSpawn) addToolGroup(selected, SPAWN_TOOL_NAMES);
   if (needsIde) addToolGroup(selected, IDE_TOOL_NAMES);
   if (needsChrome) addToolGroup(selected, CHROME_TOOL_NAMES);
   if (needsMcp) addToolGroup(selected, MCP_TOOL_NAMES);
@@ -354,20 +337,18 @@ function buildSharedAgentRuleLines(capabilityContext: PromptCapabilityContext = 
     '0.1 涉及产品能力、模型目录、版本变化、供应商上下线等可能随时间变化的信息时，优先使用 web_search 核验，不要仅凭记忆回答。',
     '1. 只有 observation.browser.elements 中存在的 elementId 才能用于 browser.click / browser.type。',
     '2. 优先使用已知信息，不要重复无意义截图或重复读同一文件。任务一旦完成，必须立即调用 finish，绝不能重复执行已成功的动作。',
-    '2.1 识别任务中的并行机会：当需要处理多个独立对象（多个文件、多个 URL、多个关键词）时，优先考虑用 spawn 并行处理而非串行逐个处理。',
     '2.2 若任务是常识问答、闲聊，或依据已有知识即可直接回答（无需读取文件/网页/桌面/终端），直接用 finish 返回答案，不要为了「显得在执行」而调用 list_dir、read_file 等探索性工具。',
     '3. 文件写入、终端确认命令、桌面键鼠输入可能需要用户批准，被拒绝后请尝试替代方案。',
     '4. cd/pushd/popd 等目录切换命令使用 run_review，会触发用户审批。',
     '5. answer 用简体中文，简洁直接。',
     '6. 需要全网搜索关键词时，优先使用 web_search（DuckDuckGo，返回标题/URL/摘要），再用 http_fetch 抓具体页面。禁止直接 navigate 到 Google/Bing/百度搜索结果页，这些页面容易触发反爬。',
     '7. http_fetch 和 navigate 都通过浏览器执行，可以处理需要 JS 渲染的页面。',
-    '8. 需要同时获取多个页面时，使用 parallel_fetch 并发抓取（最多 5 个 URL）。',
+    '8. 需要获取多个页面时，逐个使用 http_fetch 抓取，优先选择最相关、最权威的来源。',
     '9. 需要用户输入或确认偏好时使用 ask_user，不要自行假设。',
     '10. 执行中发现重要信息或潜在问题时使用 notify_user 主动告知用户。',
     '10.1 任务或附件中出现图片（本地路径或 http(s) URL，常见于任务文本中的“[附件]”块或截图）时，必须用 image_analyze 把图片交给多模态模型分析，不要凭文件名猜测内容。image 传图片路径/URL，question 用简体中文写清要从图里得到什么。',
     '10.2 简单识图任务（例如“这是什么图/图里是什么”）在一次 image_analyze 已得到可用描述后，应立即 finish。若无法确认具体来源、游戏、人物、地点或品牌，必须说明“无法仅凭图片确认”，并给出可见证据和低置信猜测；不要反复调用同一张图来放大猜测。',
     '10.3 对同一张图片最多连续调用 2 次 image_analyze；第二次只用于明确不同的问题（如 OCR、局部细节、真假核验）。不要编造图片中没有的 UI、文字、按钮、角色名、怪物、道具或数值。',
-    '11. 当任务涉及多个独立的子目标时（如分析多个文件、查询多个信息源、批量处理），自动使用 spawn 工具并行分发给子 Agent 执行，显著提升效率。最多支持 5 个并行任务。',
     '12. 涉及医保、社保、签证、贷款、股票、基金、汇率、法律、法规、政策、许可、合规等高风险或合规性信息时，必须优先从官方来源核验；如果未能核验，finish 答案必须明确说明“未能完成官方核验”，不要把记忆或常识包装成已确认结论。',
     '13. finish 之前自检：当任务要求基于网页/官网内容作答，但浏览操作没有真正取得目标页面的实质内容（如反复超时、只到达主页、被反爬挡住），不要用模型常识包装成“已确认结论”。要么继续尝试（换路径、换工具、换源站），要么在 answer 里明确说明“未能从目标页面取得信息，以下来自常识仅供参考”。',
     '14. 查询酒店/机票/电商等实时价格时，优先用 web_search 获取价格区间或聚合报价；这类价格依赖具体入住/出行日期、常需登录且受反爬限制，难以直接抓取。若拿不到确切数字，直接 finish 给出区间与查询入口，并如实说明“未取得实时精确价”，不要在单个站点反复操作空转。',
@@ -381,8 +362,8 @@ function buildSharedAgentRuleLines(capabilityContext: PromptCapabilityContext = 
 
 function buildReadonlyAgentRuleLines(systemPrompt: string | null) {
   return [
-    '你是只读子 Agent，只负责分析并返回结果。',
-    '禁止写文件、运行终端、操作浏览器/Chrome/IDE/macOS、询问或通知用户、继续 spawn。',
+    '你处于只读分析模式，只负责分析并返回结果。',
+    '禁止写文件、运行终端、操作浏览器/Chrome/IDE、询问或通知用户。',
     '路径必须使用项目内相对路径。完成后立即调用 finish 返回简洁结果。',
     systemPrompt ? `附加约束：${systemPrompt}` : '',
   ].filter(Boolean);
@@ -400,7 +381,7 @@ export function buildDesktopAgentSystemPrompt(
     ].filter(Boolean).join('\n');
   }
   return [
-    '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。',
+    '你是 DesktopAgent，负责在浏览器、文件系统、终端、IDE 和 MCP 工具之间协同完成任务。',
     '每个步骤必须调用且只能调用一个当前提供的工具；任务完成时调用 finish。',
     ...buildSharedAgentRuleLines(capabilityContext),
     systemPrompt ? `附加约束：${systemPrompt}` : '',
@@ -550,17 +531,16 @@ export function buildNvidiaTaskMessages({
     {
       role: 'system',
       content: [
-        '你是 DesktopAgent，负责在浏览器、macOS 桌面、文件系统、终端之间协同完成任务。',
+        '你是 DesktopAgent，负责在浏览器、文件系统、终端、IDE 和 MCP 工具之间协同完成任务。',
         '你只能输出一个 JSON 对象，不要输出 Markdown，不要解释。',
         '输出格式固定为 {"rationale":"简短理由","action":{...}}。',
         '可用动作示例（字段名、字段层级、tool 和 type 必须严格照此填写；每一步只输出其中一个 JSON 对象）：',
         ...buildNvidiaActionExampleLines({ ideEnabled, chromeEnabled, mcpEnabled: mcpEnabled && mcpDetails }),
         '可用动作签名（括号内为主要参数）：',
-        'browser: navigate(url), click(elementId), type(elementId,text), wait(seconds), scroll(direction,amount), get_page_content(), http_fetch(url,extractLinks?), parallel_fetch(urls)',
+        'browser: navigate(url), click(elementId), type(elementId,text), wait(seconds), scroll(direction,amount), get_page_content(), http_fetch(url,extractLinks?)',
         'fs: list_dir(path), get_file_info(path), read_file(path), write_file(path,content,append), search_files(query,path,include?)',
         'terminal: run_safe(command), run_confirmed(command), run_review(command)',
-        'macos: activate_app(app), open_app(app), list_windows(), capture_screen(), type_text(text), press_key(key,modifiers), click_at(x,y)',
-        'search: web_search(query,maxResults?)；codegraph: codegraph_query(query)；vision: image_analyze(image,question)；spawn: spawn(tasks:string[])。spawn 的 tasks 必须是 1-5 个自然语言子任务字符串，不是工具动作对象；示例：{"tool":"spawn","type":"spawn","tasks":["抓取页面 A 并提取关键数据","抓取页面 B 并核对来源"]}',
+        'search: web_search(query,maxResults?)；codegraph: codegraph_query(query)；vision: image_analyze(image,question)',
         ...(ideEnabled && ideDetails ? ['ide: ide_list_tools(refresh?), ide_call_tool(toolName,arguments)'] : []),
         ...(chromeEnabled && chromeDetails ? ['chrome: chrome_list_tools(refresh?), chrome_call_tool(toolName,arguments,refreshTools?)'] : []),
         ...(mcpEnabled && mcpDetails ? ['mcp: mcp_list_servers(), mcp_list_tools(serverName,refresh?), mcp_call_tool(serverName,toolName,arguments,refreshTools?)'] : []),

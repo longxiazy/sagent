@@ -18,14 +18,12 @@ const ADVANCED_AGENT_FIELDS = [
   { key: 'batchSize', labelKey: 'settings.batchSize' },
   { key: 'maxHistorySteps', labelKey: 'settings.maxHistorySteps' },
   { key: 'maxResultChars', labelKey: 'settings.maxResultChars' },
-  { key: 'maxParallelResultChars', labelKey: 'settings.maxParallelResultChars' },
 ];
 
 const NUMBER_FIELD_STEPS = {
   modelTimeoutSec: 5,
   maxOutputTokens: 128,
   maxResultChars: 1000,
-  maxParallelResultChars: 1000,
 };
 
 const THEME_OPTIONS = [

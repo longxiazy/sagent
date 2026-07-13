@@ -76,7 +76,8 @@ export async function executeIdeAction(action, opts: { signal?: AbortSignal } = 
       throw new Error('ide_call_tool 缺少 toolName');
     }
 
-    const tool = await client.getTool(toolName, { refresh: Boolean(action.refreshTools), signal });
+    const tools = await client.listTools({ refresh: Boolean(action.refreshTools), signal });
+    const tool = tools.find(item => item.name === toolName);
     if (!tool) {
       throw new Error(`未找到 IDE 工具 ${toolName}，请先调用 ide_list_tools 确认可用工具名`);
     }
