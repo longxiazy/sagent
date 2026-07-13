@@ -15,7 +15,6 @@ export function MemoryPanel({ onClose, activeProjectId = null, modelList = [] })
   const qs = activeProjectId ? `?projectId=${encodeURIComponent(activeProjectId)}` : '';
 
   useEffect(() => {
-    setLoading(true);
     apiFetch(`/api/agent/memory${qs}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })

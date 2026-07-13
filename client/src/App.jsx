@@ -1024,7 +1024,11 @@ export default function App() {
           showMemoryPanel={showMemoryPanel}
           onToggleMemory={() => setShowMemoryPanel(v => !v)}
           sidebarPinned={sidebarPinned}
-          onToggleSidebarPin={() => setSidebarPinned(value => !value)}
+          onToggleSidebarPin={() => {
+            const nextPinned = !sidebarPinned;
+            setSidebarPinned(nextPinned);
+            setShowSessions(nextPinned);
+          }}
           projects={projects}
           activeProjectId={activeProjectId}
           onActivateProject={handleActivateProject}

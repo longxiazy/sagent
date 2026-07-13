@@ -31,11 +31,5 @@ export function useResponsiveLayout({ dockedBreakpoint, panelSizeKey, sidebarPin
     return () => window.removeEventListener('resize', syncResponsiveState);
   }, [dockedBreakpoint, panelSizeKey]);
 
-  useEffect(() => {
-    if (window.innerWidth >= dockedBreakpoint) {
-      setShowSessions(sidebarPinned);
-    }
-  }, [dockedBreakpoint, sidebarPinned]);
-
   return { showSessions, setShowSessions };
 }
