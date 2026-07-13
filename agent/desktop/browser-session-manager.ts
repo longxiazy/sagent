@@ -125,22 +125,25 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
       await Promise.resolve(session.view.evaluate('document.readyState'));
       assertCurrentSession(session, generation);
       session.lifecycle = 'ready';
-    } catch {
+    } catch (err: any) {
       session.lifecycle = 'broken';
       if (session === sharedBrowserSession) {
         sharedBrowserSession = null;
         sharedBrowserHeadless = null;
       }
       await closeSessionBounded(session);
-      emit(onEvent, 'degraded', session, { reason: 'initialization_failed' });
-      throw new Error('WebView 初始化失败');
+      const detail = String(err?.message || err);
+      emit(onEvent, 'degraded', session, { reason: 'initialization_failed', error: detail });
+      throw new Error(`WebView 初始化失败: ${detail}`, { cause: err });
     }
 
     state.browserSession = session;
     onEvent?.({
       type: 'status',
       status: 'browser_ready',
-      message: 'Bun.WebView 浏览器已启动并通过健康检查',
+      message: process.platform === 'win32'
+        ? 'Microsoft Edge Headless 浏览器已启动并通过健康检查'
+        : 'Bun.WebView 浏览器已启动并通过健康检查',
       sessionId: session.sessionId,
       generation: session.generation,
     });

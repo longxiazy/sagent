@@ -1,11 +1,15 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { EdgeCdpWebView } from './edge-cdp-webview.ts';
 
 let sharedSession = null;
 let webViewFactory = defaultWebViewFactory;
 let dataStoreDir = null;
 
 function defaultWebViewFactory(options) {
+  if (process.platform === 'win32') {
+    return new EdgeCdpWebView(options);
+  }
   const WebView = globalThis.Bun?.WebView;
   if (!WebView) {
     throw new Error('Bun.WebView 不可用。请使用 Bun 1.3+ 运行 sagent，或升级到包含 Bun.WebView 的 Bun 版本。');
