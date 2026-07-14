@@ -419,7 +419,6 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
     if (activeGroup === 'appearance') {
       return (
         <div className="settings-section">
-          <p className="settings-section-title">{t('appearance.title')}</p>
           <div className="settings-appearance-stack">
             <div className="settings-field settings-field-switch">
               <span>{t('appearance.theme')}</span>
@@ -470,7 +469,6 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
     if (activeGroup === 'agent') {
       return (
         <div className="settings-section">
-          <p className="settings-section-title">{t('settings.agentParams')}</p>
           <p className="dialog-desc">{t('settings.agentParamsDesc')}</p>
           {renderBackendGuard() || (
             <>
@@ -525,7 +523,6 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
     if (activeGroup === 'memory') {
       return (
         <div className="settings-section">
-          <p className="settings-section-title">{t('settings.group.memory')}</p>
           <p className="dialog-desc">{t('settings.memoryDesc')}</p>
           <div className="settings-grid">
             <label className="settings-field settings-field-switch">
@@ -544,7 +541,6 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
     if (activeGroup === 'mcp') {
       return (
         <div className="settings-section">
-          <p className="settings-section-title">{t('settings.group.mcp')}</p>
           <p className="dialog-desc">{t('settings.mcpDesc')}</p>
           {renderBackendGuard() || (
             <div className="settings-mcp-list">
@@ -575,7 +571,6 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
     // apiKeys
     return (
       <div className="settings-section">
-        <p className="settings-section-title">{t('settings.apiKeys')}</p>
         <p className="dialog-desc">{t('settings.apiKeysDesc')}</p>
         {renderBackendGuard() || (
           <div className="settings-keys">

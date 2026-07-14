@@ -183,7 +183,7 @@ export default function App() {
   useEffect(() => {
     const revealFromLeftEdge = event => {
       if (window.innerWidth < DOCKED_LAYOUT_BREAKPOINT || sidebarPinned) return;
-      if (event.clientX <= window.innerWidth * 0.1) setShowSessions(true);
+      if (event.clientX <= window.innerWidth * 0.01) setShowSessions(true);
     };
     window.addEventListener('mousemove', revealFromLeftEdge);
     return () => window.removeEventListener('mousemove', revealFromLeftEdge);
