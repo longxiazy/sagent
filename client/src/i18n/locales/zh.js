@@ -16,7 +16,6 @@ export const zh = {
   'common.submitting': '提交中…',
 
   // 外观 / 语言
-  'appearance.title': '外观',
   'appearance.theme': '主题',
   'appearance.theme.light': '浅色',
   'appearance.theme.dark': '深色',
@@ -88,7 +87,6 @@ export const zh = {
   'settings.group.memory': '记忆',
   'settings.group.mcp': 'MCP 连接',
   'settings.group.apiKeys': 'API Key',
-  'settings.agentParams': 'Agent 行为参数',
   'settings.agentParamsDesc': '保存后下次任务即生效，无需重启后端。',
   'settings.maxSteps': '单次任务最大步数',
   'settings.modelTimeoutSec': '单模型超时（秒）',
@@ -123,7 +121,6 @@ export const zh = {
   'settings.mcpAdd': '新增服务',
   'settings.mcpDelete': '删除服务',
   'settings.mcpNamePlaceholder': 'MCP server 名称',
-  'settings.apiKeys': 'API Key（只读）',
   'settings.apiKeysDesc': 'Key 在 .env 配置，修改后需重启后端。',
   'settings.keyNotConfigured': '未配置',
 

@@ -15,7 +15,6 @@ export const en = {
   'common.submitting': 'Submitting…',
 
   // Appearance / language
-  'appearance.title': 'Appearance',
   'appearance.theme': 'Theme',
   'appearance.theme.light': 'Light',
   'appearance.theme.dark': 'Dark',
@@ -87,7 +86,6 @@ export const en = {
   'settings.group.memory': 'Memory',
   'settings.group.mcp': 'MCP Connections',
   'settings.group.apiKeys': 'API Keys',
-  'settings.agentParams': 'Agent behavior',
   'settings.agentParamsDesc': 'Takes effect on the next task after saving; no backend restart needed.',
   'settings.maxSteps': 'Max steps per task',
   'settings.modelTimeoutSec': 'Per-model timeout (s)',
@@ -122,7 +120,6 @@ export const en = {
   'settings.mcpAdd': 'Add server',
   'settings.mcpDelete': 'Delete server',
   'settings.mcpNamePlaceholder': 'MCP server name',
-  'settings.apiKeys': 'API Keys (read-only)',
   'settings.apiKeysDesc': 'Keys are set in .env; restart the backend after changes.',
   'settings.keyNotConfigured': 'Not configured',
 
