@@ -14,7 +14,61 @@ import { createModelTools } from '../agent/core/tool-definitions.ts';
 
 describe('agent prompts', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
+  });
+
+  it('keeps system prompts cacheable while injecting current time into task payloads', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-14T16:05:06.000Z'));
+
+    const gemini = buildGeminiAgentPromptPayload({
+      task: '查询苹果最新股价',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+    const nvidia = buildNvidiaTaskMessages({
+      task: '查询苹果最新股价',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+    const compact = buildNvidiaTaskMessages({
+      task: '查询苹果最新股价',
+      step: 1,
+      history: [],
+      observation: {},
+      compact: true,
+    });
+
+    for (const prompt of [gemini.systemInstruction, nvidia[0].content, compact[0].content]) {
+      expect(prompt).toContain('currentDateTime');
+      expect(prompt).toContain('不得猜测年份');
+      expect(prompt).not.toContain('2026-07-14T16:05:06.000Z');
+    }
+
+    const geminiPayload = JSON.parse(gemini.contents.at(-1)!.parts[0].text);
+    const nvidiaPayload = JSON.parse(nvidia[1].content);
+    const compactPayload = JSON.parse(compact[1].content);
+    for (const payload of [geminiPayload, nvidiaPayload, compactPayload]) {
+      expect(payload.currentDateTime).toEqual(expect.objectContaining({
+        localDateTime: expect.any(String),
+        timeZone: expect.any(String),
+        iso: '2026-07-14T16:05:06.000Z',
+      }));
+    }
+
+    vi.setSystemTime(new Date('2026-07-14T17:05:06.000Z'));
+    const later = buildNvidiaTaskMessages({
+      task: '查询苹果最新股价',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+
+    expect(later[0].content).toBe(nvidia[0].content);
+    expect(JSON.parse(later[1].content).currentDateTime.iso).toBe('2026-07-14T17:05:06.000Z');
   });
 
   it('provides detailed, valid NVIDIA JSON examples for every built-in action', () => {
@@ -209,6 +263,8 @@ describe('agent prompts', () => {
   });
 
   it('keeps shared Gemini and NVIDIA agent rules semantically identical', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-14T16:05:06.000Z'));
     const context = {
       task: '读取官网并总结内容',
       systemPrompt: '[Agent 记忆]\n偏好：简洁回答',

@@ -329,6 +329,28 @@ function promptResultText(value: any) {
   }
 }
 
+function buildCurrentDateTimeContext(now = new Date()) {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(now).map(part => [part.type, part.value]),
+  );
+  const localDateTime = `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+  return {
+    localDateTime,
+    timeZone,
+    iso: now.toISOString(),
+  };
+}
+
 export function compactAgentHistory(history: any[], maxEntries?: number, maxResultChars?: number, task = '') {
   if (!Array.isArray(history) || history.length === 0) return [];
   const config = configStore.get();
@@ -362,6 +384,7 @@ function buildSharedAgentRuleLines(capabilityContext: PromptCapabilityContext = 
     '7. 图片任务必须使用 image_analyze，不得凭文件名猜测。简单识图得到可用结果后立即 finish；同一图片最多连续分析 2 次，无法确认具体来源时区分可见事实与低置信猜测。',
     '8. 酒店、机票、电商等实时价格优先用 web_search 获取区间；拿不到精确数字时给出查询入口并说明未取得实时精确价。',
     '9. 重要发现可用 notify_user。finish 的 answer 使用简体中文，简洁直接。',
+    '每步输入中的 currentDateTime 是当前日期时间；涉及“今天”“最新”“近期”等相对时间时必须以它为准，不得猜测年份。',
     ...(chromeDetails ? ['10. 内置浏览器被 CAPTCHA、403 或 Cloudflare 拦截时，改用 Chrome MCP 访问同一目标。'] : []),
     ...ideLines,
     ...chromeLines,
@@ -372,6 +395,7 @@ function buildSharedAgentRuleLines(capabilityContext: PromptCapabilityContext = 
 function buildReadonlyAgentRuleLines(systemPrompt: string | null) {
   return [
     '你处于只读分析模式，只负责分析并返回结果。',
+    '每步输入中的 currentDateTime 是当前日期时间；涉及相对时间时必须以它为准，不得猜测年份。',
     '禁止写文件、运行终端、操作浏览器/Chrome/IDE、询问或通知用户。',
     '路径必须使用项目内相对路径。完成后立即调用 finish 返回简洁结果。',
     systemPrompt ? `附加约束：${systemPrompt}` : '',
@@ -424,9 +448,10 @@ export function buildGeminiTaskMessages({
   const recentUrlsHint = buildRecentUrlsHint(history);
   const recentSearchesHint = buildRecentSearchesHint(history);
   const promptHistory = compactAgentHistory(history, undefined, undefined, task);
+  const currentDateTime = buildCurrentDateTimeContext();
   contents.push({
     role: 'user',
-    parts: [{ text: JSON.stringify({ task, step, history: promptHistory, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }) }],
+    parts: [{ text: JSON.stringify({ task, currentDateTime, step, history: promptHistory, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }) }],
   });
   return { contents };
 }
@@ -497,6 +522,7 @@ export function buildNvidiaTaskMessages({
   const recentSearchesHint = buildRecentSearchesHint(history);
   const promptHistory = compactAgentHistory(history, undefined, undefined, task);
   const selectedToolNames = selectGeminiToolNames(capabilityContext);
+  const currentDateTime = buildCurrentDateTimeContext();
 
   if (toolMode === 'readonly') {
     return [
@@ -512,7 +538,7 @@ export function buildNvidiaTaskMessages({
       },
       {
         role: 'user',
-        content: JSON.stringify({ task, step, history: compactAgentHistory(history, compact ? 2 : 6, undefined, task), observation }),
+        content: JSON.stringify({ task, currentDateTime, step, history: compactAgentHistory(history, compact ? 2 : 6, undefined, task), observation }),
       },
     ];
   }
@@ -526,13 +552,14 @@ export function buildNvidiaTaskMessages({
           '若可直接回答，必须输出 {"rationale":"...","action":{"type":"finish","answer":"..."}}，不要使用 type:"answer"。',
           '若需工具，action.tool/type 只能使用：browser navigate/click/get_page_content/http_fetch；fs list_dir/read_file/search_files；terminal run_safe；search web_search；vision image_analyze；core ask_user/notify_user。',
           '常识问答、闲聊、解释类任务必须直接 finish，不要调用工具。',
+          '每步输入中的 currentDateTime 是当前日期时间；涉及相对时间时必须以它为准，不得猜测年份。',
           'answer 用简体中文，简洁直接。',
           systemPrompt ? `附加约束：${systemPrompt}` : '',
         ].filter(Boolean).join(' '),
       },
       {
         role: 'user',
-        content: JSON.stringify({ task, step, history: compactAgentHistory(history, 2, 1500, task), observation }),
+        content: JSON.stringify({ task, currentDateTime, step, history: compactAgentHistory(history, 2, 1500, task), observation }),
       },
     ];
   }
@@ -563,7 +590,7 @@ export function buildNvidiaTaskMessages({
     },
     {
       role: 'user',
-      content: JSON.stringify({ task, step, history: promptHistory, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }),
+      content: JSON.stringify({ task, currentDateTime, step, history: promptHistory, observation, ...(recentUrlsHint ? { recentUrlsHint } : {}), ...(recentSearchesHint ? { recentSearchesHint } : {}) }),
     },
   ];
 }
