@@ -2,7 +2,6 @@ import { streamAgentRun, submitAgentApproval } from '../api/streams.js';
 import { apiFetch } from '../api/http.js';
 import { showAgentNotification } from '../notifications.js';
 import { touchSession, upsertAgentRun } from './useChatSessions.js';
-import { PHONE_BREAKPOINT } from '../utils/constants.js';
 import { useT } from '../i18n/I18nProvider.jsx';
 import { agentTraceEventKey, appendUniqueTraceEvent } from '../utils/agent-trace.js';
 import { buildAgentMetaFromSession } from '../utils/agent-stats.js';
@@ -51,7 +50,6 @@ export function useAgentTransport({
   setPendingQuestion,
   setReconnectedRun,
   setRollbackLoading,
-  setAgentMobileTab,
   setAgentRunId,
   setApprovalSubmitting,
   // helpers
@@ -435,7 +433,6 @@ export function useAgentTransport({
       setReconnectedRun(false);
       setPendingApproval(null);
       approvalRequestRef.current = null;
-      if (window.innerWidth < PHONE_BREAKPOINT) setAgentMobileTab('chat');
       setTimeout(() => textareaRef.current?.focus(), 0);
     }
   };

@@ -101,6 +101,7 @@ export type AgentObservation = JsonObject;
 interface EventTraceFields {
   seq?: number;
   runId?: string;
+  attempt?: number;
   timestamp?: number;
   trace_id?: string;
   span_id?: string;
@@ -168,6 +169,7 @@ export interface RunMeta {
   model?: string;
   agentModels?: string[];
   task?: string;
+  attempt?: number;
   projectId?: string | null;
   dataDir?: string;
   projectRoot?: string | null;

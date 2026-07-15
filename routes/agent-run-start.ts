@@ -11,6 +11,15 @@ import { removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
 import { resolveRunPathsForExecution } from '../agent/core/project-store.ts';
 import { readTraceEvents } from '../helpers/trace-store.ts';
 
+export function nextAgentAttempt(existingTraceEvents: any[] = []) {
+  const explicitAttempt = existingTraceEvents.reduce((max, event) => {
+    const attempt = Number(event?.attempt);
+    return Number.isInteger(attempt) && attempt > 0 ? Math.max(max, attempt) : max;
+  }, 0);
+  const inferredAttempt = existingTraceEvents.filter(event => event?.type === 'run_meta').length;
+  return Math.max(explicitAttempt, inferredAttempt, existingTraceEvents.length > 0 ? 1 : 0) + 1;
+}
+
 export function createAgentRunStartRouter({
   runDesktopAgent,
   agentRunStore,
@@ -62,6 +71,7 @@ export function createAgentRunStartRouter({
       // fromCheckpoint 回滚时复用原 runId，保持 trace 连续性
       const existingRunId = fromCheckpoint?.runId;
       const existingTraceEvents = existingRunId ? await readTraceEvents(dataDir, existingRunId) : [];
+      const attempt = existingRunId ? nextAgentAttempt(existingTraceEvents) : 1;
       const initialEventSeq = existingTraceEvents.reduce(
         (next, event, index) => Number.isFinite(event?.seq)
           ? Math.max(next, Number(event.seq) + 1)
@@ -72,6 +82,7 @@ export function createAgentRunStartRouter({
         model,
         agentModels,
         task: normalizedTask,
+        attempt,
         // 项目信息盖到 run 记录上，供 trace/checkpoint 读取端点定位落盘目录
         projectId: resolvedProjectId,
         sessionId,
@@ -96,6 +107,7 @@ export function createAgentRunStartRouter({
         sessionId,
         projectId: resolvedProjectId,
         runId,
+        attempt,
         startedAt,
         agentRunStore,
         memoryDir: dataDir,

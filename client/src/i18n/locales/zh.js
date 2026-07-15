@@ -185,6 +185,7 @@ export const zh = {
   'agentPanel.terminalNoOutputYet': '命令已启动，暂未输出',
   'agentPanel.terminalNoOutput': '无输出',
   'agentPanel.rerunFromStep': '从 Step {step} 重新执行',
+  'agentPanel.retryAttempt': '第 {attempt} 次尝试',
   'agentPanel.badgeResult': '结果',
   'agentPanel.showJson': '展开 JSON',
   'agentPanel.hideJson': '收起 JSON',

@@ -69,8 +69,12 @@ export function createBaseEventSender(runId: string, agentRunStore: AgentRunStor
 
   return (payload: AgentEvent): AgentEvent => {
     const timestamp = Number.isFinite(payload?.timestamp) ? payload.timestamp : Date.now();
-    const spanId = buildSpanId(payload);
-    const parentId = buildParentId(payload);
+    const attemptPrefix = Number.isInteger(payload?.attempt) && Number(payload.attempt) > 0
+      ? `attempt_${payload.attempt}_`
+      : '';
+    const spanId = `${attemptPrefix}${buildSpanId(payload)}`;
+    const rawParentId = buildParentId(payload);
+    const parentId = rawParentId ? `${attemptPrefix}${rawParentId}` : null;
     const event = redactSensitiveData({
       ...payload,
       runId: payload?.runId || runId,

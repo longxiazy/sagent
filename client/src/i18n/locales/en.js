@@ -184,6 +184,7 @@ export const en = {
   'agentPanel.terminalNoOutputYet': 'Command started; no output yet',
   'agentPanel.terminalNoOutput': 'No output',
   'agentPanel.rerunFromStep': 'Re-run from Step {step}',
+  'agentPanel.retryAttempt': 'Attempt {attempt}',
   'agentPanel.badgeResult': 'Result',
   'agentPanel.showJson': 'Show JSON',
   'agentPanel.hideJson': 'Hide JSON',

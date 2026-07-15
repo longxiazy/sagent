@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Square, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp,
   Monitor, Loader2, Bot, Clock3, Coins, ListChecks, Trophy, History, Activity,
@@ -17,6 +17,7 @@ import { formatFullTime, formatRelativeTime } from '../../utils/format.js';
 import { fetchAgentTrace } from '../../api/streams.js';
 import { appendUniqueTraceEvent } from '../../utils/agent-trace.js';
 import { DialogShell } from '../dialogs/DialogShell.jsx';
+import { attemptStepKey, buildAttemptTraceIndex } from '../../utils/agent-attempts.js';
 
 // AgentPanel 既是执行面板，也是运行时仪表盘：
 // - 负责展示 trace
@@ -70,110 +71,120 @@ function AgentTraceTimeline({
   selectedModelId = 'all',
 }) {
   const metrics = useMemo(() => computeTraceMetrics(trace), [trace]);
-  const agentFinished = useMemo(
-    () => !running && trace.some(e => e.type === 'done' || e.type === 'error'),
-    [running, trace],
-  );
-  const eventsByStep = useMemo(() => {
-    const map = new Map();
-    for (const e of trace) {
-      if (e.step == null) continue;
-      let arr = map.get(e.step);
-      if (!arr) { arr = []; map.set(e.step, arr); }
-      arr.push(e);
-    }
-    return map;
-  }, [trace]);
-  const multiModelSteps = useMemo(() => {
-    const set = new Set();
-    for (const e of trace) {
-      if (e.type === 'model_plan' && e.stage === 'start' && e.models?.length > 1) set.add(e.step);
-    }
-    return set;
-  }, [trace]);
-  const singleModelSteps = useMemo(() => {
-    const set = new Set();
-    for (const e of trace) {
-      if (e.type === 'model_plan' && e.stage === 'start' && e.models?.length === 1) set.add(e.step);
-    }
-    return set;
-  }, [trace]);
+  const attemptIndex = useMemo(() => buildAttemptTraceIndex(trace), [trace]);
+  const {
+    entries,
+    eventsByStep,
+    firstEventIndexByAttempt,
+    observeAnchorIndexByStep,
+    planAnchorIndexByStep,
+    singleModelSteps,
+    multiModelSteps,
+    terminalAttempts,
+    latestAttempt,
+  } = attemptIndex;
 
   return (
     <div className={`agent-trace${history ? ' agent-trace--history' : ''}`}>
-      {trace.map((event, index) => {
-        // 系统级提示不进时间线：启动提示 / 浏览器就绪 / 后台健康快照都是噪音，
-        // 不是 agent 的实质步骤；断点恢复 status='resuming' 有信息量，保留。
-        if (shouldHideTimelineEvent(event)) return null;
-        // ── model_plan ──
-        if (event.type === 'model_plan') {
-          // start：多模型渲染对比卡组；单模型并入 StepCard，不单独渲染
-          if (event.stage === 'start') {
-            return event.models?.length > 1 ? (
+      {entries.map(({ event, index, attempt }) => {
+        const stepKey = event.step == null ? null : attemptStepKey(attempt, event.step);
+        const stepEvents = stepKey ? (eventsByStep.get(stepKey) || []) : [];
+        const groupedOutput = (event.type === 'terminal_output' || event.type === 'mcp_output')
+          && (singleModelSteps.has(stepKey) || multiModelSteps.has(stepKey));
+        const showAttemptBoundary = attempt > 1 && firstEventIndexByAttempt.get(attempt) === index;
+        let content = null;
+
+        if (!shouldHideTimelineEvent(event) && event.type === 'model_plan') {
+          if (event.stage === 'start' && event.models?.length > 1 && planAnchorIndexByStep.get(stepKey) === index) {
+            content = (
               <ModelPlanGroup
-                key={`model-plan-step-${event.step ?? index}-${index}`}
-                events={eventsByStep.get(event.step) || []}
+                key={`model-plan-attempt-${attempt}-step-${event.step ?? index}`}
+                events={stepEvents}
                 step={event.step}
                 models={event.models}
                 selectedModelId={selectedModelId}
                 modelList={modelList}
-                agentFinished={agentFinished}
+                agentFinished={attempt < latestAttempt || terminalAttempts.has(attempt) || (!running && attempt === latestAttempt)}
                 cardsExpanded={cardsExpanded}
                 onManualToggle={onManualToggle}
                 onRollback={onRollback}
                 rollbackLoading={rollbackLoading}
                 openLightbox={openLightbox}
               />
-            ) : null;
-          }
-          // consensus 落到底部 TraceItem 单独展示；其它阶段在卡组内显示，跳过
-          if (event.stage !== 'consensus') return null;
-        }
-
-        // ── step ──
-        if (event.type === 'step') {
-          // 单模型：observe/action/result 合并成一张 StepCard，只在 observe 处渲染一次
-          if (singleModelSteps.has(event.step)) {
-            const startEvent = (eventsByStep.get(event.step) || []).find(e => e.type === 'model_plan' && e.stage === 'start');
-            if (selectedModelId !== 'all' && !startEvent?.models?.includes(selectedModelId)) return null;
-            return event.stage === 'observe' ? (
-              <StepCard
-                key={`step-card-${event.step ?? index}`}
-                events={eventsByStep.get(event.step) || []}
-                step={event.step}
-                active={running && event.step === metrics.lastStep}
+            );
+          } else if (event.stage === 'consensus') {
+            content = (
+              <TraceItem
+                key={`consensus-attempt-${attempt}-${event.step ?? index}-${index}`}
+                event={event}
+                selectedModelId={selectedModelId}
                 modelList={modelList}
                 onRollback={onRollback}
                 rollbackLoading={rollbackLoading}
                 openLightbox={openLightbox}
-                forceExpanded={cardsExpanded}
-                onManualToggle={onManualToggle}
                 t={t}
               />
-            ) : null;
+            );
           }
-          // 多模型：observe/action/result 都并入决策卡组（与单模型 StepCard 一致，一步一节点），这里跳过
-          if (multiModelSteps.has(event.step) && (event.stage === 'observe' || event.stage === 'action' || event.stage === 'result')) {
-            return null;
+        } else if (!shouldHideTimelineEvent(event) && event.type === 'step') {
+          if (singleModelSteps.has(stepKey)) {
+            const startEvent = stepEvents.find(e => e.type === 'model_plan' && e.stage === 'start');
+            if ((selectedModelId === 'all' || startEvent?.models?.includes(selectedModelId))
+              && event.stage === 'observe'
+              && observeAnchorIndexByStep.get(stepKey) === index) {
+              content = (
+                <StepCard
+                  key={`step-card-attempt-${attempt}-step-${event.step ?? index}`}
+                  events={stepEvents}
+                  step={event.step}
+                  active={running && attempt === latestAttempt && event.step === metrics.lastStep}
+                  modelList={modelList}
+                  onRollback={onRollback}
+                  rollbackLoading={rollbackLoading}
+                  openLightbox={openLightbox}
+                  forceExpanded={cardsExpanded}
+                  onManualToggle={onManualToggle}
+                  t={t}
+                />
+              );
+            }
+          } else if (!multiModelSteps.has(stepKey)) {
+            content = (
+              <TraceItem
+                key={`${event.type}-attempt-${attempt}-${event.step ?? index}-${event.stage ?? index}-${index}`}
+                event={event}
+                selectedModelId={selectedModelId}
+                modelList={modelList}
+                onRollback={onRollback}
+                rollbackLoading={rollbackLoading}
+                openLightbox={openLightbox}
+                t={t}
+              />
+            );
           }
+        } else if (!shouldHideTimelineEvent(event) && !groupedOutput) {
+          content = (
+            <TraceItem
+              key={`${event.type}-attempt-${attempt}-${event.step ?? index}-${event.stage ?? index}-${index}`}
+              event={event}
+              selectedModelId={selectedModelId}
+              modelList={modelList}
+              onRollback={onRollback}
+              rollbackLoading={rollbackLoading}
+              openLightbox={openLightbox}
+              t={t}
+            />
+          );
         }
 
-        if ((event.type === 'terminal_output' || event.type === 'mcp_output') && (singleModelSteps.has(event.step) || multiModelSteps.has(event.step))) {
-          return null;
-        }
-
-        // consensus + 其余事件（status/notification/approval/done/error/...）
+        if (!showAttemptBoundary) return content;
         return (
-          <TraceItem
-            key={`${event.type}-${event.step ?? index}-${event.stage ?? index}-${index}`}
-            event={event}
-            selectedModelId={selectedModelId}
-            modelList={modelList}
-            onRollback={onRollback}
-            rollbackLoading={rollbackLoading}
-            openLightbox={openLightbox}
-            t={t}
-          />
+          <Fragment key={`attempt-boundary-${attempt}-${index}`}>
+            <div className="agent-attempt-boundary" data-attempt={attempt}>
+              <span>{t('agentPanel.retryAttempt', { attempt })}</span>
+            </div>
+            {content}
+          </Fragment>
         );
       })}
       {bottomRef && <div ref={bottomRef} />}
