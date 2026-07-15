@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { ArrowUpDown, Check, ChevronDown, ChevronRight, ChevronUp, ExternalLink, HelpCircle, Search, Star, X } from 'lucide-react';
 import { useT } from '../i18n/I18nProvider.jsx';
 import { jsonStorage, usePersistentState } from '../hooks/usePersistentState.js';
-import { modelPrice, modelSpeed, sortModels } from '../utils/model-sort.js';
+import { modelGreetingScore, modelPrice, modelSpeed, sortModels } from '../utils/model-sort.js';
 import { formatTokenLimit } from '../utils/token-limit.js';
 import { DialogShell } from './dialogs/DialogShell.jsx';
 
@@ -34,6 +34,7 @@ const ENCYCLOPEDIA_FIELD_DEFS = [
   { key: 'supportedMessageTypes', getValue: model => model?.supportedMessageTypes || model?.supported_message_types },
   { key: 'updated', getValue: model => model?.updated },
   { key: 'contextWindow', getValue: model => model?.contextWindow || model?.context_length || model?.inputTokenLimit, token: true },
+  { key: 'greetingScore', getValue: model => modelGreetingScore(model) },
 ];
 
 function asList(value) {
@@ -441,7 +442,13 @@ function ModelPickerDropdown({
   const sortMetricUnavailable = (
     (sortMode === 'price' && !availableModels.some(model => modelPrice(model) != null))
     || (sortMode === 'speed' && !availableModels.some(model => modelSpeed(model) != null))
+    || (sortMode === 'greeting' && !availableModels.some(model => modelGreetingScore(model) != null))
   );
+  const sortMetricUnavailableKey = sortMode === 'price'
+    ? 'modelSelector.priceUnavailable'
+    : sortMode === 'speed'
+      ? 'modelSelector.speedUnavailable'
+      : 'modelSelector.greetingUnavailable';
 
   const count = selectedModelIds.length;
   const triggerLabel = count === 1
@@ -456,6 +463,7 @@ function ModelPickerDropdown({
     const orderIdx = selectedModelIds.indexOf(item.id);
     const secondary = item.description || (item.label && item.label !== item.id ? item.id : '');
     const contextLabel = formatTokenLimit(item?.contextWindow || item?.context_length || item?.inputTokenLimit);
+    const greetingScore = modelGreetingScore(item);
     return (
       <span key={item.id} className={`model-option-wrapper ${isSelected ? 'selected' : ''}`}>
         <button
@@ -470,10 +478,18 @@ function ModelPickerDropdown({
           <span className="model-option-text">
             <span className="model-option-title-row">
               <span className="model-option-name">{item.label || item.id}</span>
-              <span
-                className={`model-option-context ${contextLabel ? '' : 'unknown'}`}
-                title={`${t('modelSelector.filterContext')}: ${contextLabel || t('modelSelector.contextUnknown')}`}
-              >CTX {contextLabel || '—'}</span>
+              <span className="model-option-metrics">
+                {sortMode === 'greeting' && greetingScore != null && (
+                  <span
+                    className="model-option-greeting"
+                    title={t('modelSelector.greetingScoreTitle', { score: greetingScore })}
+                  >{t('modelSelector.greetingScoreValue', { score: greetingScore })}</span>
+                )}
+                <span
+                  className={`model-option-context ${contextLabel ? '' : 'unknown'}`}
+                  title={`${t('modelSelector.filterContext')}: ${contextLabel || t('modelSelector.contextUnknown')}`}
+                >CTX {contextLabel || '—'}</span>
+              </span>
             </span>
             {secondary && <span className="model-option-description">{secondary}</span>}
             <span className="model-option-provider">{providerOf(item)}</span>
@@ -766,6 +782,7 @@ function ModelPickerDropdown({
                       <ArrowUpDown size={14} aria-hidden="true" />
                       <select value={sortMode} onChange={event => setSortMode(event.target.value)} aria-label={t('modelSelector.sortLabel')}>
                         <option value="recommended">{t('modelSelector.sortRecommended')}</option>
+                        <option value="greeting">{t('modelSelector.sortGreeting')}</option>
                         <option value="recent">{t('modelSelector.sortRecent')}</option>
                         <option value="name">{t('modelSelector.sortName')}</option>
                         <option value="updated">{t('modelSelector.sortUpdated')}</option>
@@ -801,7 +818,7 @@ function ModelPickerDropdown({
                 </div>
 
                 {sortMetricUnavailable && (
-                  <div className="model-sort-notice">{t(sortMode === 'price' ? 'modelSelector.priceUnavailable' : 'modelSelector.speedUnavailable')}</div>
+                  <div className="model-sort-notice">{t(sortMetricUnavailableKey)}</div>
                 )}
 
                 <div className={`model-filter-grid ${filtersExpanded ? 'open' : ''}`}>

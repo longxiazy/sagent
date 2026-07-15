@@ -6,9 +6,11 @@ import type { ModelInfo } from './types.ts';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CATALOG_PATH = path.resolve(__dirname, '../../../config/model-catalog/nvidia.json');
 const OVERRIDES_PATH = path.resolve(__dirname, '../../../config/model-catalog/nvidia-overrides.json');
+const GREETING_SCORES_PATH = path.resolve(__dirname, '../../../config/model-catalog/nvidia-greeting-scores.json');
 
 let cachedCatalog: Map<string, Partial<ModelInfo>> | null = null;
 let cachedOverrides: Map<string, Partial<ModelInfo>> | null = null;
+let cachedGreetingScores: Map<string, Partial<ModelInfo>> | null = null;
 
 function normalizeAlias(value: string) {
   return String(value || '').trim().replace(/_/g, '.').toLowerCase();
@@ -30,6 +32,13 @@ function sanitizeCatalogModel(model: any): Partial<ModelInfo> {
   if (Array.isArray(model?.supportedMessageTypes)) out.supportedMessageTypes = model.supportedMessageTypes;
   if (Array.isArray(model?.supportedParameters)) out.supportedParameters = model.supportedParameters;
   if (typeof model?.agentCompatible === 'boolean') out.agentCompatible = model.agentCompatible;
+  if (Number.isFinite(Number(model?.greetingScore)) && Number(model.greetingScore) >= 0) out.greetingScore = Number(model.greetingScore);
+  if (Number.isFinite(Number(model?.greetingAverageLatencyMs)) && Number(model.greetingAverageLatencyMs) > 0) {
+    out.greetingAverageLatencyMs = Number(model.greetingAverageLatencyMs);
+  }
+  if (Number.isFinite(Number(model?.greetingSuccesses)) && Number(model.greetingSuccesses) >= 0) {
+    out.greetingSuccesses = Number(model.greetingSuccesses);
+  }
   return out;
 }
 
@@ -65,10 +74,24 @@ function loadOverrides() {
   return cachedOverrides;
 }
 
+function loadGreetingScores() {
+  if (cachedGreetingScores) return cachedGreetingScores;
+  cachedGreetingScores = new Map();
+  if (!fs.existsSync(GREETING_SCORES_PATH)) return cachedGreetingScores;
+
+  const payload = JSON.parse(fs.readFileSync(GREETING_SCORES_PATH, 'utf8'));
+  const models = payload?.models && typeof payload.models === 'object' ? payload.models : {};
+  for (const [id, model] of Object.entries(models) as Array<[string, any]>) {
+    cachedGreetingScores.set(normalizeAlias(id), sanitizeCatalogModel(model));
+  }
+  return cachedGreetingScores;
+}
+
 export function getNvidiaCatalogModelMetadata(modelId: string): Partial<ModelInfo> {
   const alias = normalizeAlias(modelId);
   return {
     ...(loadCatalog().get(alias) || {}),
+    ...(loadGreetingScores().get(alias) || {}),
     ...(loadOverrides().get(alias) || {}),
   };
 }

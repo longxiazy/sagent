@@ -73,6 +73,9 @@ describe('model metadata', () => {
       contextWindow: 1_000_000,
       inputModalities: ['text'],
       outputModalities: ['text'],
+      greetingScore: 100,
+      greetingAverageLatencyMs: 44_199,
+      greetingSuccesses: 3,
     });
     expect(getNvidiaCatalogModelMetadata('meta/llama-3.1-70b-instruct')).toMatchObject({
       label: 'llama-3.1-70b-instruct',
@@ -85,6 +88,13 @@ describe('model metadata', () => {
     });
     expect(hasNvidiaCatalogModel('meta/llama-3.1-70b-instruct')).toBe(true);
     expect(hasNvidiaCatalogModel('moonshotai/kimi-k2.6')).toBe(false);
+  });
+
+  it('keeps zero greeting scores as measured values', () => {
+    expect(getNvidiaCatalogModelMetadata('meta/llama-3.2-3b-instruct')).toMatchObject({
+      greetingScore: 0,
+      greetingSuccesses: 0,
+    });
   });
 
   it('only exposes message roles backed by a local verified override', () => {

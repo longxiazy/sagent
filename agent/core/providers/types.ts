@@ -43,6 +43,9 @@ export interface ModelInfo {
   tokensPerSecond?: number;
   recommendationScore?: number;
   qualityScore?: number;
+  greetingScore?: number;
+  greetingAverageLatencyMs?: number;
+  greetingSuccesses?: number;
 }
 
 // agent 决策上下文（task/step/history/observation/conversationHistory/systemPrompt 等），

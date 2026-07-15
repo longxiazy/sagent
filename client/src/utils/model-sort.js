@@ -80,6 +80,20 @@ export function modelSpeed(model) {
   return latency != null && latency > 0 ? 1000 / latency : null;
 }
 
+export function modelGreetingScore(model) {
+  return firstNumber([
+    model?.greetingScore,
+    model?.greeting_score,
+  ]);
+}
+
+function modelGreetingLatency(model) {
+  return firstNumber([
+    model?.greetingAverageLatencyMs,
+    model?.greeting_average_latency_ms,
+  ]);
+}
+
 function recommendationScore(model) {
   const explicit = firstNumber([
     model?.recommendationScore,
@@ -143,6 +157,9 @@ export function sortModels(models, mode = 'recommended', { favoriteIds = [], rec
       result = compareKnown(a, b, modelPrice, 1);
     } else if (mode === 'speed') {
       result = compareKnown(a, b, modelSpeed, -1);
+    } else if (mode === 'greeting') {
+      result = compareKnown(a, b, modelGreetingScore, -1);
+      if (!result) result = compareKnown(a, b, modelGreetingLatency, 1);
     } else {
       result = recommendationScore(b) - recommendationScore(a);
     }
