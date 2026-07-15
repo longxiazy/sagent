@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatTokenLimit } from '../client/src/components/ModelSelector.jsx';
+import { formatTokenLimit } from '../client/src/utils/token-limit.js';
 
 describe('model selector token formatting', () => {
   it('formats decimal and binary-aligned context sizes using familiar labels', () => {

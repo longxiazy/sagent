@@ -3,6 +3,7 @@ import { ArrowUpDown, Check, ChevronDown, ChevronRight, ChevronUp, ExternalLink,
 import { useT } from '../i18n/I18nProvider.jsx';
 import { jsonStorage, usePersistentState } from '../hooks/usePersistentState.js';
 import { modelPrice, modelSpeed, sortModels } from '../utils/model-sort.js';
+import { formatTokenLimit } from '../utils/token-limit.js';
 import { DialogShell } from './dialogs/DialogShell.jsx';
 
 const MODEL_CATEGORY_DEFS = [
@@ -34,28 +35,6 @@ const ENCYCLOPEDIA_FIELD_DEFS = [
   { key: 'updated', getValue: model => model?.updated },
   { key: 'contextWindow', getValue: model => model?.contextWindow || model?.context_length || model?.inputTokenLimit, token: true },
 ];
-
-export function formatTokenLimit(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  if (n >= 1_000_000) {
-    const m = n % 1_000_000 === 0
-      ? n / 1_000_000
-      : n % 1_048_576 === 0
-        ? n / 1_048_576
-        : n / 1_000_000;
-    return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
-  }
-  if (n >= 1_000) {
-    const k = n % 1_000 === 0
-      ? n / 1_000
-      : n % 1_024 === 0
-        ? n / 1_024
-        : n / 1_000;
-    return `${Number.isInteger(k) ? k : k.toFixed(0)}K`;
-  }
-  return String(n);
-}
 
 function asList(value) {
   return Array.isArray(value)
