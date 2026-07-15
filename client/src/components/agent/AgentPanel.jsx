@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Square, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp,
   Monitor, Loader2, Bot, Clock3, Coins, ListChecks, Trophy, History, Activity,
@@ -192,7 +193,7 @@ function AgentTraceTimeline({
   );
 }
 
-export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = [], projectId = null, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onRollback, rollbackLoading }) {
+export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = [], projectId = null, modelList, collapsed, onToggleCollapse, onStop, agentStopping, pendingApproval, onRollback, rollbackLoading, headerActionsHost = null }) {
   const t = useT();
   const traceBottomRef = useRef(null);
   const traceStickyRef = useRef(true);
@@ -332,27 +333,6 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
             </button>
           )}
           <div className="agent-head-actions">
-            {trace.length > 0 && (
-              <button
-                className="agent-collapse-btn"
-                onClick={e => { e.stopPropagation(); setTraceDebugOpen(true); }}
-                title={t('agentPanel.traceDebug')}
-              >
-                <Activity size={12} />
-                <span>{t('agentPanel.traceDebug')}</span>
-              </button>
-            )}
-            {historyRuns.length > 0 && (
-              <button
-                className="agent-collapse-btn agent-history-btn"
-                onClick={e => { e.stopPropagation(); setHistoryDialogOpen(true); }}
-                title={t('agentPanel.previousRuns')}
-              >
-                <History size={12} />
-                <span>{t('agentPanel.previousRuns')}</span>
-                <span className="agent-history-btn-count">{historyRuns.length}</span>
-              </button>
-            )}
             {hasModelCards && !collapsed && showCurrentTrace && (
               <>
                 <button className="agent-collapse-btn agent-expand-all" onClick={e => { e.stopPropagation(); setCardsExpanded(true); }} title={t('agentPanel.expandAllTitle')}>
@@ -475,6 +455,29 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
             </>
       </div>
     </section>
+    {headerActionsHost && createPortal((
+      <>
+        {trace.length > 0 && (
+          <button
+            className="header-icon-btn header-agent-action-btn"
+            onClick={() => setTraceDebugOpen(true)}
+            title={t('agentPanel.traceDebug')}
+          >
+            <Activity size={14} />
+          </button>
+        )}
+        {historyRuns.length > 0 && (
+          <button
+            className="header-icon-btn header-agent-action-btn"
+            onClick={() => setHistoryDialogOpen(true)}
+            title={t('agentPanel.previousRuns')}
+          >
+            <History size={14} />
+            <span className="header-agent-action-count">{historyRuns.length}</span>
+          </button>
+        )}
+      </>
+    ), headerActionsHost)}
     {traceDebugOpen && (
       <DialogShell
         title={t('agentPanel.traceDebug')}

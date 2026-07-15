@@ -1562,6 +1562,36 @@ select,
   flex-shrink: 0;
 }
 
+.header-agent-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.header-agent-actions:empty {
+  display: none;
+}
+
+.header-agent-action-btn {
+  position: relative;
+}
+
+.header-agent-action-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border: 2px solid var(--c-surface);
+  border-radius: 999px;
+  background: var(--c-primary);
+  color: var(--c-on-accent);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+}
+
 .header-icon-btn {
   width: 34px;
   height: 34px;
@@ -3213,7 +3243,9 @@ a.model-encyclopedia-field-value:hover {
 
 .agent-workspace-trace {
   width: 100%;
-  margin: 2px 0 4px;
+  margin: 4px 0 6px;
+  padding-top: 2px;
+  border-top: 1px solid var(--c-border);
 }
 
 .agent-workspace-trace .agent-panel {
@@ -3227,7 +3259,11 @@ a.model-encyclopedia-field-value:hover {
 }
 
 .agent-workspace-trace .agent-panel-head {
-  position: static;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: -1px 0 4px;
+  padding-top: 2px;
 }
 
 .agent-workspace-trace .agent-panel-body,
@@ -3237,8 +3273,21 @@ a.model-encyclopedia-field-value:hover {
 }
 
 .agent-workspace-trace .agent-last-run,
-.agent-workspace-trace .agent-panel-note {
+.agent-workspace-trace .agent-panel-note,
+.agent-workspace-trace .agent-panel-eyebrow {
   display: none;
+}
+
+.agent-workspace-trace .agent-panel-title {
+  font-size: var(--f-sm);
+}
+
+.agent-workspace-trace .agent-panel-body {
+  padding-bottom: 2px;
+}
+
+.agent-workspace-messages > .input-area {
+  margin-top: 4px;
 }
 
 @media (min-width: 900px) {
@@ -4990,6 +5039,23 @@ a.model-encyclopedia-field-value:hover {
 }
 
 .model-card-reasoning { margin-top: 2px; }
+.step-thinking-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 7px;
+  border-left: 2px solid var(--c-warning-border);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: color-mix(in srgb, var(--c-warning-bg) 45%, transparent);
+}
+
+.step-thinking-section:empty {
+  display: none;
+}
+
+.step-thinking-section > p {
+  margin: 0;
+}
 .model-card-reasoning-toggle {
   font-size: var(--f-micro);
   color: var(--c-agent-idle);

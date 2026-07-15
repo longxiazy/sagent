@@ -167,6 +167,7 @@ export default function App() {
   const [showReset, setShowReset] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showPromptPreview, setShowPromptPreview] = useState(false);
+  const [agentActionsHost, setAgentActionsHost] = useState(null);
   const [sidebarPinned, setSidebarPinned] = usePersistentState('session_sidebar_pinned', false, booleanStorage);
   const { showSessions, setShowSessions } = useResponsiveLayout({
     dockedBreakpoint: DOCKED_LAYOUT_BREAKPOINT,
@@ -1089,6 +1090,7 @@ export default function App() {
             sessionLocked={sessionLocked}
             messagesLength={messages.length}
             modelSelect={modelSelect}
+            agentActionsHostRef={setAgentActionsHost}
             onToggleSessions={() => sidebarPinned ? setSidebarPinned(false) : setShowSessions(v => !v)}
             onCreateSession={handleCreateSession}
             onReset={() => setShowReset(true)}
@@ -1114,6 +1116,7 @@ export default function App() {
                   pendingApproval={pendingApproval}
                   onRollback={handleRollback}
                   rollbackLoading={rollbackLoading}
+                  headerActionsHost={agentActionsHost}
                 />
               ) : null}
               streaming={false}
