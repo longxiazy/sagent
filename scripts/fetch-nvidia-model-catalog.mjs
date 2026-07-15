@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const OUTPUT = path.join(ROOT, 'config/model-catalog/nvidia.json');
@@ -98,9 +99,10 @@ function parseTokenCount(value) {
   return Math.round(n);
 }
 
-function findContextWindow(markdown) {
+export function findContextWindow(markdown) {
   const candidates = [
     /\|\s*\*\*Context Length\*\*\s*\|\s*([^|\n]+)\|/i,
+    /\*\*Context Length:\*\*\s*([^\n]+)/i,
     /Maximum context length(?: of| up to)?\s+([^.\n]+)/i,
     /Context length:\s*([^.\n]+)/i,
     /up to\s+(\d+(?:\.\d+)?\s*(?:m|million|k|thousand)?)[- ]?token context/i,
@@ -299,7 +301,9 @@ async function main() {
   console.log(JSON.stringify({ output: path.relative(ROOT, OUTPUT), count: payload.count, errors: errors.length }, null, 2));
 }
 
-main().catch(err => {
-  console.error(err.stack || err.message);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(err => {
+    console.error(err.stack || err.message);
+    process.exit(1);
+  });
+}

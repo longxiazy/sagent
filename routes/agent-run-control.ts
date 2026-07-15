@@ -130,6 +130,7 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
       sessionId: run.meta?.sessionId,
       projectId: run.meta?.projectId ?? null,
       strategy: run.meta?.strategy,
+      attempt: run.meta?.attempt,
     })}\n\n`);
 
     let writer = null;
@@ -160,7 +161,9 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
       const replayedApprovalIds = new Set(replayEvents.map((event: any) => event.approvalId).filter(Boolean));
       const pending = pendingApprovalState(approvalStore, run.runId);
       for (const event of pending.pendingEvents) {
-        if (!replayedApprovalIds.has(event.approvalId)) writeSseEvent(res, event as AgentEvent);
+        if (!replayedApprovalIds.has(event.approvalId)) {
+          writeSseEvent(res, { ...event, attempt: run.meta?.attempt } as AgentEvent);
+        }
       }
     }
 

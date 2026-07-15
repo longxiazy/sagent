@@ -9,6 +9,7 @@ export function AppHeader({
   sessionLocked,
   messagesLength,
   modelSelect,
+  agentActionsHostRef,
   onToggleSessions,
   onCreateSession,
   onReset,
@@ -29,6 +30,7 @@ export function AppHeader({
       </div>
       <div className="header-right">
         {modelSelect}
+        <div className="header-agent-actions" ref={agentActionsHostRef} />
         <button className="header-icon-btn" onClick={toggleTheme} title={t('appearance.toggleTheme')}>
           {resolvedTheme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
         </button>

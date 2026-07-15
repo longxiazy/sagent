@@ -6,7 +6,3 @@ export const APP_SURFACE_COLOR = '#ffffff';
 // 暗色对应值，需与 App.css 中 :root[data-theme="dark"] 的 --c-bg / --c-surface 保持一致。
 export const APP_BG_COLOR_DARK = '#14141b';
 export const APP_SURFACE_COLOR_DARK = '#1e1e29';
-
-export const PANEL_MIN = 280;
-export const PANEL_MAX_RATIO = 0.7;
-export const PANEL_SIZE_KEY = 'agent_panel_width';

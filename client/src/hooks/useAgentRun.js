@@ -11,7 +11,6 @@ export function useAgentRun() {
   const [agentCollapsed, setAgentCollapsed] = useState(false);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   const [rollbackLoading, setRollbackLoading] = useState(false);
-  const [agentMobileTab, setAgentMobileTab] = useState('agent');
   const [pendingQuestion, setPendingQuestion] = useState(null);
   const [agentStartedAt, setAgentStartedAt] = useState(null);
 
@@ -19,7 +18,6 @@ export function useAgentRun() {
   const agentAbortRef = useRef(null);
   const approvalRequestRef = useRef(null);
   const questionRequestRef = useRef(null);
-  const touchStartRef = useRef(null);
   const reconnectTaskRef = useRef(null);
   const lastAgentTaskRef = useRef(null);
 
@@ -44,8 +42,6 @@ export function useAgentRun() {
     setShowMemoryPanel,
     rollbackLoading,
     setRollbackLoading,
-    agentMobileTab,
-    setAgentMobileTab,
     pendingQuestion,
     setPendingQuestion,
     agentStartedAt,
@@ -54,7 +50,6 @@ export function useAgentRun() {
     agentAbortRef,
     approvalRequestRef,
     questionRequestRef,
-    touchStartRef,
     reconnectTaskRef,
     lastAgentTaskRef,
   };

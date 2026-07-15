@@ -3,11 +3,9 @@ import { Menu, Settings } from 'lucide-react';
 import './App.css';
 import { fetchAgentTrace } from './api/streams.js';
 import { ensureServiceWorker, notificationPermission, notificationsSupported, requestNotificationPermission } from './notifications.js';
-import { AgentPane } from './components/AgentPane.jsx';
-import { ChatPane } from './components/ChatPane.jsx';
+import { AgentWorkspacePane } from './components/AgentWorkspacePane.jsx';
 import { SessionSidebar } from './components/SessionSidebar.jsx';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
-import { ResizeDivider } from './components/ResizeDivider.jsx';
 import { MessageContent } from './components/MessageContent.jsx';
 import { CopyButton } from './components/CopyButton.jsx';
 import { ResetDialog } from './components/dialogs/ResetDialog.jsx';
@@ -46,7 +44,6 @@ import {
   DOCKED_LAYOUT_BREAKPOINT,
   APP_BG_COLOR,
   APP_SURFACE_COLOR,
-  PANEL_SIZE_KEY,
 } from './utils/constants.js';
 import { formatMsgTime } from './utils/format.js';
 import { shuffled } from './utils/random.js';
@@ -155,8 +152,6 @@ export default function App() {
     setShowMemoryPanel,
     rollbackLoading,
     setRollbackLoading,
-    agentMobileTab,
-    setAgentMobileTab,
     pendingQuestion,
     setPendingQuestion,
     agentStartedAt,
@@ -165,7 +160,6 @@ export default function App() {
     agentAbortRef,
     approvalRequestRef,
     questionRequestRef,
-    touchStartRef,
     reconnectTaskRef,
     lastAgentTaskRef,
   } = useAgentRun();
@@ -173,10 +167,10 @@ export default function App() {
   const [showReset, setShowReset] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showPromptPreview, setShowPromptPreview] = useState(false);
+  const [agentActionsHost, setAgentActionsHost] = useState(null);
   const [sidebarPinned, setSidebarPinned] = usePersistentState('session_sidebar_pinned', false, booleanStorage);
   const { showSessions, setShowSessions } = useResponsiveLayout({
     dockedBreakpoint: DOCKED_LAYOUT_BREAKPOINT,
-    panelSizeKey: PANEL_SIZE_KEY,
     sidebarPinned,
   });
 
@@ -284,7 +278,7 @@ export default function App() {
   // 同步 <meta name="theme-color"> 是为了让浏览器地址栏颜色也跟着切换。
   const { resolvedTheme } = useTheme();
   const t = useT();
-  useThemeColorSync({ mode, agentMobileTab, showSessions, resolvedTheme });
+  useThemeColorSync({ showSessions, resolvedTheme });
 
   // 页面刷新后，如果后端还有运行中的 agent，这里会尝试“接回去”：
   // 1. 先查 /api/agent/active
@@ -823,7 +817,6 @@ export default function App() {
     setPendingQuestion,
     setReconnectedRun,
     setRollbackLoading,
-    setAgentMobileTab,
     setAgentRunId,
     setApprovalSubmitting,
     updateSession,
@@ -1097,20 +1090,17 @@ export default function App() {
             sessionLocked={sessionLocked}
             messagesLength={messages.length}
             modelSelect={modelSelect}
+            agentActionsHostRef={setAgentActionsHost}
             onToggleSessions={() => sidebarPinned ? setSidebarPinned(false) : setShowSessions(v => !v)}
             onCreateSession={handleCreateSession}
             onReset={() => setShowReset(true)}
             onOpenSettings={() => setShowSettings(true)}
           />
 
-          <div className="layout-body agent-layout">
-            <AgentPane
-              agentMobileTab={agentMobileTab}
-              setAgentMobileTab={setAgentMobileTab}
-              agentRunning={agentRunning}
-              agentTrace={agentTrace}
-              touchStartRef={touchStartRef}
-              agentPanel={(
+          <div className="layout-body">
+            <AgentWorkspacePane
+              messages={messages}
+              agentPanel={(agentRunning || agentTrace.length > 0 || activeAgentMeta) ? (
                 <AgentPanel
                   running={agentRunning}
                   trace={agentTrace}
@@ -1126,15 +1116,9 @@ export default function App() {
                   pendingApproval={pendingApproval}
                   onRollback={handleRollback}
                   rollbackLoading={rollbackLoading}
+                  headerActionsHost={agentActionsHost}
                 />
-              )}
-              resizeDivider={<ResizeDivider side="agent" />}
-            />
-
-          {messages.length > 0 && (
-            <ChatPane
-              hidden={agentMobileTab === 'agent'}
-              messages={messages}
+              ) : null}
               streaming={false}
               bottomRef={bottomRef}
               textareaRef={textareaRef}
@@ -1147,16 +1131,12 @@ export default function App() {
               attachButton={attachButton}
               attachmentBar={attachmentBar}
               contextMeter={contextMeter}
-              touchStartRef={touchStartRef}
-              agentMobileTab={agentMobileTab}
-              setAgentMobileTab={setAgentMobileTab}
               renderMessageContent={props => <MessageContent {...props} />}
               renderCopyButton={props => <CopyButton {...props} />}
               hasThinkContent={hasThinkContent}
               getModelLabel={modelId => availableModels.find(item => item.id === modelId)?.label || modelId}
               formatMsgTime={formatMsgTime}
             />
-          )}
 
           </div>
 

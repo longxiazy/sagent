@@ -31,6 +31,7 @@ export function createAgentRunSession({
   sessionId,
   projectId,
   runId,
+  attempt,
   startedAt,
   agentRunStore,
   memoryDir,
@@ -45,6 +46,7 @@ export function createAgentRunSession({
   sessionId: string | null;
   projectId: string | null;
   runId: string;
+  attempt: number;
   startedAt: number;
   agentRunStore: AgentRunStore;
   memoryDir?: string;
@@ -82,23 +84,24 @@ export function createAgentRunSession({
   const rawSendEvent = buildSseWriter(res);
   const baseSendEvent = createBaseEventSender(runId, agentRunStore, memoryDir);
   const sendEvent = (payload: AgentEvent) => {
-    if (payload.type === 'step') {
-      observedStepCount = Math.max(observedStepCount, payload.step || 0);
-      if (payload.stage === 'result') {
-        completedStepCount = Math.max(completedStepCount, payload.step || 0);
+    const attemptPayload = { ...payload, attempt } as AgentEvent;
+    if (attemptPayload.type === 'step') {
+      observedStepCount = Math.max(observedStepCount, attemptPayload.step || 0);
+      if (attemptPayload.stage === 'result') {
+        completedStepCount = Math.max(completedStepCount, attemptPayload.step || 0);
       }
     }
-    if (payload.type === 'model_plan' && payload.stage === 'winner' && payload.step) {
-      stepModels[payload.step] = payload.model;
-      if (payload.model) {
-        modelUsageCounts.set(payload.model, (modelUsageCounts.get(payload.model) || 0) + 1);
+    if (attemptPayload.type === 'model_plan' && attemptPayload.stage === 'winner' && attemptPayload.step) {
+      stepModels[attemptPayload.step] = attemptPayload.model;
+      if (attemptPayload.model) {
+        modelUsageCounts.set(attemptPayload.model, (modelUsageCounts.get(attemptPayload.model) || 0) + 1);
       }
     }
-    if (payload.type === 'model_plan' && payload.model && ['winner', 'success', 'thinking'].includes(payload.stage)) {
-      modelsUsed.add(payload.model);
+    if (attemptPayload.type === 'model_plan' && attemptPayload.model && ['winner', 'success', 'thinking'].includes(attemptPayload.stage)) {
+      modelsUsed.add(attemptPayload.model);
     }
-    logAgentEvent(payload);
-    const event = baseSendEvent(payload);
+    logAgentEvent(attemptPayload);
+    const event = baseSendEvent(attemptPayload);
     if (!sseClosed && !res.writableEnded) {
       try { rawSendEvent(event); } catch { sseClosed = true; }
     }

@@ -51,32 +51,33 @@ export function ModelPlanCard({ event, isWinner, modelList, step, onRollback, ro
           )}
         </div>
 
-        {/* 决策理由：直接显示，截断可展开（与单模型一致） */}
-        {event.rationale && (
-          <>
-            <p className={`model-card-rationale ${effRationale ? '' : 'clamp-2'}`}>{event.rationale}</p>
-            {event.rationale.length > CLAMP_THRESHOLD && (
-              <button className="step-card-toggle" onClick={toggle(setShowRationale)}>
-                {effRationale ? t('agentPanel.showLess') : t('agentPanel.showMore')}
+        <div className="step-thinking-section">
+          {/* 深度思考和决策理由统一放在工具调用之前。 */}
+          {event.reasoning && (
+            <div className="model-card-reasoning">
+              <button className="model-card-reasoning-toggle" onClick={toggle(setShowReasoning)}>
+                <span className="model-card-reasoning-badge">THINKING</span>
+                <span>{t('modelCard.reasoning')}</span>
+                {effReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
               </button>
-            )}
-          </>
-        )}
+              {effReasoning && <pre className="model-card-reasoning-text">{event.reasoning}</pre>}
+            </div>
+          )}
+
+          {event.rationale && (
+            <>
+              <p className={`model-card-rationale ${effRationale ? '' : 'clamp-2'}`}>{event.rationale}</p>
+              {event.rationale.length > CLAMP_THRESHOLD && (
+                <button className="step-card-toggle" onClick={toggle(setShowRationale)}>
+                  {effRationale ? t('agentPanel.showLess') : t('agentPanel.showMore')}
+                </button>
+              )}
+            </>
+          )}
+        </div>
 
         {/* 工具请求：与单模型一致，直接展示工具和请求内容。 */}
         <ActionDetails action={event.action} jsonOpen={effJson} onToggleJson={toggle(setShowJson)} t={t} />
-
-        {/* 深度思考（reasoning_content）：次要，小开关折叠 */}
-        {event.reasoning && (
-          <div className="model-card-reasoning">
-            <button className="model-card-reasoning-toggle" onClick={toggle(setShowReasoning)}>
-              <span className="model-card-reasoning-badge">THINKING</span>
-              <span>{t('modelCard.reasoning')}</span>
-              {effReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-            </button>
-            {effReasoning && <pre className="model-card-reasoning-text">{event.reasoning}</pre>}
-          </div>
-        )}
       </div>
     );
   }

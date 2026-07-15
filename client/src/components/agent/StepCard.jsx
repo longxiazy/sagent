@@ -82,35 +82,37 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
           </button>
         </div>
 
-        {/* observe 概要（与多模型卡组共用同一组件，口径一致） */}
-        <ObserveSummary observation={observation} openLightbox={openLightbox} t={t} />
-
-        {/* 决策理由：截断，超长可展开 */}
-        {rationale && (
-          <>
-            <p className={effRationale ? '' : 'clamp-2'}>{rationale}</p>
-            {rationale.length > CLAMP_THRESHOLD && (
-              <button className="step-card-toggle" onClick={toggle(setRationaleOpen)}>
-                {effRationale ? t('agentPanel.showLess') : t('agentPanel.showMore')}
+        <div className="step-thinking-section">
+          {reasoning && (
+            <div className="model-card-reasoning">
+              <button className="model-card-reasoning-toggle" onClick={toggle(setReasoningOpen)}>
+                <span className="model-card-reasoning-badge">THINKING</span>
+                <span>{t('modelCard.reasoning')}</span>
+                {effReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
               </button>
-            )}
-          </>
-        )}
+              {effReasoning && <pre className="model-card-reasoning-text">{reasoning}</pre>}
+            </div>
+          )}
+
+          {/* 决策理由属于 thinking 阶段，固定放在工具调用之前。 */}
+          {rationale && (
+            <>
+              <p className={effRationale ? '' : 'clamp-2'}>{rationale}</p>
+              {rationale.length > CLAMP_THRESHOLD && (
+                <button className="step-card-toggle" onClick={toggle(setRationaleOpen)}>
+                  {effRationale ? t('agentPanel.showLess') : t('agentPanel.showMore')}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* 观察上下文放在 thinking 与工具调用之间。 */}
+        <ObserveSummary observation={observation} openLightbox={openLightbox} t={t} />
 
         {/* 工具请求：固定拆出工具、请求内容；完整 JSON 仍可展开。 */}
         {action && (
           <ActionDetails action={action} jsonOpen={effJson} onToggleJson={toggle(setJsonOpen)} t={t} />
-        )}
-
-        {reasoning && (
-          <div className="model-card-reasoning">
-            <button className="model-card-reasoning-toggle" onClick={toggle(setReasoningOpen)}>
-              <span className="model-card-reasoning-badge">THINKING</span>
-              <span>{t('modelCard.reasoning')}</span>
-              {effReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-            </button>
-            {effReasoning && <pre className="model-card-reasoning-text">{reasoning}</pre>}
-          </div>
         )}
 
         <TerminalProcess events={terminalEvents} running={active && !result} t={t} />
