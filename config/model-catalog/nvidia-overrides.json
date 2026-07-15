@@ -3,12 +3,19 @@
     "note": "Locally verified NVIDIA model capability overrides. Keep separate from the generated catalog."
   },
   "models": {
+    "nvidia/cosmos-reason2-8b": {
+      "agentCompatible": false,
+      "supportedGenerationMethods": []
+    },
     "google/gemma-2-2b-it": {
       "agentCompatible": false,
       "supportedMessageRoles": [
         "user",
         "assistant"
       ]
+    },
+    "upstage/solar-10.7b-instruct": {
+      "agentCompatible": false
     }
   }
 }

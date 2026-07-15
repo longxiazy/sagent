@@ -83,6 +83,8 @@ export function AgentWorkspacePane({
           );
         })}
         <div ref={bottomRef} />
+      </div>
+      <div className="agent-workspace-composer">
         <div className="input-area">
           <AgentComposer
             variant="dock"

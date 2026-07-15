@@ -35,15 +35,23 @@ const ENCYCLOPEDIA_FIELD_DEFS = [
   { key: 'contextWindow', getValue: model => model?.contextWindow || model?.context_length || model?.inputTokenLimit, token: true },
 ];
 
-function formatTokenLimit(value) {
+export function formatTokenLimit(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
   if (n >= 1_000_000) {
-    const m = n / 1_000_000;
+    const m = n % 1_000_000 === 0
+      ? n / 1_000_000
+      : n % 1_048_576 === 0
+        ? n / 1_048_576
+        : n / 1_000_000;
     return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
   }
   if (n >= 1_000) {
-    const k = n / 1_000;
+    const k = n % 1_000 === 0
+      ? n / 1_000
+      : n % 1_024 === 0
+        ? n / 1_024
+        : n / 1_000;
     return `${Number.isInteger(k) ? k : k.toFixed(0)}K`;
   }
   return String(n);
@@ -468,6 +476,7 @@ function ModelPickerDropdown({
     const isFavorite = favoriteModelIds.includes(item.id);
     const orderIdx = selectedModelIds.indexOf(item.id);
     const secondary = item.description || (item.label && item.label !== item.id ? item.id : '');
+    const contextLabel = formatTokenLimit(item?.contextWindow || item?.context_length || item?.inputTokenLimit);
     return (
       <span key={item.id} className={`model-option-wrapper ${isSelected ? 'selected' : ''}`}>
         <button
@@ -480,7 +489,13 @@ function ModelPickerDropdown({
             {isSelected && <Check size={14} />}
           </span>
           <span className="model-option-text">
-            <span className="model-option-name">{item.label || item.id}</span>
+            <span className="model-option-title-row">
+              <span className="model-option-name">{item.label || item.id}</span>
+              <span
+                className={`model-option-context ${contextLabel ? '' : 'unknown'}`}
+                title={`${t('modelSelector.filterContext')}: ${contextLabel || t('modelSelector.contextUnknown')}`}
+              >CTX {contextLabel || '—'}</span>
+            </span>
             {secondary && <span className="model-option-description">{secondary}</span>}
             <span className="model-option-provider">{providerOf(item)}</span>
           </span>

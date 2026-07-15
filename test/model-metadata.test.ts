@@ -78,6 +78,11 @@ describe('model metadata', () => {
       label: 'llama-3.1-70b-instruct',
       publisher: 'meta',
     });
+    expect(getNvidiaCatalogModelMetadata('upstage/solar-10.7b-instruct')).toMatchObject({
+      label: 'solar-10.7b-instruct',
+      contextWindow: 4_096,
+      agentCompatible: false,
+    });
     expect(hasNvidiaCatalogModel('meta/llama-3.1-70b-instruct')).toBe(true);
     expect(hasNvidiaCatalogModel('moonshotai/kimi-k2.6')).toBe(false);
   });
@@ -88,6 +93,13 @@ describe('model metadata', () => {
       supportedMessageRoles: ['user', 'assistant'],
     });
     expect(getNvidiaCatalogModelMetadata('deepseek-ai/deepseek-v4-pro')).not.toHaveProperty('supportedMessageRoles');
+  });
+
+  it('removes unavailable hosted generation methods from locally verified NVIDIA models', () => {
+    expect(getNvidiaCatalogModelMetadata('nvidia/cosmos-reason2-8b')).toMatchObject({
+      agentCompatible: false,
+      supportedGenerationMethods: [],
+    });
   });
 
   it('loads Gemini free-tier and Agent compatibility overrides', () => {
