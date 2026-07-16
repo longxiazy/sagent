@@ -118,6 +118,29 @@ describe('agent prompts', () => {
     expect(systemPrompt).toContain('scroll(direction,amount?)');
   });
 
+  it('builds a finish-only finalization prompt after tool steps are exhausted', () => {
+    const context = {
+      task: '总结医保官网信息',
+      step: 9,
+      history: [{
+        step: 8,
+        action: { tool: 'browser', type: 'get_page_content' },
+        result: '官方页面日期：2025-01-14，在职报销60%，退休报销80%。',
+      }],
+      observation: { skipped: true },
+      finalOnly: true,
+    };
+    const nvidia = buildNvidiaTaskMessages(context);
+    const gemini = buildGeminiAgentPromptPayload(context);
+    const geminiToolNames = gemini.tools[0].functionDeclarations.map(tool => tool.name);
+
+    expect(nvidia[0].content).toContain('最终总结器');
+    expect(nvidia[0].content).toContain('"tool":"core","type":"finish"');
+    expect(nvidia[0].content).not.toContain('http_fetch(');
+    expect(gemini.systemInstruction).toContain('只能调用 finish');
+    expect(geminiToolNames).toEqual(['finish']);
+  });
+
   it('adds a recent search hint for repeated or failed web_search queries', () => {
     const { contents } = buildGeminiTaskMessages({
       task: '白天的a股呢',
@@ -235,6 +258,8 @@ describe('agent prompts', () => {
     expect(countExamples(casual)).toBe(2);
     expect(countExamples(web)).toBe(3);
     expect(countExamples(code)).toBe(5);
+    expect(web).toContain('{"tool":"browser","type":"http_fetch"');
+    expect(web).not.toContain('{"tool":"browser","type":"navigate","url":"https://example.com"}');
     expect(web).toContain('http_fetch(url,extractLinks?)');
     expect(code).toContain('write_file(path,content,append?)');
     expect(code).toContain('run_confirmed(command)');

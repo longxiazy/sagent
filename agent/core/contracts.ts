@@ -268,6 +268,7 @@ export interface RuntimeStepContext {
 export interface RuntimeDecisionContext extends RuntimeStepContext {
   observation: AgentObservation;
   state: AgentRuntimeState;
+  finalOnly?: boolean;
 }
 
 export interface RunAgentRuntimeOptions {

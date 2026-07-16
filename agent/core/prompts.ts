@@ -88,7 +88,7 @@ export function buildNvidiaActionExampleLines(options: PromptToolOptions = {}) {
 
 const TOOL_SIGNATURE_GROUP_ORDER = ['browser', 'fs', 'terminal', 'search', 'vision', 'codegraph', 'chrome', 'mcp', 'core'];
 const REPRESENTATIVE_ACTION_BY_TOOL: Record<string, string> = {
-  browser: 'navigate',
+  browser: 'http_fetch',
   fs: 'read_file',
   terminal: 'run_safe',
   search: 'web_search',
@@ -402,8 +402,8 @@ function buildSharedAgentRuleLines(
     '- 不要重复已成功或无新目的的动作。同一目标连续约 5 步仍无实质进展时停止尝试，finish 汇总已知信息并说明限制。',
     '- 不得编造工具结果。',
     ...(approvalToolsEnabled ? ['- 文件写入和终端确认命令可能需要审批；cd/pushd/popd 使用 run_review。被拒绝后改用安全替代方案。'] : []),
-    ...(browserEnabled ? ['- browser.click/type 只能使用 observation.browser.elements 中存在的 elementId；不要 navigate 到搜索引擎结果页。'] : []),
-    ...(webDetails ? ['- 网络任务中，web_search 只用于发现来源，不得仅凭标题或摘要回答需核验的问题。选择最相关的 1～3 个官方、原始或权威 URL，逐个 http_fetch 正文，只提取与问题直接相关的事实、数字、时间和条件，并保留来源对应关系。正文无明确答案时说明未找到，不得用常识补全；来源冲突时分别列出。'] : []),
+    ...(browserEnabled ? ['- browser.click/type 只能使用 observation.browser.elements 中存在的 elementId；不要 navigate 到搜索引擎结果页。scroll 返回内容未变化后，不得继续滚动，改用 get_page_content、http_fetch 或 finish。'] : []),
+    ...(webDetails ? ['- 网络任务中，web_search 只用于发现来源；拿到候选 URL 后优先用 http_fetch 提取正文，不要先 navigate。不得仅凭标题或摘要回答需核验的问题。选择最相关的 1～3 个官方、原始或权威 URL，逐个核验正文，只提取与问题直接相关的事实、数字、时间和条件，并保留来源对应关系。正文无明确答案时说明未找到，不得用常识补全；来源冲突时分别列出。'] : []),
     ...(visionEnabled ? ['- 图片任务必须使用 image_analyze，不得凭文件名猜测。附件图片使用 @attachment/N（按出现顺序从 1 开始），不得复制或改写 @uploads 路径。简单识图得到结果后立即 finish；同一图片最多连续分析 2 次，证据不足时区分可见事实与低置信猜测。'] : []),
     ...(webDetails ? ['- 酒店、机票、电商等实时价格优先用 web_search 获取区间；拿不到精确数字时给出查询入口并说明未取得实时精确价。'] : []),
     '- 重要发现可用 notify_user。finish 的 answer 使用简体中文，简洁直接。',
@@ -426,7 +426,7 @@ function buildCompactAgentRuleLines(
     '规则：',
     '- task 是本轮唯一目标；已有信息足够则立即 finish，缺少关键选择时才 ask_user。',
     '- 只选择完成目标所需的最少动作，不得编造工具结果或重复无进展的动作。',
-    ...(hasAnyTool(toolNames, ['click']) ? ['- click 只能使用 observation.browser.elements 中存在的 elementId。'] : []),
+    ...(hasAnyTool(toolNames, ['click']) ? ['- click 只能使用 observation.browser.elements 中存在的 elementId；scroll 返回内容未变化后改用 get_page_content、http_fetch 或 finish。'] : []),
     ...(webDetails && toolNames.has('web_search') && toolNames.has('http_fetch') ? ['- web_search 只用于发现来源；需要事实核验时必须 http_fetch 权威正文，不得仅凭摘要回答。'] : []),
     ...(toolNames.has('image_analyze') ? ['- 附件图片使用 @attachment/N，不得复制或改写 @uploads 路径。'] : []),
     '- currentDateTime 是当前日期时间；涉及相对时间时以它为准，不得猜测年份。finish.answer 使用简体中文，简洁直接。',
@@ -483,12 +483,21 @@ export function buildGeminiTaskMessages({
 
 export function buildGeminiAgentPromptPayload(context: any) {
   const capabilityContext = { ...context, includeInactiveCapabilityHints: false };
-  const includeToolNames = selectGeminiToolNames(context);
-  const systemInstruction = buildDesktopAgentSystemPrompt(
-    context.systemPrompt || '',
-    capabilityContext,
-    includeToolNames,
-  );
+  const includeToolNames = context.finalOnly
+    ? new Set(['finish'])
+    : selectGeminiToolNames(context);
+  const systemInstruction = context.finalOnly
+    ? [
+        '你是 DesktopAgent 的最终总结器。工具执行步数已经耗尽。',
+        '只能调用 finish，根据 task 和 history 中已经取得的结果给出最终答案。不得调用其他工具，不得忽略已成功获取的信息。',
+        'finish.answer 使用简体中文，明确区分已核验事实、失败步骤和仍缺失的信息。',
+        context.systemPrompt ? `附加约束：${context.systemPrompt}` : '',
+      ].filter(Boolean).join('\n')
+    : buildDesktopAgentSystemPrompt(
+        context.systemPrompt || '',
+        capabilityContext,
+        includeToolNames,
+      );
   const { contents } = buildGeminiTaskMessages(context);
   const tools = [{
     functionDeclarations: createModelTools({
@@ -513,6 +522,7 @@ export function buildNvidiaTaskMessages({
   observation,
   conversationHistory,
   compact = false,
+  finalOnly = false,
 }: {
   task: string;
   systemPrompt?: string | null;
@@ -521,6 +531,7 @@ export function buildNvidiaTaskMessages({
   observation: any;
   conversationHistory?: Array<{ role: string; content: string }>;
   compact?: boolean;
+  finalOnly?: boolean;
 }) {
   const capabilityContext = { task, history, observation, conversationHistory, includeInactiveCapabilityHints: false };
   const chromeEnabled = isChromeMcpAvailable();
@@ -540,6 +551,26 @@ export function buildNvidiaTaskMessages({
   const promptHistory = compactAgentHistory(history, undefined, undefined, task);
   const selectedToolNames = selectGeminiToolNames(capabilityContext);
   const currentDateTime = buildCurrentDateTimeContext();
+
+  if (finalOnly) {
+    return [
+      {
+        role: 'system',
+        content: [
+          '你是 DesktopAgent 的最终总结器。工具执行步数已经耗尽。',
+          '只能输出一个合法 JSON 对象，不要输出其他文字。',
+          '必须根据 task 和 history 中已经取得的结果完成回答，不得调用其他工具，不得忽略已成功获取的信息。',
+          '固定格式：{"rationale":"总结已有结果","action":{"tool":"core","type":"finish","answer":"最终答案"}}。',
+          'answer 使用简体中文，明确区分已核验事实、失败步骤和仍缺失的信息。',
+          systemPrompt ? `附加约束：${systemPrompt}` : '',
+        ].filter(Boolean).join('\n'),
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({ task, currentDateTime, step, history: promptHistory, observation }),
+      },
+    ];
+  }
 
   if (compact) {
     const compactToolNames = [...selectedToolNames].filter(name => COMPACT_TOOL_NAMES.has(name));

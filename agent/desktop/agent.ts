@@ -255,7 +255,7 @@ export function createDesktopAgentRunner({
         dataDir,
       }),
       observe: state => serializeBrowserOperation(() => observeDesktopAgent(state)),
-      decide: async ({ task: currentTask, step, history, observation }) =>
+      decide: async ({ task: currentTask, step, history, observation, finalOnly }) =>
         plan({
           model,
           agentModels,
@@ -267,6 +267,7 @@ export function createDesktopAgentRunner({
           step,
           history,
           observation,
+          finalOnly,
           conversationHistory,
         }),
       authorize,

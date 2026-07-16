@@ -316,6 +316,68 @@ describe('runtime: session checkpoint integration', () => {
     expect(evtLog.some(e => e.type === 'notification' && e.level === 'warning')).toBe(true);
   });
 
+  it('replaces repeated no-progress scrolling with page-content extraction', async () => {
+    const cancelSignal = new AbortController().signal;
+    const { log: evtLog, onEvent } = events();
+    const executedTypes: string[] = [];
+    const decide = vi.fn()
+      .mockReturnValueOnce(decision({ tool: 'browser', type: 'scroll', direction: 'down', amount: 10 }, 'scroll'))
+      .mockReturnValueOnce(decision({ tool: 'browser', type: 'scroll', direction: 'down', amount: 10 }, 'scroll'))
+      .mockReturnValueOnce(decision({ tool: 'browser', type: 'scroll', direction: 'down', amount: 10 }, 'scroll'))
+      .mockReturnValueOnce(decision({ tool: 'core', type: 'finish', answer: '已提取页面内容' }, 'finish'));
+
+    const result = await runAgentRuntime({
+      task: '读取页面',
+      maxSteps: 4,
+      onEvent,
+      cancelSignal,
+      initialize,
+      observe,
+      decide,
+      authorize: approve,
+      execute: (_state, action) => {
+        executedTypes.push(action.type);
+        return action.type === 'get_page_content'
+          ? '页面完整正文'
+          : '已滚动，但页面内容未变化';
+      },
+      cleanup: noop,
+    });
+
+    expect(executedTypes).toEqual(['scroll', 'scroll', 'get_page_content', 'finish']);
+    expect(result.answer).toContain('已提取页面内容');
+    expect(evtLog.some(e => e.type === 'notification' && String(e.message).includes('自动改用 get_page_content'))).toBe(true);
+  });
+
+  it('requests a finish-only summary after the last tool step', async () => {
+    const cancelSignal = new AbortController().signal;
+    const decide = vi.fn((context: any) => context.finalOnly
+      ? decision({ tool: 'core', type: 'finish', answer: '根据官网正文：在职60%，退休80%。' }, 'summarize')
+      : decision({ tool: 'browser', type: 'get_page_content' }, 'fetch content'));
+    let executeCalls = 0;
+
+    const result = await runAgentRuntime({
+      task: '总结医保信息',
+      maxSteps: 1,
+      cancelSignal,
+      initialize,
+      observe,
+      decide,
+      authorize: approve,
+      execute: () => {
+        executeCalls += 1;
+        return '北京市医保局正文：在职60%，退休80%。';
+      },
+      cleanup: noop,
+    });
+
+    expect(executeCalls).toBe(1);
+    expect(decide).toHaveBeenCalledTimes(2);
+    expect(decide.mock.calls[1][0]).toEqual(expect.objectContaining({ finalOnly: true, step: 2 }));
+    expect(result.answer).toContain('根据官网正文：在职60%，退休80%。');
+    expect(result.answer).not.toContain('已达到最大执行步数');
+  });
+
   it('saves snapshots at interval steps', async () => {
     const runId = 'run_rt2';
     const runRecord = { runId, pendingRollback: null };
