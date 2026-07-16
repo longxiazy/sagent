@@ -171,11 +171,11 @@ export function createModelTools({
     },
     {
       name: 'image_analyze',
-      description: '让多模态模型分析一张图片并回答问题。用于解读浏览器/桌面截图、查看报错图、识别图表或界面布局。image 可以是本地文件路径或 http(s) URL，question 用简体中文描述需要从图里得到的信息。识别具体来源/游戏/人物/品牌时要区分可见事实与低置信猜测；证据不足就明确说无法仅凭图片确认，不要编造 UI、文字、角色名、怪物、道具或数值。',
+      description: '让多模态模型分析一张图片并回答问题。用于解读浏览器/桌面截图、查看报错图、识别图表或界面布局。任务含附件时，image 应使用 @attachment/N（按图片出现顺序从 1 开始），由 runtime 绑定真实路径，不要复制或改写 @uploads 路径；其它图片可使用项目内相对路径、data URL 或 http(s) URL。question 用简体中文描述需要从图里得到的信息。识别具体来源/游戏/人物/品牌时要区分可见事实与低置信猜测；证据不足就明确说无法仅凭图片确认，不要编造 UI、文字、角色名、怪物、道具或数值。',
       input_schema: {
         type: 'object',
         properties: {
-          image: { type: 'string', description: '图片来源：本地文件绝对路径（如 /tmp/xxx.png）或 http(s) URL' },
+          image: { type: 'string', description: '图片来源：任务附件必须使用 @attachment/N；非附件图片可使用项目内相对路径、data URL 或 http(s) URL' },
           question: { type: 'string', description: '希望模型回答的问题（简体中文，越具体越好）' },
         },
         required: ['image', 'question'],

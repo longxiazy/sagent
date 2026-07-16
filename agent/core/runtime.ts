@@ -69,6 +69,52 @@ export function isTaskEchoFinish(task: string, action: AgentAction | undefined) 
   return normalizedTask.length > 0 && normalizedTask === normalizedAnswer;
 }
 
+const ATTACHMENT_REFERENCE_RE = /^@attachment\/(\d+)$/i;
+
+/**
+ * 从前端生成的附件任务块中提取图片附件路径。
+ * 路径由上传接口生成，runtime 保存它作为可信来源；模型只需要引用附件序号，
+ * 不再负责逐字复制 @uploads/... 路径。
+ */
+export function extractTaskImageAttachmentPaths(task: string) {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+
+  for (const line of String(task || '').split(/\r?\n/)) {
+    const pathStart = line.indexOf('@uploads/');
+    const toolMarker = line.lastIndexOf('image_analyze');
+    if (pathStart < 0 || toolMarker < pathStart) continue;
+
+    // 附件行的工具提示放在路径后的括号中。用 image_analyze 前最后一个左括号
+    // 定位提示起点，避免文件名自身包含空格或括号时被提前截断。
+    const suffixStart = line.lastIndexOf('(', toolMarker);
+    const pathEnd = suffixStart > pathStart ? suffixStart : line.length;
+    const attachmentPath = line.slice(pathStart, pathEnd).trim();
+    if (!attachmentPath || seen.has(attachmentPath)) continue;
+    seen.add(attachmentPath);
+    paths.push(attachmentPath);
+  }
+
+  return paths;
+}
+
+export function bindVisionActionToTaskAttachment(task: string, action: AgentAction) {
+  if (action?.tool !== 'vision' || action.type !== 'image_analyze') return action;
+
+  const attachments = extractTaskImageAttachmentPaths(task);
+  if (attachments.length === 0) return action;
+
+  const requested = String(action.image || '').trim();
+  const referenceMatch = requested.match(ATTACHMENT_REFERENCE_RE);
+  if (!referenceMatch) return action;
+
+  const attachmentIndex = Number(referenceMatch[1]) - 1;
+  const boundPath = attachments[attachmentIndex];
+
+  if (!boundPath || boundPath === action.image) return action;
+  return { ...action, image: boundPath };
+}
+
 function compressHistory(history: AgentStep[], task: string, maxSteps?: number) {
   // 历史截断预算每次从运行时配置读取，前台改完无需重启即生效
   const { maxHistorySteps, maxResultChars: MAX_RESULT_CHARS } = configStore.get();
@@ -380,6 +426,11 @@ export async function runAgentRuntime({
         observation,
         state,
       });
+      const modelAction = decision.action;
+      decision.action = bindVisionActionToTaskAttachment(task, modelAction);
+      if (decision.action !== modelAction && decision.action.tool === 'vision') {
+        log.info(`[Runtime] 已将 image_analyze 路径绑定到任务附件: ${decision.action.image}`);
+      }
       if (decision?.model && typeof decision.model === 'string') {
         state.model = decision.model;
       }
