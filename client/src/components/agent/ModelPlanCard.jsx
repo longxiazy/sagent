@@ -1,34 +1,32 @@
 import { useState } from 'react';
-import { RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { getModelLabel, PLAN_STAGE_LABELS, PLAN_STAGE_ICON } from './plan-stage.js';
 import { summarizeAction } from './action-summary.js';
-import { ToolIcon } from './tool-icon.jsx';
 import { useT } from '../../i18n/I18nProvider.jsx';
 import { ActionDetails } from './ActionDetails.jsx';
 import { PromptRequestDetails } from './PromptRequestDetails.jsx';
+import { ResultSummary } from './ResultSummary.jsx';
+import { TerminalProcess } from './TerminalProcess.jsx';
+import { McpProcess } from './McpProcess.jsx';
 
 // 单个模型在某一步的「决策行」。扁平结构（无整卡展开/折叠、无复制按钮、无左色条），
 // 与单模型 StepCard 行同构：winner 行直接带 step 号(前) + 回滚(尾)，理由直接显示，
 // 动作 JSON 用始终可见的同款 chip 点开。thinking / failed 等过渡态仍以「模型名 + 状态」呈现。
 
-const CLAMP_THRESHOLD = 80; // 理由超过该长度才显示「展开/收起」
-
-export function ModelPlanCard({ event, previousRequest, isWinner, modelList, step, onRollback, rollbackLoading, forceExpanded, onManualToggle }) {
+export function ModelPlanCard({ event, previousRequest, isWinner, modelList, step, onRollback, rollbackLoading, forceExpanded, onManualToggle, result = null, resultStatus = null, terminalEvents = [], mcpEvents = [], openLightbox }) {
   const t = useT();
   const label = getModelLabel(event.model, modelList);
   const stage = event.stage;
   const [showJson, setShowJson] = useState(false);
-  const [showRationale, setShowRationale] = useState(false);
-  const [showReasoning, setShowReasoning] = useState(false);
   // 各处展开态受面板「全部展开/折叠」接管（forceExpanded 非 null 时），否则用本地态。
   const effJson = forceExpanded != null ? forceExpanded : showJson;
-  const effRationale = forceExpanded != null ? forceExpanded : showRationale;
-  const effReasoning = forceExpanded === true ? true : showReasoning;
 
   if (stage === 'start') return null;
 
   // 有动作的稳定态（winner/success/cancelled）让动作当主角，与单模型 StepCard 行同构。
   const showActionPrimary = !!event.action && (stage === 'winner' || stage === 'success' || stage === 'cancelled');
+  const actionSummary = summarizeAction(event.action, event.rationale);
+  const response = event.response ?? { rationale: event.rationale, action: event.action };
   const tokens = event.usage ? (event.usage.prompt_tokens || 0) + (event.usage.completion_tokens || 0) : 0;
   // 翻转本地展开态；受面板「全部展开/折叠」接管时先解除接管再翻转。
   const toggle = setter => e => { e.stopPropagation(); if (forceExpanded != null) onManualToggle?.(); setter(v => !v); };
@@ -37,10 +35,10 @@ export function ModelPlanCard({ event, previousRequest, isWinner, modelList, ste
   if (showActionPrimary) {
     return (
       <div className={`model-card ${stage}${isWinner ? ' winner' : ''}`} data-tool={event.action.tool || undefined}>
+        <PromptRequestDetails requests={event.requests} previousRequest={previousRequest} response={response} reasoning={event.reasoning} t={t} />
         <div className="model-card-head">
           {isWinner && <span className="step-card-step">{step}</span>}
-          <ToolIcon tool={event.action.tool} size={13} className="model-card-tool-icon" />
-          <span className="model-card-summary">{summarizeAction(event.action)}</span>
+          <span className="model-card-summary" title={actionSummary}>{actionSummary}</span>
           <span className="model-card-meta">
             {isWinner && <span className="model-card-winner-star">★</span>}
             {label}{tokens > 0 ? ` · ${tokens} tok` : ''}
@@ -52,34 +50,12 @@ export function ModelPlanCard({ event, previousRequest, isWinner, modelList, ste
           )}
         </div>
 
-        <div className="step-thinking-section">
-          {/* 深度思考和决策理由统一放在工具调用之前。 */}
-          {event.reasoning && (
-            <div className="model-card-reasoning">
-              <button className="model-card-reasoning-toggle" onClick={toggle(setShowReasoning)}>
-                <span className="model-card-reasoning-badge">THINKING</span>
-                <span>{t('modelCard.reasoning')}</span>
-                {effReasoning ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-              </button>
-              {effReasoning && <pre className="model-card-reasoning-text">{event.reasoning}</pre>}
-            </div>
-          )}
-
-          {event.rationale && (
-            <>
-              <p className={`model-card-rationale ${effRationale ? '' : 'clamp-2'}`}>{event.rationale}</p>
-              {event.rationale.length > CLAMP_THRESHOLD && (
-                <button className="step-card-toggle" onClick={toggle(setShowRationale)}>
-                  {effRationale ? t('agentPanel.showLess') : t('agentPanel.showMore')}
-                </button>
-              )}
-            </>
-          )}
+        <div className="tool-execution-block">
+          <ActionDetails action={event.action} jsonOpen={effJson} onToggleJson={toggle(setShowJson)} t={t} />
+          <TerminalProcess events={terminalEvents} running={isWinner && !result} t={t} />
+          <McpProcess events={mcpEvents} running={isWinner && !result} t={t} />
+          <ResultSummary result={result} resultStatus={resultStatus} openLightbox={openLightbox} forceExpanded={forceExpanded} onManualToggle={onManualToggle} t={t} />
         </div>
-
-        {/* 工具请求：与单模型一致，直接展示工具和请求内容。 */}
-        <ActionDetails action={event.action} jsonOpen={effJson} onToggleJson={toggle(setShowJson)} t={t} />
-        <PromptRequestDetails requests={event.requests} previousRequest={previousRequest} t={t} />
       </div>
     );
   }

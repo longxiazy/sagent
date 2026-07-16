@@ -83,6 +83,7 @@ describe('createJsonPlanner', () => {
     });
 
     expect(result.action).toEqual({ tool: 'core', type: 'finish', answer: 'ok' });
+    expect(result.response).toContain('"rationale":"完成"');
     expect(create).toHaveBeenCalledTimes(2);
     expect(create.mock.calls[0][0].chat_template_kwargs).toEqual({
       thinking: true,

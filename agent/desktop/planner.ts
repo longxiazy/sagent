@@ -183,7 +183,7 @@ export function createDesktopPlanner({
       for (let attempt = 0; ; attempt++) {
         try {
           const result = await planWithTimeout(primaryModel, planCtx, cancelSignal, undefined);
-          onEvent?.({ type: 'model_plan', stage: 'success', model: primaryModel, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning, requests: result.requests });
+          onEvent?.({ type: 'model_plan', stage: 'success', model: primaryModel, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning, response: result.response, requests: result.requests });
           return result;
         } catch (err: any) {
           if (err.message.includes('模型超时')) {
@@ -293,13 +293,13 @@ export function createDesktopPlanner({
           planWithTimeout(candidate, planCtx, cancelSignal, voteAc.signal)
             .then(result => {
               if (settled) {
-                onEvent?.({ type: 'model_plan', stage: 'cancelled', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning, requests: result.requests });
+                onEvent?.({ type: 'model_plan', stage: 'cancelled', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning, response: result.response, requests: result.requests });
                 return;
               }
 
               const enriched = { ...result, model: candidate };
               log.debug(`[MultiModel] step=${step} model=${candidate} succeeded: ${result.action?.tool}.${result.action?.type}`);
-              onEvent?.({ type: 'model_plan', stage: 'success', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning, requests: result.requests });
+              onEvent?.({ type: 'model_plan', stage: 'success', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning, response: result.response, requests: result.requests });
 
               if (result.action?.type === 'finish') {
                 settled = true;
@@ -315,6 +315,7 @@ export function createDesktopPlanner({
                   action: result.action,
                   usage: result.usage,
                   reasoning: result.reasoning,
+                  response: result.response,
                   requests: result.requests,
                   finishShortCircuit: true,
                 });
@@ -377,7 +378,7 @@ export function createDesktopPlanner({
           planWithTimeout(candidate, planCtx, cancelSignal, raceAc.signal)
             .then(result => {
               if (settled) {
-                onEvent?.({ type: 'model_plan', stage: 'cancelled', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning, requests: result.requests });
+                onEvent?.({ type: 'model_plan', stage: 'cancelled', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning, response: result.response, requests: result.requests });
                 return;
               }
               settled = true;
@@ -385,7 +386,7 @@ export function createDesktopPlanner({
               timers.forEach(t => clearTimeout(t));
               cancelSignal?.removeEventListener('abort', onCancel);
               log.info(`[MultiModel] progressive 使用 ${candidate} 的结果`);
-              onEvent?.({ type: 'model_plan', stage: 'winner', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning, requests: result.requests });
+              onEvent?.({ type: 'model_plan', stage: 'winner', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning, response: result.response, requests: result.requests });
               resolve(result);
             })
             .catch((err: any) => {
@@ -454,7 +455,7 @@ export function createDesktopPlanner({
         planWithTimeout(candidate, planCtx, cancelSignal, raceAc.signal)
           .then(result => {
             if (settled) {
-              onEvent?.({ type: 'model_plan', stage: 'cancelled', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
+              onEvent?.({ type: 'model_plan', stage: 'cancelled', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning, response: result.response, requests: result.requests });
               return;
             }
             settled = true;
@@ -462,7 +463,7 @@ export function createDesktopPlanner({
             timers.forEach(timer => clearTimeout(timer));
             cancelSignal?.removeEventListener('abort', onCancel);
             log.info(`[MultiModel] 使用 ${candidate} 的结果（${activeModels.join(', ')}）`);
-            onEvent?.({ type: 'model_plan', stage: 'winner', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning });
+            onEvent?.({ type: 'model_plan', stage: 'winner', model: candidate, step, rationale: result.rationale, action: result.action, usage: result.usage, reasoning: result.reasoning, response: result.response, requests: result.requests });
             resolve(result);
           })
           .catch((err: any) => {

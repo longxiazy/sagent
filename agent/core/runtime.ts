@@ -224,6 +224,24 @@ function historyEntryFailed(entry) {
   return normalizeResultStatus(entry?.resultStatus || entry?.status) === 'failed';
 }
 
+function appendHttpFetchReferences(answer: string, history: AgentStep[]) {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of history) {
+    if (entry?.action?.tool !== 'browser' || entry.action.type !== 'http_fetch') continue;
+    const status = normalizeResultStatus(entry?.resultStatus);
+    if (status === 'failed' || status === 'rejected') continue;
+    const url = actionTargetUrl(entry.action);
+    if (!url || !/^https?:\/\//i.test(url) || seen.has(url)) continue;
+    seen.add(url);
+    urls.push(url);
+  }
+  if (urls.length === 0) return answer;
+
+  const references = urls.map((url, index) => `${index + 1}. ${url}`).join('\n');
+  return `${String(answer || '').trim()}\n\n引用：\n${references}`;
+}
+
 function normalizeActionResult(value): {
   result: unknown;
   resultStatus: ActionResultStatus;
@@ -692,6 +710,8 @@ export async function runAgentRuntime({
         answer = warning + answer;
       }
     }
+
+    answer = appendHttpFetchReferences(answer, history);
 
     return {
       answer,

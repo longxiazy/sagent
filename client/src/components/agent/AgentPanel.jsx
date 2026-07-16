@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { createPortal } from 'react-dom';
 import {
   Square, ChevronDown, ChevronUp, ChevronsDown, ChevronsUp,
-  Monitor, Loader2, Bot, Clock3, Coins, ListChecks, Trophy, History, Activity,
+  Monitor, Loader2, Bot, Clock3, Coins, ListChecks, Trophy, History, Activity, Eye, EyeOff,
 } from 'lucide-react';
 import { PHONE_BREAKPOINT } from '../../utils/constants.js';
 import { ModelPlanGroup } from './ModelPlanGroup.jsx';
@@ -216,6 +216,7 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [traceDebugOpen, setTraceDebugOpen] = useState(false);
   const [traceDebugModelId, setTraceDebugModelId] = useState('all');
+  const [headVisible, setHeadVisible] = useState(true);
   const [recentRunExpanded, setRecentRunExpanded] = useState(true);
   const [selectedModelId, setSelectedModelId] = useState('all');
 
@@ -233,8 +234,17 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
     const events = trace.filter(event => event.type === 'browser_session' || (event.type === 'status' && event.status === 'browser_ready'));
     const latest = events.at(-1);
     if (!latest) return null;
+    const latestPreview = events.findLast(event => event.screenshotUrl);
     const recoveries = events.filter(event => event.type === 'browser_session' && event.status === 'recovering').length;
-    return { ...latest, status: latest.status === 'browser_ready' ? 'ready' : latest.status, recoveries };
+    return {
+      ...latestPreview,
+      ...latest,
+      screenshotUrl: latest.screenshotUrl || latestPreview?.screenshotUrl || null,
+      title: latest.title || latestPreview?.title || '',
+      url: latest.url || latestPreview?.url || '',
+      status: latest.status === 'browser_ready' ? 'ready' : latest.status,
+      recoveries,
+    };
   }, [trace]);
   const modelIds = useMemo(() => traceModelIds(trace), [trace]);
   const hasModelCards = useMemo(
@@ -255,6 +265,14 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
     : doneStatus === 'done_degraded'
       ? t('agentPanel.statusDegraded')
       : t('agentPanel.statusDone');
+  const headerTitle = running
+    ? t('agentPanel.running')
+    : doneEvent
+      ? doneStatusLabel
+      : t('agentPanel.lastRun');
+  const headerStatus = running ? 'running' : doneEvent ? 'complete' : 'idle';
+  const headerStepCount = running ? metrics.lastStep : (doneMeta.step_count || metrics.lastStep);
+  const allCardsExpanded = cardsExpanded === true;
   const lastRunModels = useMemo(
     () => (lastRun?.models || []).map(model => modelList.find(item => item.id === model)?.label || model),
     [lastRun, modelList],
@@ -330,13 +348,13 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
   return (
     <>
     <section className={`agent-panel ${!isMobile && collapsed ? 'collapsed' : ''}`}>
+      {headVisible && (
       <div className="agent-panel-head" onClick={collapsed && trace.length > 0 ? onToggleCollapse : undefined}>
         <div className="agent-head-row-primary">
-          <div>
-            <p className="agent-panel-eyebrow">Desktop Agent</p>
-            <h3 className="agent-panel-title">{running ? t('agentPanel.running') : t('agentPanel.lastRun')}</h3>
+          <div className="agent-panel-status" role="status" aria-live="polite">
+            <span className={`agent-status-dot ${headerStatus}`} aria-hidden="true" />
+            <h3 className="agent-panel-title">{headerTitle}</h3>
           </div>
-          <span className={`agent-status-chip ${running ? 'running' : 'idle'}`}>{running ? 'Running' : 'Idle'}</span>
           {running && onStop && (
             <button className="agent-stop-btn" onClick={e => { e.stopPropagation(); onStop(); }} disabled={agentStopping} title={t('agentPanel.stopTitle')}>
               <Square size={10} /> {agentStopping ? t('agentPanel.stopping') : pendingApproval ? t('agentPanel.stopAndReject') : t('agentPanel.stop')}
@@ -344,14 +362,15 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
           )}
           <div className="agent-head-actions">
             {hasModelCards && !collapsed && showCurrentTrace && (
-              <>
-                <button className="agent-collapse-btn agent-expand-all" onClick={e => { e.stopPropagation(); setCardsExpanded(true); }} title={t('agentPanel.expandAllTitle')}>
-                  <ChevronsDown size={12} /> {t('agentPanel.expand')}
-                </button>
-                <button className="agent-collapse-btn agent-collapse-all" onClick={e => { e.stopPropagation(); setCardsExpanded(false); }} title={t('agentPanel.collapseAllTitle')}>
-                  <ChevronsUp size={12} /> {t('agentPanel.collapse')}
-                </button>
-              </>
+              <button
+                className="agent-collapse-btn agent-cards-toggle"
+                onClick={e => { e.stopPropagation(); setCardsExpanded(allCardsExpanded ? false : true); }}
+                title={allCardsExpanded ? t('agentPanel.collapseAllTitle') : t('agentPanel.expandAllTitle')}
+                aria-label={allCardsExpanded ? t('agentPanel.collapseAllTitle') : t('agentPanel.expandAllTitle')}
+                aria-pressed={allCardsExpanded}
+              >
+                {allCardsExpanded ? <ChevronsUp size={14} /> : <ChevronsDown size={14} />}
+              </button>
             )}
             {trace.length > 0 && (
               <button className="agent-collapse-btn agent-tablet-only" onClick={e => { e.stopPropagation(); onToggleCollapse(); }} title={collapsed ? t('agentPanel.expand') : t('agentPanel.collapseShort')}>
@@ -361,19 +380,52 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
           </div>
         </div>
         <div className="agent-head-row-metrics">
-          {metrics.lastStep > 0 && <span className="agent-metric">Step {metrics.lastStep}</span>}
-          <ElapsedTimer running={running} startedAt={startedAt} paused={hasPendingQuestion} finalMs={doneMeta.elapsed_ms} />
+          {headerStepCount > 0 && (
+            <span className="agent-metric">
+              {running ? `Step ${headerStepCount}` : t('agentPanel.stepCount', { n: headerStepCount })}
+            </span>
+          )}
+          {(running || doneMeta.elapsed_ms) && (
+            <ElapsedTimer running={running} startedAt={startedAt} paused={hasPendingQuestion} finalMs={doneMeta.elapsed_ms} />
+          )}
           {metrics.totalTokens > 0 && (
-            <span className="agent-metric agent-metric-tokens">{metrics.totalTokens} tokens</span>
+            <span className="agent-metric agent-metric-tokens">{formatTokenCount(metrics.totalTokens)} tok</span>
           )}
-          {!running && doneMeta.step_count && (
-            <span className="agent-metric">{t('agentPanel.stepCount', { n: doneMeta.step_count })}</span>
-          )}
-          {!running && doneEvent && doneStatus !== 'done' && (
-            <span className="agent-metric">{doneStatusLabel}</span>
+          {browserHealth && (
+            <span
+              className={`agent-browser-compact ${browserHealth.status}`}
+              title={[
+                t('agentPanel.browserHealth'),
+                t(`agentPanel.browserStatus.${browserHealth.status}`),
+                browserHealth.url,
+                browserHealth.sessionId ? `Session #${browserHealth.sessionId}` : null,
+                browserHealth.recoveries > 0 ? t('agentPanel.browserRecoveries', { n: browserHealth.recoveries }) : null,
+              ].filter(Boolean).join(' · ')}
+            >
+              <Monitor size={11} aria-hidden="true" />
+              <span className="agent-browser-compact-dot" aria-hidden="true" />
+              <strong>{t('agentPanel.browserHealth')}</strong>
+              <span>{t(`agentPanel.browserStatus.${browserHealth.status}`)}</span>
+            </span>
           )}
         </div>
+        {browserHealth?.screenshotUrl && !collapsed && (
+          <button
+            type="button"
+            className="agent-browser-preview"
+            onClick={event => { event.stopPropagation(); setLightboxSrc(browserHealth.screenshotUrl); }}
+            title={browserHealth.url || browserHealth.title || t('agentPanel.browserHealth')}
+            aria-label={`${t('agentPanel.browserHealth')}: ${browserHealth.title || browserHealth.url || t(`agentPanel.browserStatus.${browserHealth.status}`)}`}
+          >
+            <img src={browserHealth.screenshotUrl} alt="" />
+            <span className="agent-browser-preview-caption">
+              <Monitor size={11} aria-hidden="true" />
+              <span>{browserHealth.title || browserHealth.url}</span>
+            </span>
+          </button>
+        )}
       </div>
+      )}
 
       <div className="agent-panel-body">
         <>
@@ -424,17 +476,6 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
             </div>
           )}
 
-          {trace.length > 0 && showCurrentTrace && browserHealth && (
-            <div className={`agent-browser-health ${browserHealth.status}`}>
-              <span className="agent-browser-health-dot" />
-              <strong>{t('agentPanel.browserHealth')}</strong>
-              <span>{t(`agentPanel.browserStatus.${browserHealth.status}`)}</span>
-              {browserHealth.url && <span className="agent-browser-health-url" title={browserHealth.url}>{browserHealth.url}</span>}
-              {browserHealth.sessionId && <span>Session #{browserHealth.sessionId}</span>}
-              {browserHealth.recoveries > 0 && <span>{t('agentPanel.browserRecoveries', { n: browserHealth.recoveries })}</span>}
-            </div>
-          )}
-
           {trace.length === 0 && running ? (
             <div className="agent-skeleton">
               <div className="agent-skeleton-line agent-skeleton-line--w60" />
@@ -474,6 +515,17 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
             title={t('agentPanel.traceDebug')}
           >
             <Activity size={14} />
+          </button>
+        )}
+        {trace.length > 0 && (
+          <button
+            className="header-icon-btn header-agent-action-btn"
+            onClick={() => setHeadVisible(visible => !visible)}
+            title={headVisible ? t('agentPanel.hidePanel') : t('agentPanel.showPanel')}
+            aria-label={headVisible ? t('agentPanel.hidePanel') : t('agentPanel.showPanel')}
+            aria-pressed={!headVisible}
+          >
+            {headVisible ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
         )}
         {historyRuns.length > 0 && (

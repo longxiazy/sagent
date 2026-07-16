@@ -268,7 +268,12 @@ export function createJsonPlanner({
     if (!parsed.parseFailed) {
       try {
         const result = normalizeDecision(parsed, context);
-        return { ...result, usage: parsed.usage, reasoning: parsed.reasoning || null };
+        return {
+          ...result,
+          usage: parsed.usage,
+          reasoning: parsed.reasoning || null,
+          response: parsed.rawContent || null,
+        };
       } catch (normalizeErr: any) {
         log.warn(`[Planner] 动作校验失败，模型直接失败: ${normalizeErr.message}`);
         throw normalizeErr;

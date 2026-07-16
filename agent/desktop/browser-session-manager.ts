@@ -1,4 +1,4 @@
-import { closeBrowserSession, createBrowserSession } from '../tools/browser/webview-session.ts';
+import { captureBrowserPreview, closeBrowserSession, createBrowserSession } from '../tools/browser/webview-session.ts';
 
 type BrowserLifecycle = 'starting' | 'ready' | 'busy' | 'broken' | 'closing' | 'closed';
 
@@ -199,9 +199,13 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
     try {
       const result = await operation(session, 0);
       assertCurrentSession(session, generation);
+      const preview = state.runId
+        ? await captureBrowserPreview(session.view, { runId: state.runId }).catch(() => null)
+        : null;
+      assertCurrentSession(session, generation);
       session.lifecycle = 'ready';
       state.browserRecoveryFailures = 0;
-      emit(onEvent, 'ready', session, context);
+      emit(onEvent, 'ready', session, { ...context, ...preview });
       return result;
     } catch (err: any) {
       if (!isRecoverableSessionError(err)) {
@@ -220,9 +224,13 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
       try {
         const result = await operation(session, 1);
         assertCurrentSession(session, generation);
+        const preview = state.runId
+          ? await captureBrowserPreview(session.view, { runId: state.runId }).catch(() => null)
+          : null;
+        assertCurrentSession(session, generation);
         session.lifecycle = 'ready';
         state.browserRecoveryFailures = 0;
-        emit(onEvent, 'ready', session, { ...context, recreated: true, retry: 1 });
+        emit(onEvent, 'ready', session, { ...context, ...preview, recreated: true, retry: 1 });
         return result;
       } catch (retryErr: any) {
         session.lifecycle = 'broken';

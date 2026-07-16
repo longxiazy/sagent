@@ -4,6 +4,7 @@ import { getModelLabel } from './plan-stage.js';
 import { ActionDetails } from './ActionDetails.jsx';
 import { TerminalProcess } from './TerminalProcess.jsx';
 import { McpProcess } from './McpProcess.jsx';
+import { summarizeAction } from './action-summary.js';
 
 // 单条 trace 渲染。从 AgentPanel 平移而来并用 memo 包裹：trace 是 append-only 的，
 // 旧 event 对象引用不变，新事件到达时已渲染过的 item 不会重跑（尤其是 action 里的
@@ -111,9 +112,7 @@ export const TraceItem = memo(function TraceItem({ event, selectedModelId = 'all
           <span className="agent-trace-badge action">{t('agentPanel.badgeAction')}</span>
           <div className="agent-trace-content">
             <div className="agent-step-header">
-              <strong>
-                Step {event.step} · {event.action?.tool || 'core'}.{event.action?.type}
-              </strong>
+              <strong>{summarizeAction(event.action, event.rationale)}</strong>
               {event.usage && (
                 <span className="agent-token-badge">
                   {event.usage.prompt_tokens + event.usage.completion_tokens} tokens
@@ -126,7 +125,6 @@ export const TraceItem = memo(function TraceItem({ event, selectedModelId = 'all
                 <RotateCcw size={10} />
               </button>
             </div>
-            {event.rationale && <p>{event.rationale}</p>}
             <ActionDetails action={event.action} jsonOpen={jsonOpen} onToggleJson={toggleJson} t={t} />
           </div>
         </>

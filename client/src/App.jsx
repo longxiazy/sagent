@@ -278,7 +278,18 @@ export default function App() {
   // 同步 <meta name="theme-color"> 是为了让浏览器地址栏颜色也跟着切换。
   const { resolvedTheme } = useTheme();
   const t = useT();
+  const sessionTitle = useMemo(() => getSessionTitle(messages), [messages]);
   useThemeColorSync({ showSessions, resolvedTheme });
+
+  useEffect(() => {
+    const normalTitle = messages.length > 0 && sessionTitle
+      ? `${sessionTitle} · sagent`
+      : 'sagent';
+    document.title = agentRunning
+      ? `${agentStopping ? t('agentPanel.stopping') : t('agentPanel.running')} · ${sessionTitle || 'sagent'}`
+      : normalTitle;
+    return () => { document.title = 'sagent'; };
+  }, [agentRunning, agentStopping, messages.length, sessionTitle, t]);
 
   // 页面刷新后，如果后端还有运行中的 agent，这里会尝试“接回去”：
   // 1. 先查 /api/agent/active
@@ -1086,7 +1097,7 @@ export default function App() {
             </div>
           )}
           <AppHeader
-            sessionTitle={getSessionTitle(messages)}
+            sessionTitle={sessionTitle}
             sessionLocked={sessionLocked}
             messagesLength={messages.length}
             modelSelect={modelSelect}

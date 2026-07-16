@@ -202,6 +202,21 @@ export class EdgeCdpWebView {
     });
   }
 
+  async screenshot(options: { format?: 'png' | 'jpeg'; quality?: number; encoding?: string } = {}) {
+    const format = options.format === 'jpeg' ? 'jpeg' : 'png';
+    const params: Record<string, any> = {
+      format,
+      fromSurface: true,
+      captureBeyondViewport: false,
+    };
+    if (format === 'jpeg' && Number.isFinite(options.quality)) {
+      params.quality = Math.max(0, Math.min(100, Number(options.quality)));
+    }
+    const result = await this.command('Page.captureScreenshot', params);
+    if (!result?.data) throw new Error('Microsoft Edge 截图失败');
+    return Buffer.from(result.data, 'base64');
+  }
+
   async close() {
     if (this.closed) return;
     this.closed = true;

@@ -197,6 +197,44 @@ describe('runtime: session checkpoint integration', () => {
     expect(result.steps[0].url).toBe('https://target.example/page');
   });
 
+  it('appends unique successful http_fetch URLs as final references', async () => {
+    const cancelSignal = new AbortController().signal;
+    const actions = [
+      { tool: 'browser', type: 'http_fetch', url: 'https://official.example/a' },
+      { tool: 'browser', type: 'http_fetch', url: 'https://failed.example/b' },
+      { tool: 'browser', type: 'http_fetch', url: 'https://official.example/a' },
+      { tool: 'core', type: 'finish', answer: '官网确认该政策已经生效。' },
+    ];
+
+    const result = await runAgentRuntime({
+      task: '核验官网政策',
+      maxSteps: 4,
+      onEvent: noop,
+      cancelSignal,
+      initialize,
+      observe,
+      decide: ({ step }) => decision(actions[step - 1], `step ${step}`),
+      authorize: approve,
+      execute: (_state, action) => {
+        if (action.type === 'finish') return action.answer;
+        if ('url' in action && action.url.includes('failed.example')) {
+          return { result: '页面访问失败', resultStatus: 'failed', resultError: 'HTTP 500' };
+        }
+        return '官网正文';
+      },
+      cleanup: noop,
+    });
+
+    expect(result.answer).toContain('官网确认该政策已经生效。');
+    expect(result.answer.endsWith([
+      '官网确认该政策已经生效。',
+      '',
+      '引用：',
+      '1. https://official.example/a',
+    ].join('\n'))).toBe(true);
+    expect(result.answer).not.toContain('https://failed.example/b');
+  });
+
   it('emits structured result status for execution failures', async () => {
     const cancelSignal = new AbortController().signal;
     const { log: evtLog, onEvent } = events();
