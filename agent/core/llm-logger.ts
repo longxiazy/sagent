@@ -93,9 +93,11 @@ export async function flushLlmLogs() {
 }
 
 export function logLlmRequest(model, messages) {
-  const line = JSON.stringify(redactSensitiveData({ time: timeStr(), type: 'request', model, messages }));
+  const safeMessages = redactSensitiveData(messages);
+  const line = JSON.stringify({ time: timeStr(), type: 'request', model, messages: safeMessages });
   enqueueLog(join(todayDir(), modelFileName(model)), line);
   log.debug(`[LLM] → ${model} messages=${messages.length}`);
+  return safeMessages;
 }
 
 export function logLlmResponse(model, response) {

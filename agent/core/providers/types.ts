@@ -60,6 +60,7 @@ export interface AgentPlanOpts {
   history?: AgentStep[];
   observation?: AgentObservation;
   conversationHistory?: Array<{ role: string; content: string }>;
+  onRequest?: (messages: unknown[]) => void;
   [key: string]: unknown;
 }
 
@@ -69,6 +70,7 @@ export interface AgentPlanResult {
   action: AgentAction;
   usage?: TokenUsage | null;
   reasoning?: string | null;
+  requests?: unknown[][];
 }
 
 export interface CompletionOpts {

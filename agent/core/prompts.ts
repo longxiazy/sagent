@@ -60,7 +60,7 @@ const NVIDIA_ACTION_EXAMPLES: NvidiaActionExample[] = [
   { rationale: '切换目录', action: { tool: 'terminal', type: 'run_review', command: 'cd /path/to/dir' } },
   { rationale: '网络搜索关键词', action: { tool: 'search', type: 'web_search', query: '2026 北京最低工资标准' }, readonly: true },
   { rationale: '查询项目代码图谱定位相关模块', action: { tool: 'codegraph', type: 'codegraph_query', query: '记忆 memory' }, readonly: true },
-  { rationale: '分析图片内容', action: { tool: 'vision', type: 'image_analyze', image: '/abs/path/to/image.png', question: '图片里有什么内容？请详细描述。' }, readonly: true },
+  { rationale: '分析任务中的第一张附件图片', action: { tool: 'vision', type: 'image_analyze', image: '@attachment/1', question: '图片里有什么内容？请详细描述。' }, readonly: true },
   { rationale: '查看 IDE 可用工具', action: { tool: 'ide', type: 'ide_list_tools' }, capability: 'ide' },
   { rationale: '调用 IDE 工具获取运行配置', action: { tool: 'ide', type: 'ide_call_tool', toolName: 'get_run_configurations', arguments: {} }, capability: 'ide' },
   { rationale: '调用 Chrome 工具截图', action: { tool: 'chrome', type: 'chrome_call_tool', toolName: 'take_screenshot', arguments: {} }, capability: 'chrome' },
@@ -373,15 +373,19 @@ function buildSharedAgentRuleLines(capabilityContext: PromptCapabilityContext = 
   const chromeDetails = shouldIncludeChromePromptDetails(capabilityContext);
   const chromeLines = chromePromptLines(capabilityContext);
   const mcpLines = genericMcpPromptLines(capabilityContext);
+  const webDetails = WEB_TASK_RE.test(capabilityText(capabilityContext))
+    || historyUsesTool(capabilityContext.history, 'search')
+    || historyUsesTool(capabilityContext.history, 'browser');
   return [
     '规则：',
     '1. task 是本轮唯一目标；conversationHistory 只用于理解指代，不得恢复或切换到旧任务。',
     '2. 决策顺序：已有信息足够则立即 finish；缺少用户才能决定的信息则 ask_user；否则选择完成目标所需的最少工具。不要为了显得在执行而探索。',
     '3. 不要重复已成功或无新目的的动作。同一目标连续约 5 步仍无实质进展时停止尝试，finish 汇总已知信息并说明限制。',
     '4. 文件写入和终端确认命令可能需要审批；cd/pushd/popd 使用 run_review。被拒绝后改用安全替代方案。',
-    '5. browser.click/type 只能使用 observation.browser.elements 中存在的 elementId。搜索先用 web_search 定位来源，再逐个 http_fetch 权威页面；不要 navigate 到搜索引擎结果页。',
-    '6. 不得编造工具结果。时效产品信息和医保、签证、金融、法律、政策等高风险信息优先核验官方来源；未核验或未取得目标网页正文时必须明确说明。',
-    '7. 图片任务必须使用 image_analyze，不得凭文件名猜测。简单识图得到可用结果后立即 finish；同一图片最多连续分析 2 次，无法确认具体来源时区分可见事实与低置信猜测。',
+    '5. browser.click/type 只能使用 observation.browser.elements 中存在的 elementId；不要 navigate 到搜索引擎结果页。',
+    '6. 不得编造工具结果；未核验或未取得目标网页正文时必须明确说明。',
+    ...(webDetails ? ['网络任务：web_search 只用于发现来源，不得仅凭标题或摘要回答需核验的问题。选择最相关的 1～3 个官方、原始或权威 URL，逐个 http_fetch 正文，只提取与问题直接相关的事实、数字、时间和条件，并保留来源对应关系。正文无明确答案时说明未找到，不得用常识补全；来源冲突时分别列出，不要自行合并。'] : []),
+    '7. 图片任务必须使用 image_analyze，不得凭文件名猜测。任务含 [附件]/[Attachments] 图片时，image 使用 @attachment/N（按图片出现顺序从 1 开始），不得复制或改写 @uploads 路径；runtime 会绑定真实附件。简单识图得到可用结果后立即 finish；同一图片最多连续分析 2 次，无法确认具体来源时区分可见事实与低置信猜测。',
     '8. 酒店、机票、电商等实时价格优先用 web_search 获取区间；拿不到精确数字时给出查询入口并说明未取得实时精确价。',
     '9. 重要发现可用 notify_user。finish 的 answer 使用简体中文，简洁直接。',
     '每步输入中的 currentDateTime 是当前日期时间；涉及“今天”“最新”“近期”等相对时间时必须以它为准，不得猜测年份。',
@@ -551,6 +555,8 @@ export function buildNvidiaTaskMessages({
           '你是 DesktopAgent。只能输出一个 JSON 对象。',
           '若可直接回答，必须输出 {"rationale":"...","action":{"type":"finish","answer":"..."}}，不要使用 type:"answer"。',
           '若需工具，action.tool/type 只能使用：browser navigate/click/get_page_content/http_fetch；fs list_dir/read_file/search_files；terminal run_safe；search web_search；vision image_analyze；core ask_user/notify_user。',
+          'web_search 只用于发现候选来源；需要事实核验时不得仅凭摘要回答，必须选择相关权威 URL 调用 http_fetch，阅读正文后提取事实、数字、时间和条件，并说明来源。正文没有明确答案时必须说明未找到，不得猜测。',
+          '任务含图片附件时，image_analyze.image 使用 @attachment/N（按图片出现顺序从 1 开始），不要复制或改写 @uploads 路径。',
           '常识问答、闲聊、解释类任务必须直接 finish，不要调用工具。',
           '每步输入中的 currentDateTime 是当前日期时间；涉及相对时间时必须以它为准，不得猜测年份。',
           'answer 用简体中文，简洁直接。',

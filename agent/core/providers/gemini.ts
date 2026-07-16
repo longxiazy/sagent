@@ -149,11 +149,12 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
       };
       if (signal) config.abortSignal = signal;
 
-      logLlmRequest(model, [
+      const safeMessages = logLlmRequest(model, [
         { role: 'system', content: system },
         ...contents.map((message: any) => ({ role: message.role, content: message.parts })),
         { role: 'tools', content: tools },
       ]);
+      opts.onRequest?.(safeMessages);
       const response = await retryAsync(() => client.models.generateContent({ model, contents, config } as any), undefined, undefined, { retryRateLimit: false });
       const usage = buildGeminiUsage((response as any).usageMetadata);
       logLlmResponse(model, { usage: { input_tokens: usage?.prompt_tokens, output_tokens: usage?.completion_tokens }, choices: [{ message: response }] });

@@ -157,7 +157,8 @@ export function createJsonPlanner({
     }, { defaultThinking: true, supportedMessageRoles });
     const createOpts = builtRequest.request;
     messages = createOpts.messages;
-    logLlmRequest(model, messages);
+    const safeMessages = logLlmRequest(model, messages);
+    context.onRequest?.(safeMessages);
     let defaultedChatTemplateKwargs = builtRequest.defaultedChatTemplateKwargs;
     const reqOpts = signal ? { signal } : undefined;
     const retryContext = {
@@ -211,6 +212,8 @@ export function createJsonPlanner({
           }, { defaultThinking: true, supportedMessageRoles });
           messages = compactOpts.messages;
           try {
+            const safeCompactMessages = logLlmRequest(model, messages);
+            context.onRequest?.(safeCompactMessages);
             response = await createChatCompletionWithTemplateFallback({
               client,
               request: compactOpts,

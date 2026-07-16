@@ -5,6 +5,7 @@ import { summarizeAction } from './action-summary.js';
 import { ToolIcon } from './tool-icon.jsx';
 import { useT } from '../../i18n/I18nProvider.jsx';
 import { ActionDetails } from './ActionDetails.jsx';
+import { PromptRequestDetails } from './PromptRequestDetails.jsx';
 
 // 单个模型在某一步的「决策行」。扁平结构（无整卡展开/折叠、无复制按钮、无左色条），
 // 与单模型 StepCard 行同构：winner 行直接带 step 号(前) + 回滚(尾)，理由直接显示，
@@ -12,7 +13,7 @@ import { ActionDetails } from './ActionDetails.jsx';
 
 const CLAMP_THRESHOLD = 80; // 理由超过该长度才显示「展开/收起」
 
-export function ModelPlanCard({ event, isWinner, modelList, step, onRollback, rollbackLoading, forceExpanded, onManualToggle }) {
+export function ModelPlanCard({ event, previousRequest, isWinner, modelList, step, onRollback, rollbackLoading, forceExpanded, onManualToggle }) {
   const t = useT();
   const label = getModelLabel(event.model, modelList);
   const stage = event.stage;
@@ -78,6 +79,7 @@ export function ModelPlanCard({ event, isWinner, modelList, step, onRollback, ro
 
         {/* 工具请求：与单模型一致，直接展示工具和请求内容。 */}
         <ActionDetails action={event.action} jsonOpen={effJson} onToggleJson={toggle(setShowJson)} t={t} />
+        <PromptRequestDetails requests={event.requests} previousRequest={previousRequest} t={t} />
       </div>
     );
   }

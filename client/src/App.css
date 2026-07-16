@@ -4,6 +4,80 @@
   padding: 0;
 }
 
+/* LLM request inspection and step-to-step prompt diff */
+.prompt-request-details {
+  margin-top: 8px;
+  border-top: 1px solid var(--c-border-subtle, rgba(128, 148, 168, .22));
+  padding-top: 6px;
+}
+
+.prompt-request-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 0;
+}
+
+.prompt-request-toggle:hover { color: var(--c-accent); }
+
+.prompt-request-body {
+  margin-top: 6px;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--c-border-subtle, rgba(128, 148, 168, .22));
+  border-radius: 6px;
+  background: var(--c-surface-inset, rgba(0, 0, 0, .14));
+}
+
+.prompt-request-diff-legend {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 5px 8px;
+  background: var(--c-surface-inset, rgba(0, 0, 0, .22));
+  color: var(--c-text-secondary);
+  font-size: 10px;
+}
+
+.prompt-request-attempts {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px 0;
+}
+
+.prompt-request-attempts button {
+  border: 1px solid var(--c-border-subtle, rgba(128, 148, 168, .28));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 6px;
+}
+
+.prompt-request-attempts button.active {
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
+.prompt-request-pre {
+  margin: 0;
+  padding: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--c-text-primary);
+  font: 10px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.prompt-request-line { display: block; padding: 0 3px; }
+.prompt-request-line.changed { background: rgba(255, 196, 85, .19); }
+.prompt-request-line.removed { background: rgba(239, 96, 96, .18); color: #f6a6a6; }
+.prompt-request-removed { border-top: 1px solid var(--c-border-subtle, rgba(128, 148, 168, .22)); }
+.prompt-request-removed summary { cursor: pointer; padding: 6px 8px; color: #f6a6a6; font-size: 11px; }
+
 :root {
   --c-primary: #534ab7;
   --c-primary-hover: #463ea0;
