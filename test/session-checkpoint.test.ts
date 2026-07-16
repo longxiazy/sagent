@@ -288,6 +288,34 @@ describe('runtime: session checkpoint integration', () => {
     expect(evtLog.some(e => e.type === 'notification' && e.level === 'warning')).toBe(true);
   });
 
+  it('stops before repeatedly clicking the same browser element', async () => {
+    const cancelSignal = new AbortController().signal;
+    const { log: evtLog, onEvent } = events();
+    let executeCalls = 0;
+
+    const result = await runAgentRuntime({
+      task: '搜索网页内容',
+      maxSteps: 8,
+      onEvent,
+      cancelSignal,
+      initialize,
+      observe,
+      decide: () => decision({ tool: 'browser', type: 'click', elementId: '3' }, '点击搜索按钮'),
+      authorize: approve,
+      execute: () => {
+        executeCalls += 1;
+        return '已点击元素 3';
+      },
+      cleanup: noop,
+    });
+
+    expect(executeCalls).toBe(2);
+    expect(result.steps).toHaveLength(2);
+    expect(result.answer).toContain('重复执行同一动作');
+    expect(result.answer).toContain('browser.click 3');
+    expect(evtLog.some(e => e.type === 'notification' && e.level === 'warning')).toBe(true);
+  });
+
   it('saves snapshots at interval steps', async () => {
     const runId = 'run_rt2';
     const runRecord = { runId, pendingRollback: null };
@@ -309,7 +337,7 @@ describe('runtime: session checkpoint integration', () => {
         if (stepCount >= 7) {
           return decision({ type: 'finish', answer: 'all done' }, 'enough');
         }
-        return decision({ type: 'click', elementId: 'btn' }, 'go');
+        return decision({ type: 'click', elementId: `btn-${stepCount}` }, 'go');
       },
       authorize: approve,
       execute: () => 'executed',
@@ -381,7 +409,7 @@ describe('runtime: session checkpoint integration', () => {
         if (stepCount >= 7) {
           return decision({ type: 'finish', answer: 'done' }, 'enough');
         }
-        return decision({ type: 'click', elementId: 'btn' }, 'go');
+        return decision({ type: 'click', elementId: `btn-${stepCount}` }, 'go');
       },
       authorize: approve,
       execute: () => 'executed',

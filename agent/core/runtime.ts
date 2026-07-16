@@ -188,7 +188,7 @@ function actionLoopKey(action: AgentAction | undefined | null) {
   if (action.type === 'finish' || action.type === 'ask_user' || action.type === 'notify_user') return '';
   const tool = action.tool || 'core';
   const type = action.type || '';
-  const readonlyActions = new Set([
+  const repeatGuardedActions = new Set([
     'fs.list_dir',
     'fs.get_file_info',
     'fs.read_file',
@@ -200,10 +200,13 @@ function actionLoopKey(action: AgentAction | undefined | null) {
     'codegraph.codegraph_query',
     'browser.get_page_content',
     'browser.http_fetch',
+    'browser.navigate',
+    'browser.click',
+    'browser.type',
     'chrome.chrome_call_tool',
     'ide.ide_call_tool',
   ]);
-  if (!readonlyActions.has(`${tool}.${type}`)) return '';
+  if (!repeatGuardedActions.has(`${tool}.${type}`)) return '';
   return stableStringify(action);
 }
 
@@ -321,7 +324,7 @@ function buildVisionLoopStopAnswer(loop) {
 function summarizeActionForLoop(action) {
   const tool = action?.tool || 'core';
   const type = action?.type || '?';
-  const target = action?.path || action?.command || action?.url || action?.query || action?.text || action?.id || '';
+  const target = action?.path || action?.command || action?.url || action?.query || action?.text || action?.elementId || action?.id || '';
   return target ? `${tool}.${type} ${String(target).slice(0, 120)}` : `${tool}.${type}`;
 }
 
