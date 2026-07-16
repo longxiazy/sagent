@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
 function formatRequest(value) {
   if (value == null) return '';
@@ -23,15 +23,15 @@ export function PromptRequestDetails({ requests, previousRequest, response, reas
   const requestList = Array.isArray(requests) ? requests : [];
   const activeIndex = Math.min(requestIndex, Math.max(requestList.length - 1, 0));
   const currentRequest = requestList.length > 0 ? requestList[activeIndex] : null;
-  const currentText = useMemo(() => formatRequest(currentRequest), [currentRequest]);
-  const previousText = useMemo(() => formatRequest(previousRequest), [previousRequest]);
-  const responseText = useMemo(() => formatRequest(response), [response]);
-  const lines = useMemo(() => changedLines(currentText, previousText), [currentText, previousText]);
-  const removedLines = useMemo(() => {
+  const currentText = formatRequest(currentRequest);
+  const previousText = formatRequest(previousRequest);
+  const responseText = formatRequest(response);
+  const lines = changedLines(currentText, previousText);
+  const removedLines = (() => {
     if (!previousText) return [];
     const current = new Set(currentText.split('\n'));
     return previousText.split('\n').filter(text => !current.has(text));
-  }, [currentText, previousText]);
+  })();
 
   if (!currentRequest && !responseText && !reasoning) return null;
 
