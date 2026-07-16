@@ -64,14 +64,6 @@
       "expectStatus": ["done", "done_degraded"],
       "expectTools": ["chrome"],
       "note": "覆盖 chrome MCP 工具链路;若环境未启用 chrome MCP,本条可在 queries.local.json 里注释掉"
-    },
-    {
-      "id": "tool-ide-mcp",
-      "category": "tool-coverage",
-      "task": "用 ide 工具读取本项目 package.json,告诉我 name 字段的值",
-      "expectStatus": ["done", "done_degraded"],
-      "expectTools": ["ide"],
-      "note": "覆盖 IDE MCP 工具链路;若未启用 ide MCP,本条可在 queries.local.json 里注释掉"
     }
   ]
 }

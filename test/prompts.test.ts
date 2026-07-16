@@ -73,42 +73,72 @@ describe('agent prompts', () => {
 
   it('provides detailed, valid NVIDIA JSON examples for every built-in action', () => {
     const lines = buildNvidiaActionExampleLines();
-    const schemas = new Map(createModelTools({ includeIdeMcp: false, includeChromeMcp: false })
-      .map(tool => [tool.name, tool.input_schema]));
+    const definitions = createModelTools({ includeChromeMcp: false });
+    const toolsByName = new Map(definitions.map(tool => [tool.name, tool]));
 
-    expect(lines.length).toBeGreaterThanOrEqual(schemas.size);
+    expect(lines).toHaveLength(definitions.length);
     for (const line of lines) {
       const example = JSON.parse(line);
       expect(example).toEqual(expect.objectContaining({
         rationale: expect.any(String),
         action: expect.any(Object),
       }));
+      expect(example.action.tool).toEqual(expect.any(String));
       expect(example).not.toHaveProperty('rational');
-      const schema = schemas.get(example.action.type);
-      expect(schema, `missing tool schema for ${line}`).toBeDefined();
-      for (const required of schema.required || []) {
+      const definition = toolsByName.get(example.action.type);
+      expect(definition, `missing tool definition for ${line}`).toBeDefined();
+      expect(example.rationale).toBe(definition!.example.rationale);
+      for (const required of definition!.input_schema.required || []) {
         expect(Object.prototype.hasOwnProperty.call(example.action, required), `${line} is missing ${required}`).toBe(true);
       }
     }
 
-    const conditional = buildNvidiaActionExampleLines({ ideEnabled: true, chromeEnabled: true });
-    expect(lines.some(line => line.includes('ide_call_tool'))).toBe(false);
+    vi.stubEnv('CHROME_MCP_ENABLED', 'true');
+    const conditional = buildNvidiaActionExampleLines({ chromeEnabled: true });
     expect(lines.some(line => line.includes('chrome_call_tool'))).toBe(false);
-    expect(conditional.some(line => line.includes('ide_call_tool'))).toBe(true);
     expect(conditional.some(line => line.includes('chrome_call_tool'))).toBe(true);
+  });
 
-    const readonlyTypes = buildNvidiaActionExampleLines({ readonly: true })
-      .map(line => JSON.parse(line).action.type);
-    expect(readonlyTypes.sort()).toEqual([
-      'codegraph_query',
-      'finish',
-      'get_file_info',
-      'image_analyze',
-      'list_dir',
-      'read_file',
-      'search_files',
-      'web_search',
-    ].sort());
+  it('gives NVIDIA models an explicit single-action JSON output contract', () => {
+    const messages = buildNvidiaTaskMessages({
+      task: '打开示例网页',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+    const systemPrompt = messages[0].content;
+
+    expect(systemPrompt).toContain('每个步骤必须且只能输出一个合法的 JSON 对象');
+    expect(systemPrompt).toContain('禁止输出 Markdown、代码块、注释、解释或其他文字');
+    expect(systemPrompt).toContain('固定顶层结构为 {"rationale":"一句话理由","action":{"tool":"工具名","type":"动作类型",...}}');
+    expect(systemPrompt).toContain('rationale 只说明当前动作的直接目的');
+    expect(systemPrompt).toContain('finish 固定使用 {"tool":"core","type":"finish","answer":"最终结果"}');
+    expect(systemPrompt).toContain('每次只能选择一个已启用动作');
+    expect(systemPrompt).toContain('type(elementId,text,submit?)');
+    expect(systemPrompt).toContain('scroll(direction,amount?)');
+  });
+
+  it('builds a finish-only finalization prompt after tool steps are exhausted', () => {
+    const context = {
+      task: '总结医保官网信息',
+      step: 9,
+      history: [{
+        step: 8,
+        action: { tool: 'browser', type: 'get_page_content' },
+        result: '官方页面日期：2025-01-14，在职报销60%，退休报销80%。',
+      }],
+      observation: { skipped: true },
+      finalOnly: true,
+    };
+    const nvidia = buildNvidiaTaskMessages(context);
+    const gemini = buildGeminiAgentPromptPayload(context);
+    const geminiToolNames = gemini.tools[0].functionDeclarations.map(tool => tool.name);
+
+    expect(nvidia[0].content).toContain('最终总结器');
+    expect(nvidia[0].content).toContain('"tool":"core","type":"finish"');
+    expect(nvidia[0].content).not.toContain('http_fetch(');
+    expect(gemini.systemInstruction).toContain('只能调用 finish');
+    expect(geminiToolNames).toEqual(['finish']);
   });
 
   it('adds a recent search hint for repeated or failed web_search queries', () => {
@@ -158,6 +188,41 @@ describe('agent prompts', () => {
     expect(estimatePayloadTokens(compact)).toBeLessThan(estimatePayloadTokens(full));
     expect(compact[0].content).not.toContain('Chrome DevTools');
     expect(compact[0].content).not.toContain('Desktop Agent 失败');
+    expect(compact[0].content).toContain('core: ask_user(question), notify_user(message,level?), finish(answer)');
+    expect(compact[0].content).toContain('{"tool":"core","type":"finish","answer":"最终结果"}');
+    expect(compact[0].content).not.toContain('write_file(');
+    expect(compact[0].content).not.toContain('run_confirmed(');
+  });
+
+  it('includes behavior rules only for capabilities enabled by the current task', () => {
+    const casual = buildNvidiaTaskMessages({
+      task: '你好，介绍一下你自己',
+      step: 1,
+      history: [],
+      observation: {},
+    })[0].content;
+    const web = buildNvidiaTaskMessages({
+      task: '查询今天苏州天气',
+      step: 1,
+      history: [],
+      observation: {},
+    })[0].content;
+    const image = buildNvidiaTaskMessages({
+      task: '分析这张图片\n[附件]\n- 图片: /tmp/example.png',
+      step: 1,
+      history: [],
+      observation: {},
+    })[0].content;
+
+    expect(casual).not.toContain('文件写入和终端确认命令');
+    expect(casual).not.toContain('browser.click/type');
+    expect(casual).not.toContain('图片任务必须使用 image_analyze');
+    expect(casual).not.toContain('酒店、机票、电商');
+    expect(web).toContain('browser.click/type');
+    expect(web).toContain('web_search 只用于发现来源');
+    expect(web).not.toContain('图片任务必须使用 image_analyze');
+    expect(image).toContain('图片任务必须使用 image_analyze');
+    expect(image).not.toContain('browser.click/type');
   });
 
   it('keeps NVIDIA action examples scoped to the current task', () => {
@@ -182,9 +247,26 @@ describe('agent prompts', () => {
     expect(estimatePayloadTokens(code)).toBeLessThan(1200);
   });
 
-  it('keeps Chrome and IDE MCP details lazy for unrelated tasks', () => {
+  it('keeps one representative JSON example per enabled tool group', () => {
+    const countExamples = (content: string) => content
+      .split('\n')
+      .filter(line => line.startsWith('{"rationale":')).length;
+    const casual = buildNvidiaTaskMessages({ task: '你好', step: 1, history: [], observation: {} })[0].content;
+    const web = buildNvidiaTaskMessages({ task: '查询今天苏州天气', step: 1, history: [], observation: {} })[0].content;
+    const code = buildNvidiaTaskMessages({ task: '检查项目代码并运行测试', step: 1, history: [], observation: {} })[0].content;
+
+    expect(countExamples(casual)).toBe(2);
+    expect(countExamples(web)).toBe(3);
+    expect(countExamples(code)).toBe(5);
+    expect(web).toContain('{"tool":"browser","type":"http_fetch"');
+    expect(web).not.toContain('{"tool":"browser","type":"navigate","url":"https://example.com"}');
+    expect(web).toContain('http_fetch(url,extractLinks?)');
+    expect(code).toContain('write_file(path,content,append?)');
+    expect(code).toContain('run_confirmed(command)');
+  });
+
+  it('keeps Chrome MCP details lazy for unrelated tasks', () => {
     vi.stubEnv('CHROME_MCP_ENABLED', 'true');
-    vi.stubEnv('IDE_MCP_ENABLED', 'true');
     const common = {
       step: 1,
       history: [],
@@ -199,10 +281,8 @@ describe('agent prompts', () => {
       task: '用 Chrome DevTools 检查页面网络请求',
     });
 
-    expect(weather[0].content).toContain('Chrome MCP 已启用但默认不展开');
-    expect(weather[0].content).toContain('IDE MCP 已启用但默认不展开');
+    expect(weather[0].content).not.toContain('Chrome MCP 已启用但默认不展开');
     expect(weather[0].content).not.toContain('Chrome DevTools 工具可用于');
-    expect(weather[0].content).not.toContain('projectPath');
     expect(chromeTask[0].content).toContain('Chrome DevTools 工具可用于');
     expect(estimatePayloadTokens(weather)).toBeLessThan(estimatePayloadTokens(chromeTask));
   });
@@ -224,9 +304,8 @@ describe('agent prompts', () => {
     expect(messages[0].content).not.toContain('Chrome MCP 已启用但默认不展开');
   });
 
-  it('omits inactive Chrome and IDE capabilities from Gemini prompts and tools', () => {
+  it('omits inactive Chrome capabilities from Gemini prompts and tools', () => {
     vi.stubEnv('CHROME_MCP_ENABLED', 'true');
-    vi.stubEnv('IDE_MCP_ENABLED', 'true');
     const payload = buildGeminiAgentPromptPayload({
       task: '杭州今天天气怎么样？',
       step: 1,
@@ -236,18 +315,14 @@ describe('agent prompts', () => {
     const toolNames = payload.tools[0].functionDeclarations.map(tool => tool.name);
 
     expect(payload.systemInstruction).not.toContain('Chrome MCP');
-    expect(payload.systemInstruction).not.toContain('IDE MCP');
     expect(toolNames).not.toContain('chrome_list_tools');
     expect(toolNames).not.toContain('chrome_call_tool');
-    expect(toolNames).not.toContain('ide_list_tools');
-    expect(toolNames).not.toContain('ide_call_tool');
   });
 
-  it('loads Gemini Chrome and IDE capabilities when the task requires them', () => {
+  it('loads Gemini Chrome capabilities when the task requires them', () => {
     vi.stubEnv('CHROME_MCP_ENABLED', 'true');
-    vi.stubEnv('IDE_MCP_ENABLED', 'true');
     const payload = buildGeminiAgentPromptPayload({
-      task: '用 Chrome DevTools 和 IntelliJ 检查页面及代码问题',
+      task: '用 Chrome DevTools 检查页面问题',
       step: 1,
       history: [],
       observation: {},
@@ -255,11 +330,8 @@ describe('agent prompts', () => {
     const toolNames = payload.tools[0].functionDeclarations.map(tool => tool.name);
 
     expect(payload.systemInstruction).toContain('Chrome DevTools 工具可用于');
-    expect(payload.systemInstruction).toContain('当 IDE MCP 已启用时');
     expect(toolNames).toContain('chrome_list_tools');
     expect(toolNames).toContain('chrome_call_tool');
-    expect(toolNames).toContain('ide_list_tools');
-    expect(toolNames).toContain('ide_call_tool');
   });
 
   it('keeps shared Gemini and NVIDIA agent rules semantically identical', () => {
@@ -406,27 +478,6 @@ describe('agent prompts', () => {
     expect(selected.has('web_search')).toBe(true);
     expect(selected.has('read_file')).toBe(true);
     expect(selected.has('codegraph_query')).toBe(true);
-  });
-
-  it('keeps the complete readonly Gemini tool set for delegated analysis', () => {
-    const payload = buildGeminiAgentPromptPayload({
-      task: '分析这个问题',
-      step: 1,
-      history: [],
-      observation: {},
-    }, 'readonly');
-    const names = payload.tools[0].functionDeclarations.map(tool => tool.name);
-
-    expect(names).toEqual(expect.arrayContaining([
-      'list_dir',
-      'read_file',
-      'get_file_info',
-      'search_files',
-      'web_search',
-      'image_analyze',
-      'codegraph_query',
-      'finish',
-    ]));
   });
 
   it('bounds prompt history count and individual result size', () => {

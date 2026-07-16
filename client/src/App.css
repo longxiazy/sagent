@@ -11,6 +11,14 @@
   padding-top: 6px;
 }
 
+.agent-trace-content > .prompt-request-details:first-child,
+.model-card > .prompt-request-details:first-child {
+  margin: 0 0 7px;
+  padding: 0 0 6px;
+  border-top: 0;
+  border-bottom: 1px solid var(--c-border-subtle, rgba(128, 148, 168, .22));
+}
+
 .prompt-request-toggle {
   border: 0;
   background: transparent;
@@ -30,6 +38,32 @@
   border: 1px solid var(--c-border-subtle, rgba(128, 148, 168, .22));
   border-radius: 6px;
   background: var(--c-surface-inset, rgba(0, 0, 0, .14));
+}
+
+.prompt-exchange-section + .prompt-exchange-section {
+  border-top: 1px solid var(--c-border-subtle, rgba(128, 148, 168, .22));
+}
+
+.prompt-exchange-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 5px 8px;
+  background: var(--c-surface-inset, rgba(0, 0, 0, .22));
+  color: var(--c-text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.prompt-response-kind {
+  padding: 5px 8px 0;
+  color: var(--c-text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.prompt-response-pre + .prompt-response-pre {
+  border-top: 1px dashed var(--c-border-subtle, rgba(128, 148, 168, .22));
 }
 
 .prompt-request-diff-legend {
@@ -153,14 +187,13 @@
   --c-badge-consensus: #166534;
 
   /* 工具语义色：按领域分组，时间线圆点 + 工具图标据此着色，让「这步在用哪类工具」一眼可辨。
-     网络蓝青(browser/chrome/search) · 文件命令暖色(fs/terminal) · 桌面紫靛(macos/ide) · 智能粉玫(vision) · 控制灰(core) */
+     网络蓝青(browser/chrome/search) · 文件命令暖色(fs/terminal) · 智能粉玫(vision) · 控制灰(core) */
   --c-tool-browser:  #2563eb;
   --c-tool-chrome:   #0891b2;
   --c-tool-search:   #0d9488;
   --c-tool-fs:       #d97706;
   --c-tool-terminal: #16a34a;
   --c-tool-macos:    #7c3aed;
-  --c-tool-ide:      #4f46e5;
   --c-tool-mcp:      #7c3aed;
   --c-tool-vision:   #c026d3;
   --c-tool-core:     #64748b;
@@ -324,7 +357,6 @@
   --c-tool-fs:       #fbbf24;
   --c-tool-terminal: #4ade80;
   --c-tool-macos:    #a78bfa;
-  --c-tool-ide:      #818cf8;
   --c-tool-mcp:      #a78bfa;
   --c-tool-vision:   #e879f9;
   --c-tool-core:     #94a3b8;
@@ -3396,12 +3428,16 @@ a.model-encyclopedia-field-value:hover {
 
 .agent-workspace-trace .agent-panel-head {
   position: sticky;
-  top: 0;
-  z-index: 10;
-  margin: 0 0 4px;
-  padding: 2px 0 6px;
-  border-bottom: 0;
-  background: var(--c-bg);
+  top: 8px;
+  z-index: 20;
+  align-self: flex-end;
+  width: min(440px, calc(100% - 12px));
+  margin: 0 0 12px auto;
+  padding: 10px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 14px;
+  background: var(--c-surface);
+  box-shadow: 0 10px 30px rgba(47, 47, 83, 0.12), 0 2px 8px rgba(47, 47, 83, 0.06);
 }
 
 .agent-workspace-trace .agent-panel-body,
@@ -3411,8 +3447,7 @@ a.model-encyclopedia-field-value:hover {
 }
 
 .agent-workspace-trace .agent-last-run,
-.agent-workspace-trace .agent-panel-note,
-.agent-workspace-trace .agent-panel-eyebrow {
+.agent-workspace-trace .agent-panel-note {
   display: none;
 }
 
@@ -3445,12 +3480,12 @@ a.model-encyclopedia-field-value:hover {
 .agent-panel-head {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
   position: sticky;
   top: 0;
   z-index: 10;
   background: var(--c-surface);
-  padding-bottom: 8px;
+  padding: 4px 0 8px;
   border-bottom: 1px solid var(--c-border);
   margin-bottom: 4px;
 }
@@ -3458,13 +3493,41 @@ a.model-encyclopedia-field-value:hover {
 .agent-head-row-primary {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 28px;
+  gap: 6px;
+  min-height: 30px;
 }
 
-.agent-head-row-primary > :first-child {
+.agent-panel-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 1;
   min-width: 0;
+}
+
+.agent-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--c-agent-idle);
+  box-shadow: 0 0 0 3px var(--c-agent-idle-bg);
+}
+
+.agent-status-dot.running {
+  background: var(--c-agent-running);
+  box-shadow: 0 0 0 3px var(--c-agent-running-bg);
+  animation: agent-status-pulse 1.8s ease-in-out infinite;
+}
+
+.agent-status-dot.complete {
+  background: var(--c-badge-done);
+  box-shadow: 0 0 0 3px var(--c-badge-done-bg);
+}
+
+@keyframes agent-status-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.8); opacity: 0.65; }
 }
 
 .agent-head-actions {
@@ -3477,8 +3540,10 @@ a.model-encyclopedia-field-value:hover {
 .agent-head-row-metrics {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-wrap: wrap;
+  min-height: 20px;
+  margin-left: 16px;
 }
 
 .agent-panel-eyebrow {
@@ -3493,7 +3558,11 @@ a.model-encyclopedia-field-value:hover {
   margin-top: 0;
   font-size: var(--f-sm);
   font-weight: 700;
+  line-height: 1.25;
   color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-panel-note {
@@ -3503,25 +3572,12 @@ a.model-encyclopedia-field-value:hover {
   color: var(--c-text-secondary);
 }
 
-.agent-status-chip {
-  display: inline-flex;
-  align-items: center;
-  border-radius: var(--r-pill);
-  font-weight: 600;
-  height: 22px;
-  padding: 0 8px;
-  font-size: var(--f-xs);
-}
-
-.agent-status-chip.running { background: var(--c-agent-running-bg); color: var(--c-agent-running); }
-.agent-status-chip.idle { background: var(--c-agent-idle-bg); color: var(--c-agent-idle); }
-
 .agent-stop-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 22px;
-  padding: 0 8px;
+  height: 28px;
+  padding: 0 9px;
   border-radius: var(--r-pill);
   border: 1px solid var(--c-agent-stop-border);
   background: var(--c-agent-stop-bg);
@@ -3544,9 +3600,9 @@ a.model-encyclopedia-field-value:hover {
 }
 
 .agent-collapse-btn {
-  min-width: 24px;
-  height: 24px;
-  padding: 0 6px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 7px;
   border-radius: var(--r-sm);
   border: 1px solid var(--c-border);
   background: var(--c-surface);
@@ -3953,36 +4009,99 @@ a.model-encyclopedia-field-value:hover {
 
 .agent-token-detail { font-weight: 400; color: var(--c-agent-tokens); }
 
-/* ── Trace Debug Panel ── */
-
-.agent-browser-health {
-  display: flex;
+.agent-browser-compact {
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
-  min-width: 0;
-  margin-bottom: 10px;
-  padding: 7px 10px;
-  border: 1px solid var(--c-border);
+  gap: 4px;
+  height: 20px;
+  padding: 1px 7px;
   border-radius: var(--r-sm);
   background: var(--c-surface-inline);
   color: var(--c-text-secondary);
   font-size: var(--f-micro);
+  white-space: nowrap;
 }
 
-.agent-browser-health-dot {
-  width: 7px;
-  height: 7px;
+.agent-browser-compact svg {
+  color: var(--c-text-muted);
+}
+
+.agent-browser-compact strong {
+  color: var(--c-text-secondary);
+  font-weight: 650;
+}
+
+.agent-browser-compact-dot {
+  width: 6px;
+  height: 6px;
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--c-badge-done);
 }
 
-.agent-browser-health.navigating .agent-browser-health-dot,
-.agent-browser-health.starting .agent-browser-health-dot,
-.agent-browser-health.recovering .agent-browser-health-dot { background: var(--c-agent-timer); }
-.agent-browser-health.degraded .agent-browser-health-dot { background: var(--c-badge-error); }
-.agent-browser-health-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-browser-health > span:last-child { margin-left: auto; white-space: nowrap; }
+.agent-browser-compact.navigating .agent-browser-compact-dot,
+.agent-browser-compact.starting .agent-browser-compact-dot,
+.agent-browser-compact.recovering .agent-browser-compact-dot {
+  background: var(--c-agent-timer);
+  animation: agent-status-pulse 1.8s ease-in-out infinite;
+}
+
+.agent-browser-compact.degraded .agent-browser-compact-dot {
+  background: var(--c-badge-error);
+}
+
+.agent-browser-preview {
+  position: relative;
+  width: 100%;
+  height: 168px;
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-bg);
+  color: var(--c-text-secondary);
+  cursor: zoom-in;
+  padding: 0;
+  text-align: left;
+}
+
+.agent-browser-preview:hover {
+  border-color: var(--c-primary-light);
+}
+
+.agent-browser-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #fff;
+}
+
+.agent-browser-preview-caption {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  left: 6px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(20, 20, 32, 0.76);
+  color: #fff;
+  font-size: var(--f-micro);
+  backdrop-filter: blur(8px);
+}
+
+.agent-browser-preview-caption span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Trace Debug Panel ── */
 
 .agent-model-filter {
   display: flex;
@@ -4317,7 +4436,6 @@ a.model-encyclopedia-field-value:hover {
 [data-tool="fs"]       { --tool-c: var(--c-tool-fs); }
 [data-tool="terminal"] { --tool-c: var(--c-tool-terminal); }
 [data-tool="macos"]    { --tool-c: var(--c-tool-macos); }
-[data-tool="ide"]      { --tool-c: var(--c-tool-ide); }
 [data-tool="mcp"]      { --tool-c: var(--c-tool-mcp); }
 [data-tool="vision"]   { --tool-c: var(--c-tool-vision); }
 [data-tool="core"]     { --tool-c: var(--c-tool-core); }
@@ -4354,6 +4472,8 @@ a.model-encyclopedia-field-value:hover {
 }
 .agent-trace-item[data-type="session_checkpoint"]::after { background: var(--c-badge-plan); }
 .agent-trace-item[data-type="notification"]::after { background: var(--c-primary); }
+/* 用户回答已经有“回答”徽标，不再重复绘制时间线圆点。 */
+.agent-trace-item[data-type="user_response"]::after { display: none; }
 .model-plan-group::after { background: var(--c-badge-plan); }
 /* 卡组圆点改用 winner 的工具色（与单模型步一致）；无 winner 时回落到 plan 紫 */
 .model-plan-group[data-tool]::after { background: var(--tool-c); }
@@ -4688,9 +4808,9 @@ a.model-encyclopedia-field-value:hover {
 .step-card-summary {
   flex: 1;
   min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--f-sm);
-  font-weight: 600;
+  font-weight: 650;
+  line-height: 1.35;
   color: var(--c-text);
   white-space: nowrap;
   overflow: hidden;
@@ -4741,11 +4861,30 @@ a.model-encyclopedia-field-value:hover {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin: 0;
+}
+
+.tool-execution-block {
   margin-top: 6px;
   padding: 7px 8px;
   border: 1px solid var(--c-border);
   border-radius: var(--r-sm);
   background: var(--c-surface-hover);
+}
+
+.tool-execution-block > .step-card-result,
+.tool-execution-block > .tool-result-details {
+  margin: 7px 0 0;
+  padding: 7px 0 0;
+  border: 0;
+  border-top: 1px solid var(--c-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.tool-execution-block > .terminal-process,
+.tool-execution-block > .mcp-process {
+  margin-top: 7px;
 }
 
 .tool-request-row {
@@ -5095,9 +5234,9 @@ a.model-encyclopedia-field-value:hover {
 .model-card-summary {
   flex: 1;
   min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--f-sm);
-  font-weight: 600;
+  font-weight: 650;
+  line-height: 1.35;
   color: var(--c-text);
   white-space: nowrap;
   overflow: hidden;
@@ -6512,38 +6651,39 @@ textarea:disabled {
   }
 
   .agent-panel-head {
-    gap: 4px;
-    align-items: center;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background: var(--c-surface);
+    gap: 6px;
   }
 
-  .agent-panel-head > :first-child {
-    flex: 1 1 auto;
-    min-width: 0;
+  .agent-workspace-trace .agent-panel {
+    padding: 6px 0 8px;
+  }
+
+  .agent-workspace-trace .agent-panel-head {
+    top: 6px;
+    width: 100%;
+    margin: 0 0 8px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    box-shadow: 0 6px 20px rgba(47, 47, 83, 0.1), 0 1px 5px rgba(47, 47, 83, 0.05);
   }
 
   .agent-panel-title {
-    font-size: var(--f-xs);
+    font-size: var(--f-sm);
     margin-top: 0;
+  }
+
+  .agent-status-dot {
+    width: 7px;
+    height: 7px;
   }
 
   .agent-panel-note {
     display: none;
   }
 
-  .agent-status-chip {
-    height: 20px;
-    padding: 0 6px;
-    font-size: var(--f-xs);
-    flex-shrink: 0;
-  }
-
   .agent-stop-btn {
-    height: 22px;
-    padding: 0 6px;
+    height: 28px;
+    padding: 0 8px;
     font-size: var(--f-xs);
   }
 
@@ -6551,18 +6691,45 @@ textarea:disabled {
     display: none;
   }
 
-  .agent-collapse-btn.agent-expand-all,
-  .agent-collapse-btn.agent-collapse-all {
+  .agent-collapse-btn.agent-cards-toggle {
     display: inline-flex;
   }
 
   .agent-panel.collapsed .agent-panel-head { cursor: default; }
   .agent-panel.collapsed .agent-trace { display: flex; }
 
-  .agent-metrics {
-    order: 10;
-    flex-basis: 100%;
+  .agent-head-row-metrics {
+    width: calc(100% - 15px);
+    margin-left: 15px;
     gap: 4px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+
+  .agent-browser-compact {
+    padding-inline: 5px;
+  }
+
+  .agent-browser-compact strong {
+    display: none;
+  }
+
+  .agent-browser-preview {
+    height: 76px;
+    border-radius: 8px;
+  }
+
+  .agent-browser-preview-caption {
+    right: 4px;
+    bottom: 4px;
+    left: 4px;
+    height: 20px;
+    padding-inline: 5px;
+  }
+
+  .step-card-meta,
+  .model-card-meta {
+    display: none;
   }
 
   .agent-metric {
@@ -6612,7 +6779,7 @@ textarea:disabled {
     overflow-y: auto;
   }
 
-  .tool-request-details,
+  .tool-execution-block,
   .step-card-result,
   .tool-result-details {
     padding: 6px;
@@ -7122,8 +7289,6 @@ textarea:disabled {
   .agent-panel { padding: 4px 8px; }
 
   .agent-metric-tokens { font-size: var(--f-micro); padding: 1px 4px; }
-  .agent-metric:last-child { display: none; }
-
   .agent-trace-item { padding: 2px 0 2px 26px; gap: 5px; }
 
   .agent-trace-badge { height: 18px; font-size: var(--f-micro); padding: 0 4px; }

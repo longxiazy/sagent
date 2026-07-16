@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
 function formatRequest(value) {
   if (value == null) return '';
@@ -17,28 +17,29 @@ function changedLines(currentText, previousText) {
   return current.map(text => ({ text, changed: !previous.has(text) }));
 }
 
-export function PromptRequestDetails({ requests, previousRequest, t }) {
+export function PromptRequestDetails({ requests, previousRequest, response, reasoning, t }) {
   const [open, setOpen] = useState(false);
   const [requestIndex, setRequestIndex] = useState(0);
   const requestList = Array.isArray(requests) ? requests : [];
   const activeIndex = Math.min(requestIndex, Math.max(requestList.length - 1, 0));
   const currentRequest = requestList.length > 0 ? requestList[activeIndex] : null;
-  const currentText = useMemo(() => formatRequest(currentRequest), [currentRequest]);
-  const previousText = useMemo(() => formatRequest(previousRequest), [previousRequest]);
-  const lines = useMemo(() => changedLines(currentText, previousText), [currentText, previousText]);
-  const removedLines = useMemo(() => {
+  const currentText = formatRequest(currentRequest);
+  const previousText = formatRequest(previousRequest);
+  const responseText = formatRequest(response);
+  const lines = changedLines(currentText, previousText);
+  const removedLines = (() => {
     if (!previousText) return [];
     const current = new Set(currentText.split('\n'));
     return previousText.split('\n').filter(text => !current.has(text));
-  }, [currentText, previousText]);
+  })();
 
-  if (!currentRequest) return null;
+  if (!currentRequest && !responseText && !reasoning) return null;
 
   return (
     <div className="prompt-request-details">
       <button className="prompt-request-toggle" onClick={() => setOpen(value => !value)}>
-        {open ? '▾' : '▸'} {t('agentPanel.viewLlmRequest')}
-        {requests.length > 1 ? ` · ${t('agentPanel.requestAttempts', { n: requests.length })}` : ''}
+        {open ? '▾' : '▸'} {t('agentPanel.viewLlmExchange')}
+        {requestList.length > 1 ? ` · ${t('agentPanel.requestAttempts', { n: requestList.length })}` : ''}
       </button>
       {open && (
         <div className="prompt-request-body">
@@ -51,19 +52,36 @@ export function PromptRequestDetails({ requests, previousRequest, t }) {
               ))}
             </div>
           )}
-          {previousText && <div className="prompt-request-diff-legend">{t('agentPanel.requestDiffLegend')}</div>}
-          <pre className="prompt-request-pre">
-            {lines.map((line, index) => (
-              <span key={`current-${index}`} className={line.changed ? 'prompt-request-line changed' : 'prompt-request-line'}>{line.text}{'\n'}</span>
-            ))}
-          </pre>
-          {removedLines.length > 0 && (
-            <details className="prompt-request-removed">
-              <summary>{t('agentPanel.requestRemoved', { n: removedLines.length })}</summary>
+          {currentRequest && (
+            <section className="prompt-exchange-section">
+              <div className="prompt-exchange-label">{t('agentPanel.llmRequest')}</div>
+              {previousText && <div className="prompt-request-diff-legend">{t('agentPanel.requestDiffLegend')}</div>}
               <pre className="prompt-request-pre">
-                {removedLines.map((line, index) => <span key={`removed-${index}`} className="prompt-request-line removed">{line}{'\n'}</span>)}
+                {lines.map((line, index) => (
+                  <span key={`current-${index}`} className={line.changed ? 'prompt-request-line changed' : 'prompt-request-line'}>{line.text}{'\n'}</span>
+                ))}
               </pre>
-            </details>
+              {removedLines.length > 0 && (
+                <details className="prompt-request-removed">
+                  <summary>{t('agentPanel.requestRemoved', { n: removedLines.length })}</summary>
+                  <pre className="prompt-request-pre">
+                    {removedLines.map((line, index) => <span key={`removed-${index}`} className="prompt-request-line removed">{line}{'\n'}</span>)}
+                  </pre>
+                </details>
+              )}
+            </section>
+          )}
+          {(responseText || reasoning) && (
+            <section className="prompt-exchange-section prompt-response-section">
+              <div className="prompt-exchange-label">{t('agentPanel.llmResponse')}</div>
+              {reasoning && (
+                <>
+                  <div className="prompt-response-kind">{t('modelCard.reasoning')}</div>
+                  <pre className="prompt-request-pre prompt-response-pre">{reasoning}</pre>
+                </>
+              )}
+              {responseText && <pre className="prompt-request-pre prompt-response-pre">{responseText}</pre>}
+            </section>
           )}
         </div>
       )}

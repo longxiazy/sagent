@@ -126,13 +126,13 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
     },
 
     async agentPlan(opts: AgentPlanOpts): Promise<AgentPlanResult> {
-      const { model, signal, systemPrompt, modelConfig, toolMode = 'full' } = opts;
+      const { model, signal, systemPrompt, modelConfig } = opts;
       const {
         systemInstruction: system,
         contents,
         tools,
         toolConfig,
-      } = buildGeminiAgentPromptPayload(opts, toolMode as 'full' | 'readonly');
+      } = buildGeminiAgentPromptPayload(opts);
       const maxOutputTokens = resolveAgentMaxTokens({
         model,
         modelConfig,
@@ -164,7 +164,12 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
         const call = calls[0];
         const action = { type: call.name, ...(call.args || {}) };
         const decision = normalizeDesktopAgentDecision({ action });
-        return { ...decision, usage, reasoning: null };
+        return {
+          ...decision,
+          usage,
+          reasoning: null,
+          response: JSON.stringify({ functionCalls: calls }, null, 2),
+        };
       }
 
       // fallback：把纯文本当作 JSON finish 动作尝试解析
@@ -172,7 +177,7 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
       if (typeof text === 'string' && text.trim()) {
         try {
           const decision = normalizeDesktopAgentDecision(JSON.parse(text));
-          return { ...decision, usage, reasoning: null };
+          return { ...decision, usage, reasoning: null, response: text };
         } catch {
           // not JSON
         }

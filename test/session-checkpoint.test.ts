@@ -197,6 +197,44 @@ describe('runtime: session checkpoint integration', () => {
     expect(result.steps[0].url).toBe('https://target.example/page');
   });
 
+  it('appends unique successful http_fetch URLs as final references', async () => {
+    const cancelSignal = new AbortController().signal;
+    const actions = [
+      { tool: 'browser', type: 'http_fetch', url: 'https://official.example/a' },
+      { tool: 'browser', type: 'http_fetch', url: 'https://failed.example/b' },
+      { tool: 'browser', type: 'http_fetch', url: 'https://official.example/a' },
+      { tool: 'core', type: 'finish', answer: '官网确认该政策已经生效。' },
+    ];
+
+    const result = await runAgentRuntime({
+      task: '核验官网政策',
+      maxSteps: 4,
+      onEvent: noop,
+      cancelSignal,
+      initialize,
+      observe,
+      decide: ({ step }) => decision(actions[step - 1], `step ${step}`),
+      authorize: approve,
+      execute: (_state, action) => {
+        if (action.type === 'finish') return action.answer;
+        if ('url' in action && action.url.includes('failed.example')) {
+          return { result: '页面访问失败', resultStatus: 'failed', resultError: 'HTTP 500' };
+        }
+        return '官网正文';
+      },
+      cleanup: noop,
+    });
+
+    expect(result.answer).toContain('官网确认该政策已经生效。');
+    expect(result.answer.endsWith([
+      '官网确认该政策已经生效。',
+      '',
+      '引用：',
+      '1. https://official.example/a',
+    ].join('\n'))).toBe(true);
+    expect(result.answer).not.toContain('https://failed.example/b');
+  });
+
   it('emits structured result status for execution failures', async () => {
     const cancelSignal = new AbortController().signal;
     const { log: evtLog, onEvent } = events();
@@ -314,6 +352,68 @@ describe('runtime: session checkpoint integration', () => {
     expect(result.answer).toContain('重复执行同一动作');
     expect(result.answer).toContain('browser.click 3');
     expect(evtLog.some(e => e.type === 'notification' && e.level === 'warning')).toBe(true);
+  });
+
+  it('replaces repeated no-progress scrolling with page-content extraction', async () => {
+    const cancelSignal = new AbortController().signal;
+    const { log: evtLog, onEvent } = events();
+    const executedTypes: string[] = [];
+    const decide = vi.fn()
+      .mockReturnValueOnce(decision({ tool: 'browser', type: 'scroll', direction: 'down', amount: 10 }, 'scroll'))
+      .mockReturnValueOnce(decision({ tool: 'browser', type: 'scroll', direction: 'down', amount: 10 }, 'scroll'))
+      .mockReturnValueOnce(decision({ tool: 'browser', type: 'scroll', direction: 'down', amount: 10 }, 'scroll'))
+      .mockReturnValueOnce(decision({ tool: 'core', type: 'finish', answer: '已提取页面内容' }, 'finish'));
+
+    const result = await runAgentRuntime({
+      task: '读取页面',
+      maxSteps: 4,
+      onEvent,
+      cancelSignal,
+      initialize,
+      observe,
+      decide,
+      authorize: approve,
+      execute: (_state, action) => {
+        executedTypes.push(action.type);
+        return action.type === 'get_page_content'
+          ? '页面完整正文'
+          : '已滚动，但页面内容未变化';
+      },
+      cleanup: noop,
+    });
+
+    expect(executedTypes).toEqual(['scroll', 'scroll', 'get_page_content', 'finish']);
+    expect(result.answer).toContain('已提取页面内容');
+    expect(evtLog.some(e => e.type === 'notification' && String(e.message).includes('自动改用 get_page_content'))).toBe(true);
+  });
+
+  it('requests a finish-only summary after the last tool step', async () => {
+    const cancelSignal = new AbortController().signal;
+    const decide = vi.fn((context: any) => context.finalOnly
+      ? decision({ tool: 'core', type: 'finish', answer: '根据官网正文：在职60%，退休80%。' }, 'summarize')
+      : decision({ tool: 'browser', type: 'get_page_content' }, 'fetch content'));
+    let executeCalls = 0;
+
+    const result = await runAgentRuntime({
+      task: '总结医保信息',
+      maxSteps: 1,
+      cancelSignal,
+      initialize,
+      observe,
+      decide,
+      authorize: approve,
+      execute: () => {
+        executeCalls += 1;
+        return '北京市医保局正文：在职60%，退休80%。';
+      },
+      cleanup: noop,
+    });
+
+    expect(executeCalls).toBe(1);
+    expect(decide).toHaveBeenCalledTimes(2);
+    expect(decide.mock.calls[1][0]).toEqual(expect.objectContaining({ finalOnly: true, step: 2 }));
+    expect(result.answer).toContain('根据官网正文：在职60%，退休80%。');
+    expect(result.answer).not.toContain('已达到最大执行步数');
   });
 
   it('saves snapshots at interval steps', async () => {

@@ -1,6 +1,6 @@
 /**
  * Desktop Agent — 浏览器/桌面/文件/终端多工具协同的 Agent 运行器
- * Desktop Agent runtime — orchestrates browser, filesystem, terminal, IDE, and MCP tools
+ * Desktop Agent runtime — orchestrates browser, filesystem, terminal, and MCP tools
  *
  * 核心流程 / Core loop:
  *   initialize → (observe → decide → authorize → execute) × N → cleanup
@@ -36,7 +36,6 @@ import { executeSearchAction } from '../tools/search/execute.ts';
 import { executeCodegraphQueryAction } from '../tools/codegraph/execute.ts';
 import { executeVisionAction } from '../tools/vision/execute.ts';
 import { createDomainRules } from '../tools/fetch/domain-rules.ts';
-import { executeIdeAction } from '../tools/ide/execute.ts';
 import { executeChromeAction } from '../tools/chrome/execute.ts';
 import { executeGenericMcpAction } from '../tools/mcp/execute.ts';
 import { executeTerminalAction } from '../tools/terminal/run.ts';
@@ -147,7 +146,6 @@ export function createDesktopAgentRunner({
         projectRoot: state.projectRoot,
         dataDir: state.dataDir,
       }),
-      ide: async (state, action) => executeIdeAction(action, { signal: state.cancelSignal }),
       chrome: async (state, action) => executeChromeAction(action, { signal: state.cancelSignal }),
       mcp: async (state, action, context) => {
         let sequence = 0;
@@ -257,7 +255,7 @@ export function createDesktopAgentRunner({
         dataDir,
       }),
       observe: state => serializeBrowserOperation(() => observeDesktopAgent(state)),
-      decide: async ({ task: currentTask, step, history, observation }) =>
+      decide: async ({ task: currentTask, step, history, observation, finalOnly }) =>
         plan({
           model,
           agentModels,
@@ -269,14 +267,15 @@ export function createDesktopAgentRunner({
           step,
           history,
           observation,
+          finalOnly,
           conversationHistory,
         }),
       authorize,
       shouldObserve: (lastAction) => {
         if (!lastAction) return false;
         const tool = lastAction.tool || '';
-        // chrome 是浏览器类工具，状态变化必须观察；fs/terminal/ide 多为本地无副作用操作可跳过
-        return tool !== 'fs' && tool !== 'terminal' && tool !== 'ide';
+        // chrome 是浏览器类工具，状态变化必须观察；fs/terminal 多为本地无副作用操作可跳过
+        return tool !== 'fs' && tool !== 'terminal';
       },
       execute: async (state, action, context) => routeAction(state, action, context),
       cleanup: async state => {

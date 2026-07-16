@@ -9,7 +9,7 @@
  *   2. observe()     — 观察当前环境（桌面/浏览器/文件系统）
  *   3. decide()      — LLM 决定下一步动作（调用 planner/provider）
  *   4. authorize()   — 策略审批（safe 直接通过，confirm 需用户批准，blocked 直接拒绝）
- *   5. execute()     — 执行动作（路由到 browser/fs/terminal/IDE/MCP 工具）
+ *   5. execute()     — 执行动作（路由到 browser/fs/terminal/MCP 工具）
  *   6. 回到步骤 2，直到 decide 返回 finish 或达到 maxSteps
  *
  * 历史截断 / Progressive history truncation：
@@ -203,8 +203,8 @@ function actionLoopKey(action: AgentAction | undefined | null) {
     'browser.navigate',
     'browser.click',
     'browser.type',
+    'browser.scroll',
     'chrome.chrome_call_tool',
-    'ide.ide_call_tool',
   ]);
   if (!repeatGuardedActions.has(`${tool}.${type}`)) return '';
   return stableStringify(action);
@@ -222,6 +222,24 @@ function normalizeResultStatus(status): ActionResultStatus | '' {
 
 function historyEntryFailed(entry) {
   return normalizeResultStatus(entry?.resultStatus || entry?.status) === 'failed';
+}
+
+function appendHttpFetchReferences(answer: string, history: AgentStep[]) {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of history) {
+    if (entry?.action?.tool !== 'browser' || entry.action.type !== 'http_fetch') continue;
+    const status = normalizeResultStatus(entry?.resultStatus);
+    if (status === 'failed' || status === 'rejected') continue;
+    const url = actionTargetUrl(entry.action);
+    if (!url || !/^https?:\/\//i.test(url) || seen.has(url)) continue;
+    seen.add(url);
+    urls.push(url);
+  }
+  if (urls.length === 0) return answer;
+
+  const references = urls.map((url, index) => `${index + 1}. ${url}`).join('\n');
+  return `${String(answer || '').trim()}\n\n引用：\n${references}`;
 }
 
 function normalizeActionResult(value): {
@@ -476,7 +494,16 @@ export async function runAgentRuntime({
       }
 
       const repeatedLoop = detectRepeatedActionLoop(history, decision.action);
-      if (repeatedLoop) {
+      if (repeatedLoop && decision.action.tool === 'browser' && decision.action.type === 'scroll') {
+        decision.rationale = '检测到重复滚动且页面内容未变化，改为提取页面完整内容';
+        decision.action = { tool: 'browser', type: 'get_page_content' };
+        onEvent?.({
+          type: 'notification',
+          level: 'warning',
+          step,
+          message: '连续滚动未产生新内容，已自动改用 get_page_content。',
+        });
+      } else if (repeatedLoop) {
         const actionSummary = summarizeActionForLoop(decision.action);
         finalAnswer = repeatedLoop.failed
           ? `检测到 Agent 准备重复执行刚失败的同一动作（${actionSummary}）。为避免继续无意义重复，已自动停止。\n\n请补充更具体的期望、差异点或允许我换一种方式继续。`
@@ -627,8 +654,40 @@ export async function runAgentRuntime({
       }
     }
 
+    if (!finalAnswer && history.length > 0 && !cancelled()) {
+      onEvent?.({
+        type: 'notification',
+        level: 'info',
+        step: maxSteps + 1,
+        message: '工具执行步数已用完，正在根据已有结果生成最终总结。',
+      });
+      try {
+        const finalDecision = await decide({
+          task,
+          step: maxSteps + 1,
+          history: compressHistory(history, task),
+          observation: { skipped: true, reason: '工具执行步数已用完，只能根据已有结果调用 finish' },
+          state,
+          finalOnly: true,
+        });
+        if (finalDecision.action.type === 'finish' && finalDecision.action.answer.trim()) {
+          finalAnswer = finalDecision.action.answer.trim();
+        } else {
+          log.warn(`[Runtime] 最终总结阶段未返回 finish: ${finalDecision.action.tool}.${finalDecision.action.type}`);
+        }
+      } catch (err) {
+        log.warn(`[Runtime] 最终总结失败: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     if (!finalAnswer) {
-      finalAnswer = "已达到最大执行步数，任务未完全完成。";
+      const lastSuccessful = [...history].reverse().find(entry => (
+        normalizeResultStatus(entry?.resultStatus) !== 'failed'
+        && String(entry?.result ?? '').trim()
+      ));
+      finalAnswer = lastSuccessful
+        ? `已达到工具执行步数上限。最后一次成功获取的结果如下：\n\n${String(lastSuccessful.result).trim().slice(0, 6000)}`
+        : '已达到最大执行步数，任务未完全完成。';
     }
 
     const quality = assessResultQuality({ task, steps: history, answer: finalAnswer });
@@ -651,6 +710,8 @@ export async function runAgentRuntime({
         answer = warning + answer;
       }
     }
+
+    answer = appendHttpFetchReferences(answer, history);
 
     return {
       answer,

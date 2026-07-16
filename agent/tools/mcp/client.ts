@@ -7,7 +7,7 @@ import { log } from '../../../helpers/logger.ts';
 import { configStore } from '../../core/config-store.ts';
 import type { McpServerConfig } from '../../core/config-schema.ts';
 
-export const BUILTIN_MCP_SERVER_NAMES = new Set(['chrome', 'jetbrains']);
+export const BUILTIN_MCP_SERVER_NAMES = new Set(['chrome']);
 
 type GenericMcpEntry = { name: string; config: McpServerConfig };
 type McpStatus = { phase: 'connecting' | 'connected' | 'discovering' | 'calling' | 'waiting' | 'progress' | 'completed' | 'error'; toolName?: string; message?: string; progress?: number; total?: number };
@@ -34,7 +34,7 @@ export function getGenericMcpServer(name: string): McpServerConfig {
   const key = String(name || '').trim();
   if (!key) throw new Error('MCP server 名称不能为空');
   if (BUILTIN_MCP_SERVER_NAMES.has(key)) {
-    throw new Error(`${key} 使用专用 MCP 适配器，请调用对应的 IDE/Chrome 工具`);
+    throw new Error(`${key} 使用专用 MCP 适配器，请调用对应的 Chrome 工具`);
   }
   const config = configStore.mcpServers()[key];
   if (!config?.enabled) throw new Error(`MCP server ${key} 未配置或未启用`);

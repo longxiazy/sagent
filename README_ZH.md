@@ -14,7 +14,7 @@
 
 ## 项目简介
 
-sagent 把 React Web UI、Bun/Express 后端和可调用工具的 Agent runtime 组合在一起。它可以接入多个模型供应商，执行桌面自动化，读写文件，运行终端命令，查看浏览器页面，调用 JetBrains IDE MCP 工具，并在不同会话之间保留项目记忆。
+sagent 把 React Web UI、Bun/Express 后端和可调用工具的 Agent runtime 组合在一起。它可以接入多个模型供应商，执行桌面自动化，读写文件，运行终端命令，查看浏览器页面，调用 MCP 工具，并在不同会话之间保留项目记忆。
 
 它更像一个本地 AI 工作台：选择项目目录，输入任务，审批敏感操作，然后在界面里实时查看每一步执行过程和最终结果。
 
@@ -22,7 +22,7 @@ sagent 把 React Web UI、Bun/Express 后端和可调用工具的 Agent runtime 
 
 - 多模型聊天和 Agent 模式，支持竞速与汇总策略。
 - macOS 桌面观察、截图、浏览器自动化，以及可选的 Chrome DevTools MCP 集成。
-- 文件、终端、搜索、视觉、IDE MCP、浏览器等工具统一接入 Agent runtime。
+- 文件、终端、搜索、视觉、MCP、浏览器等工具统一接入 Agent runtime。
 - 使用 `npm run sandbox` 时，每次 Agent 任务都会进入短生命周期沙盒 worker。
 - 项目级记忆、trace、上传文件、checkpoint 和中断恢复。
 - 局域网内手机、平板、电脑都能实时查看 Agent 进度。
@@ -51,7 +51,7 @@ npm run sandbox
 
 `npm run sandbox` 会正常启动 UI/API server，并让每次 Agent 任务在 macOS 沙盒 worker 中执行。只有明确需要无沙盒调试时，才使用 `npm run dev`。
 
-启动后可在设置页选择 Agent Profile、调整基础/高级运行参数，并管理 Chrome 与 JetBrains MCP 连接。这些值保存在本地 `data/config.json`，密钥仍保留在 `.env`。
+启动后可在设置页选择 Agent Profile、调整基础/高级运行参数，并管理 Chrome 或通用 MCP 连接。这些值保存在本地 `data/config.json`，密钥仍保留在 `.env`。
 
 ## Docker 运行
 
@@ -108,9 +108,9 @@ Agent 每完成一步都会写入 `data/checkpoints/`。如果后端重启且恢
 
 sagent 会在配置的数据目录下保存项目经验，包括近期任务摘要、压缩后的历史上下文和项目知识。侧边栏记忆面板可以查看、手动压缩或清空这些状态。
 
-### IDE 与浏览器集成
+### 浏览器与 MCP 集成
 
-JetBrains IDE MCP 会给 Agent 增加 `ide_list_tools` 和 `ide_call_tool`。Chrome DevTools MCP 会增加 `chrome_list_tools` 和 `chrome_call_tool`。包括 `codex mcp-server` 在内的通用 MCP server 会通过 `mcp_list_servers`、`mcp_list_tools` 和 `mcp_call_tool` 接入。所有集成都是可选能力，配置方式见 [CONFIGURATION.md](CONFIGURATION.md)。
+Chrome DevTools MCP 会增加 `chrome_list_tools` 和 `chrome_call_tool`。包括 `codex mcp-server` 在内的通用 MCP server 会通过 `mcp_list_servers`、`mcp_list_tools` 和 `mcp_call_tool` 接入。所有集成都是可选能力，配置方式见 [CONFIGURATION.md](CONFIGURATION.md)。
 
 ## 常用命令
 

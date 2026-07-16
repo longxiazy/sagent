@@ -3,7 +3,6 @@ import { deriveProviderName } from '../agent/core/ai-client.ts';
 import { tReq } from '../helpers/i18n.ts';
 import type { AgentRouterContext } from './agent-types.ts';
 import { loadChromeMcpConfig } from '../agent/tools/chrome/mcp-client.ts';
-import { loadIdeMcpConfig } from '../agent/tools/ide/mcp-client.ts';
 
 // 只读展示用：脱敏 API Key（仅保留后 4 位，绝不回传明文）。
 function maskKey(key?: string): string | null {
@@ -44,16 +43,6 @@ async function testMcpConnection(name: string) {
       await client.close().catch(() => {});
     }
   }
-  if (name === 'jetbrains') {
-    const { createIdeMcpClient, loadIdeMcpConfig } = await import('../agent/tools/ide/mcp-client.ts');
-    const client = createIdeMcpClient(loadIdeMcpConfig());
-    try {
-      const tools = await client.listTools({ refresh: true });
-      return { ok: true, toolCount: tools.length };
-    } finally {
-      await client.close().catch(() => {});
-    }
-  }
   const { createGenericMcpClient, getGenericMcpServer } = await import('../agent/tools/mcp/client.ts');
   const client = createGenericMcpClient(name, getGenericMcpServer(name));
   try {
@@ -83,20 +72,6 @@ function effectiveMcpServers(configStore: AgentRouterContext['configStore']) {
         navigateTimeoutMs: chrome.navigateTimeoutMs,
       };
       sources.chrome = 'env';
-    }
-  }
-  if (!servers.jetbrains) {
-    const ide = loadIdeMcpConfig();
-    if (ide.enabled) {
-      servers.jetbrains = {
-        enabled: true,
-        transport: ide.transport === 'stdio'
-          ? { type: 'stdio', command: ide.command, args: ide.args, cwd: ide.cwd }
-          : { type: 'sse', url: ide.url || `http://${ide.host}:${ide.port}${ide.ssePath}`, ...(ide.messagesUrl ? { messagesUrl: ide.messagesUrl } : {}) },
-        projectPath: ide.projectPath,
-        promptMode: 'lazy',
-      };
-      sources.jetbrains = 'env';
     }
   }
   return { servers, sources };

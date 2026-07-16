@@ -1,7 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import {
+  captureBrowserPreview,
   closeBrowserSession,
   createBrowserSession,
+  initWebViewDataStore,
   resetWebViewFactoryForTests,
   setWebViewFactoryForTests,
 } from '../agent/tools/browser/webview-session.ts';
@@ -68,6 +73,11 @@ class FakeWebView {
     this.calls.push(['press', key]);
   }
 
+  async screenshot() {
+    this.calls.push(['screenshot']);
+    return Buffer.from('fake-jpeg');
+  }
+
   async close() {
     this.closed = true;
     this.calls.push(['close']);
@@ -112,6 +122,27 @@ describe('Bun.WebView browser session adapter', () => {
 
     await closeBrowserSession(session);
     expect(created.closed).toBe(true);
+  });
+
+  it('stores a browser preview and publishes a local screenshot URL', async () => {
+    const memoryDir = await mkdtemp(path.join(os.tmpdir(), 'sagent-browser-preview-'));
+    initWebViewDataStore(memoryDir);
+    const view = new FakeWebView();
+    view.url = 'https://example.com/report';
+
+    try {
+      const preview = await captureBrowserPreview(view, { runId: 'run_preview' });
+
+      expect(preview).toMatchObject({
+        title: 'Example',
+        url: 'https://example.com/report',
+      });
+      expect(preview?.screenshotUrl).toMatch(/^\/screenshots\/run_preview\/browser-preview-\d+\.jpg$/);
+      const relativePath = preview!.screenshotUrl.replace('/screenshots/', '');
+      await expect(readFile(path.join(memoryDir, 'screenshots', relativePath), 'utf8')).resolves.toBe('fake-jpeg');
+    } finally {
+      await rm(memoryDir, { recursive: true, force: true });
+    }
   });
 
   it.skipIf(process.platform === 'win32')('throws a clear runtime error when Bun.WebView is unavailable', () => {

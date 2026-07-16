@@ -70,6 +70,7 @@ export interface AgentPlanResult {
   action: AgentAction;
   usage?: TokenUsage | null;
   reasoning?: string | null;
+  response?: unknown;
   requests?: unknown[][];
 }
 

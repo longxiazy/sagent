@@ -30,7 +30,6 @@ import { DEFAULT_VISION_MODEL } from './agent/tools/vision/execute.ts';
 import { createClients, deriveProviderName } from './agent/core/ai-client.ts';
 import { createProviderRegistry } from './agent/core/providers/registry.ts';
 import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
-import { loadIdeMcpConfig } from './agent/tools/ide/mcp-client.ts';
 import { loadChromeMcpConfig } from './agent/tools/chrome/mcp-client.ts';
 import { createAgentRouter } from './routes/agent.ts';
 import { createCompletionsRouter } from './routes/completions.ts';
@@ -229,7 +228,6 @@ async function collectAllCheckpoints() {
 
 const httpServer = app.listen(Number(PORT), HOST, async () => {
   const cfg = configStore.get();
-  const ideConfig = loadIdeMcpConfig();
   const chromeConfig = loadChromeMcpConfig();
   const W = 56;
   const rowPad = (s, n) => padEndW(truncateW(s, n), n);
@@ -253,8 +251,6 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
   ${row('AGENT_RESUME', AGENT_RESUME)}
   ${row('AGENT_WORKERS', AGENT_SANDBOXED_WORKERS ? (AGENT_WORKER_SANDBOX ? 'sandboxed' : 'plain') : 'disabled')}
   ${row('CHROME_PATH', process.env.AGENT_BROWSER_PATH || 'auto')}
-  ${ideConfig.enabled ? row('IDE_MCP', `${ideConfig.transport} @ ${ideConfig.transport === 'stdio' ? ideConfig.command : (ideConfig.url || `${ideConfig.host}:${ideConfig.port}${ideConfig.ssePath}`)}`) : row('IDE_MCP', 'disabled')}
-  ${ideConfig.enabled ? row('IDE_PROJECT_PATH', ideConfig.projectPath) : ''}
   ${chromeConfig.enabled ? row('CHROME_MCP', `${chromeConfig.transport} @ ${chromeConfig.url || `${chromeConfig.host}:${chromeConfig.port}${chromeConfig.ssePath}`}`) : row('CHROME_MCP', 'disabled')}
   ${hLine}
   ${openai_client ? row('Provider', `${deriveProviderName(process.env.NVIDIA_BASE_URL)} @ ${process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1'}`) : ''}

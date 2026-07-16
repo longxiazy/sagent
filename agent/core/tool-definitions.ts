@@ -7,38 +7,37 @@
  *   - 各 provider 的 agentPlan() 将工具列表传给对应模型 API
  */
 
-import { isIdeMcpEnabled } from '../tools/ide/mcp-client.ts';
 import { isChromeMcpAvailable } from '../tools/chrome/mcp-client.ts';
 import { isGenericMcpEnabled } from '../tools/mcp/client.ts';
 
-const READONLY_TOOL_NAMES = new Set([
-  'list_dir',
-  'read_file',
-  'get_file_info',
-  'search_files',
-  'web_search',
-  'image_analyze',
-  'codegraph_query',
-  'finish',
-]);
+export type ModelToolDefinition = {
+  name: string;
+  description: string;
+  input_schema: {
+    type: 'object';
+    properties: Record<string, Record<string, unknown>>;
+    required?: string[];
+  };
+  example: {
+    rationale: string;
+    input: Record<string, unknown>;
+  };
+};
 
 export function createModelTools({
-  mode = 'full',
-  includeIdeMcp = true,
   includeChromeMcp = true,
   includeGenericMcp = true,
   includeToolNames,
 }: {
-  mode?: 'full' | 'readonly';
-  includeIdeMcp?: boolean;
   includeChromeMcp?: boolean;
   includeGenericMcp?: boolean;
   includeToolNames?: Iterable<string>;
 } = {}) {
-  const tools: any[] = [
+  const tools: ModelToolDefinition[] = [
     {
       name: 'navigate',
       description: '在浏览器中打开指定 URL',
+      example: { rationale: '打开网页', input: { url: 'https://example.com' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -50,6 +49,7 @@ export function createModelTools({
     {
       name: 'click',
       description: '点击网页元素（通过 elementId）',
+      example: { rationale: '点击网页元素', input: { elementId: '3' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -61,6 +61,7 @@ export function createModelTools({
     {
       name: 'type',
       description: '在输入框中输入文字',
+      example: { rationale: '在网页输入框输入文字', input: { elementId: '3', text: 'hello', submit: true } },
       input_schema: {
         type: 'object',
         properties: {
@@ -74,6 +75,7 @@ export function createModelTools({
     {
       name: 'wait',
       description: '等待指定秒数',
+      example: { rationale: '等待网页加载', input: { seconds: 2 } },
       input_schema: {
         type: 'object',
         properties: {
@@ -85,6 +87,7 @@ export function createModelTools({
     {
       name: 'scroll',
       description: '滚动网页（当页面内容超出视口时使用）',
+      example: { rationale: '向下滚动页面', input: { direction: 'down', amount: 3 } },
       input_schema: {
         type: 'object',
         properties: {
@@ -97,11 +100,13 @@ export function createModelTools({
     {
       name: 'get_page_content',
       description: '提取当前浏览器页面的正文文本和基础页面信息。',
+      example: { rationale: '获取浏览器当前页面文本内容', input: {} },
       input_schema: { type: 'object', properties: {} },
     },
     {
       name: 'list_dir',
       description: '列出目录内容',
+      example: { rationale: '读取目录', input: { path: '.' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -113,6 +118,7 @@ export function createModelTools({
     {
       name: 'read_file',
       description: '读取文件内容',
+      example: { rationale: '读取文件', input: { path: 'README.md' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -124,6 +130,7 @@ export function createModelTools({
     {
       name: 'get_file_info',
       description: '读取文件或目录的元数据（类型、大小、修改时间），不读取文件内容。适合先判断大文件大小或确认路径是否存在。',
+      example: { rationale: '查看文件大小和修改时间', input: { path: 'README.md' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -135,6 +142,7 @@ export function createModelTools({
     {
       name: 'write_file',
       description: '写入或追加文件',
+      example: { rationale: '写文件', input: { path: 'notes.txt', content: '内容', append: false } },
       input_schema: {
         type: 'object',
         properties: {
@@ -148,6 +156,7 @@ export function createModelTools({
     {
       name: 'http_fetch',
       description: '用浏览器打开 URL 并提取页面文本内容。extractLinks=true 时提取页面中的链接列表（用于搜索结果页）。',
+      example: { rationale: '抓取网页内容', input: { url: 'https://example.com', extractLinks: false } },
       input_schema: {
         type: 'object',
         properties: {
@@ -160,6 +169,7 @@ export function createModelTools({
     {
       name: 'web_search',
       description: '用 DuckDuckGo 搜索网络（无需 API key），返回标题/URL/摘要列表。它只用于发现候选来源；需要事实核验时必须筛选相关权威 URL，再用 http_fetch 抓取正文并从正文提取结论，不得仅凭搜索摘要回答。比直接打开 Google/Bing 更稳，不会触发反爬。',
+      example: { rationale: '网络搜索关键词', input: { query: '2026 北京最低工资标准', maxResults: 5 } },
       input_schema: {
         type: 'object',
         properties: {
@@ -172,6 +182,7 @@ export function createModelTools({
     {
       name: 'image_analyze',
       description: '让多模态模型分析一张图片并回答问题。用于解读浏览器/桌面截图、查看报错图、识别图表或界面布局。任务含附件时，image 应使用 @attachment/N（按图片出现顺序从 1 开始），由 runtime 绑定真实路径，不要复制或改写 @uploads 路径；其它图片可使用项目内相对路径、data URL 或 http(s) URL。question 用简体中文描述需要从图里得到的信息。识别具体来源/游戏/人物/品牌时要区分可见事实与低置信猜测；证据不足就明确说无法仅凭图片确认，不要编造 UI、文字、角色名、怪物、道具或数值。',
+      example: { rationale: '分析任务中的第一张附件图片', input: { image: '@attachment/1', question: '图片里有什么内容？请详细描述。' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -184,6 +195,7 @@ export function createModelTools({
     {
       name: 'search_files',
       description: '在文件中搜索文本内容（类似 grep），支持 glob 过滤',
+      example: { rationale: '搜索文件内容', input: { query: '关键词', path: '.', include: '*.js' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -197,6 +209,7 @@ export function createModelTools({
     {
       name: 'codegraph_query',
       description: '查询项目代码知识图谱：按关键词返回相关模块的路径、职责、导出与依赖，帮你快速定位代码而无需逐个 read_file/list_dir 探索。适合任务开始时先了解项目结构。图谱需用户先在记忆面板「Code Graph」生成，未生成时工具会给出提示。',
+      example: { rationale: '查询项目代码图谱定位相关模块', input: { query: '记忆 memory' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -208,6 +221,7 @@ export function createModelTools({
     {
       name: 'run_safe',
       description: '运行只读终端命令（白名单内，不含管道等复杂操作）',
+      example: { rationale: '运行只读命令', input: { command: 'pwd' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -219,6 +233,7 @@ export function createModelTools({
     {
       name: 'run_confirmed',
       description: '运行需用户确认的终端命令（直接执行，无白名单限制）',
+      example: { rationale: '运行需确认命令', input: { command: 'git status' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -230,6 +245,7 @@ export function createModelTools({
     {
       name: 'run_review',
       description: '运行需要用户审批的终端命令（如 cd/pushd/popd 等状态切换命令）',
+      example: { rationale: '切换目录', input: { command: 'cd /path/to/dir' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -241,6 +257,7 @@ export function createModelTools({
     {
       name: 'ask_user',
       description: '向用户提出开放式问题并等待回答。当需要用户输入或确认偏好时使用。',
+      example: { rationale: '向用户提问', input: { question: '你希望使用什么命名规范？' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -252,6 +269,7 @@ export function createModelTools({
     {
       name: 'notify_user',
       description: '向用户推送信息性消息（洞察、警告、发现）。不暂停任务执行。适用于报告中间进展或重要发现。',
+      example: { rationale: '发现重要问题需告知用户', input: { message: '发现 3 个硬编码 API 密钥', level: 'warning' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -264,6 +282,7 @@ export function createModelTools({
     {
       name: 'finish',
       description: '完成任务并返回最终结果',
+      example: { rationale: '完成任务', input: { answer: '最终结果' } },
       input_schema: {
         type: 'object',
         properties: {
@@ -274,43 +293,12 @@ export function createModelTools({
     },
   ];
 
-  if (includeIdeMcp && isIdeMcpEnabled()) {
-    tools.splice(tools.length - 1, 0,
-      {
-        name: 'ide_list_tools',
-        description: '列出当前 JetBrains IDE 暴露的 MCP 工具及参数。连接 JetBrains IDE 时，优先先调用它了解可用 IDE 能力。',
-        input_schema: {
-          type: 'object',
-          properties: {
-            refresh: { type: 'boolean', description: '是否强制重新拉取 IDE 工具列表' },
-          },
-        },
-      },
-      {
-        name: 'ide_call_tool',
-        description: '调用 JetBrains IDE 的某个 MCP 工具。toolName 必须来自 ide_list_tools，arguments 传该工具要求的参数对象。',
-        input_schema: {
-          type: 'object',
-          properties: {
-            toolName: { type: 'string', description: 'IDE MCP 工具名称，例如 get_run_configurations、get_file_problems、rename_refactoring' },
-            arguments: {
-              type: 'object',
-              description: '传给 IDE MCP 工具的参数对象；如果工具支持 projectPath 且未传入，会自动补齐',
-              additionalProperties: true,
-            },
-            refreshTools: { type: 'boolean', description: '调用前是否刷新一次 IDE 工具列表' },
-          },
-          required: ['toolName'],
-        },
-      }
-    );
-  }
-
   if (includeChromeMcp && isChromeMcpAvailable()) {
     tools.splice(tools.length - 1, 0,
       {
         name: 'chrome_list_tools',
         description: '列出当前 Chrome DevTools MCP 暴露的工具及参数。可查看浏览器操作、截图、网络检查等可用能力。',
+        example: { rationale: '刷新 Chrome 工具列表', input: { refresh: true } },
         input_schema: {
           type: 'object',
           properties: {
@@ -321,6 +309,7 @@ export function createModelTools({
       {
         name: 'chrome_call_tool',
         description: '调用 Chrome DevTools MCP 的某个工具。toolName 必须来自 chrome_list_tools，arguments 传该工具要求的参数对象。',
+        example: { rationale: '调用 Chrome 工具截图', input: { toolName: 'take_screenshot', arguments: {} } },
         input_schema: {
           type: 'object',
           properties: {
@@ -342,12 +331,14 @@ export function createModelTools({
     tools.splice(tools.length - 1, 0,
       {
         name: 'mcp_list_servers',
-        description: '列出 sagent 中已启用的通用 MCP server。Chrome 与 JetBrains 使用各自的专用工具，不在此列表中。',
+        description: '列出 sagent 中已启用的通用 MCP server。Chrome 使用专用工具，不在此列表中。',
+        example: { rationale: '查看通用 MCP server', input: {} },
         input_schema: { type: 'object', properties: {} },
       },
       {
         name: 'mcp_list_tools',
         description: '列出指定通用 MCP server 暴露的工具、参数和安全注解。',
+        example: { rationale: '查看 Codex MCP 工具', input: { serverName: 'codex' } },
         input_schema: {
           type: 'object',
           properties: {
@@ -360,6 +351,7 @@ export function createModelTools({
       {
         name: 'mcp_call_tool',
         description: '调用指定通用 MCP server 的某个工具。调用前先用 mcp_list_tools 获取准确的工具名与参数。',
+        example: { rationale: '调用 Codex 编码工具', input: { serverName: 'codex', toolName: 'codex', arguments: { prompt: '检查并修复测试失败' } } },
         input_schema: {
           type: 'object',
           properties: {
@@ -374,7 +366,7 @@ export function createModelTools({
     );
   }
 
-  let selected = mode === 'readonly' ? tools.filter(tool => READONLY_TOOL_NAMES.has(tool.name)) : tools;
+  let selected = tools;
   if (includeToolNames) {
     const allowed = new Set(includeToolNames);
     selected = selected.filter(tool => allowed.has(tool.name));
@@ -384,7 +376,7 @@ export function createModelTools({
 
 // Gemini FunctionDeclaration：name/description + parametersJsonSchema（标准 JSON Schema，
 // 与内部 input_schema 同构，直接复用）。
-export function toolToGeminiTool(tool) {
+export function toolToGeminiTool(tool: ModelToolDefinition) {
   return {
     name: tool.name,
     description: tool.description,

@@ -26,10 +26,9 @@ describe('structured configuration store', () => {
       transport: { type: 'sse', url: 'http://127.0.0.1:3099/sse' },
       promptMode: 'lazy',
     });
-    await configStore.updateMcpServer('jetbrains', {
+    await configStore.updateMcpServer('filesystem', {
       enabled: true,
-      transport: { type: 'stdio', command: 'npx', args: ['-y', '@jetbrains/mcp-proxy'] },
-      projectPath: '.',
+      transport: { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '.'] },
       toolTimeoutMs: 600000,
     });
     await configStore.updateMcpServer('codex', {
@@ -39,13 +38,13 @@ describe('structured configuration store', () => {
 
     expect(configStore.mcpServers()).toMatchObject({
       chrome: { enabled: true, transport: { type: 'sse' } },
-      jetbrains: { enabled: true, transport: { type: 'stdio' } },
+      filesystem: { enabled: true, transport: { type: 'stdio' } },
       codex: { enabled: true, transport: { type: 'stdio' }, toolTimeoutMs: 600000 },
     });
     const saved = JSON.parse(await readFile(path.join(dir, 'config.json'), 'utf8'));
     expect(saved.mcpServers.chrome.transport.url).toBe('http://127.0.0.1:3099/sse');
-    expect(saved.mcpServers.jetbrains.transport.command).toBe('npx');
-    expect(saved.mcpServers.jetbrains.toolTimeoutMs).toBe(600000);
+    expect(saved.mcpServers.filesystem.transport.command).toBe('npx');
+    expect(saved.mcpServers.filesystem.toolTimeoutMs).toBe(600000);
   });
 
   it('resets a profile durably while preserving other config sections', async () => {

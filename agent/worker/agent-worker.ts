@@ -108,9 +108,11 @@ async function main() {
   const { initLlmLogger, flushLlmLogs } = await import('../core/llm-logger.ts');
   const { configStore } = await import('../core/config-store.ts');
   const { DEFAULT_VISION_MODEL } = await import('../tools/vision/execute.ts');
+  const { initWebViewDataStore } = await import('../tools/browser/webview-session.ts');
   flushLlmLogsBeforeExit = flushLlmLogs;
 
   const memoryDir = payload.memoryDir || process.env.MEMORY_DIR || 'data';
+  initWebViewDataStore(memoryDir);
   await configStore.init(memoryDir);
   initLlmLogger(memoryDir);
 
