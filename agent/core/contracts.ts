@@ -121,7 +121,7 @@ export type AgentEvent = EventTraceFields & (
   | { type: 'step'; step: number; stage: 'observe'; observation: unknown }
   | { type: 'step'; step: number; stage: 'action'; rationale?: string; action: AgentAction; usage?: TokenUsage | null }
   | { type: 'step'; step: number; stage: 'result'; result: unknown; resultStatus?: ActionResultStatus; resultError?: string | null }
-  | { type: 'model_plan'; stage: 'start' | 'thinking' | 'success' | 'winner' | 'failed' | 'cancelled' | 'pending' | 'rate_limited' | 'consensus'; step?: number; model?: string; models?: string[]; action?: AgentAction; rationale?: string; reasoning?: string | null; usage?: TokenUsage | null; error?: string; delay?: number; cooldown_ms?: number; routing?: unknown; consensus?: unknown }
+  | { type: 'model_plan'; stage: 'start' | 'thinking' | 'success' | 'winner' | 'failed' | 'cancelled' | 'pending' | 'rate_limited' | 'consensus'; step?: number; model?: string; models?: string[]; action?: AgentAction; rationale?: string; reasoning?: string | null; usage?: TokenUsage | null; requests?: unknown[][]; error?: string; delay?: number; cooldown_ms?: number; routing?: unknown; consensus?: unknown }
   | { type: 'terminal_output'; step?: number; phase: 'start' | 'stdout' | 'stderr' | 'exit' | 'error' | 'timeout'; command?: string; cwd?: string; sequence?: number; chunk?: string; exitCode?: number | null; elapsedMs?: number; message?: string }
   | { type: 'mcp_output'; step?: number; phase: 'connecting' | 'connected' | 'discovering' | 'calling' | 'waiting' | 'progress' | 'completed' | 'error'; serverName: string; toolName?: string; sequence?: number; message?: string; progress?: number; total?: number }
   | { type: 'session_checkpoint'; step: number; message: string }

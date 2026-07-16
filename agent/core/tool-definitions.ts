@@ -159,7 +159,7 @@ export function createModelTools({
     },
     {
       name: 'web_search',
-      description: '用 DuckDuckGo 搜索网络（无需 API key），返回标题/URL/摘要列表。优先用它定位资料，再用 http_fetch 抓取具体页面。比直接打开 Google/Bing 更稳，不会触发反爬。',
+      description: '用 DuckDuckGo 搜索网络（无需 API key），返回标题/URL/摘要列表。它只用于发现候选来源；需要事实核验时必须筛选相关权威 URL，再用 http_fetch 抓取正文并从正文提取结论，不得仅凭搜索摘要回答。比直接打开 Google/Bing 更稳，不会触发反爬。',
       input_schema: {
         type: 'object',
         properties: {

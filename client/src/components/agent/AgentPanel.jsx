@@ -84,12 +84,20 @@ function AgentTraceTimeline({
     terminalAttempts,
     latestAttempt,
   } = attemptIndex;
+  const previousRequests = new Map();
 
   return (
     <div className={`agent-trace${history ? ' agent-trace--history' : ''}`}>
       {entries.map(({ event, index, attempt }) => {
         const stepKey = event.step == null ? null : attemptStepKey(attempt, event.step);
         const stepEvents = stepKey ? (eventsByStep.get(stepKey) || []) : [];
+        const stepModelEvent = stepEvents.find(e => e.type === 'model_plan' && (e.stage === 'success' || e.stage === 'winner'));
+        const previousRequest = event.type === 'model_plan'
+          ? (event.model ? previousRequests.get(event.model) : null)
+          : (stepModelEvent?.model ? previousRequests.get(stepModelEvent.model) : null);
+        if (event.type === 'model_plan' && event.model && Array.isArray(event.requests) && event.requests.length > 0) {
+          previousRequests.set(event.model, event.requests[event.requests.length - 1]);
+        }
         const groupedOutput = (event.type === 'terminal_output' || event.type === 'mcp_output')
           && (singleModelSteps.has(stepKey) || multiModelSteps.has(stepKey));
         const showAttemptBoundary = attempt > 1 && firstEventIndexByAttempt.get(attempt) === index;
@@ -103,6 +111,7 @@ function AgentTraceTimeline({
                 events={stepEvents}
                 step={event.step}
                 models={event.models}
+                previousRequests={previousRequests}
                 selectedModelId={selectedModelId}
                 modelList={modelList}
                 agentFinished={attempt < latestAttempt || terminalAttempts.has(attempt) || (!running && attempt === latestAttempt)}
@@ -140,6 +149,7 @@ function AgentTraceTimeline({
                   step={event.step}
                   active={running && attempt === latestAttempt && event.step === metrics.lastStep}
                   modelList={modelList}
+                  previousRequest={previousRequest}
                   onRollback={onRollback}
                   rollbackLoading={rollbackLoading}
                   openLightbox={openLightbox}

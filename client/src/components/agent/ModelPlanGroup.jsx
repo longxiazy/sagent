@@ -10,7 +10,7 @@ import { McpProcess } from './McpProcess.jsx';
 // 一个"按 step 分组"的展示块，让用户能看到同一步里不同模型如何竞争/投票。
 // events 是父组件预分组好的、仅属于本 step 的事件切片（避免每个 group 再各自
 // 遍历整条 trace —— 否则 S 步 × N 事件 = O(N²)）。agentFinished 由父组件统一判定。
-export function ModelPlanGroup({ events, step, models, selectedModelId = 'all', modelList, agentFinished, cardsExpanded, onManualToggle, onRollback, rollbackLoading, openLightbox }) {
+export function ModelPlanGroup({ events, step, models, selectedModelId = 'all', modelList, previousRequests, agentFinished, cardsExpanded, onManualToggle, onRollback, rollbackLoading, openLightbox }) {
   const t = useT();
   let strategyMode = 'race';
   let consensusEvent = null;
@@ -71,9 +71,10 @@ export function ModelPlanGroup({ events, step, models, selectedModelId = 'all', 
       <div className="agent-trace-content">
         <div className="model-plan-cards">
           {orderedVisible.map(m => (
-            <ModelPlanCard
-              key={m}
-              event={getEvent(m)}
+              <ModelPlanCard
+                key={m}
+                event={getEvent(m)}
+                previousRequest={previousRequests?.get(m)}
               isWinner={winnerModel === m}
               modelList={modelList}
               step={step}
@@ -92,6 +93,7 @@ export function ModelPlanGroup({ events, step, models, selectedModelId = 'all', 
                 <ModelPlanCard
                   key={m}
                   event={getEvent(m)}
+                  previousRequest={previousRequests?.get(m)}
                   isWinner={false}
                   modelList={modelList}
                   forceExpanded={cardsExpanded}

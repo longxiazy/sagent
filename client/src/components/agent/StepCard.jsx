@@ -9,6 +9,7 @@ import { ResultSummary } from './ResultSummary.jsx';
 import { ActionDetails } from './ActionDetails.jsx';
 import { TerminalProcess } from './TerminalProcess.jsx';
 import { McpProcess } from './McpProcess.jsx';
+import { PromptRequestDetails } from './PromptRequestDetails.jsx';
 
 // StepCard：把单模型一步的 observe + action + result 合并成一张卡。
 // 原先单模型一步会渲染 4 块（observe / 折叠的 model_plan 废卡 / action / result），
@@ -21,7 +22,7 @@ import { McpProcess } from './McpProcess.jsx';
 
 const CLAMP_THRESHOLD = 80; // 理由文本超过该长度才显示「展开/收起」
 
-export const StepCard = memo(function StepCard({ events, step, active, modelList, onRollback, rollbackLoading, openLightbox, forceExpanded, onManualToggle, t }) {
+export const StepCard = memo(function StepCard({ events, step, previousRequest, active, modelList, onRollback, rollbackLoading, openLightbox, forceExpanded, onManualToggle, t }) {
   const [jsonOpen, setJsonOpen] = useState(false);
   const [rationaleOpen, setRationaleOpen] = useState(false);
   const [reasoningOpen, setReasoningOpen] = useState(false);
@@ -114,6 +115,7 @@ export const StepCard = memo(function StepCard({ events, step, active, modelList
         {action && (
           <ActionDetails action={action} jsonOpen={effJson} onToggleJson={toggle(setJsonOpen)} t={t} />
         )}
+        <PromptRequestDetails requests={modelEvent?.requests} previousRequest={previousRequest} t={t} />
 
         <TerminalProcess events={terminalEvents} running={active && !result} t={t} />
         <McpProcess events={mcpEvents} running={active && !result} t={t} />
