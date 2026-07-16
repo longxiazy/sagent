@@ -9,7 +9,7 @@
  *   2. observe()     — 观察当前环境（桌面/浏览器/文件系统）
  *   3. decide()      — LLM 决定下一步动作（调用 planner/provider）
  *   4. authorize()   — 策略审批（safe 直接通过，confirm 需用户批准，blocked 直接拒绝）
- *   5. execute()     — 执行动作（路由到 browser/fs/terminal/IDE/MCP 工具）
+ *   5. execute()     — 执行动作（路由到 browser/fs/terminal/MCP 工具）
  *   6. 回到步骤 2，直到 decide 返回 finish 或达到 maxSteps
  *
  * 历史截断 / Progressive history truncation：
@@ -204,7 +204,6 @@ function actionLoopKey(action: AgentAction | undefined | null) {
     'browser.click',
     'browser.type',
     'chrome.chrome_call_tool',
-    'ide.ide_call_tool',
   ]);
   if (!repeatGuardedActions.has(`${tool}.${type}`)) return '';
   return stableStringify(action);

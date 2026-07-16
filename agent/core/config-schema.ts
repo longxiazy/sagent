@@ -25,7 +25,6 @@ export type McpTransportConfig =
 export interface McpServerConfig {
   enabled: boolean;
   transport: McpTransportConfig;
-  projectPath?: string;
   promptMode?: 'lazy' | 'always';
   keepOpen?: boolean;
   keepTabs?: boolean;

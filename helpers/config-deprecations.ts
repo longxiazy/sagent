@@ -4,7 +4,6 @@ import { log } from './logger.ts';
 
 const REMOVED_VARIABLES = ['MODELS', 'AGENT_MULTI_MODELS', 'AGENT_HEADLESS'];
 const LEGACY_CHROME_PREFIX = 'CHROME_MCP_';
-const LEGACY_IDE_PREFIX = 'IDE_MCP_';
 
 export function warnLegacyConfiguration(
   configStore: ConfigStore,
@@ -24,11 +23,7 @@ export function warnLegacyConfiguration(
 
   const stored = configStore.mcpServers();
   const chromeLegacy = Object.keys(env).filter(key => key.startsWith(LEGACY_CHROME_PREFIX) && env[key]);
-  const ideLegacy = Object.keys(env).filter(key => key.startsWith(LEGACY_IDE_PREFIX) && env[key]);
   if (!stored.chrome && chromeLegacy.length > 0) {
     log.warn('[Config] CHROME_MCP_* 已进入兼容模式；在设置页保存 Chrome MCP 后将迁移到 mcpServers.chrome');
-  }
-  if (!stored.jetbrains && ideLegacy.length > 0) {
-    log.warn('[Config] IDE_MCP_* 已进入兼容模式；在设置页保存 JetBrains MCP 后将迁移到 mcpServers.jetbrains');
   }
 }

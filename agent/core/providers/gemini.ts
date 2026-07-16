@@ -126,13 +126,13 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
     },
 
     async agentPlan(opts: AgentPlanOpts): Promise<AgentPlanResult> {
-      const { model, signal, systemPrompt, modelConfig, toolMode = 'full' } = opts;
+      const { model, signal, systemPrompt, modelConfig } = opts;
       const {
         systemInstruction: system,
         contents,
         tools,
         toolConfig,
-      } = buildGeminiAgentPromptPayload(opts, toolMode as 'full' | 'readonly');
+      } = buildGeminiAgentPromptPayload(opts);
       const maxOutputTokens = resolveAgentMaxTokens({
         model,
         modelConfig,

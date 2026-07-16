@@ -46,12 +46,6 @@ const DEFAULT_MCP_SERVERS = {
     transport: { type: 'sse', url: 'http://127.0.0.1:3099/sse' },
     promptMode: 'lazy',
   },
-  jetbrains: {
-    enabled: false,
-    transport: { type: 'sse', url: 'http://127.0.0.1:6365/sse' },
-    projectPath: '.',
-    promptMode: 'lazy',
-  },
   codex: {
     enabled: false,
     transport: { type: 'stdio', command: 'codex', args: ['mcp-server'], cwd: '.' },
@@ -102,7 +96,6 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
       setMcpServers({
         ...data.mcpServers,
         chrome: data.mcpServers.chrome || DEFAULT_MCP_SERVERS.chrome,
-        jetbrains: data.mcpServers.jetbrains || DEFAULT_MCP_SERVERS.jetbrains,
         codex: data.mcpServers.codex || DEFAULT_MCP_SERVERS.codex,
       });
     }
@@ -298,8 +291,8 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
     const server = mcpServers[name] || fallback;
     const transport = server.transport || fallback.transport;
     const status = mcpStatus[name];
-    const builtin = name === 'chrome' || name === 'jetbrains';
-    const title = name === 'chrome' ? 'Chrome DevTools' : name === 'jetbrains' ? 'JetBrains IDE' : name === 'codex' ? 'Codex CLI' : name;
+    const builtin = name === 'chrome';
+    const title = name === 'chrome' ? 'Chrome DevTools' : name === 'codex' ? 'Codex CLI' : name;
     return (
       <div key={name} className="settings-mcp-card">
         <div className="settings-mcp-heading">
@@ -376,15 +369,6 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
                 />
               </label>
             </>
-          )}
-          {name === 'jetbrains' && (
-            <label className="settings-field settings-mcp-wide">
-              <span>{t('settings.mcpProjectPath')}</span>
-              <input
-                value={server.projectPath || '.'}
-                onChange={e => updateMcp(name, current => ({ ...current, projectPath: e.target.value }))}
-              />
-            </label>
           )}
           <label className="settings-field">
             <span>{t('settings.mcpToolTimeoutSec')}</span>
@@ -545,10 +529,9 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
           {renderBackendGuard() || (
             <div className="settings-mcp-list">
               {renderMcpServer('chrome')}
-              {renderMcpServer('jetbrains')}
               {renderMcpServer('codex')}
               {Object.keys(mcpServers)
-                .filter(name => !['chrome', 'jetbrains', 'codex'].includes(name))
+                .filter(name => !['chrome', 'codex'].includes(name))
                 .sort()
                 .map(renderMcpServer)}
               <div className="settings-mcp-card">

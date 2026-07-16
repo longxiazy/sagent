@@ -92,7 +92,7 @@ The backend remains responsible for shared run state, approvals and SSE delivery
 
 Tools are registered by the Agent runtime and normalized into structured actions. Policy classification occurs before side effects. Read-only operations may proceed directly; terminal execution, file mutation, package installation and other sensitive actions require explicit approval.
 
-Chrome and JetBrains integrations are configured under `mcpServers` in `data/config.json`. Their concrete clients translate the generic SSE or stdio configuration into MCP `tools/list` and `tools/call` operations. Prompt details are loaded lazily so disabled integrations do not consume prompt context.
+Chrome and generic MCP integrations are configured under `mcpServers` in `data/config.json`. Their clients translate SSE, stdio or Streamable HTTP configuration into MCP `tools/list` and `tools/call` operations. Prompt details are loaded lazily so disabled integrations do not consume prompt context.
 
 ## Persistence and recovery
 
@@ -104,7 +104,7 @@ Writes that must survive shutdown are tracked through the persistence queue. Ser
 
 The React client keeps browser-local chat presentation state while the backend owns Agent execution state. On refresh, the client queries the active run and reconnects to its SSE stream. When a mobile browser resumes after being backgrounded, it fetches the persisted trace to recover terminal events that may have been missed.
 
-Settings reads schema, effective values and source metadata from `/api/config`. Agent/profile changes are persisted through the config API; Chrome and JetBrains cards save and test MCP connections through dedicated endpoints.
+Settings reads schema, effective values and source metadata from `/api/config`. Agent/profile changes and MCP connections are persisted and tested through the config API.
 
 ## Extension points
 

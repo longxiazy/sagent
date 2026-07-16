@@ -14,7 +14,7 @@
 
 ## Overview
 
-sagent combines a React web UI, a Bun/Express backend, and a tool-using Agent runtime. It can chat with multiple model providers, run desktop automation, operate files and terminals, inspect browser pages, call JetBrains IDE MCP tools, and preserve project memory between sessions.
+sagent combines a React web UI, a Bun/Express backend, and a tool-using Agent runtime. It can chat with multiple model providers, run desktop automation, operate files and terminals, inspect browser pages, call MCP tools, and preserve project memory between sessions.
 
 The project is designed for local use: you choose a project workspace, start an Agent task, approve sensitive operations, and watch each step stream back into the UI.
 
@@ -22,7 +22,7 @@ The project is designed for local use: you choose a project workspace, start an 
 
 - Multi-model chat and Agent mode with race or vote strategies.
 - macOS desktop observation, screenshots, browser automation, and optional Chrome DevTools MCP integration.
-- File, terminal, search, vision, IDE MCP, and browser tools behind an approval-aware runtime.
+- File, terminal, search, vision, MCP, and browser tools behind an approval-aware runtime.
 - Sandboxed Agent workers when launched with `npm run sandbox`.
 - Project-scoped memory, traces, uploads, checkpoints, and run recovery.
 - Mobile-friendly progress view for devices on the same LAN.
@@ -51,7 +51,7 @@ Edit `.env` before starting if you have not added an API key yet. Open http://lo
 
 `npm run sandbox` starts the UI/API server normally and runs each Agent task in a short-lived macOS sandboxed worker. Use `npm run dev` only when you intentionally want the non-sandboxed development mode.
 
-After startup, use Settings to choose an Agent profile, edit basic or advanced runtime limits, and manage Chrome/JetBrains MCP connections. These values are stored locally in `data/config.json`; secrets remain in `.env`.
+After startup, use Settings to choose an Agent profile, edit basic or advanced runtime limits, and manage Chrome or generic MCP connections. These values are stored locally in `data/config.json`; secrets remain in `.env`.
 
 ## Docker
 
@@ -110,9 +110,9 @@ Each completed Agent step is written to `data/checkpoints/`. If the backend rest
 
 sagent stores project experience under the configured data directory. Memory includes recent task summaries, compacted historical context, and project knowledge. The memory panel in the sidebar lets you inspect, compact, or clear that state.
 
-### IDE And Browser Integrations
+### Browser And MCP Integrations
 
-JetBrains IDE MCP adds `ide_list_tools` and `ide_call_tool` to the Agent. Chrome DevTools MCP adds browser inspection and control through `chrome_list_tools` and `chrome_call_tool`. Generic MCP servers (including `codex mcp-server`) are exposed through `mcp_list_servers`, `mcp_list_tools`, and `mcp_call_tool`. All integrations are optional and documented in [CONFIGURATION.md](CONFIGURATION.md).
+Chrome DevTools MCP adds browser inspection and control through `chrome_list_tools` and `chrome_call_tool`. Generic MCP servers (including `codex mcp-server`) are exposed through `mcp_list_servers`, `mcp_list_tools`, and `mcp_call_tool`. All integrations are optional and documented in [CONFIGURATION.md](CONFIGURATION.md).
 
 ## Common Commands
 

@@ -97,15 +97,6 @@ The Settings UI creates a versioned document at `data/config.json`:
       "promptMode": "lazy",
       "toolTimeoutMs": 60000,
       "navigateTimeoutMs": 25000
-    },
-    "jetbrains": {
-      "enabled": false,
-      "transport": {
-        "type": "stdio",
-        "command": "npx",
-        "args": ["-y", "@jetbrains/mcp-proxy"]
-      },
-      "projectPath": "."
     }
   }
 }
@@ -167,7 +158,7 @@ stdio transport:
   "transport": {
     "type": "stdio",
     "command": "npx",
-    "args": ["-y", "@jetbrains/mcp-proxy"],
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
     "cwd": "."
   }
 }
@@ -185,7 +176,7 @@ Streamable HTTP transport uses the same URL shape with `"type": "http"`:
 }
 ```
 
-The Settings UI can save and test the built-in `chrome` and `jetbrains` connections, plus arbitrary generic MCP servers. Chrome currently uses SSE; JetBrains supports SSE and stdio; generic servers support stdio, SSE, and Streamable HTTP.
+The Settings UI can save and test the built-in `chrome` connection plus arbitrary generic MCP servers. Chrome currently uses SSE; generic servers support stdio, SSE, and Streamable HTTP.
 
 Codex CLI can be registered as a generic stdio MCP server and used as a coding expert inside an sagent workflow:
 
@@ -218,7 +209,7 @@ Listing server/tool metadata is read-only. Generic tool calls require the normal
 
 - Existing `data/runtime-config.json` is automatically migrated to `data/config.json`.
 - Legacy Agent tuning environment variables remain fallback defaults during migration.
-- Legacy `CHROME_MCP_*` and `IDE_MCP_*` values appear in the Settings UI and are converted after saving.
+- Legacy `CHROME_MCP_*` values appear in the Settings UI and are converted after saving.
 - `MODELS`, `AGENT_MULTI_MODELS`, and `AGENT_HEADLESS` are ignored.
 
 The server logs migration and deprecation warnings without printing secrets.

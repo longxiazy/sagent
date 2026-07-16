@@ -153,14 +153,13 @@
   --c-badge-consensus: #166534;
 
   /* 工具语义色：按领域分组，时间线圆点 + 工具图标据此着色，让「这步在用哪类工具」一眼可辨。
-     网络蓝青(browser/chrome/search) · 文件命令暖色(fs/terminal) · 桌面紫靛(macos/ide) · 智能粉玫(vision) · 控制灰(core) */
+     网络蓝青(browser/chrome/search) · 文件命令暖色(fs/terminal) · 智能粉玫(vision) · 控制灰(core) */
   --c-tool-browser:  #2563eb;
   --c-tool-chrome:   #0891b2;
   --c-tool-search:   #0d9488;
   --c-tool-fs:       #d97706;
   --c-tool-terminal: #16a34a;
   --c-tool-macos:    #7c3aed;
-  --c-tool-ide:      #4f46e5;
   --c-tool-mcp:      #7c3aed;
   --c-tool-vision:   #c026d3;
   --c-tool-core:     #64748b;
@@ -324,7 +323,6 @@
   --c-tool-fs:       #fbbf24;
   --c-tool-terminal: #4ade80;
   --c-tool-macos:    #a78bfa;
-  --c-tool-ide:      #818cf8;
   --c-tool-mcp:      #a78bfa;
   --c-tool-vision:   #e879f9;
   --c-tool-core:     #94a3b8;
@@ -4317,7 +4315,6 @@ a.model-encyclopedia-field-value:hover {
 [data-tool="fs"]       { --tool-c: var(--c-tool-fs); }
 [data-tool="terminal"] { --tool-c: var(--c-tool-terminal); }
 [data-tool="macos"]    { --tool-c: var(--c-tool-macos); }
-[data-tool="ide"]      { --tool-c: var(--c-tool-ide); }
 [data-tool="mcp"]      { --tool-c: var(--c-tool-mcp); }
 [data-tool="vision"]   { --tool-c: var(--c-tool-vision); }
 [data-tool="core"]     { --tool-c: var(--c-tool-core); }

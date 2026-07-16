@@ -36,11 +36,6 @@ export const ACTION_TYPE_TO_TOOL = {
   run_safe: 'terminal',
   run_confirmed: 'terminal',
   run_review: 'terminal',
-  // ide
-  ide_list_tools: 'ide',
-  ide_call_tool: 'ide',
-  list_tools: 'ide',
-  call_tool: 'ide',
   // chrome
   chrome_list_tools: 'chrome',
   chrome_call_tool: 'chrome',

@@ -25,7 +25,6 @@ const MUTATING_ACTIONS = new Set([
   'browser.select',
   'browser.press',
   'chrome.chrome_call_tool',
-  'ide.ide_call_tool',
 ]);
 
 function uniqueModelIds(models: string[]) {

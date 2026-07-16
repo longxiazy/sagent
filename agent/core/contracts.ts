@@ -45,10 +45,6 @@ export type TerminalAction = {
   timeoutMs: number;
 };
 
-export type IdeAction =
-  | { tool: 'ide'; type: 'ide_list_tools'; refresh: boolean }
-  | { tool: 'ide'; type: 'ide_call_tool'; toolName: string; arguments: JsonObject; refreshTools: boolean };
-
 export type ChromeAction =
   | { tool: 'chrome'; type: 'chrome_list_tools'; refresh: boolean }
   | { tool: 'chrome'; type: 'chrome_call_tool'; toolName: string; arguments: JsonObject; refreshTools: boolean };
@@ -63,7 +59,6 @@ export type AgentAction =
   | BrowserAction
   | FsAction
   | TerminalAction
-  | IdeAction
   | ChromeAction
   | McpAction
   | { tool: 'search'; type: 'web_search'; query: string; maxResults: number }

@@ -225,31 +225,6 @@ function normalizeTerminalAction(type: string, action: JsonObject): AgentAction 
   throw new Error(`不支持的终端动作: ${type}`);
 }
 
-function normalizeIdeAction(type: string, action: JsonObject): AgentAction {
-  if (type === 'ide_list_tools' || type === 'list_tools') {
-    return {
-      tool: 'ide',
-      type: 'ide_list_tools',
-      refresh: Boolean(action.refresh),
-    };
-  }
-
-  if (type === 'ide_call_tool' || type === 'call_tool') {
-    const args = isRecord(action.arguments)
-      ? action.arguments
-      : {};
-    return {
-      tool: 'ide',
-      type: 'ide_call_tool',
-      toolName: typeof action.toolName === 'string' ? action.toolName.trim() : '',
-      arguments: args,
-      refreshTools: Boolean(action.refreshTools),
-    };
-  }
-
-  throw new Error(`不支持的 IDE 动作: ${type}`);
-}
-
 function normalizeChromeAction(type: string, action: JsonObject): AgentAction {
   if (type === 'chrome_list_tools' || type === 'chrome_list') {
     return {
@@ -365,8 +340,6 @@ export function normalizeDesktopAgentDecision(payload: unknown): AgentDecision {
     normalizedAction = normalizeVisionAction(type, action);
   } else if (tool === 'terminal') {
     normalizedAction = normalizeTerminalAction(type, action);
-  } else if (tool === 'ide') {
-    normalizedAction = normalizeIdeAction(type, action);
   } else if (tool === 'chrome') {
     normalizedAction = normalizeChromeAction(type, action);
   } else if (tool === 'mcp') {
