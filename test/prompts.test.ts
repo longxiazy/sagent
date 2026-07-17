@@ -99,6 +99,20 @@ describe('agent prompts', () => {
     expect(conditional.some(line => line.includes('chrome_call_tool'))).toBe(true);
   });
 
+  it('keeps built-in browser tools read-only', () => {
+    const names = createModelTools({ includeChromeMcp: false }).map(tool => tool.name);
+
+    expect(names).toEqual(expect.arrayContaining([
+      'navigate',
+      'wait',
+      'scroll',
+      'get_page_content',
+      'http_fetch',
+    ]));
+    expect(names).not.toContain('click');
+    expect(names).not.toContain('type');
+  });
+
   it('gives NVIDIA models an explicit single-action JSON output contract', () => {
     const messages = buildNvidiaTaskMessages({
       task: '打开示例网页',
@@ -114,7 +128,9 @@ describe('agent prompts', () => {
     expect(systemPrompt).toContain('rationale 只说明当前动作的直接目的');
     expect(systemPrompt).toContain('finish 固定使用 {"tool":"core","type":"finish","answer":"最终结果"}');
     expect(systemPrompt).toContain('每次只能选择一个已启用动作');
-    expect(systemPrompt).toContain('type(elementId,text,submit?)');
+    expect(systemPrompt).not.toContain('type(elementId,text,submit?)');
+    expect(systemPrompt).not.toContain('click(elementId)');
+    expect(systemPrompt).toContain('内置 browser 是只读信息浏览器');
     expect(systemPrompt).toContain('scroll(direction,amount?)');
   });
 
@@ -215,14 +231,14 @@ describe('agent prompts', () => {
     })[0].content;
 
     expect(casual).not.toContain('文件写入和终端确认命令');
-    expect(casual).not.toContain('browser.click/type');
+    expect(casual).not.toContain('内置 browser 是只读信息浏览器');
     expect(casual).not.toContain('图片任务必须使用 image_analyze');
     expect(casual).not.toContain('酒店、机票、电商');
-    expect(web).toContain('browser.click/type');
+    expect(web).toContain('内置 browser 是只读信息浏览器');
     expect(web).toContain('web_search 只用于发现来源');
     expect(web).not.toContain('图片任务必须使用 image_analyze');
     expect(image).toContain('图片任务必须使用 image_analyze');
-    expect(image).not.toContain('browser.click/type');
+    expect(image).not.toContain('内置 browser 是只读信息浏览器');
   });
 
   it('keeps NVIDIA action examples scoped to the current task', () => {
@@ -332,6 +348,69 @@ describe('agent prompts', () => {
     expect(payload.systemInstruction).toContain('Chrome DevTools 工具可用于');
     expect(toolNames).toContain('chrome_list_tools');
     expect(toolNames).toContain('chrome_call_tool');
+  });
+
+  it('routes ordinary web interaction tasks to Chrome MCP', () => {
+    vi.stubEnv('CHROME_MCP_ENABLED', 'true');
+    const payload = buildGeminiAgentPromptPayload({
+      task: '登录网站并填写表单后提交',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+    const toolNames = payload.tools[0].functionDeclarations.map(tool => tool.name);
+
+    expect(payload.systemInstruction).toContain('网页交互以及 CAPTCHA');
+    expect(toolNames).toContain('chrome_call_tool');
+    expect(toolNames).not.toContain('click');
+    expect(toolNames).not.toContain('type');
+  });
+
+  it('reports unavailable Chrome MCP instead of advertising missing interaction tools', () => {
+    vi.stubEnv('CHROME_MCP_ENABLED', 'false');
+    const payload = buildGeminiAgentPromptPayload({
+      task: '登录网站并提交表单',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+    const toolNames = payload.tools[0].functionDeclarations.map(tool => tool.name);
+
+    expect(payload.systemInstruction).toContain('当前未启用 Chrome MCP');
+    expect(toolNames).not.toContain('chrome_list_tools');
+    expect(toolNames).not.toContain('chrome_call_tool');
+  });
+
+  it('keeps Chrome interaction tools in compact prompts when Chrome MCP is available', () => {
+    vi.stubEnv('CHROME_MCP_ENABLED', 'true');
+    const messages = buildNvidiaTaskMessages({
+      task: '登录网站并填写表单后提交',
+      step: 1,
+      history: [],
+      observation: {},
+      compact: true,
+    });
+
+    expect(messages[0].content).toContain('chrome_list_tools(refresh?)');
+    expect(messages[0].content).toContain('chrome_call_tool(toolName,arguments?,refreshTools?)');
+    expect(messages[0].content).not.toContain('browser: click');
+    expect(messages[0].content).not.toContain('browser: type');
+  });
+
+  it('reports unavailable Chrome MCP in compact interaction prompts', () => {
+    vi.stubEnv('CHROME_MCP_ENABLED', 'false');
+    const messages = buildNvidiaTaskMessages({
+      task: '登录网站并提交表单',
+      step: 1,
+      history: [],
+      observation: {},
+      compact: true,
+    });
+
+    expect(messages[0].content).toContain('当前未启用 Chrome MCP');
+    expect(messages[0].content).not.toContain('chrome_call_tool(');
+    expect(messages[0].content).not.toContain('browser: click');
+    expect(messages[0].content).not.toContain('browser: type');
   });
 
   it('keeps shared Gemini and NVIDIA agent rules semantically identical', () => {

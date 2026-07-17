@@ -10,6 +10,7 @@ type PendingCommand = {
 };
 
 export class EdgeCdpWebView {
+  // 该适配器刻意保持只读：只实现导航、页面求值和截图，不提供 CDP 输入事件。
   url = 'about:blank';
   title = '';
   private child: ChildProcess | null = null;
@@ -161,45 +162,6 @@ export class EdgeCdpWebView {
       throw new Error(detail);
     }
     return response.result?.value;
-  }
-
-  async click(selector: string) {
-    await this.evaluate(`(() => {
-      const element = document.querySelector(${JSON.stringify(selector)});
-      if (!element) throw new Error(${JSON.stringify(`元素不存在: ${selector}`)});
-      element.scrollIntoView({ block: 'center', inline: 'center' });
-      element.click();
-      return true;
-    })()`);
-  }
-
-  async type(selector: string, text: string) {
-    await this.evaluate(`(() => {
-      const element = document.querySelector(${JSON.stringify(selector)});
-      if (!element) throw new Error(${JSON.stringify(`元素不存在: ${selector}`)});
-      element.focus();
-      return true;
-    })()`);
-    await this.command('Input.insertText', { text });
-  }
-
-  async press(key: string) {
-    if (key !== 'Enter') throw new Error(`暂不支持按键: ${key}`);
-    await this.command('Input.dispatchKeyEvent', {
-      type: 'keyDown',
-      key: 'Enter',
-      code: 'Enter',
-      text: '\r',
-      windowsVirtualKeyCode: 13,
-      nativeVirtualKeyCode: 13,
-    });
-    await this.command('Input.dispatchKeyEvent', {
-      type: 'keyUp',
-      key: 'Enter',
-      code: 'Enter',
-      windowsVirtualKeyCode: 13,
-      nativeVirtualKeyCode: 13,
-    });
   }
 
   async screenshot(options: { format?: 'png' | 'jpeg'; quality?: number; encoding?: string } = {}) {

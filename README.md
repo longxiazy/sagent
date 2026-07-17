@@ -112,7 +112,7 @@ sagent stores project experience under the configured data directory. Memory inc
 
 ### Browser And MCP Integrations
 
-Chrome DevTools MCP adds browser inspection and control through `chrome_list_tools` and `chrome_call_tool`. Generic MCP servers (including `codex mcp-server`) are exposed through `mcp_list_servers`, `mcp_list_tools`, and `mcp_call_tool`. All integrations are optional and documented in [CONFIGURATION.md](CONFIGURATION.md).
+The built-in Browser is read-only and is limited to navigation and content extraction. All interactive web operations—including clicking, typing, login, form submission, upload, and download—are delegated to Chrome DevTools MCP through `chrome_list_tools` and `chrome_call_tool`. Generic MCP servers (including `codex mcp-server`) are exposed through `mcp_list_servers`, `mcp_list_tools`, and `mcp_call_tool`. All integrations are optional and documented in [CONFIGURATION.md](CONFIGURATION.md).
 
 ## Common Commands
 

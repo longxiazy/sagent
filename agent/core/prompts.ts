@@ -14,6 +14,8 @@ type PromptCapabilityContext = {
 };
 
 const CHROME_TASK_RE = /\bchrome\b|devtools|开发者工具|真实浏览器|网络面板|performance|lighthouse|控制台|console/i;
+// 内置 browser 只读；命中这些意图时需要加载 Chrome MCP，而不是重新开放 browser.click/type。
+const INTERACTIVE_BROWSER_TASK_RE = /\b(?:click|type|fill|input|submit|login|sign[ -]?in|upload|download|checkout|purchase)\b|点击|输入|填写|提交|登录|登入|注册|上传|下载|下单|购买|支付|勾选|选择下拉|拖拽|验证码/i;
 const GENERIC_MCP_TASK_RE = /\bmcp\b|codex|编码专家|coding expert|外部工具|工具服务器/i;
 const BROWSER_BLOCK_RE = /captcha|cloudflare|403|forbidden|人机验证|反爬|访问受限|被拦截|blocked/i;
 const WEB_TASK_RE = /https?:\/\/|\bwww\.|\bweb\b|browser|website|search|news|weather|price|flight|hotel|online|网页|浏览器|网站|上网|搜索|查询|新闻|天气|实时|价格|机票|航班|酒店|电商|官网/i;
@@ -25,7 +27,7 @@ const FOLLOWUP_TASK_RE = /^\s*(?:(?:继续|接着|重试|再试|这个|那个|�
 // web_search 作为轻量信息查询兜底常驻，避免产品目录、模型上下线、版本变化等
 // 时效性问题未命中关键词分类后只剩 finish，导致模型把问题原样返回。
 const CORE_TOOL_NAMES = ['web_search', 'ask_user', 'notify_user', 'finish'];
-const WEB_TOOL_NAMES = ['navigate', 'click', 'type', 'wait', 'scroll', 'get_page_content', 'http_fetch', 'web_search'];
+const WEB_TOOL_NAMES = ['navigate', 'wait', 'scroll', 'get_page_content', 'http_fetch', 'web_search'];
 const FILE_TOOL_NAMES = ['list_dir', 'read_file', 'get_file_info', 'write_file', 'search_files', 'codegraph_query'];
 const TERMINAL_TOOL_NAMES = ['run_safe', 'run_confirmed', 'run_review'];
 const VISION_TOOL_NAMES = ['image_analyze'];
@@ -33,7 +35,6 @@ const CHROME_TOOL_NAMES = ['chrome_list_tools', 'chrome_call_tool'];
 const MCP_TOOL_NAMES = ['mcp_list_servers', 'mcp_list_tools', 'mcp_call_tool'];
 const COMPACT_TOOL_NAMES = new Set([
   'navigate',
-  'click',
   'get_page_content',
   'http_fetch',
   'list_dir',
@@ -44,6 +45,8 @@ const COMPACT_TOOL_NAMES = new Set([
   'image_analyze',
   'ask_user',
   'notify_user',
+  'chrome_list_tools',
+  'chrome_call_tool',
   'finish',
 ]);
 
@@ -213,7 +216,8 @@ export function selectGeminiToolNames(context: PromptCapabilityContext = {}) {
   if (needsFiles) addToolGroup(selected, FILE_TOOL_NAMES);
   if (needsTerminal) addToolGroup(selected, TERMINAL_TOOL_NAMES);
   if (needsVision) addToolGroup(selected, VISION_TOOL_NAMES);
-  if (needsChrome) addToolGroup(selected, CHROME_TOOL_NAMES);
+  // 任务“需要 Chrome”不代表运行时“能够调用 Chrome”；不可用时不要把幽灵工具名传给提示词。
+  if (needsChrome && isChromeMcpAvailable()) addToolGroup(selected, CHROME_TOOL_NAMES);
   if (needsMcp) addToolGroup(selected, MCP_TOOL_NAMES);
   return selected;
 }
@@ -228,6 +232,7 @@ function historyShowsBrowserBlock(history: any[] | undefined) {
 
 export function shouldIncludeChromePromptDetails({ task = '', history = [], observation }: PromptCapabilityContext = {}) {
   return CHROME_TASK_RE.test(task)
+    || INTERACTIVE_BROWSER_TASK_RE.test(task)
     || historyUsesTool(history, 'chrome')
     || historyShowsBrowserBlock(history)
     || BROWSER_BLOCK_RE.test(String(observation?.browser?.text || ''));
@@ -252,7 +257,7 @@ function chromePromptLines(context: PromptCapabilityContext) {
   if (shouldIncludeChromePromptDetails(context)) return buildChromePromptLines();
   if (context.includeInactiveCapabilityHints === false) return [];
   return [
-    'Chrome MCP 已启用但默认不展开。仅当任务明确要求 Chrome/DevTools，或内置浏览器遭遇 CAPTCHA、403、Cloudflare 等拦截时，调用 {"tool":"chrome","type":"chrome_list_tools"} 按需获取工具。',
+    'Chrome MCP 已启用但默认不展开。网页点击、输入、登录、提交、上传和下载必须使用 Chrome MCP；内置浏览器只读。需要交互或遇到 CAPTCHA、403、Cloudflare 时，调用 {"tool":"chrome","type":"chrome_list_tools"} 按需获取工具。',
   ];
 }
 
@@ -402,13 +407,14 @@ function buildSharedAgentRuleLines(
     '- 不要重复已成功或无新目的的动作。同一目标连续约 5 步仍无实质进展时停止尝试，finish 汇总已知信息并说明限制。',
     '- 不得编造工具结果。',
     ...(approvalToolsEnabled ? ['- 文件写入和终端确认命令可能需要审批；cd/pushd/popd 使用 run_review。被拒绝后改用安全替代方案。'] : []),
-    ...(browserEnabled ? ['- browser.click/type 只能使用 observation.browser.elements 中存在的 elementId；不要 navigate 到搜索引擎结果页。scroll 返回内容未变化后，不得继续滚动，改用 get_page_content、http_fetch 或 finish。'] : []),
+    ...(browserEnabled ? ['- 内置 browser 是只读信息浏览器，只能 navigate、wait、scroll、get_page_content、http_fetch；禁止点击、输入、登录、提交、上传或下载。如果当前提供 chrome_call_tool，网页交互必须使用它；否则明确说明无法执行。不要 navigate 到搜索引擎结果页；scroll 返回内容未变化后改用 get_page_content、http_fetch 或 finish。'] : []),
     ...(webDetails ? ['- 网络任务中，web_search 只用于发现来源；拿到候选 URL 后优先用 http_fetch 提取正文，不要先 navigate。不得仅凭标题或摘要回答需核验的问题。选择最相关的 1～3 个官方、原始或权威 URL，逐个核验正文，只提取与问题直接相关的事实、数字、时间和条件，并保留来源对应关系。正文无明确答案时说明未找到，不得用常识补全；来源冲突时分别列出。'] : []),
     ...(visionEnabled ? ['- 图片任务必须使用 image_analyze，不得凭文件名猜测。附件图片使用 @attachment/N（按出现顺序从 1 开始），不得复制或改写 @uploads 路径。简单识图得到结果后立即 finish；同一图片最多连续分析 2 次，证据不足时区分可见事实与低置信猜测。'] : []),
     ...(webDetails ? ['- 酒店、机票、电商等实时价格优先用 web_search 获取区间；拿不到精确数字时给出查询入口并说明未取得实时精确价。'] : []),
     '- 重要发现可用 notify_user。finish 的 answer 使用简体中文，简洁直接。',
     '- currentDateTime 是当前日期时间；涉及“今天”“最新”“近期”等相对时间时必须以它为准，不得猜测年份。',
-    ...(chromeEnabled && chromeDetails ? ['- 内置浏览器被 CAPTCHA、403 或 Cloudflare 拦截时，改用 Chrome MCP 访问同一目标。'] : []),
+    ...(chromeEnabled && chromeDetails ? ['- 网页交互以及 CAPTCHA、403、Cloudflare 等真实浏览器场景必须使用 Chrome MCP。'] : []),
+    ...(!chromeEnabled && INTERACTIVE_BROWSER_TASK_RE.test(capabilityText(capabilityContext)) ? ['- 当前未启用 Chrome MCP，无法执行网页点击、输入、登录、提交、上传或下载；不得回退到内置 browser 模拟交互，应明确说明需要启用 Chrome MCP。'] : []),
     ...chromeLines,
     ...mcpLines,
   ];
@@ -419,6 +425,9 @@ function buildCompactAgentRuleLines(
   definitions: ModelToolDefinition[],
 ) {
   const toolNames = new Set(definitions.map(definition => definition.name));
+  const interactiveBrowserTask = INTERACTIVE_BROWSER_TASK_RE.test(capabilityText(capabilityContext));
+  // compact 提示不读取全量 Chrome 说明，以实际保留下来的调用工具判断能力是否可用。
+  const chromeEnabled = toolNames.has('chrome_call_tool');
   const webDetails = WEB_TASK_RE.test(capabilityText(capabilityContext))
     || historyUsesTool(capabilityContext.history, 'search')
     || historyUsesTool(capabilityContext.history, 'browser');
@@ -426,7 +435,9 @@ function buildCompactAgentRuleLines(
     '规则：',
     '- task 是本轮唯一目标；已有信息足够则立即 finish，缺少关键选择时才 ask_user。',
     '- 只选择完成目标所需的最少动作，不得编造工具结果或重复无进展的动作。',
-    ...(hasAnyTool(toolNames, ['click']) ? ['- click 只能使用 observation.browser.elements 中存在的 elementId；scroll 返回内容未变化后改用 get_page_content、http_fetch 或 finish。'] : []),
+    ...(hasAnyTool(toolNames, ['navigate', 'scroll', 'get_page_content', 'http_fetch']) ? ['- 内置 browser 只读；网页点击、输入、登录和提交不能使用内置 browser。scroll 无变化后改用 get_page_content、http_fetch 或 finish。'] : []),
+    ...(chromeEnabled && interactiveBrowserTask ? ['- 当前提供 chrome_call_tool，网页点击、输入、登录和提交必须使用 Chrome MCP。'] : []),
+    ...(!chromeEnabled && interactiveBrowserTask ? ['- 当前未启用 Chrome MCP，无法执行网页点击、输入、登录、提交、上传或下载；不得回退到内置 browser 模拟交互，应明确说明需要启用 Chrome MCP。'] : []),
     ...(webDetails && toolNames.has('web_search') && toolNames.has('http_fetch') ? ['- web_search 只用于发现来源；需要事实核验时必须 http_fetch 权威正文，不得仅凭摘要回答。'] : []),
     ...(toolNames.has('image_analyze') ? ['- 附件图片使用 @attachment/N，不得复制或改写 @uploads 路径。'] : []),
     '- currentDateTime 是当前日期时间；涉及相对时间时以它为准，不得猜测年份。finish.answer 使用简体中文，简洁直接。',
@@ -573,8 +584,12 @@ export function buildNvidiaTaskMessages({
   }
 
   if (compact) {
+    // compact 仍须保留 Chrome 交互入口，否则移除 browser.click/type 后小上下文重试将无法完成交互任务。
     const compactToolNames = [...selectedToolNames].filter(name => COMPACT_TOOL_NAMES.has(name));
-    const compactToolDefinitions = selectPromptToolDefinitions({ includeToolNames: compactToolNames });
+    const compactToolDefinitions = selectPromptToolDefinitions({
+      chromeEnabled: chromeEnabled && chromeDetails,
+      includeToolNames: compactToolNames,
+    });
     return [
       {
         role: 'system',

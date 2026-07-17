@@ -221,7 +221,7 @@ export function buildChromePromptLines(env = process.env) {
   }
   const lines = [
     '当 Chrome DevTools MCP 已启用时，使用 chrome_call_tool 调用具体工具；toolName 取自下方工具列表，arguments 传对应参数对象。',
-    'Chrome DevTools 工具可用于浏览器页面操作、截图、网络请求检查、性能分析等。',
+    'Chrome DevTools 工具可用于并负责所有网页交互，包括点击、输入、登录、提交、上传、下载，以及截图、网络请求检查和性能分析；内置 browser 只用于只读信息浏览。',
     '只有当怀疑工具列表已变更（例如调用报"未找到 Chrome 工具"）时，才需要 chrome_list_tools 主动刷新；正常情况下直接使用 chrome_call_tool。',
     'uid 形如 "3_12"，下划线前的数字是 snapshotId。每次 take_snapshot（或带 includeSnapshot 的操作）后 snapshotId 都会变，旧 uid 立即失效——禁止跨 snapshot 复用 uid，使用前请取最新 snapshot。',
     'take_snapshot / take_screenshot 只对"当前已选中的页面"生效，需先用 navigate_page(url=...) 打开目标页面；navigate_page 成功后已自动附带页面快照，无需再单独 take_snapshot。',
