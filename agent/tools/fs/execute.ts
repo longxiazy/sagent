@@ -180,7 +180,18 @@ export async function executeFsAction(action, opts: { cwd?: string | null; dataD
     }
     const maxResults = action.maxResults || 20;
     const include = action.include || '*';
-    const args = ['-rn', '--color=never', '-E', query, '--include', include, targetPath];
+    // 递归搜索必须排除敏感文件/目录，否则 grep -r 会读取并回显 read_file 明令禁止的
+    // .env / .git / .ssh / 私钥内容，绕过敏感文件防护造成凭据泄露。
+    const excludeArgs = [
+      '--exclude-dir=.git',
+      '--exclude-dir=.ssh',
+      '--exclude=.env',
+      '--exclude=.env.*',
+      '--exclude=id_rsa',
+      '--exclude=id_dsa',
+      '--exclude=authorized_keys',
+    ];
+    const args = ['-rn', '--color=never', '-E', ...excludeArgs, query, '--include', include, targetPath];
 
     const lines = await new Promise<string[]>((resolve, reject) => {
       const proc = spawn('grep', args, { stdio: ['ignore', 'pipe', 'pipe'] });
