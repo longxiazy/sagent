@@ -540,7 +540,13 @@ class SseTransport {
         clearTimeout(this.endpointFallbackTimer);
         this.endpointFallbackTimer = null;
       }
-      this.postUrl = new URL(data, this.streamUrl).toString();
+      try {
+        this.postUrl = new URL(data, this.streamUrl).toString();
+      } catch (err: any) {
+        // 畸形 endpoint 事件不应冒泡出 consumeStream 击垮整条流（进而误标不可达）。
+        log.warn(`[Chrome MCP][sse] 无法解析 endpoint 事件: ${truncateText(data, 240)} (${err?.message || err})`);
+        return;
+      }
       log.info(`[Chrome MCP][sse] endpoint event -> ${this.postUrl}`);
       this.endpointResolve?.(this.postUrl);
       return;

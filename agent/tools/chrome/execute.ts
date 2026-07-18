@@ -360,7 +360,7 @@ export async function executeChromeAction(action, opts: { signal?: AbortSignal }
     const NAVIGATE_TOOLS = new Set(['navigate_page', 'new_page']);
     if (!result?.isError && NAVIGATE_TOOLS.has(toolName)) {
       try {
-        const snapshotResult = await client.callTool('take_snapshot', {});
+        const snapshotResult = await client.callTool('take_snapshot', {}, { signal });
         const snapshotContent = extractToolContent(snapshotResult);
         parts.push(`\n[页面快照]\n${snapshotContent}`);
         const sid = extractSnapshotIdFromText(snapshotContent);
