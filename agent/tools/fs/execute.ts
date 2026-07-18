@@ -161,7 +161,10 @@ export async function executeFsAction(action, opts: { cwd?: string | null; dataD
   if (action.type === 'read_file') {
     const { canonicalPath: targetPath } = await resolveExisting(action.path, '读取');
     const buffer = await fs.readFile(targetPath, { signal: opts.signal });
-    const text = buffer.toString('utf8', 0, Math.min(buffer.length, action.maxBytes || 12000));
+    // 按字节截断可能切断多字节 UTF-8 字符产生乱码；TextDecoder 的 stream 模式
+    // 会丢弃末尾不完整的字节序列，避免边界处出现替换字符。
+    const end = Math.min(buffer.length, action.maxBytes || 12000);
+    const text = new TextDecoder('utf-8').decode(buffer.subarray(0, end), { stream: true });
     return `文件 ${targetPath} 内容预览:\n${text}`;
   }
 
@@ -194,13 +197,17 @@ export async function executeFsAction(action, opts: { cwd?: string | null; dataD
       '--exclude=id_dsa',
       '--exclude=authorized_keys',
     ];
-    const args = ['-rn', '--color=never', '-E', ...excludeArgs, query, '--include', include, targetPath];
+    // query 以 -- 与选项分隔，避免以 '-' 开头的 query 被 grep 当作选项解析。
+    const args = ['-rn', '--color=never', '-E', ...excludeArgs, '--include', include, '--', query, targetPath];
 
+    let timedOut = false;
     const lines = await new Promise<string[]>((resolve, reject) => {
       const proc = spawn('grep', args, { stdio: ['ignore', 'pipe', 'pipe'] });
       const collected: string[] = [];
       let buf = '';
       const timer = setTimeout(() => {
+        timedOut = true;
+        opts.signal?.removeEventListener('abort', onAbort);
         proc.kill();
         resolve(collected);
       }, 10000);
@@ -221,6 +228,7 @@ export async function executeFsAction(action, opts: { cwd?: string | null; dataD
             collected.push(line);
             if (collected.length >= maxResults + 100) {
               clearTimeout(timer);
+              opts.signal?.removeEventListener('abort', onAbort);
               proc.kill();
               resolve(collected);
             }
@@ -249,15 +257,18 @@ export async function executeFsAction(action, opts: { cwd?: string | null; dataD
     });
 
     if (lines.length === 0) {
-      return `搜索 "${query}" 在 ${targetPath} (${include}): 未找到匹配`;
+      return timedOut
+        ? `搜索 "${query}" 在 ${targetPath} (${include}): 10 秒内未完成，无匹配结果（可能不完整）`
+        : `搜索 "${query}" 在 ${targetPath} (${include}): 未找到匹配`;
     }
 
     const truncated = lines.slice(0, maxResults);
     const header = `搜索 "${query}" 在 ${targetPath} (${include})，找到 ${lines.length} 个结果:`;
+    const timeoutNote = timedOut ? '\n... (搜索超过 10 秒被中断，结果可能不完整)' : '';
     if (lines.length > maxResults) {
-      return `${header}\n${truncated.join('\n')}\n... (截断，共 ${lines.length} 个结果)`;
+      return `${header}\n${truncated.join('\n')}\n... (截断，共 ${lines.length} 个结果)${timeoutNote}`;
     }
-    return `${header}\n${truncated.join('\n')}`;
+    return `${header}\n${truncated.join('\n')}${timeoutNote}`;
   }
 
   throw new Error(`不支持的文件动作: ${action.type}`);
