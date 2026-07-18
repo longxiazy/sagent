@@ -89,6 +89,24 @@ function asStringArray(value: unknown): string[] {
     : [];
 }
 
+// 兼容 content 为字符串或分段数组（[{type:'text',text}]）两种返回形态。
+function extractMessageText(content: unknown): string {
+  if (typeof content === 'string') return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map(part => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object' && typeof (part as Record<string, unknown>).text === 'string') {
+          return (part as Record<string, string>).text;
+        }
+        return '';
+      })
+      .join('')
+      .trim();
+  }
+  return '';
+}
+
 function uniqueModels(values: unknown[]): string[] {
   return [...new Set(values
     .flatMap(value => Array.isArray(value) ? value : [value])
@@ -154,6 +172,14 @@ async function toImageDataUrl(
 ): Promise<string> {
   throwIfAborted(signal);
   if (/^data:image\//i.test(image)) {
+    // data URL 分支也要做大小限制，否则可构造超大 data URL 绕过 10MB 上限。
+    const comma = image.indexOf(',');
+    const meta = comma >= 0 ? image.slice(5, comma) : '';
+    const payload = comma >= 0 ? image.slice(comma + 1) : '';
+    const approxBytes = /;base64/i.test(meta) ? Math.floor(payload.length * 3 / 4) : payload.length;
+    if (approxBytes > MAX_IMAGE_BYTES) {
+      throw new Error(`图片过大（${(approxBytes / 1024 / 1024).toFixed(1)} MB），上限 10 MB`);
+    }
     return image;
   }
 
@@ -213,7 +239,7 @@ async function toImageDataUrl(
   if (buf.length > MAX_IMAGE_BYTES) {
     throw new Error(`图片过大（${(buf.length / 1024 / 1024).toFixed(1)} MB），上限 10 MB`);
   }
-  return `data:${mimeFromExt(abs)};base64,${buf.toString('base64')}`;
+  return `data:${sniffImageMime(buf) || mimeFromExt(abs)};base64,${buf.toString('base64')}`;
 }
 
 export async function executeVisionAction(
@@ -277,8 +303,10 @@ export async function executeVisionAction(
           temperature: 0.2,
           messages,
         }, { signal: scope.signal })) as CompletionLike;
-    const text = completion?.choices?.[0]?.message?.content;
-    const answer = typeof text === 'string' ? text.trim() : '';
+    const raw = completion?.choices?.[0]?.message?.content;
+    // 部分 OpenAI 兼容/多模态实现会把 content 返回为分段数组，需拼接文本片段，
+    // 否则会被当作空内容误报“未返回内容”。
+    const answer = extractMessageText(raw);
     if (!answer) return `image_analyze 模型 ${model} 未返回内容`;
     return `image_analyze 结果（model=${model}）:\n${answer}`;
   } catch (err: unknown) {
