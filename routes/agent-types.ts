@@ -7,7 +7,6 @@ import type {
   AgentRunStore,
   ApprovalStore,
   DesktopAgentRunner,
-  DomainRules,
 } from '../agent/core/contracts.ts';
 
 export interface AgentRouterContext {
@@ -16,7 +15,6 @@ export interface AgentRouterContext {
   approvalStore: ApprovalStore;
   memoryDir: string;
   checkpointDir: string;
-  domainRules?: DomainRules;
   modelConfig: ModelInfo[];
   registry: ProviderRegistry;
   configStore: ConfigStore;

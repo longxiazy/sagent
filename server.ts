@@ -113,12 +113,11 @@ const runDesktopAgent = AGENT_SANDBOXED_WORKERS
       sandbox: AGENT_WORKER_SANDBOX,
     }) as any
   : directRunDesktopAgent;
-runDesktopAgent.domainRules = directRunDesktopAgent.domainRules;
 
 const SCREENSHOT_DIR = path.join(MEMORY_DIR, 'screenshots');
 app.use('/screenshots', express.static(SCREENSHOT_DIR));
 
-app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, domainRules: runDesktopAgent.domainRules, modelConfig, registry, configStore, projectStore }));
+app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, modelConfig, registry, configStore, projectStore }));
 app.use(createCompletionsRouter({ registry, modelConfig }));
 app.use(createSuggestionsRouter({ store: createSuggestionStore(path.join(__dirname, 'data')) }));
 

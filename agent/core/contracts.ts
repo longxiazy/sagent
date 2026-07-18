@@ -229,16 +229,6 @@ export interface ApprovalStore {
   rejectAll(): void;
 }
 
-export interface DomainRules {
-  needsBrowser(url: string): Promise<boolean>;
-  markBrowserDomain(url: string): Promise<void>;
-  detectBotResponse(content: unknown): Promise<boolean>;
-  getRules(): Promise<string[]>;
-  addDomain(domain: string): Promise<void>;
-  removeDomain(domain: string): Promise<void>;
-  resetToDefaults(): Promise<void>;
-}
-
 export interface AgentRuntimeState {
   runId?: string;
   onEvent?: AgentEventWriter;
@@ -354,5 +344,4 @@ export interface DesktopAgentRunOptions {
 
 export interface DesktopAgentRunner {
   (options: DesktopAgentRunOptions): Promise<DesktopAgentResult>;
-  domainRules?: DomainRules;
 }
