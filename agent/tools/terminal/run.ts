@@ -51,7 +51,15 @@ async function resolveCwd(value, base = process.cwd()) {
 async function assertSafeCommandPaths(args: string[], cwd: string) {
   for (const arg of args) {
     const candidate = arg.startsWith('-') && arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : arg;
-    if (!candidate || candidate.startsWith('-')) continue;
+    if (!candidate) continue;
+    if (candidate.startsWith('-')) {
+      // 粘连短选项的路径值（如 -f/etc/passwd）不走上面的 = 分支，单独约束绝对路径/越界。
+      const attached = candidate.replace(/^-+[A-Za-z]*/, '');
+      if (attached && (path.isAbsolute(attached) || attached.split(/[\\/]/).includes('..'))) {
+        throw new Error(`run_safe 路径参数越界: ${attached}`);
+      }
+      continue;
+    }
     if (path.isAbsolute(candidate)) throw new Error(`run_safe 禁止使用绝对路径参数: ${candidate}`);
     const segments = candidate.split(/[\\/]/);
     if (segments.includes('..')) throw new Error(`run_safe 路径参数越界: ${candidate}`);
@@ -152,6 +160,7 @@ async function runProcess({ file, args, env = process.env, command, cwd, timeout
     }, timeoutMs);
 
     child.stdout.on('data', chunk => {
+      if (settled) return;
       const text = chunk.toString();
       if (stdout.length < MAX_CAPTURE) stdout += redactText(text);
       emitProgress({
@@ -161,6 +170,7 @@ async function runProcess({ file, args, env = process.env, command, cwd, timeout
     });
 
     child.stderr.on('data', chunk => {
+      if (settled) return;
       const text = chunk.toString();
       if (stderr.length < MAX_CAPTURE) stderr += redactText(text);
       emitProgress({

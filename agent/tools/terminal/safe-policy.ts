@@ -215,6 +215,13 @@ export function parseSafeCommand(command: string): ParsedSafeCommand {
   if (!validateArgs(file, args)) {
     throw new Error(`run_safe 不允许该命令参数: ${command}`);
   }
+  if (file === 'rg') {
+    // rg 会加载 RIPGREP_CONFIG_PATH 指向的配置文件，其中的 --pre 无法在命令行层面拦截，
+    // 剥离该环境变量以关闭配置文件加载。
+    const env = { ...process.env };
+    delete env.RIPGREP_CONFIG_PATH;
+    return { file, args, env };
+  }
   if (file !== 'git') return { file, args };
 
   const [subcommand, ...subcommandArgs] = args;
