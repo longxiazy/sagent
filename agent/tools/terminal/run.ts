@@ -109,6 +109,9 @@ async function runProcess({ file, args, env = process.env, command, cwd, timeout
 
     let stdout = '';
     let stderr = '';
+    // 输出最终只截取前若干字节，累积无上限会在高产出命令超时前占满内存；
+    // 达到上限后停止追加（保留已收集的头部内容）。
+    const MAX_CAPTURE = 256 * 1024;
     let settled = false;
     let killTimer: NodeJS.Timeout | null = null;
     let timeout: NodeJS.Timeout;
@@ -150,7 +153,7 @@ async function runProcess({ file, args, env = process.env, command, cwd, timeout
 
     child.stdout.on('data', chunk => {
       const text = chunk.toString();
-      stdout += redactText(text);
+      if (stdout.length < MAX_CAPTURE) stdout += redactText(text);
       emitProgress({
         phase: 'stdout',
         chunk: redactText(text).slice(0, 4000),
@@ -159,7 +162,7 @@ async function runProcess({ file, args, env = process.env, command, cwd, timeout
 
     child.stderr.on('data', chunk => {
       const text = chunk.toString();
-      stderr += redactText(text);
+      if (stderr.length < MAX_CAPTURE) stderr += redactText(text);
       emitProgress({
         phase: 'stderr',
         chunk: redactText(text).slice(0, 4000),
