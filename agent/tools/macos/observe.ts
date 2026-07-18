@@ -18,7 +18,7 @@ function emptyUnlessAborted(signal?: AbortSignal) {
 
 function execFileText(file: string, args: string[], signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(file, args, { timeout: 12000, signal }, (error, stdout, stderr) => {
+    execFile(file, args, { timeout: 12000, signal, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(stderr?.trim() || error.message));
         return;
@@ -48,6 +48,8 @@ async function captureScreenshot(runId, signal?: AbortSignal) {
     await fs.chmod(filePath, 0o600).catch(() => {});
     return filePath;
   } catch (err) {
+    // screencapture 可能已落盘半成品（超时被 kill / abort），清理残留文件。
+    await fs.rm(filePath, { force: true }).catch(() => {});
     if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : err;
     return '';
   }

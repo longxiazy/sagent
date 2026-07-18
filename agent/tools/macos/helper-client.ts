@@ -9,7 +9,7 @@ const DEFAULT_HELPER_CANDIDATES = [
 
 function execFileJson(file: string, args: string[], payload: any = {}, timeout = 12000, signal?: AbortSignal): Promise<any> {
   return new Promise((resolve, reject) => {
-    const child = execFile(file, args, { timeout, signal }, (error, stdout, stderr) => {
+    const child = execFile(file, args, { timeout, signal, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(stderr?.trim() || error.message));
         return;
