@@ -38,7 +38,19 @@ function mimeFromExt(target: string): string {
   if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
   if (ext === 'webp') return 'image/webp';
   if (ext === 'gif') return 'image/gif';
+  if (ext === 'bmp') return 'image/bmp';
   return 'image/png';
+}
+
+// 依据文件头魔数识别常见图片类型，用于扩展名/content-type 不可靠时的兜底，
+// 避免把非 png 图片一律标成 image/png 送给严格的 provider。
+function sniffImageMime(buf: Buffer): string | null {
+  if (buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.length >= 6 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif';
+  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  if (buf.length >= 2 && buf[0] === 0x42 && buf[1] === 0x4d) return 'image/bmp';
+  return null;
 }
 
 interface VisionContext {
@@ -152,12 +164,30 @@ async function toImageDataUrl(
       if (!res.ok) {
         throw new Error(`下载图片失败 HTTP ${res.status}`);
       }
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.length > MAX_IMAGE_BYTES) {
-        throw new Error(`图片过大（${(buf.length / 1024 / 1024).toFixed(1)} MB），上限 10 MB`);
+      // 先按 Content-Length 预检，再边下边累计字节数，超限立即中止，
+      // 避免把超大响应体一次性读入内存导致 OOM。
+      const declaredLength = Number(res.headers.get('content-length'));
+      if (Number.isFinite(declaredLength) && declaredLength > MAX_IMAGE_BYTES) {
+        throw new Error(`图片过大（${(declaredLength / 1024 / 1024).toFixed(1)} MB），上限 10 MB`);
       }
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('下载图片失败：响应无内容');
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        total += value.length;
+        if (total > MAX_IMAGE_BYTES) {
+          await reader.cancel().catch(() => {});
+          throw new Error('图片过大，超过上限 10 MB');
+        }
+        chunks.push(value);
+      }
+      const buf = Buffer.concat(chunks);
       const contentType = res.headers.get('content-type')?.split(';')[0]?.trim();
-      const mime = contentType && /^image\//.test(contentType) ? contentType : mimeFromExt(image);
+      const mime = contentType && /^image\//i.test(contentType) ? contentType : (sniffImageMime(buf) || mimeFromExt(image));
       return `data:${mime};base64,${buf.toString('base64')}`;
     } finally {
       scope.cleanup();
