@@ -217,19 +217,6 @@ async function extractPageTextOrLinks(view, url, extractLinks) {
     : cleaned;
 }
 
-function elementSelector(elementId) {
-  const id = String(elementId).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  return `[data-agent-node-id="${id}"]`;
-}
-
-function queryElementScript(selector, body) {
-  return `(() => {
-    const element = document.querySelector(${JSON.stringify(selector)});
-    if (!element) throw new Error('元素不存在: ${selector.replace(/'/g, "\\'")}');
-    ${body}
-  })()`;
-}
-
 export async function executeBrowserAction(view, action, opts: { signal?: AbortSignal; recoveryAttempt?: number } = {}) {
   const activeView = view || getWebView();
   const signal = opts.signal;
@@ -290,54 +277,19 @@ async function _executeBrowserAction(view, action, opts: { recoveryAttempt?: num
   }
 
   if (action.type === 'click') {
-    if (!action.elementId) {
-      throw new Error('click 缺少 elementId');
-    }
-
-    const selector = elementSelector(action.elementId);
-    await view.click(selector, { timeout: 10000 });
-    await delay(ACTION_SETTLE_MS);
-    return `已点击元素 ${action.elementId}`;
+    // 兼容旧 trace/checkpoint 或过期客户端：保留动作识别，但绝不在内置 WebView 中执行交互。
+    return failedResult(
+      '内置浏览器是只读信息浏览器，不支持点击操作。请启用并使用 Chrome MCP（chrome_call_tool）。',
+      '内置浏览器不支持交互操作',
+    );
   }
 
   if (action.type === 'type') {
-    if (!action.elementId) {
-      throw new Error('type 缺少 elementId');
-    }
-
-    const selector = elementSelector(action.elementId);
-    const elementInfo = await safeEvaluate(view, queryElementScript(selector, `
-      return {
-        tagName: element.tagName.toLowerCase(),
-        isEditable: Boolean(element.isContentEditable),
-      };
-    `));
-
-    await view.click(selector, { timeout: 10000 });
-
-    if (elementInfo.tagName === 'input' || elementInfo.tagName === 'textarea') {
-      await safeEvaluate(view, queryElementScript(selector, `
-        element.focus();
-        element.value = '';
-        element.dispatchEvent(new Event('input', { bubbles: true }));
-      `));
-      await view.type(selector, action.text || '');
-    } else if (elementInfo.isEditable) {
-      await safeEvaluate(view, queryElementScript(selector, `
-        element.focus();
-        element.textContent = '';
-      `));
-      await view.type(selector, action.text || '');
-    } else {
-      throw new Error(`元素 ${action.elementId} 不可输入`);
-    }
-
-    if (action.submit) {
-      await view.press('Enter');
-      await delay(ACTION_SETTLE_MS);
-    }
-
-    return `已在元素 ${action.elementId} 输入内容`;
+    // 与 click 一样只做明确拒绝；网页输入和提交统一交给 Chrome MCP。
+    return failedResult(
+      '内置浏览器是只读信息浏览器，不支持输入或提交操作。请启用并使用 Chrome MCP（chrome_call_tool）。',
+      '内置浏览器不支持交互操作',
+    );
   }
 
   if (action.type === 'wait') {

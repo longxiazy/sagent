@@ -1,7 +1,7 @@
 /**
  * Tool Definitions — Agent 可用的所有工具 schema 定义
  *
- * 定义了 DesktopAgent 能调用的全部工具（浏览器、文件系统、终端、HTTP 抓取、核心动作）。
+ * 定义了 DesktopAgent 能调用的全部工具（只读浏览器、文件系统、终端、HTTP 抓取、核心动作）。
  *
  * 调用场景：
  *   - 各 provider 的 agentPlan() 将工具列表传给对应模型 API
@@ -33,10 +33,11 @@ export function createModelTools({
   includeGenericMcp?: boolean;
   includeToolNames?: Iterable<string>;
 } = {}) {
+  // browser 工具集只负责读取页面；所有会改变网页状态的操作由可选 Chrome MCP 动态注入。
   const tools: ModelToolDefinition[] = [
     {
       name: 'navigate',
-      description: '在浏览器中打开指定 URL',
+      description: '在只读内置浏览器中打开指定 URL；不得用于点击、输入、登录或提交操作',
       example: { rationale: '打开网页', input: { url: 'https://example.com' } },
       input_schema: {
         type: 'object',
@@ -44,32 +45,6 @@ export function createModelTools({
           url: { type: 'string', description: '目标 URL' },
         },
         required: ['url'],
-      },
-    },
-    {
-      name: 'click',
-      description: '点击网页元素（通过 elementId）',
-      example: { rationale: '点击网页元素', input: { elementId: '3' } },
-      input_schema: {
-        type: 'object',
-        properties: {
-          elementId: { type: 'string', description: '元素的 data-agent-node-id' },
-        },
-        required: ['elementId'],
-      },
-    },
-    {
-      name: 'type',
-      description: '在输入框中输入文字',
-      example: { rationale: '在网页输入框输入文字', input: { elementId: '3', text: 'hello', submit: true } },
-      input_schema: {
-        type: 'object',
-        properties: {
-          elementId: { type: 'string', description: '输入框的 elementId' },
-          text: { type: 'string', description: '要输入的文字' },
-          submit: { type: 'boolean', description: '输入后按回车' },
-        },
-        required: ['elementId', 'text'],
       },
     },
     {
@@ -86,7 +61,7 @@ export function createModelTools({
     },
     {
       name: 'scroll',
-      description: '滚动网页（当页面内容超出视口时使用）',
+      description: '在只读内置浏览器中滚动网页（当页面内容超出视口时使用）',
       example: { rationale: '向下滚动页面', input: { direction: 'down', amount: 3 } },
       input_schema: {
         type: 'object',
@@ -99,7 +74,7 @@ export function createModelTools({
     },
     {
       name: 'get_page_content',
-      description: '提取当前浏览器页面的正文文本和基础页面信息。',
+      description: '从只读内置浏览器提取当前页面的正文文本和基础页面信息。',
       example: { rationale: '获取浏览器当前页面文本内容', input: {} },
       input_schema: { type: 'object', properties: {} },
     },
@@ -155,7 +130,7 @@ export function createModelTools({
     },
     {
       name: 'http_fetch',
-      description: '用浏览器打开 URL 并提取页面文本内容。extractLinks=true 时提取页面中的链接列表（用于搜索结果页）。',
+      description: '用只读内置浏览器打开 URL 并提取页面文本内容。extractLinks=true 时提取页面中的链接列表。不得用于点击、输入、登录或提交操作。',
       example: { rationale: '抓取网页内容', input: { url: 'https://example.com', extractLinks: false } },
       input_schema: {
         type: 'object',

@@ -110,7 +110,7 @@ sagent 会在配置的数据目录下保存项目经验，包括近期任务摘�
 
 ### 浏览器与 MCP 集成
 
-Chrome DevTools MCP 会增加 `chrome_list_tools` 和 `chrome_call_tool`。包括 `codex mcp-server` 在内的通用 MCP server 会通过 `mcp_list_servers`、`mcp_list_tools` 和 `mcp_call_tool` 接入。所有集成都是可选能力，配置方式见 [CONFIGURATION.md](CONFIGURATION.md)。
+内置 Browser 仅用于只读信息浏览和正文提取；点击、输入、登录、提交、上传、下载等网页交互统一由 Chrome DevTools MCP 负责。Chrome MCP 会增加 `chrome_list_tools` 和 `chrome_call_tool`。包括 `codex mcp-server` 在内的通用 MCP server 会通过 `mcp_list_servers`、`mcp_list_tools` 和 `mcp_call_tool` 接入。所有集成都是可选能力，配置方式见 [CONFIGURATION.md](CONFIGURATION.md)。
 
 ## 常用命令
 
