@@ -468,6 +468,11 @@ class SseTransport {
       .finally(() => {
         log.info(`[Chrome MCP][sse] stream closed url=${this.streamUrl}`);
         this.streamPromise = null;
+        // 流一旦关闭（正常 done / 断线 / 中止），会话即失效：重置 initialized 使下次请求
+        // 重新握手（否则以 SSE 为会话边界的 server 会拒绝新会话上的请求）；
+        // 并 reject 仍在等待 SSE 响应的在途请求，避免它们各自空等到自身超时。
+        this.initialized = false;
+        this.rejectAllPending(new Error('Chrome MCP SSE 流已关闭，请重试'));
       });
 
     if (!this.endpointPromise) {
