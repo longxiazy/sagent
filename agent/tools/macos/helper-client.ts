@@ -23,6 +23,10 @@ function execFileJson(file: string, args: string[], payload: any = {}, timeout =
     });
 
     if (child.stdin) {
+      // helper 在读完 stdin 前退出/崩溃时，向其 stdin 写入会触发 EPIPE；
+      // 未监听的可写流 'error' 会作为未捕获异常使整个后端进程崩溃，这里吞掉它，
+      // 真正的失败会经 execFile 回调（进程退出码/stderr）反映。
+      child.stdin.on('error', () => {});
       child.stdin.end(JSON.stringify(payload));
     }
   });
