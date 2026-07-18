@@ -451,6 +451,13 @@ class SseTransport {
         await this.consumeStream(response.body);
       })
       .catch(err => {
+        if (err?.name === 'AbortError') {
+          // 主动 close() 触发的中止不是真实断线，不能标记为不可达，
+          // 否则每次 run 结束调用 shutdownChromeMcp 都会把 Chrome MCP 冷却 5 分钟自锁。
+          log.info(`[Chrome MCP][sse] stream aborted url=${this.streamUrl}`);
+          this.endpointReject?.(new Error('Chrome MCP SSE 连接已关闭'));
+          return;
+        }
         const error = new Error(`Chrome MCP SSE 连接失败: ${err.message}`);
         markChromeMcpUnavailable();
         log.warn(`[Chrome MCP][sse] stream failed url=${this.streamUrl} reason=${error.message}`);
