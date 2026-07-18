@@ -169,6 +169,9 @@ function validateGit(args: string[]) {
   if (args[0].startsWith('-') || hasOption(args, '-c', '--config-env', '--exec-path')) return false;
   const subcommand = args[0];
   if (!GIT_READ_ONLY_SUBCOMMANDS.has(subcommand)) return false;
+  // -O / -O<pager> 是 --open-files-in-pager 的短选项，git 会用 /bin/sh 执行该 pager，
+  // 构成任意命令执行；hasOption 无法匹配 -O<pager> 粘连形式，需单独拒绝任何 -O 开头参数。
+  if (args.some(arg => arg === '-O' || arg.startsWith('-O'))) return false;
   if (hasOption(
     args,
     '--output',
