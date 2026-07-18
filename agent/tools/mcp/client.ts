@@ -190,9 +190,11 @@ export async function getSharedGenericMcpClient(name: string) {
   const key = configKey(config);
   const existing = sharedClients.get(name);
   if (existing?.key === key) return existing.client;
-  if (existing) await existing.client.close();
+  // 同步登记新 client（set 之前不能有 await），避免同名并发调用各自 await 旧连接关闭后
+  // 互相覆盖 map、导致先建的新连接从 map 丢失却仍持有子进程/连接而永不关闭。
   const client = createGenericMcpClient(name, config);
   sharedClients.set(name, { key, client });
+  if (existing) await existing.client.close().catch(() => {});
   return client;
 }
 
