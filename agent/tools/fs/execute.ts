@@ -117,10 +117,13 @@ export async function executeFsAction(action, opts: { cwd?: string | null; dataD
     await fs.mkdir(path.dirname(lexicalPath), { recursive: true });
     const canonicalParent = await fs.realpath(path.dirname(lexicalPath));
     assertWithinSandbox(canonicalParent, baseCwd, '写入');
+    assertSafePath(canonicalParent, baseCwd);
     const canonicalPath = path.join(canonicalParent, path.basename(lexicalPath));
+    assertSafePath(canonicalPath, baseCwd);
     try {
       const existingTarget = await fs.realpath(lexicalPath);
       assertWithinSandbox(existingTarget, baseCwd, '写入');
+      assertSafePath(existingTarget, baseCwd);
       return existingTarget;
     } catch (err: any) {
       if (err?.code !== 'ENOENT') throw err;
