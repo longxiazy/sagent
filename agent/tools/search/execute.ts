@@ -42,7 +42,9 @@ function unwrapDdgRedirect(href) {
     const parsed = new URL(url, ENDPOINT);
     if (/(^|\.)duckduckgo\.com$/i.test(parsed.hostname) && parsed.pathname === '/l/') {
       const uddg = parsed.searchParams.get('uddg');
-      if (uddg) return decodeURIComponent(uddg);
+      // searchParams.get 已做过一次百分号解码，返回的即真实 URL；再次 decodeURIComponent
+      // 属二次解码，会破坏含编码字符的 URL 或在残留裸 % 时抛错回退到跳转包装地址。
+      if (uddg) return uddg;
     }
     return parsed.toString();
   } catch {
