@@ -207,7 +207,7 @@ export function SessionList({
       />
 
       {showMemoryPanel ? (
-        <MemoryPanel onClose={onToggleMemory} activeProjectId={activeProjectId} modelList={modelList} />
+        <MemoryPanel onClose={onToggleMemory} activeProjectId={activeProjectId} />
       ) : statsPanelOpen ? (
         <AgentStatsPanel
           sessions={projectSessions}

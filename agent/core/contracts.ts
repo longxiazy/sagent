@@ -62,7 +62,6 @@ export type AgentAction =
   | ChromeAction
   | McpAction
   | { tool: 'search'; type: 'web_search'; query: string; maxResults: number }
-  | { tool: 'codegraph'; type: 'codegraph_query'; query: string }
   | { tool: 'vision'; type: 'image_analyze'; image: string; question: string };
 
 export type AgentTool = AgentAction['tool'];

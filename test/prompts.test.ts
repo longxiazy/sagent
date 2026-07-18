@@ -273,7 +273,7 @@ describe('agent prompts', () => {
 
     expect(countExamples(casual)).toBe(2);
     expect(countExamples(web)).toBe(3);
-    expect(countExamples(code)).toBe(5);
+    expect(countExamples(code)).toBe(4);
     expect(web).toContain('{"tool":"browser","type":"http_fetch"');
     expect(web).not.toContain('{"tool":"browser","type":"navigate","url":"https://example.com"}');
     expect(web).toContain('http_fetch(url,extractLinks?)');
@@ -477,7 +477,6 @@ describe('agent prompts', () => {
     expect(webTools.has('navigate')).toBe(true);
     expect(webTools.has('read_file')).toBe(false);
     expect(codeTools.has('read_file')).toBe(true);
-    expect(codeTools.has('codegraph_query')).toBe(true);
     expect(codeTools.has('run_safe')).toBe(true);
     expect(codeTools.has('web_search')).toBe(true);
     expect(codeTools.has('navigate')).toBe(false);
@@ -556,7 +555,6 @@ describe('agent prompts', () => {
     expect(selected.has('navigate')).toBe(true);
     expect(selected.has('web_search')).toBe(true);
     expect(selected.has('read_file')).toBe(true);
-    expect(selected.has('codegraph_query')).toBe(true);
   });
 
   it('bounds prompt history count and individual result size', () => {

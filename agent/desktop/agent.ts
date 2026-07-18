@@ -33,7 +33,6 @@ import { createAgentAuthorizer } from '../policy/approvals.ts';
 import { executeBrowserAction } from '../tools/browser/execute.ts';
 import { executeFsAction } from '../tools/fs/execute.ts';
 import { executeSearchAction } from '../tools/search/execute.ts';
-import { executeCodegraphQueryAction } from '../tools/codegraph/execute.ts';
 import { executeVisionAction } from '../tools/vision/execute.ts';
 import { createDomainRules } from '../tools/fetch/domain-rules.ts';
 import { executeChromeAction } from '../tools/chrome/execute.ts';
@@ -134,7 +133,6 @@ export function createDesktopAgentRunner({
       },
       fs: async (state, action) => executeFsAction(action, { cwd: state.projectRoot, dataDir: state.dataDir, signal: state.cancelSignal }),
       search: async (state, action) => executeSearchAction(action, { signal: state.cancelSignal }),
-      codegraph: async (state, action) => executeCodegraphQueryAction(action, { dataDir: state.dataDir, signal: state.cancelSignal }),
       vision: async (state, action) => executeVisionAction(action, {
         registry,
         openai_client,

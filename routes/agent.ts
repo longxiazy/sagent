@@ -19,7 +19,6 @@ import { createAgentCheckpointRouter } from './agent-checkpoints.ts';
 import { createAgentTraceRouter } from './agent-traces.ts';
 import { createAgentUploadsRouter } from './agent-uploads.ts';
 import { createAgentProjectsRouter } from './agent-projects.ts';
-import { createAgentCodegraphRouter } from './agent-codegraph.ts';
 import { createAgentContextRouter } from './agent-context.ts';
 import { createAgentSessionsRouter } from './agent-sessions.ts';
 import { createSessionStore } from '../agent/core/session-store.ts';
@@ -41,7 +40,6 @@ export function createAgentRouter(context: Omit<AgentRouterContext, 'sessionStor
   router.use(createAgentTraceRouter(fullContext));
   router.use(createAgentUploadsRouter(fullContext));
   router.use(createAgentProjectsRouter(fullContext));
-  router.use(createAgentCodegraphRouter(fullContext));
   router.use(createAgentContextRouter(fullContext));
   router.use(createAgentSessionsRouter(fullContext));
 
