@@ -45,12 +45,12 @@ function assertWithinSandbox(targetPath, sandboxPath, operation = '访问') {
 }
 
 const DANGEROUS_PATTERNS = [
-  /^\.env(\.\w+)?$/i,
-  /^\.ssh\//i,
-  /^\.git\//i,
-  / id_rsa/,
-  / id_dsa/,
-  / authorized_keys/,
+  /(^|\/)\.env(\.\w+)?$/i,
+  /(^|\/)\.ssh(\/|$)/i,
+  /(^|\/)\.git(\/|$)/i,
+  /(^|\/)id_rsa$/i,
+  /(^|\/)id_dsa$/i,
+  /(^|\/)authorized_keys$/i,
 ];
 
 function assertSafePath(targetPath, sandboxPath) {
