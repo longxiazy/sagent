@@ -34,7 +34,6 @@ import { executeBrowserAction } from '../tools/browser/execute.ts';
 import { executeFsAction } from '../tools/fs/execute.ts';
 import { executeSearchAction } from '../tools/search/execute.ts';
 import { executeVisionAction } from '../tools/vision/execute.ts';
-import { createDomainRules } from '../tools/fetch/domain-rules.ts';
 import { executeChromeAction } from '../tools/chrome/execute.ts';
 import { executeGenericMcpAction } from '../tools/mcp/execute.ts';
 import { executeTerminalAction } from '../tools/terminal/run.ts';
@@ -84,7 +83,6 @@ export function createDesktopAgentRunner({
   staggerDelayMs = 0,
   batchSize = 1,
 }: DesktopAgentRunnerConfig): DesktopAgentRunner {
-  const domainRules = createDomainRules(checkpointDir);
   const {
     cleanupBrowserSession,
     serializeBrowserOperation,
@@ -282,7 +280,5 @@ export function createDesktopAgentRunner({
     });
   }
 
-  const runner = runDesktopAgent as DesktopAgentRunner;
-  runner.domainRules = domainRules;
-  return runner;
+  return runDesktopAgent as DesktopAgentRunner;
 }

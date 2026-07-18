@@ -16,7 +16,7 @@ export default [
     },
   },
   {
-    files: ['agent/tools/browser/**/*.js', 'agent/tools/fetch/execute.js'],
+    files: ['agent/tools/browser/**/*.js'],
     languageOptions: {
       globals: {
         window: 'readonly',

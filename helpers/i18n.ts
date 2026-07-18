@@ -25,8 +25,6 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'checkpoint.notEnabled': '会话检查点未启用',
     'checkpoint.noActiveRun': '没有活跃的运行',
     'checkpoint.rollbackInProgress': '已有回滚请求处理中',
-    'fetchRules.notEnabled': 'Domain rules 未启用',
-    'fetchRules.domainEmpty': 'domain 不能为空',
   },
   en: {
     'trace.notFound': 'trace not found',
@@ -45,8 +43,6 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'checkpoint.notEnabled': 'Session checkpoints are not enabled',
     'checkpoint.noActiveRun': 'No active run',
     'checkpoint.rollbackInProgress': 'A rollback request is already in progress',
-    'fetchRules.notEnabled': 'Domain rules are not enabled',
-    'fetchRules.domainEmpty': 'domain cannot be empty',
   },
 };
 

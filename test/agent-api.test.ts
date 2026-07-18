@@ -54,7 +54,6 @@ beforeEach(async () => {
     approvalStore,
     memoryDir: tmpDir,
     checkpointDir: tmpDir,
-    domainRules: null,
     modelConfig: [
       { id: 'test-model', label: 'test-model', provider: 'test' },
       { id: 'chat-only-model', label: 'chat-only-model', provider: 'test', agentCompatible: false },
@@ -194,7 +193,6 @@ describe('POST /api/agent', () => {
       approvalStore,
       memoryDir: tmpDir,
       checkpointDir: tmpDir,
-      domainRules: null,
       modelConfig: [{ id: 'test-model', provider: 'test' }],
       registry: mockRegistry,
       configStore: {},
