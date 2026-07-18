@@ -132,15 +132,6 @@ function normalizeSearchAction(type: string, action: JsonObject): AgentAction {
   throw new Error(`不支持的搜索动作: ${type}`);
 }
 
-function normalizeCodegraphAction(type: string, action: JsonObject): AgentAction {
-  if (type === 'codegraph_query') {
-    const query = typeof action.query === 'string' ? action.query.trim() : '';
-    if (!query) throw new Error('codegraph_query 缺少 query');
-    return { tool: 'codegraph', type, query };
-  }
-  throw new Error(`不支持的代码图谱动作: ${type}`);
-}
-
 function normalizeVisionAction(type: string, action: JsonObject): AgentAction {
   if (type === 'image_analyze') {
     const image = typeof action.image === 'string' ? action.image.trim() : '';
@@ -334,8 +325,6 @@ export function normalizeDesktopAgentDecision(payload: unknown): AgentDecision {
     normalizedAction = normalizeFsAction(type, action);
   } else if (tool === 'search') {
     normalizedAction = normalizeSearchAction(type, action);
-  } else if (tool === 'codegraph') {
-    normalizedAction = normalizeCodegraphAction(type, action);
   } else if (tool === 'vision') {
     normalizedAction = normalizeVisionAction(type, action);
   } else if (tool === 'terminal') {

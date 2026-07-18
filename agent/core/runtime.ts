@@ -197,7 +197,6 @@ function actionLoopKey(action: AgentAction | undefined | null) {
     'terminal.run_confirmed',
     'terminal.run_review',
     'search.web_search',
-    'codegraph.codegraph_query',
     'browser.get_page_content',
     'browser.http_fetch',
     'browser.navigate',

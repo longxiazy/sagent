@@ -356,23 +356,6 @@ export const zh = {
   'memory.clearKnowledgeTitle': '清空项目知识',
   'memory.clearKnowledge': '清空知识',
 
-  // 代码图谱 Code Graph
-  'codegraph.tab': '代码图谱',
-  'codegraph.stats': '{files} 文件 · {modules} 模块 · 覆盖率 {coverage}',
-  'codegraph.lastIndexed': '上次索引 {time}',
-  'codegraph.notIndexed': '尚未建立图谱',
-  'codegraph.empty': '该项目还没有代码图谱。选择模型后点「重新索引」生成。',
-  'codegraph.reindex': '重新索引',
-  'codegraph.indexing': '索引中…',
-  'codegraph.scanning': '扫描文件中…',
-  'codegraph.describing': '生成语义 {done}/{total}',
-  'codegraph.searchPlaceholder': '搜索模块…',
-  'codegraph.noMatch': '无匹配模块',
-  'codegraph.noModel': '无可用模型',
-  'codegraph.modelTitle': '选择用于生成图谱语义的模型',
-  'codegraph.dependsOn': '依赖 {n}',
-  'codegraph.error': '索引失败：{error}',
-
   // 对话框
   'reset.title': '清空当前会话内容？',
   'reset.desc': '当前会话会保留，但消息记录会被移除。',

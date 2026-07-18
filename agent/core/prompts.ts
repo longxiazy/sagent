@@ -28,7 +28,7 @@ const FOLLOWUP_TASK_RE = /^\s*(?:(?:继续|接着|重试|再试|这个|那个|�
 // 时效性问题未命中关键词分类后只剩 finish，导致模型把问题原样返回。
 const CORE_TOOL_NAMES = ['web_search', 'ask_user', 'notify_user', 'finish'];
 const WEB_TOOL_NAMES = ['navigate', 'wait', 'scroll', 'get_page_content', 'http_fetch', 'web_search'];
-const FILE_TOOL_NAMES = ['list_dir', 'read_file', 'get_file_info', 'write_file', 'search_files', 'codegraph_query'];
+const FILE_TOOL_NAMES = ['list_dir', 'read_file', 'get_file_info', 'write_file', 'search_files'];
 const TERMINAL_TOOL_NAMES = ['run_safe', 'run_confirmed', 'run_review'];
 const VISION_TOOL_NAMES = ['image_analyze'];
 const CHROME_TOOL_NAMES = ['chrome_list_tools', 'chrome_call_tool'];
@@ -89,14 +89,13 @@ export function buildNvidiaActionExampleLines(options: PromptToolOptions = {}) {
   return buildNvidiaActionExampleLinesFromDefinitions(selectPromptToolDefinitions(options));
 }
 
-const TOOL_SIGNATURE_GROUP_ORDER = ['browser', 'fs', 'terminal', 'search', 'vision', 'codegraph', 'chrome', 'mcp', 'core'];
+const TOOL_SIGNATURE_GROUP_ORDER = ['browser', 'fs', 'terminal', 'search', 'vision', 'chrome', 'mcp', 'core'];
 const REPRESENTATIVE_ACTION_BY_TOOL: Record<string, string> = {
   browser: 'http_fetch',
   fs: 'read_file',
   terminal: 'run_safe',
   search: 'web_search',
   vision: 'image_analyze',
-  codegraph: 'codegraph_query',
   chrome: 'chrome_list_tools',
   mcp: 'mcp_list_servers',
   core: 'finish',
@@ -207,8 +206,7 @@ export function selectGeminiToolNames(context: PromptCapabilityContext = {}) {
     || usedTools.has('search')
     || usedTools.has('chrome');
   const needsFiles = FILE_TASK_RE.test(text)
-    || usedTools.has('fs')
-    || usedTools.has('codegraph');
+    || usedTools.has('fs');
   const needsTerminal = TERMINAL_TASK_RE.test(text) || usedTools.has('terminal');
   const needsVision = VISION_TASK_RE.test(text) || usedTools.has('vision');
 
