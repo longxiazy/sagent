@@ -21,11 +21,14 @@ function decodeEntities(text) {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, ' ')
-    .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, '/')
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => {
+      const n = parseInt(code, 16);
+      return Number.isFinite(n) && n <= 0x10ffff ? String.fromCodePoint(n) : '';
+    })
     .replace(/&#(\d+);/g, (_, code) => {
       const n = Number(code);
-      return Number.isFinite(n) ? String.fromCharCode(n) : '';
+      // fromCharCode 只取低 16 位，补充平面码点（如 emoji）会解码错误，用 fromCodePoint。
+      return Number.isFinite(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : '';
     });
 }
 
