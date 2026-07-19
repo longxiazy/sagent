@@ -2,10 +2,23 @@
 // GET 拉取当前配置/默认值/Key 状态；POST 保存参数；reset 恢复默认。
 import { apiFetch } from './http.js';
 
-export async function fetchConfig() {
-  const res = await apiFetch('/api/config');
+export async function fetchConfig(projectId) {
+  const q = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
+  const res = await apiFetch(`/api/config${q}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
+}
+
+// 保存 tools.model(vision/distill)。projectId 为空=全局,否则写该项目级 override。
+export async function saveTools(tools, projectId) {
+  const res = await apiFetch('/api/config/tools', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tools, projectId: projectId || undefined }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
 }
 
 export async function saveConfig(patch) {

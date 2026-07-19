@@ -32,6 +32,7 @@ import { runAgentRuntime } from '../core/runtime.ts';
 import { createAgentAuthorizer } from '../policy/approvals.ts';
 import { executeBrowserAction } from '../tools/browser/execute.ts';
 import { distillFetchContent } from '../tools/browser/distill.ts';
+import { readProjectToolsOverride, resolveToolModel } from '../core/tool-model-resolver.ts';
 import { executeFsAction } from '../tools/fs/execute.ts';
 import { executeSearchAction } from '../tools/search/execute.ts';
 import { executeVisionAction } from '../tools/vision/execute.ts';
@@ -131,33 +132,52 @@ export function createDesktopAgentRunner({
           actionType: action.type,
           url: 'url' in action ? action.url : ('urls' in action ? action.urls?.[0] : null),
         });
-        // http_fetch 抓取即提炼:长正文进 history 前用便宜模型以 task 为锚压缩(保留来源 URL),
-        // 避免后续每步 prompt 平方级膨胀。distillModel 未配置时 distill 内部直接原样返回。
-        if (action.type === 'http_fetch' && typeof result === 'string' && distillModel && openai_client) {
-          return distillFetchContent({
-            text: result,
-            url: action.url,
-            task: context?.task,
-            client: openai_client as never,
-            model: distillModel,
-            signal: state.cancelSignal,
+        // http_fetch 抓取即提炼:长正文进 history 前用模型以 task 为锚压缩(保留来源 URL),
+        // 避免后续每步 prompt 平方级膨胀。model 三层解析:项目→全局→env→主模型(默认回退主模型)。
+        if (action.type === 'http_fetch' && typeof result === 'string' && openai_client) {
+          const projectTools = await readProjectToolsOverride(state.dataDir);
+          const model = resolveToolModel('distill', {
+            projectTools,
+            globalTools: configStore.tools(),
+            envModel: process.env.DISTILL_MODEL,
+            mainModel: state.model,
           });
+          if (model) {
+            return distillFetchContent({
+              text: result,
+              url: action.url,
+              task: context?.task,
+              client: openai_client as never,
+              model,
+              signal: state.cancelSignal,
+            });
+          }
         }
         return result;
       },
       fs: async (state, action) => executeFsAction(action, { cwd: state.projectRoot, dataDir: state.dataDir, signal: state.cancelSignal }),
       search: async (state, action) => executeSearchAction(action, { signal: state.cancelSignal }),
-      vision: async (state, action) => executeVisionAction(action, {
-        registry,
-        openai_client,
-        modelConfig,
-        visionModel,
-        model: state.model,
-        agentModels: state.agentModels,
-        signal: state.cancelSignal,
-        projectRoot: state.projectRoot,
-        dataDir: state.dataDir,
-      }),
+      vision: async (state, action) => {
+        // vision model 三层解析:项目→全局→env→主模型;未设回退主模型(用户已确认接受主模型可能非多模态)。
+        const projectTools = await readProjectToolsOverride(state.dataDir);
+        const resolvedVisionModel = resolveToolModel('vision', {
+          projectTools,
+          globalTools: configStore.tools(),
+          envModel: process.env.VISION_MODEL,
+          mainModel: state.model,
+        });
+        return executeVisionAction(action, {
+          registry,
+          openai_client,
+          modelConfig,
+          visionModel: resolvedVisionModel,
+          model: state.model,
+          agentModels: state.agentModels,
+          signal: state.cancelSignal,
+          projectRoot: state.projectRoot,
+          dataDir: state.dataDir,
+        });
+      },
       chrome: async (state, action) => executeChromeAction(action, { signal: state.cancelSignal }),
       mcp: async (state, action, context) => {
         let sequence = 0;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Palette, SlidersHorizontal, Brain, KeyRound, Minus, Plus, Plug, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
-import { fetchConfig, saveConfig, resetConfig, applyConfigProfile, saveMcpServer, deleteMcpServer, testMcpServer } from '../../api/config.js';
+import { Palette, SlidersHorizontal, Brain, KeyRound, Minus, Plus, Plug, ChevronDown, ChevronRight, Trash2, Boxes } from 'lucide-react';
+import { fetchConfig, saveConfig, saveTools, resetConfig, applyConfigProfile, saveMcpServer, deleteMcpServer, testMcpServer } from '../../api/config.js';
 import { useTheme } from '../../theme/ThemeProvider.jsx';
 import { useI18n, useT } from '../../i18n/I18nProvider.jsx';
 import { DialogShell } from './DialogShell.jsx';
@@ -58,6 +58,7 @@ const DEFAULT_MCP_SERVERS = {
 const GROUPS = [
   { id: 'appearance', labelKey: 'settings.group.appearance', Icon: Palette },
   { id: 'agent', labelKey: 'settings.group.agent', Icon: SlidersHorizontal },
+  { id: 'models', labelKey: 'settings.group.models', Icon: Boxes },
   { id: 'memory', labelKey: 'settings.group.memory', Icon: Brain },
   { id: 'mcp', labelKey: 'settings.group.mcp', Icon: Plug },
   { id: 'apiKeys', labelKey: 'settings.group.apiKeys', Icon: KeyRound },
@@ -66,12 +67,14 @@ const GROUPS = [
 // 设置面板：左导航分组 + 右内容。
 // 外观（主题/语言，前台即时生效）、Agent 参数（保存后下次任务生效）、
 // 记忆（记忆开关为前端偏好即时生效 + 记忆最大条数后端参数）、API Key 只读展示。
-export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
+export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activeProjectId = null, projects = [] }) {
   const t = useT();
   const { theme, setTheme, fontSize, setFontSize } = useTheme();
   const { locale, setLocale } = useI18n();
   const [activeGroup, setActiveGroup] = useState('appearance');
   const [agent, setAgent] = useState(null);
+  const [tools, setTools] = useState({ vision: {}, distill: {} });
+  const [toolsScope, setToolsScope] = useState('');
   const [sources, setSources] = useState({});
   const [schema, setSchema] = useState({});
   const [profile, setProfile] = useState('custom');
@@ -88,6 +91,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
 
   const applyConfigData = data => {
     if (data.agent) setAgent(data.agent);
+    if (data.tools) setTools({ vision: data.tools.vision || {}, distill: data.tools.distill || {} });
     if (data.sources) setSources(data.sources);
     if (data.schema) setSchema(data.schema);
     if (data.profile) setProfile(data.profile);
@@ -117,6 +121,37 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
   const setField = (key, value) => {
     setAgent(prev => ({ ...prev, [key]: value }));
     setSaved(false);
+  };
+
+  const setToolModel = (tool, value) => {
+    setTools(prev => ({ ...prev, [tool]: { model: value } }));
+    setSaved(false);
+  };
+
+  const switchToolsScope = async scope => {
+    setToolsScope(scope);
+    setSaved(false);
+    setError('');
+    try {
+      const data = await fetchConfig(scope || undefined);
+      setTools({ vision: data.tools?.vision || {}, distill: data.tools?.distill || {} });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const handleSaveTools = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const data = await saveTools(tools, toolsScope || undefined);
+      if (data.tools) setTools({ vision: data.tools.vision || {}, distill: data.tools.distill || {} });
+      setSaved(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const numberFieldLimit = key => {
@@ -504,6 +539,48 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
       );
     }
 
+    if (activeGroup === 'models') {
+      return (
+        <div className="settings-section">
+          <p className="dialog-desc">{t('settings.modelsDesc')}</p>
+          {renderBackendGuard() || (
+            <div className="settings-grid">
+              <label className="settings-field">
+                <span>{t('settings.toolsScope')}</span>
+                <select value={toolsScope} onChange={e => switchToolsScope(e.target.value)} disabled={saving}>
+                  <option value="">{t('settings.scopeGlobal')}</option>
+                  {projects.map(p => (
+                    <option key={p.projectId} value={p.projectId}>{p.name || p.projectId}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="settings-field">
+                <span>{t('settings.visionModel')}</span>
+                <input
+                  list="tool-model-suggestions"
+                  value={tools.vision?.model || ''}
+                  placeholder={t('settings.toolModelPlaceholder')}
+                  onChange={e => setToolModel('vision', e.target.value)}
+                />
+              </label>
+              <label className="settings-field">
+                <span>{t('settings.distillModel')}</span>
+                <input
+                  list="tool-model-suggestions"
+                  value={tools.distill?.model || ''}
+                  placeholder={t('settings.toolModelPlaceholder')}
+                  onChange={e => setToolModel('distill', e.target.value)}
+                />
+              </label>
+              <datalist id="tool-model-suggestions">
+                <option value="nvidia/ising-calibration-1-35b-a3b" />
+              </datalist>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     if (activeGroup === 'memory') {
       return (
         <div className="settings-section">
@@ -572,7 +649,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
   };
 
   // 保存/重置只对后端 agent 配置生效，外观/记忆开关是前端偏好（即时生效，无需保存）。
-  const showSaveBar = activeGroup === 'agent' || activeGroup === 'memory';
+  const showSaveBar = activeGroup === 'agent' || activeGroup === 'memory' || activeGroup === 'models';
   const activeGroupLabel = t(GROUPS.find(group => group.id === activeGroup)?.labelKey || 'settings.title');
 
   return (
@@ -585,8 +662,10 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory }) {
       dialogClassName="settings-dialog"
       footer={showSaveBar ? (
         <div className="settings-dialog-footer">
-          <button type="button" className="dialog-btn" onClick={handleReset} disabled={loading || saving || !agent}>{t('common.resetDefault')}</button>
-          <button type="button" className="dialog-btn primary" onClick={handleSave} disabled={loading || saving || !agent}>{t('common.save')}</button>
+          {activeGroup !== 'models' && (
+            <button type="button" className="dialog-btn" onClick={handleReset} disabled={loading || saving || !agent}>{t('common.resetDefault')}</button>
+          )}
+          <button type="button" className="dialog-btn primary" onClick={activeGroup === 'models' ? handleSaveTools : handleSave} disabled={loading || saving || !agent}>{t('common.save')}</button>
         </div>
       ) : null}
     >
