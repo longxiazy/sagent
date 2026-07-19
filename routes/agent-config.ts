@@ -3,6 +3,7 @@ import { deriveProviderName } from '../agent/core/ai-client.ts';
 import { tReq } from '../helpers/i18n.ts';
 import type { AgentRouterContext } from './agent-types.ts';
 import { loadChromeMcpConfig } from '../agent/tools/chrome/mcp-client.ts';
+import { readProjectToolsOverride, writeProjectToolsOverride } from '../agent/core/tool-model-resolver.ts';
 
 // 只读展示用：脱敏 API Key（仅保留后 4 位，绝不回传明文）。
 function maskKey(key?: string): string | null {
@@ -77,7 +78,7 @@ function effectiveMcpServers(configStore: AgentRouterContext['configStore']) {
   return { servers, sources };
 }
 
-export function createAgentConfigRouter({ configStore }: AgentRouterContext) {
+export function createAgentConfigRouter({ configStore, projectStore }: AgentRouterContext) {
   const router = Router();
   const configPayload = (agent = configStore.get()) => {
     const mcp = effectiveMcpServers(configStore);
@@ -88,14 +89,38 @@ export function createAgentConfigRouter({ configStore }: AgentRouterContext) {
       schema: configStore.schema(),
       profiles: configStore.profiles(),
       profile: configStore.document().profile || 'custom',
+      tools: configStore.tools(),
       mcpServers: mcp.servers,
       mcpSources: mcp.sources,
     };
   };
 
   // 当前 Agent 行为参数 + env 默认值（供前端「恢复默认」对照）+ Key 只读状态。
-  router.get('/api/config', (_req, res) => {
-    res.json({ ...configPayload(), keys: describeKeys() });
+  // ?projectId=<id> 时返回该项目的 tools override(vision/distill model);否则返回全局 tools。
+  router.get('/api/config', async (req, res) => {
+    const payload: any = { ...configPayload(), keys: describeKeys() };
+    const projectId = typeof req.query.projectId === 'string' ? req.query.projectId.trim() : '';
+    if (projectId) {
+      payload.tools = await readProjectToolsOverride(projectStore.dataDir(projectId));
+      payload.toolsScope = 'project';
+    } else {
+      payload.toolsScope = 'global';
+    }
+    res.json(payload);
+  });
+
+  // 更新 tools.model(vision/distill)。body: { tools, projectId? };有 projectId 写项目级,否则全局。
+  router.put('/api/config/tools', async (req, res) => {
+    try {
+      const projectId = typeof req.body?.projectId === 'string' ? req.body.projectId.trim() : '';
+      const tools = req.body?.tools ?? {};
+      const saved = projectId
+        ? await writeProjectToolsOverride(projectStore.dataDir(projectId), tools)
+        : await configStore.updateTools(tools);
+      res.json({ tools: saved, scope: projectId ? 'project' : 'global' });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || tReq(req, 'config.validationFailed') });
+    }
   });
 
   // 更新 Agent 行为参数；校验失败返回 400 + 原因，成功后落盘并下次任务即生效。

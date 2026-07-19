@@ -184,6 +184,9 @@ export function normalizeConfigDocument(value: any): SagentConfigDocument {
       vision: typeof value.tools?.vision?.model === 'string' && value.tools.vision.model.trim()
         ? { model: value.tools.vision.model.trim() }
         : {},
+      distill: typeof value.tools?.distill?.model === 'string' && value.tools.distill.model.trim()
+        ? { model: value.tools.distill.model.trim() }
+        : {},
       screenshots: ['pixelate', 'none'].includes(value.tools?.screenshots?.redaction)
         ? { redaction: value.tools.screenshots.redaction }
         : {},
@@ -291,6 +294,18 @@ export const configStore = {
     saveChain = saveChain.then(persist).catch(err => log.error('[Config] 保存失败:', err?.message || err));
     await saveChain;
     return { ...next };
+  },
+
+  /** 更新全局 tools.model 配置(vision/distill),sanitize 后落盘。 */
+  async updateTools(tools: SagentConfigDocument['tools']): Promise<SagentConfigDocument['tools']> {
+    const sanitized = normalizeConfigDocument({
+      ...document,
+      tools: { ...(document.tools || {}), ...(tools || {}) },
+    }).tools;
+    document = { ...document, tools: sanitized };
+    saveChain = saveChain.then(persist).catch(err => log.error('[Config] 保存失败:', err?.message || err));
+    await saveChain;
+    return sanitized;
   },
 
   /** 校验并合并 patch，落盘后返回最新配置。校验失败抛错（含原因）。 */

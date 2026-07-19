@@ -39,6 +39,7 @@ export interface SagentConfigDocument {
   mcpServers?: Record<string, McpServerConfig>;
   tools?: {
     vision?: { model?: string };
+    distill?: { model?: string };
     screenshots?: { redaction?: 'pixelate' | 'none' };
   };
   execution?: {

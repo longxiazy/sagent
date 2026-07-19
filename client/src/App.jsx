@@ -1171,7 +1171,7 @@ export default function App() {
       />
 
       {showReset && <ResetDialog onConfirm={handleReset} onCancel={() => setShowReset(false)} />}
-      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} agentMemory={agentMemory} setAgentMemory={setAgentMemory} />}
+      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} agentMemory={agentMemory} setAgentMemory={setAgentMemory} activeProjectId={activeProjectId} projects={projects} />}
       {showPromptPreview && visibleContextEstimate?.promptPreview?.text && (
         <PromptPreviewDialog
           estimate={visibleContextEstimate}
