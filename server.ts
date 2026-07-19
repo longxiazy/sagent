@@ -27,7 +27,6 @@ import { flushLlmLogs, initLlmLogger } from './agent/core/llm-logger.ts';
 import { createDesktopAgentRunner } from './agent/desktop/agent.ts';
 import { createSandboxedWorkerAgentRunner, getWorkerCancelDelays } from './agent/worker/runner.ts';
 import { DEFAULT_VISION_MODEL } from './agent/tools/vision/execute.ts';
-import { DEFAULT_DISTILL_MODEL } from './agent/tools/browser/distill.ts';
 import { createClients, deriveProviderName } from './agent/core/ai-client.ts';
 import { createProviderRegistry } from './agent/core/providers/registry.ts';
 import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
@@ -83,7 +82,6 @@ const projectStore = createProjectStore(MEMORY_DIR);
 await projectStore.init();
 
 const VISION_MODEL = (configStore.tools().vision?.model || process.env.VISION_MODEL || DEFAULT_VISION_MODEL).trim();
-const DISTILL_MODEL = (process.env.DISTILL_MODEL || DEFAULT_DISTILL_MODEL).trim();
 const AGENT_SANDBOXED_WORKERS = executionConfig.sandboxedWorkers;
 const AGENT_WORKER_SANDBOX = executionConfig.workerSandbox;
 const agentRunStore = createAgentRunStore();
@@ -103,7 +101,6 @@ const directRunDesktopAgent = createDesktopAgentRunner({
   approvalStore,
   checkpointDir: CHECKPOINT_DIR,
   visionModel: VISION_MODEL,
-  distillModel: DISTILL_MODEL,
 });
 const runDesktopAgent = AGENT_SANDBOXED_WORKERS
   ? createSandboxedWorkerAgentRunner({
@@ -113,7 +110,6 @@ const runDesktopAgent = AGENT_SANDBOXED_WORKERS
       approvalStore,
       runStore: agentRunStore,
       visionModel: VISION_MODEL,
-      distillModel: DISTILL_MODEL,
       sandbox: AGENT_WORKER_SANDBOX,
     }) as any
   : directRunDesktopAgent;

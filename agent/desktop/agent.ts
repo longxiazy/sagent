@@ -31,7 +31,6 @@ import { createActionRouter } from '../core/router.ts';
 import { runAgentRuntime } from '../core/runtime.ts';
 import { createAgentAuthorizer } from '../policy/approvals.ts';
 import { executeBrowserAction } from '../tools/browser/execute.ts';
-import { distillFetchContent } from '../tools/browser/distill.ts';
 import { executeFsAction } from '../tools/fs/execute.ts';
 import { executeSearchAction } from '../tools/search/execute.ts';
 import { executeVisionAction } from '../tools/vision/execute.ts';
@@ -64,7 +63,6 @@ interface DesktopAgentRunnerConfig {
   approvalStore: Pick<ApprovalStore, 'request'>;
   checkpointDir?: string;
   visionModel: string;
-  distillModel?: string;
   modelTimeoutMs?: number;
   staggerDelayMs?: number;
   batchSize?: number;
@@ -81,7 +79,6 @@ export function createDesktopAgentRunner({
   approvalStore,
   checkpointDir,
   visionModel,
-  distillModel = '',
   modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS,
   staggerDelayMs = 0,
   batchSize = 1,
@@ -124,26 +121,13 @@ export function createDesktopAgentRunner({
         return action.answer || '任务已完成';
       },
       browser: async (state, action, context) => {
-        const result = await withBrowserSessionRecovery(state, state.onEvent, (session, recoveryAttempt) => (
+        return withBrowserSessionRecovery(state, state.onEvent, (session, recoveryAttempt) => (
           executeBrowserAction(session.view, action, { signal: state.cancelSignal, recoveryAttempt })
         ), {
           step: context?.step,
           actionType: action.type,
           url: 'url' in action ? action.url : ('urls' in action ? action.urls?.[0] : null),
         });
-        // http_fetch 抓取即提炼:长正文进 history 前用便宜模型以 task 为锚压缩(保留来源 URL),
-        // 避免后续每步 prompt 平方级膨胀。distillModel 未配置时 distill 内部直接原样返回。
-        if (action.type === 'http_fetch' && typeof result === 'string' && distillModel && openai_client) {
-          return distillFetchContent({
-            text: result,
-            url: action.url,
-            task: context?.task,
-            client: openai_client as never,
-            model: distillModel,
-            signal: state.cancelSignal,
-          });
-        }
-        return result;
       },
       fs: async (state, action) => executeFsAction(action, { cwd: state.projectRoot, dataDir: state.dataDir, signal: state.cancelSignal }),
       search: async (state, action) => executeSearchAction(action, { signal: state.cancelSignal }),
