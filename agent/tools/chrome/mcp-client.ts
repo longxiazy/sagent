@@ -451,6 +451,13 @@ class SseTransport {
         await this.consumeStream(response.body);
       })
       .catch(err => {
+        if (err?.name === 'AbortError') {
+          // 主动 close() 触发的中止不是真实断线，不能标记为不可达，
+          // 否则每次 run 结束调用 shutdownChromeMcp 都会把 Chrome MCP 冷却 5 分钟自锁。
+          log.info(`[Chrome MCP][sse] stream aborted url=${this.streamUrl}`);
+          this.endpointReject?.(new Error('Chrome MCP SSE 连接已关闭'));
+          return;
+        }
         const error = new Error(`Chrome MCP SSE 连接失败: ${err.message}`);
         markChromeMcpUnavailable();
         log.warn(`[Chrome MCP][sse] stream failed url=${this.streamUrl} reason=${error.message}`);
@@ -461,6 +468,11 @@ class SseTransport {
       .finally(() => {
         log.info(`[Chrome MCP][sse] stream closed url=${this.streamUrl}`);
         this.streamPromise = null;
+        // 流一旦关闭（正常 done / 断线 / 中止），会话即失效：重置 initialized 使下次请求
+        // 重新握手（否则以 SSE 为会话边界的 server 会拒绝新会话上的请求）；
+        // 并 reject 仍在等待 SSE 响应的在途请求，避免它们各自空等到自身超时。
+        this.initialized = false;
+        this.rejectAllPending(new Error('Chrome MCP SSE 流已关闭，请重试'));
       });
 
     if (!this.endpointPromise) {
@@ -528,7 +540,13 @@ class SseTransport {
         clearTimeout(this.endpointFallbackTimer);
         this.endpointFallbackTimer = null;
       }
-      this.postUrl = new URL(data, this.streamUrl).toString();
+      try {
+        this.postUrl = new URL(data, this.streamUrl).toString();
+      } catch (err: any) {
+        // 畸形 endpoint 事件不应冒泡出 consumeStream 击垮整条流（进而误标不可达）。
+        log.warn(`[Chrome MCP][sse] 无法解析 endpoint 事件: ${truncateText(data, 240)} (${err?.message || err})`);
+        return;
+      }
       log.info(`[Chrome MCP][sse] endpoint event -> ${this.postUrl}`);
       this.endpointResolve?.(this.postUrl);
       return;

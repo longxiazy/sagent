@@ -169,6 +169,9 @@ function validateGit(args: string[]) {
   if (args[0].startsWith('-') || hasOption(args, '-c', '--config-env', '--exec-path')) return false;
   const subcommand = args[0];
   if (!GIT_READ_ONLY_SUBCOMMANDS.has(subcommand)) return false;
+  // -O / -O<pager> 是 --open-files-in-pager 的短选项，git 会用 /bin/sh 执行该 pager，
+  // 构成任意命令执行；hasOption 无法匹配 -O<pager> 粘连形式，需单独拒绝任何 -O 开头参数。
+  if (args.some(arg => arg === '-O' || arg.startsWith('-O'))) return false;
   if (hasOption(
     args,
     '--output',
@@ -211,6 +214,13 @@ export function parseSafeCommand(command: string): ParsedSafeCommand {
   }
   if (!validateArgs(file, args)) {
     throw new Error(`run_safe 不允许该命令参数: ${command}`);
+  }
+  if (file === 'rg') {
+    // rg 会加载 RIPGREP_CONFIG_PATH 指向的配置文件，其中的 --pre 无法在命令行层面拦截，
+    // 剥离该环境变量以关闭配置文件加载。
+    const env = { ...process.env };
+    delete env.RIPGREP_CONFIG_PATH;
+    return { file, args, env };
   }
   if (file !== 'git') return { file, args };
 

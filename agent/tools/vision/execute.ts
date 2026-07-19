@@ -38,7 +38,19 @@ function mimeFromExt(target: string): string {
   if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
   if (ext === 'webp') return 'image/webp';
   if (ext === 'gif') return 'image/gif';
+  if (ext === 'bmp') return 'image/bmp';
   return 'image/png';
+}
+
+// 依据文件头魔数识别常见图片类型，用于扩展名/content-type 不可靠时的兜底，
+// 避免把非 png 图片一律标成 image/png 送给严格的 provider。
+function sniffImageMime(buf: Buffer): string | null {
+  if (buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.length >= 6 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif';
+  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  if (buf.length >= 2 && buf[0] === 0x42 && buf[1] === 0x4d) return 'image/bmp';
+  return null;
 }
 
 interface VisionContext {
@@ -75,6 +87,24 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter(item => typeof item === 'string').map(item => item.trim()).filter(Boolean)
     : [];
+}
+
+// 兼容 content 为字符串或分段数组（[{type:'text',text}]）两种返回形态。
+function extractMessageText(content: unknown): string {
+  if (typeof content === 'string') return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map(part => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object' && typeof (part as Record<string, unknown>).text === 'string') {
+          return (part as Record<string, string>).text;
+        }
+        return '';
+      })
+      .join('')
+      .trim();
+  }
+  return '';
 }
 
 function uniqueModels(values: unknown[]): string[] {
@@ -142,6 +172,14 @@ async function toImageDataUrl(
 ): Promise<string> {
   throwIfAborted(signal);
   if (/^data:image\//i.test(image)) {
+    // data URL 分支也要做大小限制，否则可构造超大 data URL 绕过 10MB 上限。
+    const comma = image.indexOf(',');
+    const meta = comma >= 0 ? image.slice(5, comma) : '';
+    const payload = comma >= 0 ? image.slice(comma + 1) : '';
+    const approxBytes = /;base64/i.test(meta) ? Math.floor(payload.length * 3 / 4) : payload.length;
+    if (approxBytes > MAX_IMAGE_BYTES) {
+      throw new Error(`图片过大（${(approxBytes / 1024 / 1024).toFixed(1)} MB），上限 10 MB`);
+    }
     return image;
   }
 
@@ -152,12 +190,30 @@ async function toImageDataUrl(
       if (!res.ok) {
         throw new Error(`下载图片失败 HTTP ${res.status}`);
       }
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.length > MAX_IMAGE_BYTES) {
-        throw new Error(`图片过大（${(buf.length / 1024 / 1024).toFixed(1)} MB），上限 10 MB`);
+      // 先按 Content-Length 预检，再边下边累计字节数，超限立即中止，
+      // 避免把超大响应体一次性读入内存导致 OOM。
+      const declaredLength = Number(res.headers.get('content-length'));
+      if (Number.isFinite(declaredLength) && declaredLength > MAX_IMAGE_BYTES) {
+        throw new Error(`图片过大（${(declaredLength / 1024 / 1024).toFixed(1)} MB），上限 10 MB`);
       }
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('下载图片失败：响应无内容');
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        total += value.length;
+        if (total > MAX_IMAGE_BYTES) {
+          await reader.cancel().catch(() => {});
+          throw new Error('图片过大，超过上限 10 MB');
+        }
+        chunks.push(value);
+      }
+      const buf = Buffer.concat(chunks);
       const contentType = res.headers.get('content-type')?.split(';')[0]?.trim();
-      const mime = contentType && /^image\//.test(contentType) ? contentType : mimeFromExt(image);
+      const mime = contentType && /^image\//i.test(contentType) ? contentType : (sniffImageMime(buf) || mimeFromExt(image));
       return `data:${mime};base64,${buf.toString('base64')}`;
     } finally {
       scope.cleanup();
@@ -183,7 +239,7 @@ async function toImageDataUrl(
   if (buf.length > MAX_IMAGE_BYTES) {
     throw new Error(`图片过大（${(buf.length / 1024 / 1024).toFixed(1)} MB），上限 10 MB`);
   }
-  return `data:${mimeFromExt(abs)};base64,${buf.toString('base64')}`;
+  return `data:${sniffImageMime(buf) || mimeFromExt(abs)};base64,${buf.toString('base64')}`;
 }
 
 export async function executeVisionAction(
@@ -247,8 +303,10 @@ export async function executeVisionAction(
           temperature: 0.2,
           messages,
         }, { signal: scope.signal })) as CompletionLike;
-    const text = completion?.choices?.[0]?.message?.content;
-    const answer = typeof text === 'string' ? text.trim() : '';
+    const raw = completion?.choices?.[0]?.message?.content;
+    // 部分 OpenAI 兼容/多模态实现会把 content 返回为分段数组，需拼接文本片段，
+    // 否则会被当作空内容误报“未返回内容”。
+    const answer = extractMessageText(raw);
     if (!answer) return `image_analyze 模型 ${model} 未返回内容`;
     return `image_analyze 结果（model=${model}）:\n${answer}`;
   } catch (err: unknown) {

@@ -40,17 +40,23 @@ describe('terminal run_safe policy', () => {
   });
 
   it('parses quoted arguments without invoking a shell', () => {
-    expect(parseSafeCommand('rg -n "foo bar" \'src files\'')).toEqual({
+    expect(parseSafeCommand('rg -n "foo bar" \'src files\'')).toMatchObject({
       file: 'rg',
       args: ['-n', 'foo bar', 'src files'],
     });
   });
 
   it('preserves explicit empty argv values', () => {
-    expect(parseSafeCommand("rg '' README.md")).toEqual({
+    expect(parseSafeCommand("rg '' README.md")).toMatchObject({
       file: 'rg',
       args: ['', 'README.md'],
     });
+  });
+
+  it('strips RIPGREP_CONFIG_PATH from rg env to disable config-file --pre', () => {
+    const parsed = parseSafeCommand('rg foo src');
+    expect(parsed.env).toBeDefined();
+    expect(parsed.env).not.toHaveProperty('RIPGREP_CONFIG_PATH');
   });
 
   it('hardens git against configured external processes', () => {

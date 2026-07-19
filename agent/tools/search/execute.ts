@@ -21,11 +21,14 @@ function decodeEntities(text) {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, ' ')
-    .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, '/')
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => {
+      const n = parseInt(code, 16);
+      return Number.isFinite(n) && n <= 0x10ffff ? String.fromCodePoint(n) : '';
+    })
     .replace(/&#(\d+);/g, (_, code) => {
       const n = Number(code);
-      return Number.isFinite(n) ? String.fromCharCode(n) : '';
+      // fromCharCode 只取低 16 位，补充平面码点（如 emoji）会解码错误，用 fromCodePoint。
+      return Number.isFinite(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : '';
     });
 }
 
@@ -42,7 +45,9 @@ function unwrapDdgRedirect(href) {
     const parsed = new URL(url, ENDPOINT);
     if (/(^|\.)duckduckgo\.com$/i.test(parsed.hostname) && parsed.pathname === '/l/') {
       const uddg = parsed.searchParams.get('uddg');
-      if (uddg) return decodeURIComponent(uddg);
+      // searchParams.get 已做过一次百分号解码，返回的即真实 URL；再次 decodeURIComponent
+      // 属二次解码，会破坏含编码字符的 URL 或在残留裸 % 时抛错回退到跳转包装地址。
+      if (uddg) return uddg;
     }
     return parsed.toString();
   } catch {

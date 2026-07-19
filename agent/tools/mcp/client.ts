@@ -48,6 +48,9 @@ export class GenericMcpClient {
   private transport: StdioClientTransport | SSEClientTransport | StreamableHTTPClientTransport | null = null;
   private connecting: Promise<Client> | null = null;
   private tools: any[] | null = null;
+  // 每次 close() 递增；connectOnce 在 connect 成功后比对，若期间发生过 close 则丢弃新连接，
+  // 避免在途连接“复活”后挂上却不在任何清理路径中导致泄漏。
+  private closeGeneration = 0;
 
   constructor(name: string, config: McpServerConfig) {
     this.name = name;
@@ -62,6 +65,7 @@ export class GenericMcpClient {
 
   private async connectOnce(onStatus?: McpStatusHandler) {
     onStatus?.({ phase: 'connecting', message: `正在连接 ${this.name}` });
+    const generation = this.closeGeneration;
     const transportConfig = this.config.transport;
     const transport = transportConfig.type === 'stdio'
       ? new StdioClientTransport({
@@ -92,6 +96,11 @@ export class GenericMcpClient {
     }
     try {
       await client.connect(transport, { timeout: this.config.toolTimeoutMs || 60_000 });
+      if (this.closeGeneration !== generation) {
+        // 连接期间发生过 close()，丢弃这个连接，避免复活后挂上却无人清理。
+        await client.close().catch(() => {});
+        throw new Error(`${this.name} 连接已在建立期间被关闭`);
+      }
       this.client = client;
       onStatus?.({ phase: 'connected', message: `${this.name} 已连接` });
       return client;
@@ -171,6 +180,7 @@ export class GenericMcpClient {
   }
 
   async close() {
+    this.closeGeneration += 1;
     this.tools = null;
     const client = this.client;
     const transport = this.transport;
@@ -190,9 +200,11 @@ export async function getSharedGenericMcpClient(name: string) {
   const key = configKey(config);
   const existing = sharedClients.get(name);
   if (existing?.key === key) return existing.client;
-  if (existing) await existing.client.close();
+  // 同步登记新 client（set 之前不能有 await），避免同名并发调用各自 await 旧连接关闭后
+  // 互相覆盖 map、导致先建的新连接从 map 丢失却仍持有子进程/连接而永不关闭。
   const client = createGenericMcpClient(name, config);
   sharedClients.set(name, { key, client });
+  if (existing) await existing.client.close().catch(() => {});
   return client;
 }
 

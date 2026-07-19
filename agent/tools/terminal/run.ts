@@ -51,7 +51,15 @@ async function resolveCwd(value, base = process.cwd()) {
 async function assertSafeCommandPaths(args: string[], cwd: string) {
   for (const arg of args) {
     const candidate = arg.startsWith('-') && arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : arg;
-    if (!candidate || candidate.startsWith('-')) continue;
+    if (!candidate) continue;
+    if (candidate.startsWith('-')) {
+      // 粘连短选项的路径值（如 -f/etc/passwd）不走上面的 = 分支，单独约束绝对路径/越界。
+      const attached = candidate.replace(/^-+[A-Za-z]*/, '');
+      if (attached && (path.isAbsolute(attached) || attached.split(/[\\/]/).includes('..'))) {
+        throw new Error(`run_safe 路径参数越界: ${attached}`);
+      }
+      continue;
+    }
     if (path.isAbsolute(candidate)) throw new Error(`run_safe 禁止使用绝对路径参数: ${candidate}`);
     const segments = candidate.split(/[\\/]/);
     if (segments.includes('..')) throw new Error(`run_safe 路径参数越界: ${candidate}`);
@@ -109,6 +117,9 @@ async function runProcess({ file, args, env = process.env, command, cwd, timeout
 
     let stdout = '';
     let stderr = '';
+    // 输出最终只截取前若干字节，累积无上限会在高产出命令超时前占满内存；
+    // 达到上限后停止追加（保留已收集的头部内容）。
+    const MAX_CAPTURE = 256 * 1024;
     let settled = false;
     let killTimer: NodeJS.Timeout | null = null;
     let timeout: NodeJS.Timeout;
@@ -149,8 +160,9 @@ async function runProcess({ file, args, env = process.env, command, cwd, timeout
     }, timeoutMs);
 
     child.stdout.on('data', chunk => {
+      if (settled) return;
       const text = chunk.toString();
-      stdout += redactText(text);
+      if (stdout.length < MAX_CAPTURE) stdout += redactText(text);
       emitProgress({
         phase: 'stdout',
         chunk: redactText(text).slice(0, 4000),
@@ -158,8 +170,9 @@ async function runProcess({ file, args, env = process.env, command, cwd, timeout
     });
 
     child.stderr.on('data', chunk => {
+      if (settled) return;
       const text = chunk.toString();
-      stderr += redactText(text);
+      if (stderr.length < MAX_CAPTURE) stderr += redactText(text);
       emitProgress({
         phase: 'stderr',
         chunk: redactText(text).slice(0, 4000),
