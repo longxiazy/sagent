@@ -13,7 +13,10 @@
     "stop": "node scripts/stop.js",
     "smoke": "node scripts/smoke-test.mjs",
     "test": "vitest run",
-    "prompt:bench": "bun scripts/prompt-benchmark.ts"
+    "prompt:bench": "bun scripts/prompt-benchmark.ts",
+    "eval": "bun scripts/trace-eval.ts",
+    "eval:capture": "bun scripts/trace-eval.ts capture",
+    "eval:live": "bun scripts/trace-eval.ts --live"
   },
   "dependencies": {
     "@google/genai": "^2.7.0",
