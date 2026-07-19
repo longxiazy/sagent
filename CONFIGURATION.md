@@ -60,6 +60,7 @@ Non-loopback `HOST` values require a token of at least 16 characters.
 | `SAGENT_SHELL` | Shell used by confirmed terminal actions |
 | `BUN_BIN` | Bun executable used by workers |
 | `SANDBOX_EXEC` | macOS sandbox executable override |
+| `DISTILL_MODEL` | Cheap OpenAI-compatible model that distills `http_fetch` page text before it enters agent history; cuts prompt-token growth on multi-source browsing. Empty/unset = disabled |
 
 ## Structured configuration
 

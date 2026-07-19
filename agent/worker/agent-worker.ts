@@ -108,6 +108,7 @@ async function main() {
   const { initLlmLogger, flushLlmLogs } = await import('../core/llm-logger.ts');
   const { configStore } = await import('../core/config-store.ts');
   const { DEFAULT_VISION_MODEL } = await import('../tools/vision/execute.ts');
+  const { DEFAULT_DISTILL_MODEL } = await import('../tools/browser/distill.ts');
   const { initWebViewDataStore } = await import('../tools/browser/webview-session.ts');
   flushLlmLogsBeforeExit = flushLlmLogs;
 
@@ -134,6 +135,7 @@ async function main() {
     approvalStore,
     checkpointDir: payload.checkpointDir || memoryDir,
     visionModel: payload.visionModel || process.env.VISION_MODEL || DEFAULT_VISION_MODEL,
+    distillModel: payload.distillModel || process.env.DISTILL_MODEL || DEFAULT_DISTILL_MODEL,
   });
 
   const checkpointWriter = {
