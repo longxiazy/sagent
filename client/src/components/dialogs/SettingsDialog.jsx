@@ -74,7 +74,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
   const [activeGroup, setActiveGroup] = useState('appearance');
   const [agent, setAgent] = useState(null);
   const [tools, setTools] = useState({ vision: {}, distill: {} });
-  const [toolsScope, setToolsScope] = useState('');
+  const [toolsScope, setToolsScope] = useState(activeProjectId || '');
   const [sources, setSources] = useState({});
   const [schema, setSchema] = useState({});
   const [profile, setProfile] = useState('custom');
@@ -107,7 +107,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
 
   useEffect(() => {
     let alive = true;
-    fetchConfig()
+    fetchConfig(activeProjectId || undefined)
       .then(data => {
         if (!alive) return;
         applyConfigData(data);
