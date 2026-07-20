@@ -68,8 +68,9 @@ export function useSessionHandlers({
 
     setChatState(prev => {
       const archivedAt = Date.now();
+      // 同时 bump updatedAt：归档也是一次修改,让后端单条同步的 diff 能识别到它。
       const nextSessions = prev.sessions.map(session => (
-        session.id === sessionId ? { ...session, archivedAt } : session
+        session.id === sessionId ? { ...session, archivedAt, updatedAt: archivedAt } : session
       ));
       if (sessionId !== prev.activeSessionId) {
         return normalizeChatState({ sessions: nextSessions, activeSessionId: prev.activeSessionId });

@@ -322,38 +322,52 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
     return { version: SESSION_VERSION, sessions, activeSessionId };
   }
 
-  async function replaceAll(inputSessions: unknown, activeSessionId: unknown) {
-    if (!Array.isArray(inputSessions)) throw new Error('sessions 必须是数组');
-    const scopeList = scopes();
-    const grouped = new Map<string | null, StoredSession[]>();
-    for (const scope of scopeList) grouped.set(scope.projectId, []);
-    for (const raw of inputSessions) {
-      const requestedProjectId = typeof raw?.projectId === 'string' && raw.projectId ? raw.projectId : null;
-      if (!grouped.has(requestedProjectId)) throw new Error(`项目不存在: ${requestedProjectId}`);
-      const normalized = normalizeSession(raw, requestedProjectId);
-      if (normalized) grouped.get(requestedProjectId)!.push(normalized);
-    }
+  // 单条 upsert：客户端只同步“发生变化的那一条”会话，绝不推整份列表，
+  // 因此不存在“列表里缺失即删除”的推断——过期客户端最多回退它见过的某条,
+  // 无法删除它从未见过的会话。删除必须走显式 deleteSession。
+  async function upsertSession(rawSession: unknown) {
+    if (!rawSession || typeof rawSession !== 'object') throw new Error('session 必须是对象');
+    const requestedProjectId = typeof (rawSession as any).projectId === 'string' && (rawSession as any).projectId
+      ? (rawSession as any).projectId
+      : null;
+    const scope = resolveScope(requestedProjectId);
+    const normalized = normalizeSession(rawSession, scope.projectId);
+    if (!normalized) throw new Error('session 无效');
+    await queueFor(scope.dataDir).enqueue(async () => {
+      const state = await readScopeState(scope.dataDir, scope.projectId);
+      // 不复活已被显式删除(拉黑)的会话——挡住过期标签页把删掉的会话又推回来。
+      const dismissed = new Set(state.dismissedTraceRunIds);
+      if (sessionRunIds(normalized).some(runId => dismissed.has(runId))) return;
+      const index = state.sessions.findIndex(session => session.id === normalized.id);
+      if (index >= 0) {
+        // updatedAt 守卫：过期客户端不得回退后端已写入的更新的会话状态。
+        if ((normalized.updatedAt || 0) < (state.sessions[index].updatedAt || 0)) return;
+        state.sessions[index] = normalized;
+      } else {
+        state.sessions.unshift(normalized);
+      }
+      await writeScopeState(scope.dataDir, state);
+    });
+    return loadAll();
+  }
 
-    await Promise.all(scopeList.map(scope => queueFor(scope.dataDir).enqueue(async () => {
-      const previous = await readScopeState(scope.dataDir, scope.projectId);
-      const nextSessions = grouped.get(scope.projectId) || [];
-      const nextRunIds = new Set(nextSessions.flatMap(sessionRunIds));
-      const removedRunIds = previous.sessions.flatMap(sessionRunIds).filter(runId => !nextRunIds.has(runId));
-      const dismissed = new Set([...previous.dismissedTraceRunIds, ...removedRunIds]);
-      for (const runId of nextRunIds) dismissed.delete(runId);
-      const nextActiveSessionId = typeof activeSessionId === 'string'
-        && nextSessions.some(session => session.id === activeSessionId && isActiveSession(session))
-        ? activeSessionId
-        : previous.activeSessionId && nextSessions.some(session => session.id === previous.activeSessionId && isActiveSession(session))
-          ? previous.activeSessionId
-          : nextSessions.find(isActiveSession)?.id || null;
-      await writeScopeState(scope.dataDir, {
-        ...previous,
-        sessions: nextSessions,
-        activeSessionId: nextActiveSessionId,
-        dismissedTraceRunIds: [...dismissed],
-      });
-    })));
+  // 显式删除：从存量移除会话,并把它的 runId 加进 dismissedTraceRunIds
+  // (阻止 trace 恢复复活它)。这是 dismissedTraceRunIds 唯一的写入点。
+  async function deleteSession(projectId: string | null, sessionId: string) {
+    if (typeof sessionId !== 'string' || !sessionId) throw new Error('sessionId 不能为空');
+    const scope = resolveScope(projectId);
+    await queueFor(scope.dataDir).enqueue(async () => {
+      const state = await readScopeState(scope.dataDir, scope.projectId);
+      const target = state.sessions.find(session => session.id === sessionId);
+      const dismissed = new Set(state.dismissedTraceRunIds);
+      if (target) for (const runId of sessionRunIds(target)) dismissed.add(runId);
+      state.sessions = state.sessions.filter(session => session.id !== sessionId);
+      state.dismissedTraceRunIds = [...dismissed];
+      if (state.activeSessionId === sessionId) {
+        state.activeSessionId = state.sessions.find(isActiveSession)?.id || null;
+      }
+      await writeScopeState(scope.dataDir, state);
+    });
     return loadAll();
   }
 
@@ -466,7 +480,7 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
     });
   }
 
-  return { loadAll, replaceAll, recordRunStart, recordRunTerminal };
+  return { loadAll, upsertSession, deleteSession, recordRunStart, recordRunTerminal };
 }
 
 export type SessionStore = ReturnType<typeof createSessionStore>;

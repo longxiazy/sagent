@@ -221,6 +221,9 @@ export function useChatSessions() {
   const [sessionsError, setSessionsError] = useState(null);
   const hydratedRef = useRef(false);
   const persistChainRef = useRef(Promise.resolve());
+  // 上一次成功同步到后端的快照(id -> 已 strip 的会话)。diff 只针对本客户端自己
+  // 见过的会话——因此过期客户端永远无法删除它从未见过的会话。
+  const lastSyncedRef = useRef(new Map());
   const { sessions, activeSessionId } = chatState;
   const activeSession = sessions.find(session => session.id === activeSessionId) || sessions[0];
 
@@ -231,10 +234,12 @@ export function useChatSessions() {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         if (controller.signal.aborted) return;
-        setChatState(normalizeChatState({
+        const next = normalizeChatState({
           sessions: data.sessions,
           activeSessionId: data.activeSessionId,
-        }));
+        });
+        setChatState(next);
+        lastSyncedRef.current = new Map(stripAgentTrace(next.sessions).map(session => [session.id, session]));
         hydratedRef.current = true;
         setSessionsError(null);
         setSessionsLoading(false);
@@ -247,33 +252,57 @@ export function useChatSessions() {
     return () => controller.abort();
   }, []);
 
+  // 只把“发生变化的那一条”同步到后端,永不推整份列表:
+  //   - 新建 / 内容变化(updatedAt 改变) → 单条 PUT /api/sessions/:id
+  //   - 从本客户端列表消失(仅永久删除会走这条) → 单条 DELETE /api/sessions/:id
+  // diff 针对的是本客户端自己上一次同步的快照,而非后端存量,所以过期客户端
+  // 绝不会误删它从未见过的会话——这正是历史上“整列表覆盖写”丢会话的根因。
   useEffect(() => {
     if (!hydratedRef.current) return undefined;
-    const payload = {
-      sessions: stripAgentTrace(sessions),
-      activeSessionId: activeSession.id,
-    };
+    const current = stripAgentTrace(sessions);
+    const currentById = new Map(current.map(session => [session.id, session]));
+    const previous = lastSyncedRef.current;
+    const upserts = current.filter(session => {
+      const before = previous.get(session.id);
+      return !before || before.updatedAt !== session.updatedAt;
+    });
+    const deletes = [...previous.values()].filter(session => !currentById.has(session.id));
+    if (upserts.length === 0 && deletes.length === 0) return undefined;
+
     const timer = setTimeout(() => {
       persistChainRef.current = persistChainRef.current
         .catch(() => {})
         .then(async () => {
-          const response = await apiFetch('/api/sessions', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-          if (!response.ok) {
-            const data = await response.json().catch(() => ({}));
-            throw new Error(data.error || `HTTP ${response.status}`);
+          for (const session of deletes) {
+            const query = session.projectId ? `?projectId=${encodeURIComponent(session.projectId)}` : '';
+            const response = await apiFetch(`/api/sessions/${encodeURIComponent(session.id)}${query}`, { method: 'DELETE' });
+            if (!response.ok && response.status !== 404) {
+              const data = await response.json().catch(() => ({}));
+              throw new Error(data.error || `HTTP ${response.status}`);
+            }
           }
+          for (const session of upserts) {
+            const response = await apiFetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ session }),
+            });
+            if (!response.ok) {
+              const data = await response.json().catch(() => ({}));
+              throw new Error(data.error || `HTTP ${response.status}`);
+            }
+          }
+          lastSyncedRef.current = currentById;
+          setSessionsError(null);
         })
         .catch(err => {
+          // 失败不更新快照,下次 diff 会自动重试。
           console.warn('[useChatSessions] backend persistence failed', err);
           setSessionsError(err?.message || String(err));
         });
     }, 300);
     return () => clearTimeout(timer);
-  }, [activeSession.id, sessions]);
+  }, [sessions]);
 
   const updateSession = useCallback((sessionId, updater) => {
     setChatState(prev =>
