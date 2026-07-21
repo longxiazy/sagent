@@ -25,6 +25,7 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'checkpoint.notEnabled': '会话检查点未启用',
     'checkpoint.noActiveRun': '没有活跃的运行',
     'checkpoint.rollbackInProgress': '已有回滚请求处理中',
+    'screenshots.invalidPath': '非法的截图路径',
   },
   en: {
     'trace.notFound': 'trace not found',
@@ -43,6 +44,7 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'checkpoint.notEnabled': 'Session checkpoints are not enabled',
     'checkpoint.noActiveRun': 'No active run',
     'checkpoint.rollbackInProgress': 'A rollback request is already in progress',
+    'screenshots.invalidPath': 'Invalid screenshot path',
   },
 };
 

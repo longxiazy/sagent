@@ -40,7 +40,10 @@ export interface SagentConfigDocument {
   tools?: {
     vision?: { model?: string };
     distill?: { model?: string };
-    screenshots?: { redaction?: 'pixelate' | 'none' };
+    screenshots?: {
+      redaction?: 'pixelate' | 'none';
+      retention?: { enabled?: boolean; maxAgeDays?: number; maxTotalMB?: number };
+    };
   };
   execution?: {
     resume?: boolean;

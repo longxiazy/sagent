@@ -33,6 +33,7 @@ import { createProviderRegistry } from './agent/core/providers/registry.ts';
 import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
 import { loadChromeMcpConfig } from './agent/tools/chrome/mcp-client.ts';
 import { createAgentRouter } from './routes/agent.ts';
+import { createAgentScreenshotsRouter } from './routes/agent-screenshots.ts';
 import { createCompletionsRouter } from './routes/completions.ts';
 import { createSuggestionsRouter } from './routes/suggestions.ts';
 import { createSuggestionStore } from './helpers/suggestion-store.ts';
@@ -47,6 +48,7 @@ import { createApiAuth, createCorsOptions, createOriginGuard, loadServerSecurity
 import { flushAllPersistenceTasks } from './helpers/persistence-queue.ts';
 import { persistRecoveredAgentRunMemory } from './routes/agent-run-memory-persist.ts';
 import { warnLegacyConfiguration } from './helpers/config-deprecations.ts';
+import { cleanupScreenshots } from './helpers/screenshot-store.ts';
 
 const securityConfig = loadServerSecurityConfig();
 const app = express();
@@ -120,6 +122,23 @@ const runDesktopAgent = AGENT_SANDBOXED_WORKERS
 
 const SCREENSHOT_DIR = path.join(MEMORY_DIR, 'screenshots');
 app.use('/screenshots', express.static(SCREENSHOT_DIR));
+app.use(createAgentScreenshotsRouter({ screenshotDir: SCREENSHOT_DIR }));
+
+// 截图保留策略:仅在 retention.enabled 时,启动清一次 + 每日清一次(动态读 configStore)。
+function runScreenshotRetention() {
+  const retention = configStore.tools().screenshots?.retention;
+  if (!retention?.enabled) return;
+  cleanupScreenshots(SCREENSHOT_DIR, retention)
+    .then(({ removedFiles, removedBytes }) => {
+      if (removedFiles > 0) {
+        log.info(`[Screenshots] 保留策略清理 ${removedFiles} 张，释放 ${(removedBytes / 1024 / 1024).toFixed(1)}MB`);
+      }
+    })
+    .catch(err => log.error('[Screenshots] 清理失败:', err?.message || err));
+}
+runScreenshotRetention();
+const screenshotRetentionTimer = setInterval(runScreenshotRetention, 24 * 60 * 60 * 1000);
+screenshotRetentionTimer.unref?.();
 
 app.use(createAgentRouter({ runDesktopAgent, agentRunStore, approvalStore, memoryDir: MEMORY_DIR, checkpointDir: CHECKPOINT_DIR, modelConfig, registry, configStore, projectStore }));
 app.use(createCompletionsRouter({ registry, modelConfig }));

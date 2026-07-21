@@ -150,6 +150,8 @@ export default function App() {
     setAgentCollapsed,
     showMemoryPanel,
     setShowMemoryPanel,
+    showScreenshotPanel,
+    setShowScreenshotPanel,
     rollbackLoading,
     setRollbackLoading,
     pendingQuestion,
@@ -1027,6 +1029,8 @@ export default function App() {
           locked={sessionLocked}
           showMemoryPanel={showMemoryPanel}
           onToggleMemory={() => setShowMemoryPanel(v => !v)}
+          showScreenshotPanel={showScreenshotPanel}
+          onToggleScreenshots={() => setShowScreenshotPanel(v => !v)}
           sidebarPinned={sidebarPinned}
           onToggleSidebarPin={() => {
             const nextPinned = !sidebarPinned;
