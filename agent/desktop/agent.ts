@@ -132,8 +132,9 @@ export function createDesktopAgentRunner({
           actionType: action.type,
           url: 'url' in action ? action.url : ('urls' in action ? action.urls?.[0] : null),
         });
-        // http_fetch 抓取即提炼:长正文进 history 前用模型以 task 为锚压缩(保留来源 URL),
-        // 避免后续每步 prompt 平方级膨胀。model 三层解析:项目→全局→env→主模型(默认回退主模型)。
+        // http_fetch 提炼成功后只返回 task 锚定的 Distill 摘要(保留来源 URL)，
+        // 面板、trace 和后续 prompt 均不再携带网页原文；提炼失败仍安全回退原文。
+        // model 三层解析:项目→全局→env→主模型(默认回退主模型)。
         if (action.type === 'http_fetch' && typeof result === 'string' && openai_client) {
           const projectTools = await readProjectToolsOverride(state.dataDir);
           const model = resolveToolModel('distill', {

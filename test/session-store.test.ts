@@ -73,7 +73,29 @@ describe('backend session store', () => {
     expect(state.sessions[0].messages[1].content).toBe('旧版答案');
   });
 
-  it('does not resurrect trace sessions after the user removes them', async () => {
+  it('keeps sessions a stale client simply omits (no delete-by-absence)', async () => {
+    // 回归本次 bug：过期客户端只 upsert 它自己那条,完全没提到已存在的会话,
+    // 已存在的会话必须原样保留、绝不能被“缺失”推断成删除。
+    const runId = 'run_kept_trace';
+    await appendTraceEvent(tmpDir, runId, {
+      type: 'run_meta', task: '保留我', model: 'model-a', startedAt: 1000, timestamp: 1000,
+    });
+    await appendTraceEvent(tmpDir, runId, { type: 'done', answer: '答案', timestamp: 2000, meta: {} });
+    const store = createSessionStore({ memoryDir: tmpDir, projectStore });
+    const recovered = await store.loadAll();
+    expect(recovered.sessions).toHaveLength(1);
+
+    await store.upsertSession({
+      id: 'session_blank', projectId: null, messages: [], createdAt: 3000, updatedAt: 3000,
+    });
+    const reloaded = await store.loadAll();
+
+    expect(reloaded.sessions).toHaveLength(2);
+    expect(reloaded.sessions.some(session => session.id === 'session_blank')).toBe(true);
+    expect(reloaded.sessions.some(session => session.agentRunId === runId)).toBe(true);
+  });
+
+  it('does not resurrect trace sessions after an explicit delete', async () => {
     const runId = 'run_removed_trace';
     await appendTraceEvent(tmpDir, runId, {
       type: 'run_meta', task: '稍后删除', model: 'model-a', startedAt: 1000, timestamp: 1000,
@@ -82,18 +104,30 @@ describe('backend session store', () => {
     const store = createSessionStore({ memoryDir: tmpDir, projectStore });
     const recovered = await store.loadAll();
     expect(recovered.sessions).toHaveLength(1);
+    const targetId = recovered.sessions[0].id;
 
-    await store.replaceAll([{
-      id: 'session_blank',
-      projectId: null,
-      messages: [],
-      createdAt: 3000,
-      updatedAt: 3000,
-    }], 'session_blank');
+    await store.deleteSession(null, targetId);
     const reloaded = await store.loadAll();
+    expect(reloaded.sessions.some(session => session.id === targetId)).toBe(false);
 
-    expect(reloaded.sessions).toHaveLength(1);
-    expect(reloaded.sessions[0].id).toBe('session_blank');
+    // 用全新 store 再跑一次 loadAll：trace 仍在磁盘,但已被拉黑,不能复活。
+    const fresh = createSessionStore({ memoryDir: tmpDir, projectStore });
+    const again = await fresh.loadAll();
+    expect(again.sessions.some(session => session.id === targetId)).toBe(false);
+  });
+
+  it('upsertSession will not let an older write revert a newer session (updatedAt guard)', async () => {
+    const store = createSessionStore({ memoryDir: tmpDir, projectStore });
+    await store.upsertSession({
+      id: 's1', projectId: null, messages: [{ role: 'user', content: 'new' }], createdAt: 1000, updatedAt: 5000,
+    });
+    // 过期客户端用更旧的 updatedAt 覆盖 → 应被守卫挡下。
+    await store.upsertSession({
+      id: 's1', projectId: null, messages: [{ role: 'user', content: 'stale' }], createdAt: 1000, updatedAt: 2000,
+    });
+    const reloaded = await store.loadAll();
+    const s1 = reloaded.sessions.find(session => session.id === 's1');
+    expect(s1?.messages?.[0]?.content).toBe('new');
   });
 
   it('recovers project traces with the correct project ownership', async () => {

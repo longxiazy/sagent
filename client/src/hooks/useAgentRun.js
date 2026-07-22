@@ -10,6 +10,7 @@ export function useAgentRun() {
   const [approvalSubmitting, setApprovalSubmitting] = useState(false);
   const [agentCollapsed, setAgentCollapsed] = useState(false);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
+  const [showScreenshotPanel, setShowScreenshotPanel] = useState(false);
   const [rollbackLoading, setRollbackLoading] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState(null);
   const [agentStartedAt, setAgentStartedAt] = useState(null);
@@ -40,6 +41,8 @@ export function useAgentRun() {
     setAgentCollapsed,
     showMemoryPanel,
     setShowMemoryPanel,
+    showScreenshotPanel,
+    setShowScreenshotPanel,
     rollbackLoading,
     setRollbackLoading,
     pendingQuestion,

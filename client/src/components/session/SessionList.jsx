@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Archive, ArchiveRestore, BarChart3, Brain, ChevronDown, Pin, PinOff, Search, Trash2, X } from 'lucide-react';
+import { Archive, ArchiveRestore, BarChart3, Brain, ChevronDown, Images, Pin, PinOff, Search, Trash2, X } from 'lucide-react';
 import { getSessionTitle } from '../../hooks/useChatSessions.js';
 import { usePersistentState, jsonStorage } from '../../hooks/usePersistentState.js';
 import { formatRelativeTime, formatShortTime, formatFullTime } from '../../utils/format.js';
 import { buildGroups, lastActivityTs } from './session-grouping.js';
 import { MemoryPanel } from './MemoryPanel.jsx';
+import { ScreenshotPanel } from './ScreenshotPanel.jsx';
 import { ProjectSwitcher } from './ProjectSwitcher.jsx';
 import { AgentStatsPanel } from './AgentStatsPanel.jsx';
 import { useT } from '../../i18n/I18nProvider.jsx';
@@ -119,6 +120,8 @@ export function SessionList({
   locked,
   showMemoryPanel,
   onToggleMemory,
+  showScreenshotPanel,
+  onToggleScreenshots,
   sidebarPinned = false,
   onToggleSidebarPin,
   // project
@@ -151,7 +154,7 @@ export function SessionList({
 
   const groups = useMemo(() => buildGroups(visibleSessions, query), [visibleSessions, query]);
   const searching = query.trim().length > 0;
-  const statsPanelOpen = showStatsPanel && !showMemoryPanel;
+  const statsPanelOpen = showStatsPanel && !showMemoryPanel && !showScreenshotPanel;
 
   // 搜索时强制展开所有命中分组，避免折叠把结果藏起来。
   const isCollapsed = key => !searching && Array.isArray(collapsedGroups) && collapsedGroups.includes(key);
@@ -176,7 +179,8 @@ export function SessionList({
           <button
             className={`session-icon-btn ${statsPanelOpen ? 'active' : ''}`}
             onClick={() => {
-              if (!statsPanelOpen && showMemoryPanel) onToggleMemory();
+              if (showMemoryPanel) onToggleMemory();
+              if (showScreenshotPanel) onToggleScreenshots();
               setShowStatsPanel(v => !v);
             }}
             title={t('session.viewAgentStats')}
@@ -187,11 +191,23 @@ export function SessionList({
             className={`session-icon-btn ${showMemoryPanel ? 'active' : ''}`}
             onClick={() => {
               setShowStatsPanel(false);
+              if (showScreenshotPanel) onToggleScreenshots();
               onToggleMemory();
             }}
             title={t('session.viewMemory')}
           >
             <Brain size={13} />
+          </button>
+          <button
+            className={`session-icon-btn ${showScreenshotPanel ? 'active' : ''}`}
+            onClick={() => {
+              setShowStatsPanel(false);
+              if (showMemoryPanel) onToggleMemory();
+              onToggleScreenshots();
+            }}
+            title={t('session.viewScreenshots')}
+          >
+            <Images size={13} />
           </button>
         </div>
       </div>
@@ -208,6 +224,8 @@ export function SessionList({
 
       {showMemoryPanel ? (
         <MemoryPanel onClose={onToggleMemory} activeProjectId={activeProjectId} />
+      ) : showScreenshotPanel ? (
+        <ScreenshotPanel onClose={onToggleScreenshots} />
       ) : statsPanelOpen ? (
         <AgentStatsPanel
           sessions={projectSessions}

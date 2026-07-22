@@ -164,6 +164,27 @@ function normalizeMcpServers(value: any): Record<string, McpServerConfig> {
   return servers;
 }
 
+type ScreenshotRetention = { enabled?: boolean; maxAgeDays?: number; maxTotalMB?: number };
+
+function normalizeScreenshotRetention(value: any): ScreenshotRetention | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const out: ScreenshotRetention = {};
+  if (typeof value.enabled === 'boolean') out.enabled = value.enabled;
+  const age = Number(value.maxAgeDays);
+  if (Number.isFinite(age) && age >= 0) out.maxAgeDays = Math.min(Math.round(age), 3650);
+  const mb = Number(value.maxTotalMB);
+  if (Number.isFinite(mb) && mb >= 0) out.maxTotalMB = Math.min(Math.round(mb), 1_048_576);
+  return Object.keys(out).length ? out : undefined;
+}
+
+function normalizeScreenshots(value: any): NonNullable<NonNullable<SagentConfigDocument['tools']>['screenshots']> {
+  const out: NonNullable<NonNullable<SagentConfigDocument['tools']>['screenshots']> = {};
+  if (['pixelate', 'none'].includes(value?.redaction)) out.redaction = value.redaction;
+  const retention = normalizeScreenshotRetention(value?.retention);
+  if (retention) out.retention = retention;
+  return out;
+}
+
 export function normalizeConfigDocument(value: any): SagentConfigDocument {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return { version: 1, agent: {}, mcpServers: {} };
@@ -187,9 +208,7 @@ export function normalizeConfigDocument(value: any): SagentConfigDocument {
       distill: typeof value.tools?.distill?.model === 'string' && value.tools.distill.model.trim()
         ? { model: value.tools.distill.model.trim() }
         : {},
-      screenshots: ['pixelate', 'none'].includes(value.tools?.screenshots?.redaction)
-        ? { redaction: value.tools.screenshots.redaction }
-        : {},
+      screenshots: normalizeScreenshots(value.tools?.screenshots),
     },
     execution: {
       ...(typeof value.execution?.resume === 'boolean' ? { resume: value.execution.resume } : {}),

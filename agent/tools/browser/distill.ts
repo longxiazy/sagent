@@ -1,10 +1,11 @@
 /**
  * http_fetch 抓取即提炼(per-fetch distill)
  *
- * http_fetch 抓来的网页正文整段进 history,会让后续每步 prompt 平方级膨胀。
- * 这里在正文进入 history 前,用一个便宜模型以 task 为锚提炼成要点,大幅压缩体积,
- * 同时**强制保留来源 URL**——result-quality 的官方来源判定与 appendHttpFetchReferences
- * 都从 result 文本里提 URL,丢了会破坏打分与引用。
+ * http_fetch 抓来的网页正文只作为提炼输入。这里用一个便宜模型以 task 为锚生成
+ * 摘要，步骤面板、trace 和后续 planner history 都只使用摘要，避免原文在每一步
+ * 重复展示并进入后续 prompt。
+ * 摘要同时**强制保留来源 URL**——result-quality 的官方来源判定与
+ * appendHttpFetchReferences 都从 result 文本里提 URL,丢了会破坏打分与引用。
  *
  * 纯增量、默认关闭:未配置 distillModel(client/model 为空)或正文短于阈值时原样返回;
  * 提炼失败/超时回退原文,绝不抛错阻断主流程(取消信号例外,需向上传播)。
@@ -41,7 +42,7 @@ export async function distillFetchContent({
   client,
   model,
   signal,
-  threshold = 1200,
+  threshold = 120,
   maxChars = 24000,
 }: DistillOptions): Promise<string> {
   const original = String(text ?? '');
@@ -58,14 +59,17 @@ export async function distillFetchContent({
     const response = await client.chat.completions.create(
       {
         model,
-        messages: [{ role: 'user', content: buildDistillPrompt(task, original, maxChars) }],
+        messages: [{ role: 'user', content: buildDistillPrompt(task, url, original, maxChars) }],
         temperature: 0.1,
-        max_tokens: 600,
+        max_tokens: 1000, // 留足空间:推理模型写完思考链后仍能产出正文,减少被截断成"纯思考"
       },
       signal ? { signal } : undefined,
     );
-    const distilled = response?.choices?.[0]?.message?.content?.trim();
-    if (!distilled) return original; // 空输出 → 回退原文
+    // Distill 输出作为模型原始结果追加展示，不在此改写或剥离思考内容。
+    const distilled = typeof response?.choices?.[0]?.message?.content === 'string'
+      ? response.choices[0].message.content.trim()
+      : '';
+    if (!distilled) return original;
     return ensureSourceUrls(distilled, sourceUrls);
   } catch (err: any) {
     // 取消信号必须向上传播,否则取消后仍返回原文让主循环继续
@@ -75,16 +79,32 @@ export async function distillFetchContent({
   }
 }
 
-function buildDistillPrompt(task: string | undefined, text: string, maxChars: number): string {
+function buildDistillPrompt(task: string | undefined, url: string | undefined, text: string, maxChars: number): string {
   const body = text.length > maxChars ? `${text.slice(0, maxChars)}\n...(正文过长已截断)` : text;
   return [
-    task ? `任务:${task}` : '',
-    '从以下网页正文中提炼与任务直接相关的事实、数字、时间和结论,用简洁中文分条列出。',
-    '必须原样保留正文中出现的所有来源 URL(http/https 开头),不得改写或省略。',
-    '正文没有与任务相关的信息时,直接说明"正文无相关信息"。',
+    '你是网页证据提取器。当前输入只代表一个网页来源，不是完成整个用户任务所需的全部材料。',
     '',
+    '严格遵守：',
+    '1. 用户任务仅用于判断哪些网页内容相关；不要在本次输出中完成整个任务、凑齐数量、比较其他来源或给出跨来源结论。',
+    '2. 如果任务要求多个信息源，把当前网页仅视为一个候选来源。不要把正文里的模型、厂商、人物、栏目或数据条目重新解释成多个“信息源”。',
+    '3. 只提取正文明确写出的相关事实、数字、日期、原话和页面自述；不要补充常识、猜测、外部知识或虚构链接。',
+    '4. 正文中出现的所有 http/https URL 必须原样保留；来源页面 URL 也必须原样输出。',
+    '5. 只输出最终提取结果。禁止输出分析过程、思考步骤、任务复述、歧义讨论、Correction、Refinement、Thinking Process 或类似内容。',
+    '6. 使用简体中文，控制在 8 个要点以内；没有相关内容时写“正文无相关信息”。',
+    '',
+    '固定输出格式：',
+    `来源页面：${url || '未提供'}`,
+    '相关信息：',
+    '- <直接来自正文的相关信息>',
+    '',
+    '<用户任务>',
+    task || '未提供',
+    '</用户任务>',
+    '',
+    '<网页正文>',
     body,
-  ].filter(Boolean).join('\n');
+    '</网页正文>',
+  ].join('\n');
 }
 
 // 提炼可能丢弃 URL,补回缺失的来源,保证 result-quality 的官方来源判定与引用不失效。
