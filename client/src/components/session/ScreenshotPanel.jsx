@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronUp, Trash2, X } from 'lucide-react';
 import { useT } from '../../i18n/I18nProvider.jsx';
 import {
@@ -54,6 +55,14 @@ export function ScreenshotPanel({ onClose }) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 放大图用 Esc 关闭(对齐 AgentPanel 的 lightbox 交互)。
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e) => { if (e.key === 'Escape') setLightbox(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightbox]);
 
   const refresh = async () => {
     try {
@@ -185,10 +194,13 @@ export function ScreenshotPanel({ onClose }) {
         </div>
       </div>
 
-      {lightbox && (
+      {/* lightbox 必须 portal 到 body:手机端侧栏有 transform + overflow:hidden,
+          会把 position:fixed 的放大图限制/裁剪在侧栏内。 */}
+      {lightbox && createPortal(
         <div className="screenshot-lightbox" onClick={() => setLightbox(null)}>
           <img className="screenshot-lightbox-img" src={lightbox} alt="" />
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
