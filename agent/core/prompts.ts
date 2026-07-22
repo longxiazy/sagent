@@ -2,7 +2,7 @@ import { buildChromePromptLines, isChromeMcpAvailable } from '../tools/chrome/mc
 import { isGenericMcpEnabled, listGenericMcpServers } from '../tools/mcp/client.ts';
 import { configStore } from './config-store.ts';
 import { inferTool } from './action-types.ts';
-import { createModelTools, toolToGeminiTool, type ModelToolDefinition } from './tool-definitions.ts';
+import { createModelTools, toolToGeminiTool, toolToOpenAiTool, type ModelToolDefinition } from './tool-definitions.ts';
 import { compactToolResult } from './result-extraction.ts';
 
 type PromptCapabilityContext = {
@@ -523,6 +523,21 @@ export function buildGeminiAgentPromptPayload(context: any) {
   };
 }
 
+// 原生 tool-call 模式下随请求发送的 OpenAI tools 数组；工具选择逻辑与全量提示保持一致。
+export function buildNvidiaAgentTools(context: {
+  task: string;
+  history: any[];
+  observation: any;
+  conversationHistory?: Array<{ role: string; content: string }>;
+}) {
+  const capabilityContext = { ...context, includeInactiveCapabilityHints: false };
+  return selectPromptToolDefinitions({
+    chromeEnabled: isChromeMcpAvailable(),
+    mcpEnabled: isGenericMcpEnabled() && shouldIncludeGenericMcpDetails(capabilityContext),
+    includeToolNames: selectGeminiToolNames(capabilityContext),
+  }).map(toolToOpenAiTool);
+}
+
 export function buildNvidiaTaskMessages({
   task,
   systemPrompt,
@@ -532,6 +547,7 @@ export function buildNvidiaTaskMessages({
   conversationHistory,
   compact = false,
   finalOnly = false,
+  nativeTools = false,
 }: {
   task: string;
   systemPrompt?: string | null;
@@ -541,6 +557,7 @@ export function buildNvidiaTaskMessages({
   conversationHistory?: Array<{ role: string; content: string }>;
   compact?: boolean;
   finalOnly?: boolean;
+  nativeTools?: boolean;
 }) {
   const capabilityContext = { task, history, observation, conversationHistory, includeInactiveCapabilityHints: false };
   const chromeEnabled = isChromeMcpAvailable();
@@ -614,11 +631,17 @@ export function buildNvidiaTaskMessages({
     includeToolNames: selectedToolNames,
   });
 
-  return [
-    {
-      role: 'system',
-      content: [
-        '你是 DesktopAgent，负责在浏览器、文件系统、终端和 MCP 工具之间协同完成任务。',
+  // 原生 tool-call 模式：工具 schema 随请求 tools 参数下发，提示只保留调用协议与规则，
+  // 不再要求模型在 content 中输出 JSON 动作。
+  const outputProtocolLines = nativeTools
+    ? [
+        '输出协议：',
+        '1. 每个步骤必须且只能通过 function calling 调用一个已提供的工具；禁止在文本内容中输出 JSON 动作、Markdown 或代码块。',
+        '2. 工具参数必须严格符合该工具的 schema，不得添加未定义字段。',
+        '3. 文本内容只用于一句话说明当前动作的直接目的，必须简短。',
+        '4. 任务完成时调用 finish 工具，answer 为最终结果。',
+      ]
+    : [
         '输出协议：',
         '1. 每个步骤必须且只能输出一个合法的 JSON 对象；禁止输出 Markdown、代码块、注释、解释或其他文字。',
         '2. JSON 使用双引号且无尾随逗号，固定顶层结构为 {"rationale":"一句话理由","action":{"tool":"工具名","type":"动作类型",...}}。',
@@ -629,6 +652,14 @@ export function buildNvidiaTaskMessages({
         ...buildNvidiaActionExampleLinesFromDefinitions(selectRepresentativeExampleDefinitions(promptToolDefinitions)),
         '可用动作签名（括号内为主要参数）：',
         ...buildNvidiaToolSignatureLines(promptToolDefinitions),
+      ];
+
+  return [
+    {
+      role: 'system',
+      content: [
+        '你是 DesktopAgent，负责在浏览器、文件系统、终端和 MCP 工具之间协同完成任务。',
+        ...outputProtocolLines,
         ...buildSharedAgentRuleLines(capabilityContext, selectedToolNames),
         systemPrompt ? `附加约束：${systemPrompt}` : '',
         conversationSummary,

@@ -8,7 +8,7 @@
 
 import { createJsonPlanner } from '../planner.ts';
 import { normalizeDesktopAgentDecision } from '../schemas.ts';
-import { buildNvidiaTaskMessages } from '../prompts.ts';
+import { buildNvidiaTaskMessages, buildNvidiaAgentTools } from '../prompts.ts';
 import { deriveProviderName, isChatCapableModel } from '../ai-client.ts';
 import {
   buildChatCompletionRequest,
@@ -146,6 +146,7 @@ export function createOpenAICompatProvider(
     client,
     buildMessages: (ctx: any) => buildNvidiaTaskMessages(ctx),
     buildCompactMessages: (ctx: any) => buildNvidiaTaskMessages({ ...ctx, compact: true }),
+    buildTools: (ctx: any) => buildNvidiaAgentTools(ctx),
     normalizeDecision: normalizeDesktopAgentDecision,
     buildParserError(err: Error) {
       return `模型动作解析失败: ${err.message}`;

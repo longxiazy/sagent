@@ -5,13 +5,13 @@
  * 冻结的 Agent 行为参数收敛到这里。消费点改为每次读 get()，因此前台改完
  * 下次 agent 任务即自动生效，无需重启进程。
  *
- * 数据来源优先级：data/config.json（前台覆盖） > 兼容环境变量（默认值底）。
- *   - computeEnvDefaults() 从 process.env 算默认值（保留各处原有默认）
+ * 数据来源优先级：data/config.json（前台覆盖） > 内置 schema 默认值。
+ *   - configDefaults() 返回内置默认值；Agent 运行时参数不再读取环境变量
  *   - config.json 保存 profile、Agent 覆盖、工具和 MCP server
- *   - reset() 清空覆盖，回到 .env 默认
+ *   - reset() 清空覆盖，回到内置默认
  *
  * get() 是同步的（compressHistory 等热路径是同步函数）；current 在模块加载时
- * 即初始化为 env 默认值，init() 再叠加 json，故任何时刻 get() 都安全。
+ * 即初始化为默认值，init() 再叠加 json，故任何时刻 get() 都安全。
  *
  * API Key 不在此管理（前台只读展示，仍在 .env 改）。
  */
@@ -23,7 +23,7 @@ import {
   AGENT_CONFIG_KEYS,
   AGENT_CONFIG_SCHEMA,
   CONFIG_PROFILES,
-  configDefaultsFromEnv,
+  configDefaults,
   type ConfigProfile,
   type RuntimeConfig,
   type RuntimeConfigKey,
@@ -33,9 +33,9 @@ import {
 
 export type { RuntimeConfig } from './config-schema.ts';
 
-/** 纯函数：从 env 计算默认值（保留 server.ts / runtime.ts / memory.ts 原有默认）。 */
-export function computeEnvDefaults(env: Record<string, string | undefined> = process.env): RuntimeConfig {
-  return configDefaultsFromEnv(env).values;
+/** 纯函数：返回内置默认值。 */
+export function computeDefaults(): RuntimeConfig {
+  return configDefaults().values;
 }
 
 /**
@@ -94,17 +94,17 @@ export function mergeConfig(defaults: RuntimeConfig, overrides: Partial<RuntimeC
 }
 
 // ── 单例 ──────────────────────────────────────────────
-let envState = configDefaultsFromEnv();
-let envDefaults = envState.values;
+let defaultsState = configDefaults();
+let defaultValues = defaultsState.values;
 let overrides: Partial<RuntimeConfig> = {};
-let current: RuntimeConfig = { ...envDefaults };
+let current: RuntimeConfig = { ...defaultValues };
 let filePath: string | null = null;
 let legacyFilePath: string | null = null;
 let document: SagentConfigDocument = { version: 1, agent: {} };
 let saveChain: Promise<void> = Promise.resolve();
 
 function recompute() {
-  current = mergeConfig(envDefaults, overrides);
+  current = mergeConfig(defaultValues, overrides);
 }
 
 async function persist() {
@@ -221,8 +221,8 @@ export function normalizeConfigDocument(value: any): SagentConfigDocument {
 export const configStore = {
   /** 启动时调用一次：设定落盘目录并加载 json 覆盖。 */
   async init(persistDir: string): Promise<RuntimeConfig> {
-    envState = configDefaultsFromEnv();
-    envDefaults = envState.values;
+    defaultsState = configDefaults();
+    defaultValues = defaultsState.values;
     filePath = path.join(persistDir, 'config.json');
     legacyFilePath = path.join(persistDir, 'runtime-config.json');
     try {
@@ -250,13 +250,13 @@ export const configStore = {
     return current;
   },
 
-  /** env 默认值（前端展示「恢复默认」对照用）。 */
+  /** 内置默认值（前端展示「恢复默认」对照用）。 */
   defaults(): RuntimeConfig {
-    return { ...envDefaults };
+    return { ...defaultValues };
   },
 
-  sources(): Record<RuntimeConfigKey, 'default' | 'env' | 'user'> {
-    const sources = { ...envState.sources } as Record<RuntimeConfigKey, 'default' | 'env' | 'user'>;
+  sources(): Record<RuntimeConfigKey, 'default' | 'user'> {
+    const sources = { ...defaultsState.sources } as Record<RuntimeConfigKey, 'default' | 'user'>;
     for (const key of AGENT_CONFIG_KEYS) {
       if (key in overrides) sources[key] = 'user';
     }
@@ -292,8 +292,8 @@ export const configStore = {
     };
     return {
       resume: envBool('AGENT_RESUME', stored.resume ?? true),
-      // execution 是启动期部署选择；显式环境变量优先，确保 npm run sandbox 语义稳定。
-      sandboxedWorkers: envBool('AGENT_SANDBOXED_WORKERS', stored.sandboxedWorkers ?? false),
+      // execution 是启动期部署选择。sandboxedWorkers 只由存储配置决定（默认沙箱），不再接受环境变量覆盖。
+      sandboxedWorkers: stored.sandboxedWorkers ?? true,
       workerSandbox: envBool('AGENT_WORKER_SANDBOX', stored.workerSandbox ?? true),
     };
   },

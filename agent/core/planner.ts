@@ -18,6 +18,7 @@ import { estimatePayloadTokens, inferContextWindow } from './context-estimate.ts
 import {
   buildChatCompletionRequest,
   createChatCompletionWithTemplateFallback,
+  isUnsupportedToolsError,
 } from './openai-compatible-request.ts';
 import { configStore } from './config-store.ts';
 
@@ -106,6 +107,11 @@ function contextLengthDetailsFromError(err: any) {
   };
 }
 
+export function modelSupportsNativeToolCalls(model: string, modelConfig: any[] | null | undefined) {
+  const modelInfo = findModelInfo(model, modelConfig);
+  return Array.isArray(modelInfo?.supportedParameters) && modelInfo.supportedParameters.includes('tools');
+}
+
 export function createJsonPlanner({
   client,
   temperature = 0.1,
@@ -113,13 +119,22 @@ export function createJsonPlanner({
   maxTokens = DEFAULT_AGENT_MAX_TOKENS,
   buildMessages,
   buildCompactMessages = null,
+  buildTools = null,
   normalizeDecision,
   buildParserError = null,
 }) {
-  return async ({ model, signal = null, ...context }) => {
+  return async function plan({ model, signal = null, ...context }) {
     const supportedMessageRoles = Array.isArray(context.modelConfig)
       ? context.modelConfig.find((item: any) => item?.id === model)?.supportedMessageRoles
       : undefined;
+    // catalog 明确声明支持 tools 的模型走原生 function calling；finalOnly 固定输出 finish JSON，不需要 tools。
+    const nativeToolsCapable = typeof buildTools === 'function'
+      && !context.finalOnly
+      && !context.disableNativeTools
+      && modelSupportsNativeToolCalls(model, context.modelConfig);
+    let tools = nativeToolsCapable ? buildTools(context) : null;
+    if (!Array.isArray(tools) || tools.length === 0) tools = null;
+    if (tools) context = { ...context, nativeTools: true };
     let messages = buildMessages(context);
     const configuredMaxTokens = Number(context.maxOutputTokens)
       || configStore.get().maxOutputTokens
@@ -128,12 +143,14 @@ export function createJsonPlanner({
       model,
       modelConfig: context.modelConfig,
       requestedMaxTokens: configuredMaxTokens,
-      promptPayload: messages,
+      promptPayload: tools ? { messages, tools } : messages,
     });
     let usedCompactPrompt = false;
 
     if (requestMaxTokens < MIN_USEFUL_AGENT_MAX_TOKENS && typeof buildCompactMessages === 'function') {
-      const compactMessages = buildCompactMessages(context);
+      // compact 提示走 JSON-in-prompt 协议，同时也省去 tools 参数占用的上下文。
+      const compactContext = tools ? { ...context, nativeTools: false } : context;
+      const compactMessages = buildCompactMessages(compactContext);
       const compactMaxTokens = resolveAgentMaxTokens({
         model,
         modelConfig: context.modelConfig,
@@ -144,6 +161,8 @@ export function createJsonPlanner({
         messages = compactMessages;
         requestMaxTokens = compactMaxTokens;
         usedCompactPrompt = true;
+        tools = null;
+        context = compactContext;
         log.warn(`[Planner] 模型上下文偏小，使用 compact prompt: max_tokens ${requestMaxTokens}`);
       }
     }
@@ -154,6 +173,7 @@ export function createJsonPlanner({
       top_p: topP,
       max_tokens: requestMaxTokens,
       messages,
+      ...(tools ? { tools, tool_choice: 'auto' } : {}),
     }, { defaultThinking: true, supportedMessageRoles });
     const createOpts = builtRequest.request;
     messages = createOpts.messages;
@@ -170,6 +190,7 @@ export function createJsonPlanner({
       message_count: messages.length,
       max_tokens: requestMaxTokens,
       compact_prompt: usedCompactPrompt || undefined,
+      native_tools: tools ? true : undefined,
     };
 
     let response;
@@ -183,6 +204,11 @@ export function createJsonPlanner({
         defaultedChatTemplateKwargs,
       });
     } catch (err) {
+      // catalog 声明与端点实际能力可能不一致：tools 参数被拒时整体回退 JSON-in-prompt 重来一次。
+      if (tools && isUnsupportedToolsError(err)) {
+        log.warn(`[Planner] ${model} 端点不支持 tools 参数，回退 JSON-in-prompt 重试: ${err.message}`);
+        return plan({ model, signal, ...context, nativeTools: false, disableNativeTools: true });
+      }
       const contextLengthDetails = contextLengthDetailsFromError(err);
       const retryMaxTokens = contextLengthDetails?.retryMaxTokens;
       if (!retryMaxTokens || retryMaxTokens >= createOpts.max_tokens) {
@@ -191,7 +217,7 @@ export function createJsonPlanner({
       }
 
       if (retryMaxTokens < MIN_USEFUL_AGENT_MAX_TOKENS && typeof buildCompactMessages === 'function' && !usedCompactPrompt) {
-        const compactMessages = buildCompactMessages(context);
+        const compactMessages = buildCompactMessages(tools ? { ...context, nativeTools: false } : context);
         const compactMaxTokens = resolveAgentMaxTokens({
           model,
           modelConfig: context.modelConfig,

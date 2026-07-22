@@ -86,7 +86,7 @@ await projectStore.init();
 
 const VISION_MODEL = (configStore.tools().vision?.model || process.env.VISION_MODEL || DEFAULT_VISION_MODEL).trim();
 const DISTILL_MODEL = (process.env.DISTILL_MODEL || DEFAULT_DISTILL_MODEL).trim();
-const AGENT_SANDBOXED_WORKERS = executionConfig.sandboxedWorkers;
+const agentSandboxedWorkers = executionConfig.sandboxedWorkers;
 const AGENT_WORKER_SANDBOX = executionConfig.workerSandbox;
 const agentRunStore = createAgentRunStore();
 const approvalStore = createApprovalStore();
@@ -107,7 +107,7 @@ const directRunDesktopAgent = createDesktopAgentRunner({
   visionModel: VISION_MODEL,
   distillModel: DISTILL_MODEL,
 });
-const runDesktopAgent = AGENT_SANDBOXED_WORKERS
+const runDesktopAgent = agentSandboxedWorkers
   ? createSandboxedWorkerAgentRunner({
       memoryDir: MEMORY_DIR,
       checkpointDir: CHECKPOINT_DIR,
@@ -264,14 +264,14 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
   ${row('Models', modelConfig.map(m => m.id).join(', '))}
   ${row('VISION_MODEL', VISION_MODEL)}
   ${hLine}
-  ${row('AGENT_MAX_STEPS', cfg.maxSteps)}
-  ${row('AGENT_MODEL_TIMEOUT', `${cfg.modelTimeoutSec}s`)}
-  ${row('AGENT_STAGGER_DELAY', `${cfg.staggerDelaySec}s`)}
-  ${row('AGENT_BATCH_SIZE', cfg.batchSize)}
+  ${row('Max Steps', cfg.maxSteps)}
+  ${row('Model Timeout', `${cfg.modelTimeoutSec}s`)}
+  ${row('Stagger Delay', `${cfg.staggerDelaySec}s`)}
+  ${row('Batch Size', cfg.batchSize)}
   ${hLine}
-  ${row('AGENT_OBSERVE_DESKTOP', cfg.observeDesktop)}
+  ${row('Observe Desktop', cfg.observeDesktop)}
   ${row('AGENT_RESUME', AGENT_RESUME)}
-  ${row('AGENT_WORKERS', AGENT_SANDBOXED_WORKERS ? (AGENT_WORKER_SANDBOX ? 'sandboxed' : 'plain') : 'disabled')}
+  ${row('AGENT_WORKERS', agentSandboxedWorkers ? (AGENT_WORKER_SANDBOX ? 'sandboxed' : 'plain') : 'disabled')}
   ${row('CHROME_PATH', process.env.AGENT_BROWSER_PATH || 'auto')}
   ${chromeConfig.enabled ? row('CHROME_MCP', `${chromeConfig.transport} @ ${chromeConfig.url || `${chromeConfig.host}:${chromeConfig.port}${chromeConfig.ssePath}`}`) : row('CHROME_MCP', 'disabled')}
   ${hLine}

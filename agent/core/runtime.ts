@@ -17,7 +17,7 @@
  *   - 保留最近 AGENT_MAX_HISTORY_STEPS（默认 20）步
  *   - 渐进截断 result：最近 3 步保留最多 MAX_RESULT_CHARS 字符，4-10 步 2500 字符，11+ 步 1000 字符
  *   - 超出步数压缩为一行摘要
- *   - 可通过 .env 的 AGENT_MAX_HISTORY_STEPS / AGENT_MAX_RESULT_CHARS 配置
+ *   - 可通过 data/config.json 的 maxHistorySteps / maxResultChars 配置
  *
  * 调用场景：
  *   - agent/desktop/agent.js 的 runDesktopAgent() 是唯一的调用方，

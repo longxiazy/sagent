@@ -124,6 +124,92 @@ describe('createJsonPlanner', () => {
     expect(create.mock.calls[0][0].messages[0].content).toContain('Only return JSON.');
   });
 
+  it('sends native tools for models that declare tools support and parses tool_calls', async () => {
+    const create = vi.fn().mockResolvedValue({
+      choices: [{
+        message: {
+          content: '',
+          tool_calls: [{ function: { name: 'finish', arguments: JSON.stringify({ answer: 'ok' }) } }],
+        },
+      }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    });
+
+    const planner = createJsonPlanner({
+      client: { chat: { completions: { create } } },
+      buildMessages: () => [{ role: 'user', content: 'finish now' }],
+      buildTools: () => [{ type: 'function', function: { name: 'finish', description: 'done', parameters: { type: 'object', properties: {} } } }],
+      normalizeDecision: normalizeDesktopAgentDecision,
+    });
+
+    const result = await planner({
+      model: 'deepseek-ai/deepseek-v4-pro',
+      modelConfig: [{ id: 'deepseek-ai/deepseek-v4-pro', supportedParameters: ['tools'] }],
+      task: 'finish now',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+
+    expect(result.action).toEqual({ tool: 'core', type: 'finish', answer: 'ok' });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0].tools).toHaveLength(1);
+    expect(create.mock.calls[0][0].tool_choice).toBe('auto');
+  });
+
+  it('omits native tools for models without declared tools support', async () => {
+    const create = vi.fn().mockResolvedValue(completion({
+      rationale: '完成', action: { type: 'finish', answer: 'ok' },
+    }));
+
+    const planner = createJsonPlanner({
+      client: { chat: { completions: { create } } },
+      buildMessages: () => [{ role: 'user', content: 'finish' }],
+      buildTools: () => [{ type: 'function', function: { name: 'finish', description: 'd', parameters: { type: 'object', properties: {} } } }],
+      normalizeDecision: normalizeDesktopAgentDecision,
+    });
+
+    await planner({
+      model: 'meta/llama-3.2-1b-instruct',
+      modelConfig: [{ id: 'meta/llama-3.2-1b-instruct', supportedParameters: ['temperature'] }],
+      task: 'finish',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+
+    expect(create.mock.calls[0][0]).not.toHaveProperty('tools');
+  });
+
+  it('falls back to JSON-in-prompt when the endpoint rejects the tools parameter', async () => {
+    const err: any = new Error('This model does not support tools');
+    err.status = 400;
+    const create = vi.fn()
+      .mockRejectedValueOnce(err)
+      .mockResolvedValueOnce(completion({ rationale: '完成', action: { type: 'finish', answer: 'ok' } }));
+
+    const planner = createJsonPlanner({
+      client: { chat: { completions: { create } } },
+      buildMessages: () => [{ role: 'user', content: 'finish' }],
+      buildTools: () => [{ type: 'function', function: { name: 'finish', description: 'd', parameters: { type: 'object', properties: {} } } }],
+      normalizeDecision: normalizeDesktopAgentDecision,
+    });
+
+    const result = await planner({
+      model: 'deepseek-ai/deepseek-v4-pro',
+      modelConfig: [{ id: 'deepseek-ai/deepseek-v4-pro', supportedParameters: ['tools'] }],
+      task: 'finish',
+      step: 1,
+      history: [],
+      observation: {},
+    });
+
+    expect(result.action).toEqual({ tool: 'core', type: 'finish', answer: 'ok' });
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[0][0]).toHaveProperty('tools');
+    expect(create.mock.calls[1][0]).not.toHaveProperty('tools');
+  });
+
   it('caps agent output tokens to fit small context windows', async () => {
     const create = vi.fn().mockResolvedValue(completion({
       rationale: '完成',

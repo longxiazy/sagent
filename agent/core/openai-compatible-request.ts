@@ -79,6 +79,8 @@ export function buildChatCompletionRequest(
     top_p: number;
     max_tokens: number;
     chat_template_kwargs?: any;
+    tools?: any[];
+    tool_choice?: any;
   },
   { defaultThinking = false, supportedMessageRoles }: { defaultThinking?: boolean; supportedMessageRoles?: string[] } = {}
 ) {
@@ -97,6 +99,9 @@ export function buildChatCompletionRequest(
       top_p: opts.top_p,
       max_tokens: opts.max_tokens,
       ...(chatTemplateKwargs ? { chat_template_kwargs: chatTemplateKwargs } : {}),
+      ...(Array.isArray(opts.tools) && opts.tools.length > 0
+        ? { tools: opts.tools, ...(opts.tool_choice !== undefined ? { tool_choice: opts.tool_choice } : {}) }
+        : {}),
     };
   const adaptedRequest = Array.isArray(supportedMessageRoles)
     && supportedMessageRoles.length > 0
@@ -108,6 +113,21 @@ export function buildChatCompletionRequest(
     request: adaptedRequest,
     defaultedChatTemplateKwargs: Boolean(defaultChatTemplateKwargs),
   };
+}
+
+// 尽管模型在 catalog 中声明支持 tools，个别端点/版本仍可能拒绝该参数；命中后由 planner 回退 JSON-in-prompt。
+export function isUnsupportedToolsError(err: any) {
+  const message = String(err?.message || err?.error?.message || '').toLowerCase();
+  const status = err?.status || err?.statusCode || 0;
+  return [400, 404, 422, 500].includes(status) && (
+    message.includes('does not support tools') ||
+    message.includes('tools is not supported') ||
+    message.includes('tool use is not supported') ||
+    message.includes('tool calling is not supported') ||
+    message.includes('function calling is not') ||
+    message.includes('tool_choice') ||
+    ((message.includes('unknown parameter') || message.includes('unrecognized request argument') || message.includes('extra_forbidden')) && message.includes('tool'))
+  );
 }
 
 export function isUnsupportedChatTemplateKwargsError(err: any) {
