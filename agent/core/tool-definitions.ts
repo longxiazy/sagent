@@ -346,3 +346,15 @@ export function toolToGeminiTool(tool: ModelToolDefinition) {
     parametersJsonSchema: tool.input_schema,
   };
 }
+
+// OpenAI 兼容端点的 function calling 格式：input_schema 即标准 JSON Schema，直接作 parameters。
+export function toolToOpenAiTool(tool: ModelToolDefinition) {
+  return {
+    type: 'function' as const,
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.input_schema,
+    },
+  };
+}

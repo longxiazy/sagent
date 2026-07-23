@@ -92,11 +92,15 @@ export async function flushLlmLogs() {
   } while (writeQueue.size > 0 || activeFlushes.size > 0);
 }
 
-export function logLlmRequest(model, messages) {
-  const safeMessages = redactSensitiveData(messages);
+export function logLlmRequest(model, messages, tools = null) {
+  const hasTools = Array.isArray(tools) && tools.length > 0;
+  // tools 是请求的独立字段、不在 messages 里；以 {role:'tools'} 伪消息并入，
+  // 让文件日志与前端 trace 用同一套 messages 展示（与 gemini provider 一致）。
+  const combined = hasTools ? [...messages, { role: 'tools', content: tools }] : messages;
+  const safeMessages = redactSensitiveData(combined);
   const line = JSON.stringify({ time: timeStr(), type: 'request', model, messages: safeMessages });
   enqueueLog(join(todayDir(), modelFileName(model)), line);
-  log.debug(`[LLM] → ${model} messages=${messages.length}`);
+  log.debug(`[LLM] → ${model} messages=${messages.length}${hasTools ? ` tools=${tools.length}` : ''}`);
   return safeMessages;
 }
 

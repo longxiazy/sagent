@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"bun server.ts\" \"cd client && npm run dev\"",
-    "sandbox": "concurrently \"AGENT_SANDBOXED_WORKERS=true bun server.ts\" \"cd client && npm run dev\"",
+    "prod": "bun server.ts",
     "chrome:mcp": "node scripts/chrome-mcp-sse-server.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build:client": "cd client && npm run build",

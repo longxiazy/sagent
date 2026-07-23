@@ -58,10 +58,10 @@ Configuration is intentionally split by lifecycle:
 Agent tuning resolves as:
 
 ```text
-schema defaults < compatibility environment defaults < data/config.json < per-run values
+schema defaults < data/config.json < per-run values
 ```
 
-Startup-only execution flags are different: an explicitly supplied environment variable overrides the stored execution preference. This keeps commands and deployment manifests deterministic.
+Agent tuning fields no longer read `AGENT_*` environment variables — they come from the built-in schema defaults and `data/config.json` only. Startup-only execution flags are different: `resume`/`workerSandbox` honor `AGENT_RESUME`/`AGENT_WORKER_SANDBOX` env overrides, while `sandboxedWorkers` is resolved from stored config only (default `true`).
 
 ## Agent run lifecycle
 
@@ -84,7 +84,7 @@ Agent values such as step limits, timeouts, output budgets and context limits ar
 
 ## Runner boundary
 
-`npm run dev` runs the Agent in the backend process. `npm run sandbox` sets `AGENT_SANDBOXED_WORKERS=true`, causing each run to execute in a short-lived worker. On macOS, the worker can additionally be constrained by `sandbox.sb`.
+By default (`execution.sandboxedWorkers` unset or `true` in `data/config.json`) each run executes in a short-lived worker; on macOS the worker can additionally be constrained by `sandbox.sb`. Set `execution.sandboxedWorkers` to `false` in `data/config.json` to run the Agent in the backend process instead. This is resolved only from stored config — there is no environment-variable override.
 
 The backend remains responsible for shared run state, approvals and SSE delivery. Worker messages bridge tool requests, trace events, approval decisions and cancellation back to the main process.
 

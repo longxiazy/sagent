@@ -1,16 +1,21 @@
 const REDACTED = '[REDACTED]';
-const SENSITIVE_KEY = /(authorization|api[-_]?key|token|secret|password|passwd|cookie|private[-_]?key|client[-_]?secret)/i;
-// Token usage/count fields are observability metrics, not credentials. Keep this
-// allowlist narrow so access_token, refresh_token, bearer_token, etc. remain redacted.
-const TOKEN_METRIC_KEY = /^(?:prompt_tokens|completion_tokens|total_tokens|input_tokens|output_tokens|cached_tokens|reasoning_tokens|audio_tokens|accepted_prediction_tokens|rejected_prediction_tokens|prompt_tokens_details|completion_tokens_details|max_tokens|max_output_tokens|context_tokens|token_count|promptTokenCount|candidatesTokenCount|totalTokenCount|cachedContentTokenCount|maxOutputTokens|inputTokenLimit|outputTokenLimit)$/i;
+// 明确的凭据键（子串匹配）。注意不含裸 "token"：token 计数是可观测指标，
+// 只有「凭据型 token 键」（见 isCredentialTokenKey）才脱敏。
+const SENSITIVE_KEY = /(authorization|api[-_]?key|secret|password|passwd|cookie|private[-_]?key|client[-_]?secret)/i;
+
+// 凭据型 token 键：单数 token 结尾（token、access_token、refresh-token、accessToken…）。
+// 不匹配复数计数指标（*_tokens、tokens_per_second）或 token_count / promptTokenCount 等遥测字段。
+function isCredentialTokenKey(key: string) {
+  return /^token$/i.test(key) || /[_-]token$/i.test(key) || /[a-z]Token$/.test(key);
+}
 
 function shouldRedactKey(key: string) {
-  return SENSITIVE_KEY.test(key) && !TOKEN_METRIC_KEY.test(key);
+  return SENSITIVE_KEY.test(key) || isCredentialTokenKey(key);
 }
 
 function configuredSecrets(): string[] {
   return Object.entries(process.env)
-    .filter(([key, value]) => SENSITIVE_KEY.test(key) && typeof value === 'string' && value.length >= 8)
+    .filter(([key, value]) => shouldRedactKey(key) && typeof value === 'string' && value.length >= 8)
     .map(([, value]) => value as string)
     .sort((a, b) => b.length - a.length);
 }
@@ -33,18 +38,24 @@ export function redactText(value: unknown): string {
 export function redactSensitiveData<T>(value: T, seen = new WeakSet<object>()): T {
   if (typeof value === 'string') return redactText(value) as T;
   if (!value || typeof value !== 'object') return value;
+  // seen 只跟踪「当前 DFS 路径上的祖先」以拦真正的循环引用；处理完子树后弹出，
+  // 否则被多个兄弟字段共享的同一对象（如 response.usage 与顶层 usage）会被误当成环而整体脱敏。
   if (seen.has(value as object)) return REDACTED as T;
   seen.add(value as object);
 
+  let output: unknown;
   if (Array.isArray(value)) {
-    return value.map(item => redactSensitiveData(item, seen)) as T;
+    output = value.map(item => redactSensitiveData(item, seen));
+  } else {
+    const obj: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      obj[key] = shouldRedactKey(key) && item != null
+        ? REDACTED
+        : redactSensitiveData(item, seen);
+    }
+    output = obj;
   }
 
-  const output: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    output[key] = shouldRedactKey(key) && item != null
-      ? REDACTED
-      : redactSensitiveData(item, seen);
-  }
+  seen.delete(value as object);
   return output as T;
 }

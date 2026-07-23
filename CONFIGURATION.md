@@ -125,12 +125,13 @@ Agent behavior is resolved in this order:
 
 ```text
 built-in schema defaults
-  < legacy Agent environment defaults
   < data/config.json
   < per-run request values
 ```
 
-The `execution` section is startup-only. Explicit startup environment values override stored execution preferences so commands and deployment manifests remain deterministic. In particular, `npm run sandbox` sets `AGENT_SANDBOXED_WORKERS=true` and always selects the worker runner for that server process.
+Agent runtime tuning fields (`maxSteps`, `modelTimeoutSec`, `maxOutputTokens`, `staggerDelaySec`, `batchSize`, `observeDesktop`, `maxHistorySteps`, `maxResultChars`, `autoModelRouting`) are resolved only from the built-in schema defaults and `data/config.json` (editable via the Settings UI, hot-applied to the next run). They no longer read any `AGENT_*` environment variable.
+
+The `execution` section is startup-only. `sandboxedWorkers` is resolved solely from `data/config.json` (default `true` — the worker runner is selected unless the stored config sets it to `false`); it does not read any environment variable. `resume` and `workerSandbox` still honor `AGENT_RESUME` / `AGENT_WORKER_SANDBOX` overrides.
 
 Provider keys and server deployment variables remain environment-only.
 
@@ -209,7 +210,7 @@ Listing server/tool metadata is read-only. Generic tool calls require the normal
 ## Migration from legacy configuration
 
 - Existing `data/runtime-config.json` is automatically migrated to `data/config.json`.
-- Legacy Agent tuning environment variables remain fallback defaults during migration.
+- Agent tuning `AGENT_*` environment variables are no longer read; set these values in `data/config.json` or the Settings UI.
 - Legacy `CHROME_MCP_*` values appear in the Settings UI and are converted after saving.
 - `MODELS`, `AGENT_MULTI_MODELS`, and `AGENT_HEADLESS` are ignored.
 

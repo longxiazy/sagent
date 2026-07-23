@@ -68,7 +68,17 @@ describe('structured configuration store', () => {
     expect(configStore.get()).toEqual(configStore.defaults());
   });
 
-  it('lets explicit startup environment override stored execution mode', async () => {
+  it('defaults to sandboxed workers when execution mode is not configured', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'sagent-config-execution-default-'));
+    await writeFile(path.join(dir, 'config.json'), JSON.stringify({ version: 1 }));
+    await configStore.init(dir);
+
+    expect(configStore.execution({}).sandboxedWorkers).toBe(true);
+    // sandboxedWorkers 由存储配置决定，不受环境变量影响。
+    expect(configStore.execution({ AGENT_SANDBOXED_WORKERS: 'false' }).sandboxedWorkers).toBe(true);
+  });
+
+  it('ignores AGENT_SANDBOXED_WORKERS and honors only the stored execution mode', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'sagent-config-execution-'));
     await writeFile(path.join(dir, 'config.json'), JSON.stringify({
       version: 1,
@@ -81,12 +91,13 @@ describe('structured configuration store', () => {
       workerSandbox: false,
       resume: false,
     });
+    // AGENT_SANDBOXED_WORKERS 不再被接受；仅 workerSandbox/resume 仍支持环境变量覆盖。
     expect(configStore.execution({
       AGENT_SANDBOXED_WORKERS: 'true',
       AGENT_WORKER_SANDBOX: 'true',
       AGENT_RESUME: 'true',
     })).toEqual({
-      sandboxedWorkers: true,
+      sandboxedWorkers: false,
       workerSandbox: true,
       resume: true,
     });

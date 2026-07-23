@@ -75,4 +75,46 @@ describe('sensitive data redaction', () => {
     expect(content).toContain('[REDACTED]');
     expect(content).not.toContain('super-secret-value');
   });
+
+  it('keeps a metrics object shared by two sibling keys (no false cycle)', () => {
+    // logLlmResponse 把同一个 usage 对象同时放在顶层和 response.usage，
+    // 修复前第二次出现会被 seen 误判为循环而整体 [REDACTED]。
+    const usage = { completion_tokens: 30, num_draft_tokens: 40 };
+    const source = { usage, response: { choices: [], usage } };
+    const output: any = redactSensitiveData(source);
+
+    expect(output.usage).toEqual({ completion_tokens: 30, num_draft_tokens: 40 });
+    expect(output.response.usage).toEqual({ completion_tokens: 30, num_draft_tokens: 40 });
+  });
+
+  it('still breaks genuine reference cycles', () => {
+    const node: any = { name: 'a' };
+    node.self = node;
+    const output: any = redactSensitiveData(node);
+
+    expect(output.name).toBe('a');
+    expect(output.self).toBe('[REDACTED]');
+  });
+
+  it('preserves NVIDIA speculative-decoding telemetry fields', () => {
+    const source = {
+      usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+      nvext: {
+        spec_decode: {
+          num_speculative_tokens: 4,
+          num_draft_tokens: 725,
+          num_accepted_tokens: 600,
+          num_rejected_tokens: 125,
+          acceptance_rate: 0.866,
+          accepted_tokens_per_position: [0.86],
+        },
+        request_throughput: {
+          generation_tokens_per_second: 120,
+          draft_tokens_per_second: 200,
+        },
+      },
+    };
+
+    expect(redactSensitiveData(source)).toEqual(source);
+  });
 });

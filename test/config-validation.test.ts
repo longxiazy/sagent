@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { computeEnvDefaults, validateConfig, mergeConfig } from '../agent/core/config-store.js';
+import { computeDefaults, validateConfig, mergeConfig } from '../agent/core/config-store.js';
 
 describe('config validation and effective defaults', () => {
-  it('空 env 用内置默认值（与改造前各处默认一致）', () => {
-    const d = computeEnvDefaults({});
+  it('内置默认值（与改造前各处默认一致）', () => {
+    const d = computeDefaults();
     expect(d).toEqual({
       maxSteps: 8,
       modelTimeoutSec: 90,
@@ -15,19 +15,6 @@ describe('config validation and effective defaults', () => {
       maxResultChars: 4000,
       autoModelRouting: false,
     });
-  });
-
-  it('从 env 读取覆盖值', () => {
-    const d = computeEnvDefaults({ AGENT_MAX_STEPS: '64', AGENT_MODEL_TIMEOUT: '120', AGENT_OBSERVE_DESKTOP: 'true', AGENT_AUTO_MODEL_ROUTING: 'true' });
-    expect(d.maxSteps).toBe(64);
-    expect(d.modelTimeoutSec).toBe(120);
-    expect(d.observeDesktop).toBe(true);
-    expect(d.autoModelRouting).toBe(true);
-  });
-
-  it('observeDesktop 仅字符串 "true" 为真', () => {
-    expect(computeEnvDefaults({ AGENT_OBSERVE_DESKTOP: 'false' }).observeDesktop).toBe(false);
-    expect(computeEnvDefaults({ AGENT_OBSERVE_DESKTOP: '1' }).observeDesktop).toBe(false);
   });
 });
 
@@ -82,7 +69,7 @@ describe('validateConfig', () => {
 });
 
 describe('mergeConfig', () => {
-  const defaults = computeEnvDefaults({});
+  const defaults = computeDefaults();
 
   it('overrides 覆盖默认，其余保持', () => {
     const m = mergeConfig(defaults, { maxSteps: 3 });

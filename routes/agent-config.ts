@@ -133,7 +133,7 @@ export function createAgentConfigRouter({ configStore, projectStore }: AgentRout
     }
   });
 
-  // 清空前台覆盖，回到 .env 默认值。
+  // 清空前台覆盖，回到内置默认值。
   router.post('/api/config/reset', async (_req, res) => {
     const agent = await configStore.reset();
     res.json(configPayload(agent));
