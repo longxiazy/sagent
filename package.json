@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "bun server.ts",
+    "dev": "concurrently \"bun server.ts\" \"cd client && npm run dev\"",
+    "prod": "bun server.ts",
     "chrome:mcp": "node scripts/chrome-mcp-sse-server.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build:client": "cd client && npm run build",
