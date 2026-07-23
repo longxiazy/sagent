@@ -177,7 +177,7 @@ export function createJsonPlanner({
     }, { defaultThinking: true, supportedMessageRoles });
     const createOpts = builtRequest.request;
     messages = createOpts.messages;
-    const safeMessages = logLlmRequest(model, messages);
+    const safeMessages = logLlmRequest(model, messages, tools);
     context.onRequest?.(safeMessages);
     let defaultedChatTemplateKwargs = builtRequest.defaultedChatTemplateKwargs;
     const reqOpts = signal ? { signal } : undefined;

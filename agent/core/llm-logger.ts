@@ -92,11 +92,18 @@ export async function flushLlmLogs() {
   } while (writeQueue.size > 0 || activeFlushes.size > 0);
 }
 
-export function logLlmRequest(model, messages) {
+export function logLlmRequest(model, messages, tools = null) {
   const safeMessages = redactSensitiveData(messages);
-  const line = JSON.stringify({ time: timeStr(), type: 'request', model, messages: safeMessages });
+  const safeTools = Array.isArray(tools) && tools.length > 0 ? redactSensitiveData(tools) : null;
+  const line = JSON.stringify({
+    time: timeStr(),
+    type: 'request',
+    model,
+    messages: safeMessages,
+    ...(safeTools ? { tools: safeTools } : {}),
+  });
   enqueueLog(join(todayDir(), modelFileName(model)), line);
-  log.debug(`[LLM] → ${model} messages=${messages.length}`);
+  log.debug(`[LLM] → ${model} messages=${messages.length}${safeTools ? ` tools=${safeTools.length}` : ''}`);
   return safeMessages;
 }
 
