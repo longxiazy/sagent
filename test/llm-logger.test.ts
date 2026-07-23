@@ -33,7 +33,7 @@ describe('llm-logger', () => {
     }
   });
 
-  it('records native tool definitions in the request log', async () => {
+  it('records native tool definitions as a tools pseudo-message in the request log', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'sagent-llm-logger-tools-'));
     try {
       initLlmLogger(dir);
@@ -46,14 +46,14 @@ describe('llm-logger', () => {
       const file = path.join(dir, 'llm-logs', todayDirName(), 'vendor_model.jsonl');
       const raw = await readFile(file, 'utf8');
       expect(raw).toContain('"type":"request"');
-      expect(raw).toContain('"tools":[');
+      expect(raw).toContain('"role":"tools"');
       expect(raw).toContain('"name":"finish"');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  it('omits the tools field when no native tools are sent', async () => {
+  it('omits the tools pseudo-message when no native tools are sent', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'sagent-llm-logger-notools-'));
     try {
       initLlmLogger(dir);
@@ -64,7 +64,7 @@ describe('llm-logger', () => {
       const file = path.join(dir, 'llm-logs', todayDirName(), 'vendor_model.jsonl');
       const raw = await readFile(file, 'utf8');
       expect(raw).toContain('"type":"request"');
-      expect(raw).not.toContain('"tools":');
+      expect(raw).not.toContain('"role":"tools"');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
