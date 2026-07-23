@@ -112,6 +112,28 @@
 .prompt-request-removed { border-top: 1px solid var(--c-border-subtle, rgba(128, 148, 168, .22)); }
 .prompt-request-removed summary { cursor: pointer; padding: 6px 8px; color: #f6a6a6; font-size: 11px; }
 
+/* word 级差异：相同片段常规、新增高亮、删除取消线。 */
+.prompt-word-diff { white-space: pre-wrap; }
+.prompt-word.same { color: var(--c-text-secondary); }
+.prompt-word.add { background: rgba(94, 210, 130, .22); color: var(--c-text-primary); border-radius: 2px; }
+.prompt-word.del { background: rgba(239, 96, 96, .18); color: #f6a6a6; text-decoration: line-through; border-radius: 2px; }
+
+/* 折叠未改动内容的条带按钮（块级，自成一行）。 */
+.prompt-fold-band {
+  display: block;
+  width: 100%;
+  margin: 3px 0;
+  border: 1px dashed var(--c-border-subtle, rgba(128, 148, 168, .3));
+  border-radius: 4px;
+  background: var(--c-surface-inset, rgba(0, 0, 0, .18));
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  font: 10px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+  padding: 3px 8px;
+  text-align: center;
+}
+.prompt-fold-band:hover { border-color: var(--c-accent); color: var(--c-accent); }
+
 :root {
   --c-primary: #534ab7;
   --c-primary-hover: #463ea0;

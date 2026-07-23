@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { buildPromptDiff } from '../../utils/prompt-diff.js';
+
+const FOLD_CONTEXT = 3;
 
 function formatRequest(value) {
   if (value == null) return '';
@@ -10,11 +13,52 @@ function formatRequest(value) {
   }
 }
 
-function changedLines(currentText, previousText) {
-  const current = currentText.split('\n');
-  if (!previousText) return current.map(text => ({ text, changed: false }));
-  const previous = new Set(previousText.split('\n'));
-  return current.map(text => ({ text, changed: !previous.has(text) }));
+// 未改动段：超过 2×context+1 行时折叠中间，仅保留首尾 context 行作为定位上下文。
+function EqualBlock({ text, t }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = text.split('\n');
+  if (lines.length <= FOLD_CONTEXT * 2 + 1) {
+    return <span className="prompt-word same">{text}</span>;
+  }
+  if (expanded) {
+    return (
+      <>
+        <span className="prompt-word same">{text}</span>
+        <button type="button" className="prompt-fold-band" onClick={() => setExpanded(false)}>
+          {t('agentPanel.requestFoldCollapse')}
+        </button>
+      </>
+    );
+  }
+  const hiddenCount = lines.length - FOLD_CONTEXT * 2;
+  return (
+    <>
+      <span className="prompt-word same">{lines.slice(0, FOLD_CONTEXT).join('\n')}</span>
+      <button type="button" className="prompt-fold-band" onClick={() => setExpanded(true)}>
+        {t('agentPanel.requestFolded', { n: hiddenCount })}
+      </button>
+      <span className="prompt-word same">{lines.slice(-FOLD_CONTEXT).join('\n')}</span>
+    </>
+  );
+}
+
+function PromptDiff({ currentText, previousText, t }) {
+  const { hasPrevious, blocks } = buildPromptDiff(previousText, currentText);
+  return (
+    <>
+      {hasPrevious && <div className="prompt-request-diff-legend">{t('agentPanel.requestDiffLegend')}</div>}
+      <pre className="prompt-request-pre prompt-word-diff">
+        {blocks.map((block, index) => {
+          if (block.type === 'change') {
+            return block.segments.map((seg, segIndex) => (
+              <span key={`c-${index}-${segIndex}`} className={`prompt-word ${seg.op}`}>{seg.value}</span>
+            ));
+          }
+          return <EqualBlock key={`e-${index}`} text={block.text} t={t} />;
+        })}
+      </pre>
+    </>
+  );
 }
 
 export function PromptRequestDetails({ requests, previousRequest, response, reasoning, t }) {
@@ -24,14 +68,9 @@ export function PromptRequestDetails({ requests, previousRequest, response, reas
   const activeIndex = Math.min(requestIndex, Math.max(requestList.length - 1, 0));
   const currentRequest = requestList.length > 0 ? requestList[activeIndex] : null;
   const currentText = formatRequest(currentRequest);
-  const previousText = formatRequest(previousRequest);
+  // 仅首个尝试与上一轮请求对比；重试尝试之间不做 diff（各自完整展示）。
+  const previousText = activeIndex === 0 ? formatRequest(previousRequest) : '';
   const responseText = formatRequest(response);
-  const lines = changedLines(currentText, previousText);
-  const removedLines = (() => {
-    if (!previousText) return [];
-    const current = new Set(currentText.split('\n'));
-    return previousText.split('\n').filter(text => !current.has(text));
-  })();
 
   if (!currentRequest && !responseText && !reasoning) return null;
 
@@ -55,20 +94,7 @@ export function PromptRequestDetails({ requests, previousRequest, response, reas
           {currentRequest && (
             <section className="prompt-exchange-section">
               <div className="prompt-exchange-label">{t('agentPanel.llmRequest')}</div>
-              {previousText && <div className="prompt-request-diff-legend">{t('agentPanel.requestDiffLegend')}</div>}
-              <pre className="prompt-request-pre">
-                {lines.map((line, index) => (
-                  <span key={`current-${index}`} className={line.changed ? 'prompt-request-line changed' : 'prompt-request-line'}>{line.text}{'\n'}</span>
-                ))}
-              </pre>
-              {removedLines.length > 0 && (
-                <details className="prompt-request-removed">
-                  <summary>{t('agentPanel.requestRemoved', { n: removedLines.length })}</summary>
-                  <pre className="prompt-request-pre">
-                    {removedLines.map((line, index) => <span key={`removed-${index}`} className="prompt-request-line removed">{line}{'\n'}</span>)}
-                  </pre>
-                </details>
-              )}
+              <PromptDiff currentText={currentText} previousText={previousText} t={t} />
             </section>
           )}
           {(responseText || reasoning) && (
