@@ -13,12 +13,16 @@ import { computeTraceMetrics, formatDurationMs, formatTokenCount, traceModelIds 
 import { getModelLabel } from './plan-stage.js';
 import { TraceDebugPanel } from './TraceDebugPanel.jsx';
 import { useIsMobile } from '../../hooks/useIsMobile.js';
+import { usePersistentState, jsonStorage } from '../../hooks/usePersistentState.js';
 import { useT } from '../../i18n/I18nProvider.jsx';
 import { formatFullTime, formatRelativeTime } from '../../utils/format.js';
 import { fetchAgentTrace } from '../../api/streams.js';
 import { appendUniqueTraceEvent } from '../../utils/agent-trace.js';
 import { DialogShell } from '../dialogs/DialogShell.jsx';
 import { attemptStepKey, buildAttemptTraceIndex } from '../../utils/agent-attempts.js';
+
+// 运行悬浮框的位置/尺寸持久化 key(全局，不分项目)。
+const FLOAT_BOX_KEY = 'sagent.agentFloatBox';
 
 // AgentPanel 既是执行面板，也是运行时仪表盘：
 // - 负责展示 trace
@@ -220,12 +224,62 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
   const [recentRunExpanded, setRecentRunExpanded] = useState(true);
   const [selectedModelId, setSelectedModelId] = useState('all');
 
+  // 运行悬浮框：默认贴在页面右上角(fixed，见 CSS)，桌面端可拖动、缩放；位置尺寸持久化。
+  // 交互过程中走临时 liveBox(纯内存)，松手才写入 storedBox(落 localStorage)，避免每帧写盘。
+  const headRef = useRef(null);
+  const gestureOrigin = useRef(null);
+  const liveBoxRef = useRef(null);
+  const movedRef = useRef(false);
+  const [storedBox, setStoredBox] = usePersistentState(FLOAT_BOX_KEY, null, jsonStorage);
+  const [liveBox, setLiveBox] = useState(null);
+  const [gesture, setGesture] = useState(null); // 'drag' | 'resize' | null
+  const box = liveBox ?? storedBox; // 生效布局 {left, top, width, height}，字段可缺省
+  const storedBoxRef = useRef(storedBox);
+  useEffect(() => { storedBoxRef.current = storedBox; }, [storedBox]);
+
   // onRollback 来自上层且每次 render 是新引用；用 ref 包出稳定回调，
   // 这样 memo 化的 TraceItem 不会因为回调引用变化而整片重渲。
   const rollbackRef = useRef(onRollback);
   useEffect(() => { rollbackRef.current = onRollback; }, [onRollback]);
   const stableRollback = useCallback(step => rollbackRef.current?.(step), []);
   const disabledRollback = useCallback(() => {}, []);
+
+  // 记录手势起点(指针坐标 + 当前框的视口矩形 + 是否已有显式宽高)。
+  const captureOrigin = useCallback(e => {
+    const rect = headRef.current?.getBoundingClientRect();
+    if (!rect) return false;
+    gestureOrigin.current = {
+      px: e.clientX, py: e.clientY,
+      left: rect.left, top: rect.top, w: rect.width, h: rect.height,
+      hasWidth: box?.width != null, hasHeight: box?.height != null,
+    };
+    return true;
+  }, [box]);
+
+  // 从悬浮框标题栏空白处按下即开始拖动；点在按钮/链接/缩放手柄上不触发。
+  const beginHeadDrag = useCallback(e => {
+    if (isMobile) return;
+    if (e.button != null && e.button !== 0) return;
+    if (e.target.closest?.('button, a, input, textarea, select, [role="button"], .agent-panel-head-resize')) return;
+    if (!captureOrigin(e)) return;
+    movedRef.current = false;
+    setGesture('drag');
+  }, [isMobile, captureOrigin]);
+
+  // 左下角手柄按下开始缩放；阻止冒泡以免同时触发拖动。
+  const beginHeadResize = useCallback(e => {
+    if (isMobile) return;
+    if (e.button != null && e.button !== 0) return;
+    e.stopPropagation();
+    if (!captureOrigin(e)) return;
+    setGesture('resize');
+  }, [isMobile, captureOrigin]);
+
+  // 折叠态下点击标题栏展开；若刚拖动过则跳过这次点击。
+  const handleHeadClick = useCallback(() => {
+    if (movedRef.current) { movedRef.current = false; return; }
+    onToggleCollapse?.();
+  }, [onToggleCollapse]);
 
   // 以下派生值原先每次 render（含每秒计时 tick）都对整条 trace 做 some/reduce/find，
   // 现在统一 memo 化，只在 trace/running 变化时重算。
@@ -345,11 +399,97 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
     return () => scroller.removeEventListener('scroll', onScroll);
   }, [traceHasContent]);
 
+  // 拖动/缩放期间在 window 上跟踪指针，松手落盘；并锁定全局光标与选区。
+  useEffect(() => {
+    if (!gesture) return;
+    const margin = 8;
+    const onMove = e => {
+      const o = gestureOrigin.current;
+      if (!o) return;
+      const dx = e.clientX - o.px;
+      const dy = e.clientY - o.py;
+      let next;
+      if (gesture === 'drag') {
+        if (!movedRef.current && Math.hypot(dx, dy) > 3) movedRef.current = true;
+        const maxLeft = Math.max(margin, window.innerWidth - o.w - margin);
+        const maxTop = Math.max(margin, window.innerHeight - o.h - margin);
+        next = {
+          left: Math.min(Math.max(margin, o.left + dx), maxLeft),
+          top: Math.min(Math.max(margin, o.top + dy), maxTop),
+          width: o.hasWidth ? o.w : undefined,
+          height: o.hasHeight ? o.h : undefined,
+        };
+      } else {
+        // 左下角手柄：右边缘与顶边钉住，向左/向下拉伸。
+        movedRef.current = true; // 缩放结束后的合成 click 不应触发折叠/展开
+        const minW = 240, minH = 48;
+        const rightEdge = o.left + o.w;
+        const width = Math.max(minW, Math.min(o.w - dx, rightEdge - margin));
+        const height = Math.max(minH, Math.min(o.h + dy, window.innerHeight - o.top - margin));
+        next = { left: rightEdge - width, top: o.top, width, height };
+      }
+      liveBoxRef.current = next;
+      setLiveBox(next);
+    };
+    const stop = () => {
+      if (liveBoxRef.current) setStoredBox(liveBoxRef.current);
+      liveBoxRef.current = null;
+      setLiveBox(null);
+      setGesture(null);
+    };
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = gesture === 'resize' ? 'nesw-resize' : 'grabbing';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+    return () => {
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+    };
+  }, [gesture, setStoredBox]);
+
+  // 挂载时与窗口缩放后，把悬浮框夹回可视区域，避免上次的位置/尺寸在更小的窗口里越界。
+  const clampStoredBox = useCallback(() => {
+    const prev = storedBoxRef.current;
+    if (!prev || prev.left == null) return;
+    const margin = 8;
+    const rect = headRef.current?.getBoundingClientRect();
+    const width = prev.width != null ? Math.min(prev.width, window.innerWidth - margin * 2) : undefined;
+    const height = prev.height != null ? Math.min(prev.height, window.innerHeight - margin * 2) : undefined;
+    const w = width ?? rect?.width ?? 0;
+    const h = height ?? rect?.height ?? 0;
+    const left = Math.min(Math.max(margin, prev.left), Math.max(margin, window.innerWidth - w - margin));
+    const top = Math.min(Math.max(margin, prev.top ?? margin), Math.max(margin, window.innerHeight - h - margin));
+    if (left === prev.left && top === prev.top && width === prev.width && height === prev.height) return;
+    setStoredBox({ ...prev, left, top, width, height });
+  }, [setStoredBox]);
+
+  useEffect(() => {
+    clampStoredBox();
+    window.addEventListener('resize', clampStoredBox);
+    return () => window.removeEventListener('resize', clampStoredBox);
+  }, [clampStoredBox]);
+
   return (
     <>
     <section className={`agent-panel ${!isMobile && collapsed ? 'collapsed' : ''}`}>
       {headVisible && (
-      <div className="agent-panel-head" onClick={collapsed && trace.length > 0 ? onToggleCollapse : undefined}>
+      <div
+        ref={headRef}
+        className={`agent-panel-head${gesture ? ' dragging' : ''}`}
+        style={box && !isMobile ? {
+          ...(box.left != null ? { left: box.left, top: box.top, right: 'auto', margin: 0 } : null),
+          ...(box.width != null ? { width: box.width } : null),
+          ...(box.height != null ? { height: box.height } : null),
+        } : undefined}
+        onPointerDown={beginHeadDrag}
+        onClick={collapsed && trace.length > 0 ? handleHeadClick : undefined}
+      >
         <div className="agent-head-row-primary">
           <div className="agent-panel-status" role="status" aria-live="polite">
             <span className={`agent-status-dot ${headerStatus}`} aria-hidden="true" />
@@ -423,6 +563,13 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
               <span>{browserHealth.title || browserHealth.url}</span>
             </span>
           </button>
+        )}
+        {!isMobile && (
+          <span
+            className="agent-panel-head-resize"
+            onPointerDown={beginHeadResize}
+            aria-hidden="true"
+          />
         )}
       </div>
       )}
