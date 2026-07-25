@@ -1,12 +1,14 @@
 /**
  * LLM Logger — 将 LLM 请求/响应日志按模型、按日期写入文件
  *
- * 文件结构：data/llm-logs/2026-04-24/minimaxai_minimax-m2.7.jsonl
+ * 文件结构：<baseDir>/llm-logs/<date>/<model>.jsonl
  * 每行一个 JSON 对象：{ time, type, model, ... }
  *
  * 调用场景：
- *   - planner.js 发送 NVIDIA API 请求前后
- *   - provider 调用模型 API 前后
+ *   - planner.ts / provider 在调用模型 API 前后
+ *
+ * 隐私 run 仍会返回脱敏后的请求数据给调用方，并保留控制台诊断；只是不把
+ * request/response/error 行加入 JSONL 写队列。
  */
 
 import { mkdir, appendFile } from 'node:fs/promises';
@@ -15,6 +17,7 @@ import { log } from '../../helpers/logger.ts';
 import { extractErrorDiagnostics, formatErrorDiagnostics } from '../../helpers/retry.ts';
 import { getLogPolicy, pruneLogTreeSync, rotateLogFileSync } from '../../helpers/log-policy.ts';
 import { redactSensitiveData } from '../../helpers/redact.ts';
+import { isPrivateRun } from '../../helpers/private-run.ts';
 
 let logDir = 'data/llm-logs';
 
@@ -98,22 +101,28 @@ export function logLlmRequest(model, messages, tools = null) {
   // 让文件日志与前端 trace 用同一套 messages 展示（与 gemini provider 一致）。
   const combined = hasTools ? [...messages, { role: 'tools', content: tools }] : messages;
   const safeMessages = redactSensitiveData(combined);
-  const line = JSON.stringify({ time: timeStr(), type: 'request', model, messages: safeMessages });
-  enqueueLog(join(todayDir(), modelFileName(model)), line);
+  if (!isPrivateRun()) {
+    const line = JSON.stringify({ time: timeStr(), type: 'request', model, messages: safeMessages });
+    enqueueLog(join(todayDir(), modelFileName(model)), line);
+  }
   log.debug(`[LLM] → ${model} messages=${messages.length}${hasTools ? ` tools=${tools.length}` : ''}`);
   return safeMessages;
 }
 
 export function logLlmResponse(model, response) {
   const usage = response.usage || {};
-  const line = JSON.stringify(redactSensitiveData({ time: timeStr(), type: 'response', model, usage, response }));
-  enqueueLog(join(todayDir(), modelFileName(model)), line);
+  if (!isPrivateRun()) {
+    const line = JSON.stringify(redactSensitiveData({ time: timeStr(), type: 'response', model, usage, response }));
+    enqueueLog(join(todayDir(), modelFileName(model)), line);
+  }
   const tokens = (usage.prompt_tokens || 0) + (usage.completion_tokens || usage.output_tokens || 0);
   log.debug(`[LLM] ← ${model} tokens=${tokens}`);
 }
 
 export function logLlmError(model, err, context = {}) {
-  const line = JSON.stringify(redactSensitiveData({ time: timeStr(), type: 'error', model, context, error: extractErrorDiagnostics(err) }));
-  enqueueLog(join(todayDir(), modelFileName(model)), line);
+  if (!isPrivateRun()) {
+    const line = JSON.stringify(redactSensitiveData({ time: timeStr(), type: 'error', model, context, error: extractErrorDiagnostics(err) }));
+    enqueueLog(join(todayDir(), modelFileName(model)), line);
+  }
   log.warn(`[LLM] ✕ ${model} ${formatErrorDiagnostics(err)}`);
 }

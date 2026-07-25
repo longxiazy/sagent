@@ -33,6 +33,7 @@ let app;
 let agentRunStore;
 let approvalStore;
 let projectStore;
+let lastRunOptions;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sagent-api-test-'));
@@ -47,9 +48,13 @@ beforeEach(async () => {
   // 空注册表 → resolveRunPaths 回退到 tmpDir/process.cwd()，与无项目态一致。
   projectStore = createProjectStore(tmpDir);
   await projectStore.init();
+  lastRunOptions = null;
 
   const router = createAgentRouter({
-    runDesktopAgent: async () => ({ answer: 'done', steps: [] }),
+    runDesktopAgent: async options => {
+      lastRunOptions = options;
+      return { answer: 'done', steps: [] };
+    },
     agentRunStore,
     approvalStore,
     memoryDir: tmpDir,
@@ -159,6 +164,48 @@ describe('approval ownership', () => {
 });
 
 describe('POST /api/agent', () => {
+  it('passes private mode through without persisting trace or checkpoint files', async () => {
+    const res = await request(app)
+      .post('/api/agent')
+      .send({ task: 'private browse', model: 'test-model', memory: false, privateMode: true })
+      .buffer(true)
+      .parse((response, callback) => {
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', chunk => { body += chunk; });
+        response.on('end', () => callback(null, body));
+      });
+
+    expect(res.status).toBe(200);
+    expect(lastRunOptions).toMatchObject({ privateMode: true });
+    const responseText = typeof res.text === 'string' ? res.text : String(res.body || '');
+    expect(responseText).toContain('"privateMode":true');
+    await expect(fs.access(path.join(tmpDir, 'traces'))).rejects.toThrow();
+    await expect(fs.access(path.join(tmpDir, 'checkpoints'))).rejects.toThrow();
+    await expect(fs.access(path.join(tmpDir, 'chat-sessions.json'))).rejects.toThrow();
+  });
+
+  it('rejects checkpoint retry and rollback requests for private runs', async () => {
+    const retry = await request(app)
+      .post('/api/agent')
+      .send({
+        task: 'private retry',
+        model: 'test-model',
+        memory: false,
+        privateMode: true,
+        fromCheckpoint: { runId: 'run_old_private', step: 2 },
+      });
+    expect(retry.status).toBe(400);
+
+    const run = agentRunStore.createRun({ privateMode: true }, 1, 'run_private_rollback');
+    const rollback = await request(app)
+      .post('/api/agent/rollback')
+      .send({ targetStep: 1 });
+    expect(rollback.status).toBe(400);
+    expect(run.pendingRollback).toBeNull();
+    agentRunStore.closeRun(run.runId);
+  });
+
   it('requires an explicit model selection', async () => {
     const res = await request(app)
       .post('/api/agent')
@@ -210,6 +257,41 @@ describe('POST /api/agent', () => {
     expect(res.status).toBe(500);
     expect(res.headers['content-type']).toContain('application/json');
     expect(res.body.error).toBe('project lookup failed');
+  });
+});
+
+describe('/api/sessions private-mode guard', () => {
+  it('does not mutate chat-sessions.json when the private header is present', async () => {
+    const initial = await request(app)
+      .put('/api/sessions/session_normal')
+      .send({
+        session: {
+          id: 'session_normal',
+          messages: [{ role: 'user', content: '普通会话' }],
+          updatedAt: 1000,
+        },
+      });
+    expect(initial.status).toBe(200);
+    const file = path.join(tmpDir, 'chat-sessions.json');
+    const before = await fs.readFile(file, 'utf8');
+
+    const privateUpdate = await request(app)
+      .put('/api/sessions/session_private')
+      .set('X-Private-Mode', 'true')
+      .send({
+        session: {
+          id: 'session_private',
+          messages: [{ role: 'user', content: '不应写入' }],
+          updatedAt: 2000,
+        },
+      });
+    expect(privateUpdate.status).toBe(200);
+
+    const privateDelete = await request(app)
+      .delete('/api/sessions/session_normal')
+      .set('X-Private-Mode', 'true');
+    expect(privateDelete.status).toBe(200);
+    await expect(fs.readFile(file, 'utf8')).resolves.toBe(before);
   });
 });
 

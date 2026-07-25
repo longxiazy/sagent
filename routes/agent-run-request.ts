@@ -1,3 +1,5 @@
+/** 解析 POST /api/agent 输入，并把 fromCheckpoint 转换成 runtime 的起始 step/history。 */
+
 import { loadLatestHealthySnapshot } from '../agent/core/checkpoint.ts';
 
 function uniqueModelIds(value: any) {
@@ -18,6 +20,7 @@ export function parseAgentRunRequest(reqBody: any) {
     models: reqModels,
     strategy = 'race',
     headless,
+    privateMode,
     memory: useMemory = true,
     messages: conversationHistory,
     fromCheckpoint,
@@ -48,6 +51,7 @@ export function parseAgentRunRequest(reqBody: any) {
     agentModels,
     strategy,
     headless,
+    privateMode: privateMode === true,
     useMemory,
     conversationHistory,
     fromCheckpoint,
@@ -56,10 +60,11 @@ export function parseAgentRunRequest(reqBody: any) {
   };
 }
 
-export async function resolveCheckpointSeed(checkpointDir: string, fromCheckpoint: any) {
+export async function resolveCheckpointSeed(checkpointDir: string | null | undefined, fromCheckpoint: any) {
   let checkpointInitialStep;
   let checkpointInitialHistory;
 
+  // 隐私模式传入 null checkpointDir，因此即使请求带 fromCheckpoint 也不会读取磁盘快照。
   if (fromCheckpoint && checkpointDir) {
     const cpRunId = fromCheckpoint.runId;
     const cpStep = fromCheckpoint.step;
@@ -70,7 +75,7 @@ export async function resolveCheckpointSeed(checkpointDir: string, fromCheckpoin
         checkpointInitialStep = cpStep;
         checkpointInitialHistory = snapshot.history || [];
       } else {
-        // 目标是第 1 步且无更早快照 → 从头开始
+        // 找不到目标步之前的健康快照（包括回滚到第 1 步）→ 从头开始。
         checkpointInitialStep = 1;
         checkpointInitialHistory = [];
       }

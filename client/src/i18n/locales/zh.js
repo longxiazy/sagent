@@ -57,6 +57,9 @@ export const zh = {
 
   // 输入框
   'input.agentPlaceholder': '描述要让 Agent 完成的任务…',
+  'input.privateMode': '隐私模式',
+  'input.privateModeOff': '开启隐私模式：本次任务不保存聊天会话、运行日志、LLM 日志和截图；内置浏览器使用一次性 profile。',
+  'input.privateModeOn': '隐私模式已开启：本次任务不保存聊天会话、运行日志、LLM 日志和截图，任务结束后清除内置浏览器数据。',
   'context.label': 'Context 预估',
   'context.actualLabel': 'Context 实际',
   'context.summary': '首轮 {used}/{limit} tok · {percent}%',
@@ -104,6 +107,11 @@ export const zh = {
   'settings.maxResultChars': '每步结果最大字符数',
   'settings.memoryEnabled': '启用记忆',
   'settings.memoryDesc': 'Agent 是否使用项目知识和代码图谱辅助任务（前端偏好，即时生效）。',
+  'settings.sandboxedWorkers': '启用独立 Worker',
+  'settings.workerSandbox': '启用 macOS Sandbox',
+  'settings.executionRestartDesc': '这是启动配置：保存后需重启后端才会生效。关闭独立 Worker 后，Worker Sandbox 也会不可用。',
+  'settings.workerSandboxEnvOverride': 'AGENT_WORKER_SANDBOX 环境变量正在覆盖此设置。',
+  'settings.executionRestartSaved': 'Worker 启动配置已保存；重启后端后生效。',
   'settings.observeDesktop': '观测 macOS 桌面',
   'settings.autoModelRouting': '动态模型路由',
   'settings.profile': '运行配置',

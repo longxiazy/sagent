@@ -1,10 +1,10 @@
 /**
  * Run Agent — 任务执行的共享工具函数
  *
- * 从 server.ts 和 routes/agent.ts 提取的公共逻辑：
+ * 从 server.ts 和 routes/agent-run-*.ts 提取的公共逻辑：
  *   - 事件分发（store + reconnect 转发）
  *   - 记忆加载 + systemPrompt 构建
- *   - 运行后清理（checkpoint + run 关闭）
+ *   - 运行收尾（持久化 flush、checkpoint/隐私产物清理、Chrome MCP 状态清理、run 关闭）
  */
 
 import { loadMemory, buildMemoryPrompt } from '../agent/core/memory.ts';
@@ -13,6 +13,8 @@ import { shutdownChromeMcp, closeAllChromePagesQuiet, loadChromeMcpConfig } from
 import { resetChromeSnapshotState } from '../agent/tools/chrome/execute.ts';
 import { appendTraceEvent } from './trace-store.ts';
 import { log } from './logger.ts';
+import { isPrivateRun, withPrivateRun } from './private-run.ts';
+import { removePrivateRunArtifacts } from './private-run-artifacts.ts';
 import type { AgentEvent, AgentRunStore, TerminalRunStatus } from '../agent/core/contracts.ts';
 import { redactSensitiveData } from './redact.ts';
 
@@ -63,7 +65,12 @@ function buildOperation(payload: any) {
   return payload?.type || 'event';
 }
 
-export function createBaseEventSender(runId: string, agentRunStore: AgentRunStore, memoryDir?: string) {
+export function createBaseEventSender(
+  runId: string,
+  agentRunStore: AgentRunStore,
+  memoryDir?: string,
+  { persistTrace = true }: { persistTrace?: boolean } = {},
+) {
   const stageTimes = new Map<string, number>();
   const modelTimes = new Map<string, number>();
 
@@ -121,11 +128,14 @@ export function createBaseEventSender(runId: string, agentRunStore: AgentRunStor
 
     const sequencedEvent = agentRunStore.addEvent(runId, event);
     const run = agentRunStore.getRun(runId);
-    const writeTrace = () => appendTraceEvent(memoryDir, runId, sequencedEvent);
-    const traceWrite = run?.persistence ? run.persistence.enqueue(writeTrace) : writeTrace();
-    traceWrite.catch((err: any) => {
-      log.warn(`[TraceStore] append failed runId=${runId}: ${err.message}`);
-    });
+    // 事件先进入内存 run store 并发送给 SSE；隐私任务只跳过 JSONL trace 的持久化。
+    if (persistTrace && !isPrivateRun()) {
+      const writeTrace = () => appendTraceEvent(memoryDir, runId, sequencedEvent);
+      const traceWrite = run?.persistence ? run.persistence.enqueue(writeTrace) : writeTrace();
+      traceWrite.catch((err: any) => {
+        log.warn(`[TraceStore] append failed runId=${runId}: ${err.message}`);
+      });
+    }
     if (run?._reconnectWriters) {
       for (const writer of run._reconnectWriters) {
         writer(sequencedEvent);
@@ -147,17 +157,24 @@ export async function loadMemoryForPrompt(memoryDir: string) {
 }
 
 export async function cleanupAgentRun(
-  checkpointDir: string | undefined,
+  checkpointDir: string | null | undefined,
   runId: string,
   agentRunStore: AgentRunStore,
   { removeSnapshots = false, finalStatus }: { removeSnapshots?: boolean; finalStatus?: TerminalRunStatus } = {},
 ) {
+  // start 路由、取消路径和 checkpoint resume 都会调用这里；先 flush 串行写队列，
+  // 再清理文件并关闭 run，保证最后一个事件/快照不会在清理之后落盘。
   const run = agentRunStore.getRun(runId);
+  const privateMode = run?.meta?.privateMode === true;
   await run?.persistence?.flush();
-  if (checkpointDir) {
+  if (privateMode) {
+    const dataDir = typeof run?.meta?.dataDir === 'string' ? run.meta.dataDir : checkpointDir;
+    await withPrivateRun(true, () => removePrivateRunArtifacts(dataDir, runId));
+  }
+  if (checkpointDir && !privateMode) {
     // step-level checkpoint 只用于崩溃恢复，任务完成后可删除
     await removeCheckpoint(checkpointDir, runId).catch(() => {});
-    // session snapshots 用于回滚，只在启动新任务时才清理
+    // Session 快照用于回滚，默认保留；只有调用方明确要求批量收尾时才删除。
     if (removeSnapshots) {
       await removeSessionCheckpoints(checkpointDir, runId).catch(() => {});
     }
@@ -171,14 +188,18 @@ export async function cleanupAgentRun(
   const chromeConfig = loadChromeMcpConfig();
   if (!chromeConfig.keepTabs) {
     await closeAllChromePagesQuiet().catch(err => {
-      log.warn(`[cleanupAgentRun] closeAllChromePages 失败 runId=${runId} ${err?.message || err}`);
+      if (!privateMode) {
+        log.warn(`[cleanupAgentRun] closeAllChromePages 失败 runId=${runId} ${err?.message || err}`);
+      }
     });
   }
   // 只关闭本进程里的 Chrome MCP SSE client；外部 chrome:mcp bridge 和 Chrome 继续由独立进程管理。
   // 如果更看重复用连接，可在 .env 设 CHROME_MCP_KEEP_OPEN=true 跳过。
   if (!chromeConfig.keepOpen) {
     await shutdownChromeMcp().catch(err => {
-      log.warn(`[cleanupAgentRun] shutdownChromeMcp 失败 runId=${runId} ${err?.message || err}`);
+      if (!privateMode) {
+        log.warn(`[cleanupAgentRun] shutdownChromeMcp 失败 runId=${runId} ${err?.message || err}`);
+      }
     });
   }
 }

@@ -1,16 +1,25 @@
+/** 将桌面 helper/AppleScript 与内置浏览器状态合并成 planner 使用的 observation。 */
+
 import { captureBrowserObservation, summarizeBrowserObservation } from '../tools/browser/observe.ts';
 import { observeMacOSDesktop } from '../tools/macos/observe.ts';
 
 export async function observeDesktopAgent(state: {
   observeDesktop?: boolean;
   runId?: string;
+  privateMode?: boolean;
   browserSession?: any;
   projectRoot?: string | null;
   cancelSignal?: AbortSignal;
 }) {
+  // 两类观测并行执行；未启用桌面观测或尚未建立浏览器会话时返回空占位，
+  // 让 planner 始终收到稳定的 observation 结构。
   const [desktop, browserRaw] = await Promise.all([
     state.observeDesktop
-      ? observeMacOSDesktop({ runId: state.runId || 'unknown', signal: state.cancelSignal })
+      ? observeMacOSDesktop({
+          runId: state.runId || 'unknown',
+          signal: state.cancelSignal,
+          privateMode: state.privateMode === true,
+        })
       : Promise.resolve({ frontmostApp: '', frontmostWindowTitle: '', windows: [] }),
     state.browserSession
       ? captureBrowserObservation(state.browserSession.view)

@@ -89,6 +89,17 @@ describe('agent run store', () => {
     expect(store.getActiveRun()).toBeNull();
   });
 
+  it('does not retain completed private runs in memory', () => {
+    const store = createAgentRunStore();
+    const run = store.createRun({ privateMode: true }, 1, 'run_private_memory');
+    store.addEvent(run.runId, { type: 'notification', level: 'info', message: 'secret' });
+
+    store.closeRun(run.runId, 'completed');
+
+    expect(run.events).toEqual([]);
+    expect(store.getRun(run.runId)).toBeNull();
+  });
+
   it('rejects invalid state transitions', () => {
     const store = createAgentRunStore();
     const run = store.createRun({}, 1, 'run_invalid');

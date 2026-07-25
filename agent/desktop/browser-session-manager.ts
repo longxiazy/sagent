@@ -1,3 +1,12 @@
+/**
+ * Shared built-in browser session manager.
+ *
+ * Sessions are matched by headless + privateMode, all operations pass through one
+ * serial queue, and an invalid WebView is recreated once before a per-run circuit
+ * breaker stops further built-in-browser calls. Normal sessions are reset to about:blank
+ * for reuse; private sessions are closed so their temporary profile can be deleted.
+ */
+
 import { captureBrowserPreview, closeBrowserSession, createBrowserSession } from '../tools/browser/webview-session.ts';
 
 type BrowserLifecycle = 'starting' | 'ready' | 'busy' | 'broken' | 'closing' | 'closed';
@@ -5,6 +14,8 @@ type BrowserLifecycle = 'starting' | 'ready' | 'busy' | 'broken' | 'closing' | '
 type ManagedBrowserSession = {
   view: any;
   page: any;
+  privateMode?: boolean;
+  privateProfileDir?: string | null;
   sessionId: number;
   generation: number;
   lifecycle: BrowserLifecycle;
@@ -21,6 +32,7 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
   const MAX_RECOVERY_FAILURES_PER_RUN = 2;
   let sharedBrowserSession: ManagedBrowserSession | null = null;
   let sharedBrowserHeadless: boolean | null = null;
+  let sharedBrowserPrivateMode: boolean | null = null;
   let nextSessionId = 1;
   let nextGeneration = 1;
   let operationQueue: Promise<unknown> = Promise.resolve();
@@ -32,6 +44,7 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
       sessionId: session?.sessionId || null,
       generation: session?.generation || null,
       lifecycle: session?.lifecycle || 'closed',
+      privateMode: Boolean(session?.privateMode),
       timestamp: Date.now(),
       ...extra,
     });
@@ -81,10 +94,12 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
     await session.closePromise;
   }
 
-  async function getSharedBrowserSessionInternal(headless: boolean, onEvent?: (payload: any) => void) {
+  async function getSharedBrowserSessionInternal(headless: boolean, privateMode: boolean, onEvent?: (payload: any) => void) {
+    // headless/privateMode 属于会话隔离条件；任一变化都不能复用旧 WebView。
     if (
       sharedBrowserSession
       && sharedBrowserHeadless === headless
+      && sharedBrowserPrivateMode === privateMode
       && sharedBrowserSession.lifecycle !== 'broken'
       && sharedBrowserSession.lifecycle !== 'closing'
       && sharedBrowserSession.lifecycle !== 'closed'
@@ -95,11 +110,12 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
       const previous = sharedBrowserSession;
       sharedBrowserSession = null;
       sharedBrowserHeadless = null;
+      sharedBrowserPrivateMode = null;
       await closeSessionBounded(previous);
     }
 
     const session: ManagedBrowserSession = {
-      ...createBrowserSession(),
+      ...createBrowserSession({ privateMode }),
       sessionId: nextSessionId++,
       generation: nextGeneration++,
       lifecycle: 'starting',
@@ -107,17 +123,23 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
     };
     sharedBrowserSession = session;
     sharedBrowserHeadless = headless;
+    sharedBrowserPrivateMode = privateMode;
     emit(onEvent, 'starting', session);
     return session;
   }
 
   async function ensureBrowserSessionInternal(state: any, onEvent?: (payload: any) => void) {
-    if (state.browserSession && isCurrentSession(state.browserSession)) {
+    const privateMode = state.privateMode === true;
+    if (
+      state.browserSession
+      && isCurrentSession(state.browserSession)
+      && Boolean(state.browserSession.privateMode) === privateMode
+    ) {
       return state.browserSession as ManagedBrowserSession;
     }
     state.browserSession = null;
 
-    const session = await getSharedBrowserSessionInternal(state.headless, onEvent);
+    const session = await getSharedBrowserSessionInternal(state.headless === true, privateMode, onEvent);
     const generation = session.generation;
     try {
       session.lifecycle = 'busy';
@@ -130,6 +152,7 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
       if (session === sharedBrowserSession) {
         sharedBrowserSession = null;
         sharedBrowserHeadless = null;
+        sharedBrowserPrivateMode = null;
       }
       await closeSessionBounded(session);
       const detail = String(err?.message || err);
@@ -146,6 +169,7 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
         : 'Bun.WebView 浏览器已启动并通过健康检查',
       sessionId: session.sessionId,
       generation: session.generation,
+      privateMode: Boolean(session.privateMode),
     });
     emit(onEvent, 'ready', session, { url: 'about:blank', healthChecked: true });
     return session;
@@ -158,6 +182,7 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
     if (session && session === sharedBrowserSession) {
       sharedBrowserSession = null;
       sharedBrowserHeadless = null;
+      sharedBrowserPrivateMode = null;
     }
     if (session) {
       if (session.lifecycle !== 'broken') session.lifecycle = 'closing';
@@ -168,6 +193,11 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
   async function cleanupBrowserSessionInternal(state?: any) {
     const session = (state?.browserSession || sharedBrowserSession) as ManagedBrowserSession | null;
     if (!session?.view || !isCurrentSession(session)) return;
+    if (session.privateMode) {
+      // 隐私会话不能跨任务复用：关闭 WebView 才会删除一次性 profile。
+      await resetBrowserSessionInternal(state);
+      return;
+    }
     const generation = session.generation;
     try {
       session.lifecycle = 'busy';
@@ -187,6 +217,8 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
     operation: (session: ManagedBrowserSession, recoveryAttempt: number) => Promise<any>,
     context: any = {},
   ) {
+    // 每个动作最多经历一次重建重试；连续两次恢复失败后打开本 run 熔断，
+    // 避免 planner 在坏会话上无限循环并持续产生副作用。
     if (state.browserCircuitOpen) {
       emit(onEvent, 'degraded', state.browserSession, { ...context, reason: 'circuit_open', recoveryFailures: state.browserRecoveryFailures || 0 });
       return circuitOpenResult();
@@ -199,8 +231,11 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
     try {
       const result = await operation(session, 0);
       assertCurrentSession(session, generation);
-      const preview = state.runId
-        ? await captureBrowserPreview(session.view, { runId: state.runId }).catch(() => null)
+      const preview = state.runId && state.privateMode !== true
+        ? await captureBrowserPreview(session.view, {
+            runId: state.runId,
+            privateMode: state.privateMode === true,
+          }).catch(() => null)
         : null;
       assertCurrentSession(session, generation);
       session.lifecycle = 'ready';
@@ -224,8 +259,11 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
       try {
         const result = await operation(session, 1);
         assertCurrentSession(session, generation);
-        const preview = state.runId
-          ? await captureBrowserPreview(session.view, { runId: state.runId }).catch(() => null)
+        const preview = state.runId && state.privateMode !== true
+          ? await captureBrowserPreview(session.view, {
+              runId: state.runId,
+              privateMode: state.privateMode === true,
+            }).catch(() => null)
           : null;
         assertCurrentSession(session, generation);
         session.lifecycle = 'ready';
@@ -252,8 +290,8 @@ export function createSharedBrowserSessionManager({ closeTimeoutMs = 3_000 } = {
 
   return {
     serializeBrowserOperation: <T>(operation: () => Promise<T>) => enqueue(operation),
-    getSharedBrowserSession: (headless: boolean, onEvent?: (payload: any) => void) => (
-      enqueue(() => getSharedBrowserSessionInternal(headless, onEvent))
+    getSharedBrowserSession: (headless: boolean, onEvent?: (payload: any) => void, privateMode = false) => (
+      enqueue(() => getSharedBrowserSessionInternal(headless === true, privateMode === true, onEvent))
     ),
     ensureBrowserSession: (state: any, onEvent?: (payload: any) => void) => (
       enqueue(() => ensureBrowserSessionInternal(state, onEvent))

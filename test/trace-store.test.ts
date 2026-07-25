@@ -5,6 +5,7 @@ import os from 'node:os';
 import { appendTraceEvent, listTraceRuns, readTraceEvents } from '../helpers/trace-store.ts';
 import { createAgentRunStore } from '../helpers/run-store.ts';
 import { createBaseEventSender } from '../helpers/run-agent.ts';
+import { withPrivateRun } from '../helpers/private-run.ts';
 
 let tmpDir: string;
 
@@ -96,5 +97,20 @@ describe('trace store', () => {
     });
     expect(event.input_tokens).toBe(120);
     expect(event.output_tokens).toBe(30);
+  });
+
+  it('keeps private-run events in memory without writing a trace file', async () => {
+    const runId = 'run_private_trace';
+    const store = createAgentRunStore();
+    const run = store.createRun({ privateMode: true }, 1, runId);
+
+    await withPrivateRun(true, async () => {
+      const send = createBaseEventSender(runId, store, tmpDir);
+      send({ type: 'notification', level: 'info', message: 'secret event' });
+      await run.persistence?.flush();
+    });
+
+    expect(run.events).toHaveLength(1);
+    await expect(fs.access(path.join(tmpDir, 'traces'))).rejects.toThrow();
   });
 });

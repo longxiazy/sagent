@@ -1,3 +1,10 @@
+/**
+ * Windows built-in browser adapter: launch a dedicated Edge process and expose the
+ * small read-only WebView surface used by the Agent through CDP WebSocket commands.
+ * A temporary profile is used for the launched process; privateMode additionally
+ * requests an Edge InPrivate context. close() then performs bounded profile cleanup.
+ */
+
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -8,6 +15,35 @@ type PendingCommand = {
   resolve: (value: any) => void;
   reject: (reason?: any) => void;
 };
+
+export function buildEdgeLaunchArgs({
+  port,
+  profileDir,
+  width = 1440,
+  height = 960,
+  privateMode = false,
+}: {
+  port: number;
+  profileDir: string;
+  width?: number;
+  height?: number;
+  privateMode?: boolean;
+}) {
+  return [
+    '--headless=new',
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${profileDir}`,
+    `--window-size=${width},${height}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-background-networking',
+    '--disable-component-update',
+    '--disable-extensions',
+    '--disable-features=msEdgeFirstRunExperience',
+    ...(privateMode ? ['--inprivate'] : []),
+    'about:blank',
+  ];
+}
 
 export class EdgeCdpWebView {
   // 该适配器刻意保持只读：只实现导航、页面求值和截图，不提供 CDP 输入事件。
@@ -21,7 +57,7 @@ export class EdgeCdpWebView {
   private profileDir: string | null = null;
   private ready: Promise<void>;
 
-  constructor(private options: { width?: number; height?: number } = {}) {
+  constructor(private options: { width?: number; height?: number; privateMode?: boolean } = {}) {
     this.ready = this.start();
   }
 
@@ -48,19 +84,15 @@ export class EdgeCdpWebView {
     if (this.closed) throw new Error('Invalid state: WebView is closed');
 
     this.profileDir = mkdtempSync(path.join(os.tmpdir(), 'sagent-edge-'));
-    this.child = spawn(edgePath, [
-      '--headless=new',
-      `--remote-debugging-port=${port}`,
-      `--user-data-dir=${this.profileDir}`,
-      `--window-size=${this.options.width || 1440},${this.options.height || 960}`,
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--disable-background-networking',
-      '--disable-component-update',
-      '--disable-extensions',
-      '--disable-features=msEdgeFirstRunExperience',
-      'about:blank',
-    ], {
+    // Each adapter owns its profile directory; close() validates the temp prefix
+    // before recursively deleting it, so a malformed path can never widen cleanup.
+    this.child = spawn(edgePath, buildEdgeLaunchArgs({
+      port,
+      profileDir: this.profileDir,
+      width: this.options.width || 1440,
+      height: this.options.height || 960,
+      privateMode: this.options.privateMode,
+    }), {
       stdio: 'ignore',
       windowsHide: true,
     });
@@ -198,6 +230,8 @@ export class EdgeCdpWebView {
     try { this.socket?.close(); } catch {}
     try { this.child?.kill(); } catch {}
     if (this.profileDir) {
+      // Edge may keep files briefly after Browser.close; retry bounded cleanup only
+      // inside the OS temp root and only for our generated sagent-edge-* directory.
       const tempRoot = path.resolve(os.tmpdir());
       const resolvedProfile = path.resolve(this.profileDir);
       if (resolvedProfile.startsWith(`${tempRoot}${path.sep}`) && path.basename(resolvedProfile).startsWith('sagent-edge-')) {

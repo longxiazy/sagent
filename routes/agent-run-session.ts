@@ -1,3 +1,12 @@
+/**
+ * One Agent run's SSE boundary.
+ *
+ * It owns heartbeat/connection lifecycle, enriches events with attempt and trace fields,
+ * tracks steps/models for terminal metadata, and fans each event into the in-memory run
+ * store plus the live response. Normal runs also persist app/trace logs; private runs keep
+ * the same live UI event channel but skip those persistence paths.
+ */
+
 import { safeJson, cleanText, displayWidth, padEndW } from '../agent/core/utils.ts';
 import { formatLogTime, buildAgentMetrics, buildSseWriter, logAgentEvent } from '../helpers/agent-logging.ts';
 import { createBaseEventSender } from '../helpers/run-agent.ts';
@@ -25,6 +34,7 @@ export function createAgentRunSession({
   res,
   model,
   agentHeadless,
+  agentPrivateMode,
   normalizedTask,
   agentModels,
   strategy,
@@ -40,6 +50,7 @@ export function createAgentRunSession({
   res: Response;
   model: string;
   agentHeadless: boolean;
+  agentPrivateMode: boolean;
   normalizedTask: string;
   agentModels: string[];
   strategy: string;
@@ -73,17 +84,25 @@ export function createAgentRunSession({
     if (sseClosed) return;
     sseClosed = true;
     clearInterval(heartbeat);
-    log.debug(`[${formatLogTime()}] POST /api/agent client_disconnected model=${model} run_id=${runId}`);
+    if (!agentPrivateMode) {
+      log.debug(`[${formatLogTime()}] POST /api/agent client_disconnected model=${model} run_id=${runId}`);
+    }
   });
 
-  log.info(
-    `[${formatLogTime()}] POST /api/agent model=${model} headless=${agentHeadless} task=${safeJson(normalizedTask)} ` +
-      `run_id=${runId}`
-  );
+  if (!agentPrivateMode) {
+    log.info(
+      `[${formatLogTime()}] POST /api/agent model=${model} headless=${agentHeadless} task=${safeJson(normalizedTask)} ` +
+        `run_id=${runId}`
+    );
+  }
 
   const rawSendEvent = buildSseWriter(res);
-  const baseSendEvent = createBaseEventSender(runId, agentRunStore, memoryDir);
+  const baseSendEvent = createBaseEventSender(runId, agentRunStore, memoryDir, {
+    persistTrace: !agentPrivateMode,
+  });
   const sendEvent = (payload: AgentEvent) => {
+    // Tracking happens before storage/streaming so terminal metrics and model attribution
+    // reflect exactly the same sequenced events seen by reconnect clients.
     const attemptPayload = { ...payload, attempt } as AgentEvent;
     if (attemptPayload.type === 'step') {
       observedStepCount = Math.max(observedStepCount, attemptPayload.step || 0);
@@ -100,7 +119,7 @@ export function createAgentRunSession({
     if (attemptPayload.type === 'model_plan' && attemptPayload.model && ['winner', 'success', 'thinking'].includes(attemptPayload.stage)) {
       modelsUsed.add(attemptPayload.model);
     }
-    logAgentEvent(attemptPayload);
+    logAgentEvent(attemptPayload, { persist: !agentPrivateMode });
     const event = baseSendEvent(attemptPayload);
     if (!sseClosed && !res.writableEnded) {
       try { rawSendEvent(event); } catch { sseClosed = true; }
@@ -120,11 +139,14 @@ export function createAgentRunSession({
     model,
     agentModels,
     strategy,
+    privateMode: agentPrivateMode,
     task: normalizedTask,
     sessionId: sessionId || undefined,
     projectId,
   });
-  log.debug(`[SSE] stream started, writableEnded=${res.writableEnded} writableFinished=${res.writableFinished}`);
+  if (!agentPrivateMode) {
+    log.debug(`[SSE] stream started, writableEnded=${res.writableEnded} writableFinished=${res.writableFinished}`);
+  }
 
   function getTrackingState(): AgentRunTrackingState {
     return {
@@ -137,6 +159,8 @@ export function createAgentRunSession({
   }
 
   function close({ finalAnswer, agentError, approvalStore }: { finalAnswer: string | null; agentError: Error | null; approvalStore: ApprovalStore }) {
+    // close() only owns the HTTP/SSE side; checkpoint/run-store cleanup remains in
+    // cleanupAgentRun() so success and error paths share one persistence boundary.
     const status = agentError
       ? agentError.message === 'Agent 已取消'
         ? 'cancelled'
@@ -174,7 +198,7 @@ export function createAgentRunSession({
       ...innerLines.map(line => `  ║${padEndW(line, W)}║`),
       `  ╚${bRow.slice(2)}╝`,
     ].join('\n');
-    log.info(`\n${box}`);
+    if (!agentPrivateMode) log.info(`\n${box}`);
     clearInterval(heartbeat);
     approvalStore.rejectAll();
     if (!sseClosed && !res.writableEnded) {

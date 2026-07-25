@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getLogPolicy, pruneLogTreeSync, rotateLogFileSync } from './log-policy.ts';
 import { redactSensitiveData, redactText } from './redact.ts';
+import { isPrivateRun } from './private-run.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = join(__dirname, '..', 'data', 'logs');
@@ -37,6 +38,9 @@ function fmt(level, args) {
 }
 
 function writeToFile(level, args) {
+  // 隐私任务仍允许输出仅存于当前进程的控制台诊断，
+  // 但绝不能把本次运行内容追加到持久化 app 日志。
+  if (isPrivateRun()) return;
   const ts = new Date().toISOString();
   const line = args.map(a => {
     if (typeof a === 'string') return redactText(a);

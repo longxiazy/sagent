@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -10,6 +10,7 @@ import {
   resetWebViewFactoryForTests,
   setWebViewFactoryForTests,
 } from '../agent/tools/browser/webview-session.ts';
+import { buildEdgeLaunchArgs } from '../agent/tools/browser/edge-cdp-webview.ts';
 import { captureBrowserObservation, summarizeBrowserObservation } from '../agent/tools/browser/observe.ts';
 import { executeBrowserAction } from '../agent/tools/browser/execute.ts';
 import { createSharedBrowserSessionManager } from '../agent/desktop/browser-session-manager.ts';
@@ -124,6 +125,63 @@ describe('Bun.WebView browser session adapter', () => {
     expect(created.closed).toBe(true);
   });
 
+  it('uses a disposable data store for private browser sessions and removes it on close', async () => {
+    const memoryDir = await mkdtemp(path.join(os.tmpdir(), 'sagent-private-browser-test-'));
+    let created;
+    setWebViewFactoryForTests(options => {
+      created = new FakeWebView(options);
+      return created;
+    });
+    initWebViewDataStore(memoryDir);
+
+    try {
+      const session = createBrowserSession({ privateMode: true });
+      const profileDir = created.options.dataStore.directory;
+
+      expect(session.privateMode).toBe(true);
+      expect(created.options.privateMode).toBe(true);
+      expect(profileDir).toMatch(/sagent-private-browser-/);
+      await expect(access(profileDir)).resolves.toBeUndefined();
+
+      await closeBrowserSession(session);
+      await expect(access(profileDir)).rejects.toThrow();
+    } finally {
+      await rm(memoryDir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps normal and private sessions separate and closes private sessions after a run', async () => {
+    const created: FakeWebView[] = [];
+    setWebViewFactoryForTests(options => {
+      const view = new FakeWebView(options);
+      created.push(view);
+      return view;
+    });
+    const manager = createSharedBrowserSessionManager();
+    const normalState: any = { headless: true, privateMode: false, browserSession: null };
+    const privateState: any = { headless: true, privateMode: true, browserSession: null };
+
+    await manager.ensureBrowserSession(normalState);
+    await manager.ensureBrowserSession(privateState);
+
+    expect(created).toHaveLength(2);
+    expect(created[0].closed).toBe(true);
+    expect(privateState.browserSession.privateMode).toBe(true);
+
+    await manager.cleanupBrowserSession(privateState);
+    expect(created[1].closed).toBe(true);
+    expect(privateState.browserSession).toBeNull();
+  });
+
+  it('adds Edge InPrivate only when private mode is enabled', () => {
+    const base = { port: 1234, profileDir: '/tmp/sagent-edge-test' };
+    const normalArgs = buildEdgeLaunchArgs(base);
+    const privateArgs = buildEdgeLaunchArgs({ ...base, privateMode: true });
+
+    expect(normalArgs).not.toContain('--inprivate');
+    expect(privateArgs).toContain('--inprivate');
+  });
+
   it('stores a browser preview and publishes a local screenshot URL', async () => {
     const memoryDir = await mkdtemp(path.join(os.tmpdir(), 'sagent-browser-preview-'));
     initWebViewDataStore(memoryDir);
@@ -140,6 +198,22 @@ describe('Bun.WebView browser session adapter', () => {
       expect(preview?.screenshotUrl).toMatch(/^\/screenshots\/run_preview\/browser-preview-\d+\.jpg$/);
       const relativePath = preview!.screenshotUrl.replace('/screenshots/', '');
       await expect(readFile(path.join(memoryDir, 'screenshots', relativePath), 'utf8')).resolves.toBe('fake-jpeg');
+    } finally {
+      await rm(memoryDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not call screenshot or create files in private mode', async () => {
+    const memoryDir = await mkdtemp(path.join(os.tmpdir(), 'sagent-browser-preview-private-'));
+    initWebViewDataStore(memoryDir);
+    const view = new FakeWebView();
+    view.url = 'https://example.com/private';
+
+    try {
+      await expect(captureBrowserPreview(view, { runId: 'run_private_preview', privateMode: true }))
+        .resolves.toBeNull();
+      expect(view.calls.some(call => call[0] === 'screenshot')).toBe(false);
+      await expect(access(path.join(memoryDir, 'screenshots', 'run_private_preview'))).rejects.toThrow();
     } finally {
       await rm(memoryDir, { recursive: true, force: true });
     }

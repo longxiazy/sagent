@@ -1,3 +1,9 @@
+/**
+ * Agent run control routes: cancel, active-run discovery, and SSE reconnect.
+ * Active-run reconnect registers a live writer before replaying persisted/in-memory
+ * history, then drains buffered live events so replay and new events cannot interleave.
+ */
+
 import { Router } from 'express';
 import type { AgentRouterContext } from './agent-types.ts';
 import { removeCheckpoint, removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
@@ -46,13 +52,14 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
     if (typeof runId !== 'string' || !runId) {
       return res.status(400).json({ error: tReq(req, 'approval.runIdEmpty') });
     }
-    log.warn(`[Cancel] 用户手动停止任务 runId=${runId}`);
     const run = agentRunStore.getRun(runId);
+    const privateMode = run?.meta?.privateMode === true;
+    if (run && !privateMode) log.warn(`[Cancel] 用户手动停止任务 runId=${runId}`);
     agentRunStore.cancelRun(runId);
-    log.warn(`[Cancel] cancelRun 完成 runId=${runId}`);
+    if (run && !privateMode) log.warn(`[Cancel] cancelRun 完成 runId=${runId}`);
     approvalStore.rejectAll();
-    log.warn(`[Cancel] rejectAll 完成 runId=${runId}`);
-    // 立即清理 checkpoint，防止重启后恢复已取消的任务
+    if (run && !privateMode) log.warn(`[Cancel] rejectAll 完成 runId=${runId}`);
+    // 立即清理 Step checkpoint 和 Session 快照，防止取消任务被恢复或回滚。
     try {
       const removeCancelledCheckpoints = () => Promise.all([
         removeCheckpoint(run?.meta?.dataDir || checkpointDir, runId),
@@ -60,9 +67,9 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
       ]);
       if (run?.persistence) await run.persistence.enqueue(removeCancelledCheckpoints);
       else await removeCancelledCheckpoints();
-      log.warn(`[Cancel] checkpoint 清理完成 runId=${runId}`);
+      if (run && !privateMode) log.warn(`[Cancel] checkpoint 清理完成 runId=${runId}`);
     } catch (err: any) {
-      log.warn(`[Cancel] checkpoint 清理失败 runId=${runId}: ${err.message}`);
+      if (run && !privateMode) log.warn(`[Cancel] checkpoint 清理失败 runId=${runId}: ${err.message}`);
     }
     return res.json({ ok: true });
   });
@@ -91,6 +98,8 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
     const cursor = parseCursor(req);
     const run = agentRunStore.getRun(runId);
     if (!run) {
+      // 内存 TTL 已过时仍可从普通 run 的持久化 trace 回放；隐私 run 没有 trace，
+      // 且结束时立即删除内存记录，因此会自然返回 404。
       const pid = typeof req.query.projectId === 'string' ? req.query.projectId : null;
       const traceDir = resolveRunPaths(projectStore, pid, memoryDir).dataDir;
       const traceEvents = await readTraceEvents(traceDir, runId);
@@ -130,11 +139,14 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
       sessionId: run.meta?.sessionId,
       projectId: run.meta?.projectId ?? null,
       strategy: run.meta?.strategy,
+      privateMode: run.meta?.privateMode === true,
       attempt: run.meta?.attempt,
     })}\n\n`);
 
     let writer = null;
     if (ACTIVE_RUN_STATUSES.has(run.status)) {
+      // 先挂 live writer 再读取历史；回放期间到达的新事件暂存到 liveBuffer，
+      // 最后按 seq 接在 replayUpperSeq 之后发送，避免“读取历史”的时间窗丢事件。
       writer = (payload: AgentEvent) => {
         if (Number(payload.seq) <= cursor) return;
         if (replaying) liveBuffer.push(payload);

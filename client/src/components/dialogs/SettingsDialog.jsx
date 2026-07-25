@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Palette, SlidersHorizontal, Brain, KeyRound, Minus, Plus, Plug, ChevronDown, ChevronRight, Trash2, Boxes } from 'lucide-react';
-import { fetchConfig, saveConfig, saveTools, resetConfig, applyConfigProfile, saveMcpServer, deleteMcpServer, testMcpServer } from '../../api/config.js';
+import { fetchConfig, saveConfig, saveExecution, saveTools, resetConfig, applyConfigProfile, saveMcpServer, deleteMcpServer, testMcpServer } from '../../api/config.js';
 import { useTheme } from '../../theme/ThemeProvider.jsx';
 import { useI18n, useT } from '../../i18n/I18nProvider.jsx';
 import { DialogShell } from './DialogShell.jsx';
 
-// Agent 行为参数（可写，热生效）。单位与 .env 一致，换算放后端消费点。
+// Agent 行为参数（可写，下一次任务生效）。单位与后端 schema 一致，换算放消费点。
 // label 改为 i18n key，渲染时经 t() 取文案。
 const BASIC_AGENT_FIELDS = [
   { key: 'maxSteps', labelKey: 'settings.maxSteps' },
@@ -40,6 +40,11 @@ const FONT_SIZE_OPTIONS = [
 
 const PROFILE_OPTIONS = ['fast', 'balanced', 'deep', 'safe'];
 
+const DEFAULT_EXECUTION = {
+  sandboxedWorkers: true,
+  workerSandbox: true,
+};
+
 const DEFAULT_MCP_SERVERS = {
   chrome: {
     enabled: false,
@@ -66,7 +71,7 @@ const GROUPS = [
 
 // 设置面板：左导航分组 + 右内容。
 // 外观（主题/语言，前台即时生效）、Agent 参数（保存后下次任务生效）、
-// 记忆（记忆开关为前端偏好即时生效 + 记忆最大条数后端参数）、API Key 只读展示。
+// Worker 部署开关（保存后需重启）、记忆前端偏好和 API Key 只读展示。
 export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activeProjectId = null, projects = [] }) {
   const t = useT();
   const { theme, setTheme, fontSize, setFontSize } = useTheme();
@@ -76,6 +81,9 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
   const [tools, setTools] = useState({ vision: {}, distill: {} });
   const [toolsScope, setToolsScope] = useState(activeProjectId || '');
   const [sources, setSources] = useState({});
+  const [execution, setExecution] = useState(DEFAULT_EXECUTION);
+  const [executionSources, setExecutionSources] = useState({});
+  const [executionDirty, setExecutionDirty] = useState(false);
   const [schema, setSchema] = useState({});
   const [profile, setProfile] = useState('custom');
   const [profiles, setProfiles] = useState({});
@@ -88,11 +96,14 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [restartRequired, setRestartRequired] = useState(false);
 
   const applyConfigData = data => {
     if (data.agent) setAgent(data.agent);
     if (data.tools) setTools({ vision: data.tools.vision || {}, distill: data.tools.distill || {} });
     if (data.sources) setSources(data.sources);
+    if (data.execution) setExecution({ ...DEFAULT_EXECUTION, ...data.execution });
+    if (data.executionSources) setExecutionSources(data.executionSources);
     if (data.schema) setSchema(data.schema);
     if (data.profile) setProfile(data.profile);
     if (data.profiles) setProfiles(data.profiles);
@@ -116,10 +127,16 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
       .catch(e => { if (alive) setError(e.message); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, []);
+  }, [activeProjectId]);
 
   const setField = (key, value) => {
     setAgent(prev => ({ ...prev, [key]: value }));
+    setSaved(false);
+  };
+
+  const setExecutionField = (key, value) => {
+    setExecution(current => ({ ...current, [key]: value }));
+    setExecutionDirty(true);
     setSaved(false);
   };
 
@@ -178,9 +195,21 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
   const handleSave = async () => {
     setSaving(true);
     setError('');
+    const shouldSaveExecution = executionDirty;
     try {
-      const data = await saveConfig(agent);
+      // 先保存热生效的 Agent 参数，再按需保存需要重启的 Worker 部署选项。
+      const agentData = await saveConfig(agent);
+      let data = agentData;
+      if (shouldSaveExecution) {
+        const executionPatch = { sandboxedWorkers: execution.sandboxedWorkers };
+        // 环境变量覆盖的字段不可由 UI 回写，避免覆盖用户在配置文件里保存的值。
+        if (executionSources.workerSandbox !== 'env') executionPatch.workerSandbox = execution.workerSandbox;
+        const executionData = await saveExecution(executionPatch);
+        data = { ...agentData, ...executionData };
+      }
       applyConfigData(data);
+      setExecutionDirty(false);
+      if (shouldSaveExecution) setRestartRequired(true);
       setSaved(true);
     } catch (e) {
       setError(e.message);
@@ -195,6 +224,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
     try {
       const data = await resetConfig();
       applyConfigData(data);
+      setExecutionDirty(false);
       setSaved(true);
     } catch (e) {
       setError(e.message);
@@ -209,6 +239,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
     try {
       const data = await applyConfigProfile(nextProfile);
       applyConfigData(data);
+      setExecutionDirty(false);
       setSaved(true);
     } catch (e) {
       setError(e.message);
@@ -320,6 +351,8 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
     if (!agent) return <p className="settings-error">{error || t('common.loadFailed')}</p>;
     return null;
   };
+
+  const workerSandboxDisabled = !execution.sandboxedWorkers || executionSources.workerSandbox === 'env';
 
   const renderMcpServer = name => {
     const fallback = DEFAULT_MCP_SERVERS[name] || { enabled: false, transport: { type: 'stdio', command: '', args: [], cwd: '.' } };
@@ -521,17 +554,51 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
                 {t('settings.advanced')}
               </button>
               {advancedOpen && (
-                <div className="settings-grid settings-advanced-grid">
-                  {ADVANCED_AGENT_FIELDS.map(f => numberField(f.key, f.labelKey))}
-                  <label className="settings-field settings-field-switch">
-                    <span>{t('settings.observeDesktop')}</span>
-                    <input
-                      type="checkbox"
-                      checked={!!agent.observeDesktop}
-                      onChange={e => setField('observeDesktop', e.target.checked)}
-                    />
-                  </label>
-                </div>
+                <>
+                  <div className="settings-grid settings-advanced-grid">
+                    {ADVANCED_AGENT_FIELDS.map(f => numberField(f.key, f.labelKey))}
+                    <label className="settings-field settings-field-switch">
+                      <span className="settings-field-label">
+                        <span>{t('settings.observeDesktop')}</span>
+                        {sources.observeDesktop && <small>{t(`settings.source.${sources.observeDesktop}`)}</small>}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={!!agent.observeDesktop}
+                        onChange={e => setField('observeDesktop', e.target.checked)}
+                      />
+                    </label>
+                    <label className="settings-field settings-field-switch">
+                      <span className="settings-field-label">
+                        <span>{t('settings.sandboxedWorkers')}</span>
+                        {executionSources.sandboxedWorkers && <small>{t(`settings.source.${executionSources.sandboxedWorkers}`)}</small>}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={!!execution.sandboxedWorkers}
+                        onChange={e => setExecutionField('sandboxedWorkers', e.target.checked)}
+                        disabled={saving}
+                      />
+                    </label>
+                    <label className="settings-field settings-field-switch">
+                      <span className="settings-field-label">
+                        <span>{t('settings.workerSandbox')}</span>
+                        {executionSources.workerSandbox && <small>{t(`settings.source.${executionSources.workerSandbox}`)}</small>}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={!!execution.workerSandbox}
+                        onChange={e => setExecutionField('workerSandbox', e.target.checked)}
+                        disabled={saving || workerSandboxDisabled}
+                        title={executionSources.workerSandbox === 'env' ? t('settings.workerSandboxEnvOverride') : undefined}
+                      />
+                    </label>
+                  </div>
+                  <p className="dialog-desc">{t('settings.executionRestartDesc')}</p>
+                  {executionSources.workerSandbox === 'env' && (
+                    <p className="dialog-desc">{t('settings.workerSandboxEnvOverride')}</p>
+                  )}
+                </>
               )}
             </>
           )}
@@ -648,7 +715,8 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
     );
   };
 
-  // 保存/重置只对后端 agent 配置生效，外观/记忆开关是前端偏好（即时生效，无需保存）。
+  // Agent 页保存热配置及已修改的 execution，Models 页保存工具覆盖；
+  // 外观/记忆是即时前端偏好，Memory 页沿用现有共享 footer。
   const showSaveBar = activeGroup === 'agent' || activeGroup === 'memory' || activeGroup === 'models';
   const activeGroupLabel = t(GROUPS.find(group => group.id === activeGroup)?.labelKey || 'settings.title');
 
@@ -687,6 +755,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
             {renderGroup()}
             {showSaveBar && error && <p className="settings-error">{error}</p>}
             {showSaveBar && saved && !error && <p className="settings-ok">{t('common.saved')}</p>}
+            {activeGroup === 'agent' && restartRequired && !error && <p className="settings-ok">{t('settings.executionRestartSaved')}</p>}
           </div>
         </div>
 

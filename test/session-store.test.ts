@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createProjectStore, projectDataDir } from '../agent/core/project-store.js';
 import { createSessionStore } from '../agent/core/session-store.js';
 import { appendTraceEvent } from '../helpers/trace-store.js';
+import { withPrivateRun } from '../helpers/private-run.js';
 
 describe('backend session store', () => {
   let tmpDir: string;
@@ -128,6 +129,62 @@ describe('backend session store', () => {
     const reloaded = await store.loadAll();
     const s1 = reloaded.sessions.find(session => session.id === 's1');
     expect(s1?.messages?.[0]?.content).toBe('new');
+  });
+
+  it('does not persist private run sessions or read-only recovery changes', async () => {
+    const runId = 'run_private_session';
+    const store = createSessionStore({ memoryDir: tmpDir, projectStore });
+
+    await store.recordRunStart({
+      projectId: null,
+      sessionId: 'session_private',
+      runId,
+      task: '不应写入的任务',
+      model: 'model-private',
+      models: ['model-private'],
+      startedAt: 1000,
+      privateMode: true,
+    });
+    await store.recordRunTerminal({
+      projectId: null,
+      sessionId: 'session_private',
+      runId,
+      task: '不应写入的任务',
+      answer: '不应写入的答案',
+      error: null,
+      models: ['model-private'],
+      status: 'done',
+      startedAt: 1000,
+      endedAt: 2000,
+      privateMode: true,
+    });
+
+    await expect(fs.access(path.join(tmpDir, 'chat-sessions.json'))).rejects.toThrow();
+
+    // 即使调用方漏传 privateMode，异步隐私上下文也会挡住写入。
+    await withPrivateRun(true, () => store.upsertSession({
+      id: 'session_private_context',
+      messages: [{ role: 'user', content: '上下文隐私' }],
+      updatedAt: 3000,
+    }));
+    await expect(fs.access(path.join(tmpDir, 'chat-sessions.json'))).rejects.toThrow();
+
+    await appendTraceEvent(tmpDir, 'run_readonly_recovery', {
+      type: 'run_meta',
+      task: '只读恢复',
+      model: 'model-read-only',
+      startedAt: 4000,
+      timestamp: 4000,
+    });
+    await appendTraceEvent(tmpDir, 'run_readonly_recovery', {
+      type: 'done',
+      answer: '只读答案',
+      timestamp: 5000,
+      meta: {},
+    });
+    const readOnly = await store.loadAll({ persist: false });
+    expect(readOnly.sessions.some(session => session.messages.some(message => message.content === '只读恢复'))).toBe(true);
+    await expect(fs.access(path.join(tmpDir, 'chat-sessions.json'))).rejects.toThrow();
   });
 
   it('recovers project traces with the correct project ownership', async () => {

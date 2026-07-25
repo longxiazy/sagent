@@ -10,6 +10,8 @@ import { executeAgentRun } from './agent-run-execution.ts';
 import { removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
 import { resolveRunPathsForExecution } from '../agent/core/project-store.ts';
 import { readTraceEvents } from '../helpers/trace-store.ts';
+import { withPrivateRun } from '../helpers/private-run.ts';
+import { removePrivateRunArtifacts } from '../helpers/private-run-artifacts.ts';
 
 export function nextAgentAttempt(existingTraceEvents: any[] = []) {
   const explicitAttempt = existingTraceEvents.reduce((max, event) => {
@@ -34,15 +36,23 @@ export function createAgentRunStartRouter({
   const router = Router();
 
   router.post('/api/agent', async (req, res) => {
-    let session: ReturnType<typeof createAgentRunSession> | null = null;
-    let runId: string | null = null;
-    let runCheckpointDir = checkpointDir;
-    try {
+    // Wrap request parsing, run creation, execution and cleanup in one AsyncLocalStorage scope;
+    // lower-level log/trace/checkpoint/session writers can then enforce privacy independently.
+    return withPrivateRun(req.body?.privateMode === true, async () => {
+      let session: ReturnType<typeof createAgentRunSession> | null = null;
+      let runId: string | null = null;
+      let runCheckpointDir = checkpointDir;
+      try {
       const parsed = parseAgentRunRequest(req.body);
       if ('error' in parsed) {
         return res.status(400).json({ error: tReq(req, parsed.error) });
       }
-      const { task, model, agentModels, strategy, headless, useMemory, conversationHistory, fromCheckpoint, projectId, sessionId } = parsed;
+      const { task, model, agentModels, strategy, headless, privateMode, useMemory, conversationHistory, fromCheckpoint, projectId, sessionId } = parsed;
+      const agentPrivateMode = privateMode === true;
+      if (agentPrivateMode && fromCheckpoint) {
+        // 隐私 run 没有可读取的健康快照；明确拒绝，而不是复用旧 runId 后从头执行。
+        return res.status(400).json({ error: tReq(req, 'checkpoint.notEnabled') });
+      }
       const incompatibleModels = agentModels.filter(modelId => (
         modelConfig.find(item => item.id === modelId)?.agentCompatible === false
       ));
@@ -54,11 +64,12 @@ export function createAgentRunStartRouter({
 
       // 解析本次 run 的落盘目录与文件工具根：命中项目用项目目录，否则回退全局（无项目态）。
       const { projectId: resolvedProjectId, projectRoot, dataDir } = await resolveRunPathsForExecution(projectStore, projectId, memoryDir);
-      runCheckpointDir = dataDir;
+      runCheckpointDir = agentPrivateMode ? null : dataDir;
 
       const { checkpointInitialStep, checkpointInitialHistory } = await resolveCheckpointSeed(runCheckpointDir, fromCheckpoint);
 
-      // 清理上一个 run 的 session snapshots（fromCheckpoint 回滚时保留当前 run 的快照）
+      // 新任务启动前清理该 dataDir 下所有历史 Session 快照；fromCheckpoint 回滚
+      // 需要继续读取当前 run 的快照，因此跳过这次批量清理。
       if (runCheckpointDir && !fromCheckpoint) {
         const { listSessionCheckpointRuns } = await import('../agent/core/checkpoint.ts');
         const runs = await listSessionCheckpointRuns(runCheckpointDir);
@@ -70,7 +81,9 @@ export function createAgentRunStartRouter({
       const startedAt = Date.now();
       // fromCheckpoint 回滚时复用原 runId，保持 trace 连续性
       const existingRunId = fromCheckpoint?.runId;
-      const existingTraceEvents = existingRunId ? await readTraceEvents(dataDir, existingRunId) : [];
+      const existingTraceEvents = !agentPrivateMode && existingRunId
+        ? await readTraceEvents(dataDir, existingRunId)
+        : [];
       const attempt = existingRunId ? nextAgentAttempt(existingTraceEvents) : 1;
       const initialEventSeq = existingTraceEvents.reduce(
         (next, event, index) => Number.isFinite(event?.seq)
@@ -83,6 +96,7 @@ export function createAgentRunStartRouter({
         agentModels,
         task: normalizedTask,
         attempt,
+        privateMode: agentPrivateMode,
         // 项目信息盖到 run 记录上，供 trace/checkpoint 读取端点定位落盘目录
         projectId: resolvedProjectId,
         sessionId,
@@ -94,6 +108,12 @@ export function createAgentRunStartRouter({
       }
       const runRecord = acquired.run;
       runId = runRecord.runId;
+      if (agentPrivateMode) {
+        // retry 可能复用旧 runId；启动前先清掉该 ID 的可定位历史产物，
+        // 正常结束或可捕获异常时 cleanupAgentRun 再兜底一次。
+        await Promise.all([...new Set([dataDir, memoryDir])]
+          .map(dir => removePrivateRunArtifacts(dir, runId!)));
+      }
       let finalAnswer: string | null = null;
       let agentError: any = null;
       session = createAgentRunSession({
@@ -101,6 +121,7 @@ export function createAgentRunStartRouter({
         res,
         model,
         agentHeadless,
+        agentPrivateMode,
         normalizedTask,
         agentModels,
         strategy,
@@ -121,6 +142,7 @@ export function createAgentRunStartRouter({
         models: agentModels,
         startedAt,
         retry: Boolean(fromCheckpoint),
+        privateMode: agentPrivateMode,
       });
       agentRunStore.transitionRun(runId, 'running');
 
@@ -140,6 +162,7 @@ export function createAgentRunStartRouter({
         strategy,
         systemPrompt,
         headless: agentHeadless,
+        privateMode: agentPrivateMode,
         runId,
         runRecord,
         session,
@@ -155,7 +178,7 @@ export function createAgentRunStartRouter({
       const { agentResult, finalAnswer: nextFinalAnswer, agentError: nextAgentError, finalStatus } = result;
       finalAnswer = nextFinalAnswer;
       agentError = nextAgentError;
-      if (memory) {
+      if (memory && !agentPrivateMode) {
         try {
           await runRecord.persistence?.enqueue(async () => {
             const { stepModels } = session!.getTrackingState();
@@ -189,30 +212,32 @@ export function createAgentRunStartRouter({
         startedAt,
         endedAt: Date.now(),
         meta: { step_count: Math.max(tracking.completedStepCount, tracking.observedStepCount) },
+        privateMode: agentPrivateMode,
       });
       session.close({ finalAnswer, agentError, approvalStore });
       await cleanupAgentRun(runCheckpointDir, runId, agentRunStore, { finalStatus });
       return;
-    } catch (err: any) {
-      const message = err?.message || String(err);
-      log.error('Agent start failed:', message);
-      if (session && runId) {
-        session.sendEvent({ type: 'error', runId, error: message });
-        session.close({ finalAnswer: null, agentError: err, approvalStore });
-        const finalStatus = agentRunStore.getRun(runId)?.status === 'cancelling' ? 'cancelled' : 'failed';
-        await cleanupAgentRun(runCheckpointDir, runId, agentRunStore, { finalStatus }).catch(() => {});
-        return;
+      } catch (err: any) {
+        const message = err?.message || String(err);
+        if (req.body?.privateMode !== true) log.error('Agent start failed:', message);
+        if (session && runId) {
+          session.sendEvent({ type: 'error', runId, error: message });
+          session.close({ finalAnswer: null, agentError: err, approvalStore });
+          const finalStatus = agentRunStore.getRun(runId)?.status === 'cancelling' ? 'cancelled' : 'failed';
+          await cleanupAgentRun(runCheckpointDir, runId, agentRunStore, { finalStatus }).catch(() => {});
+          return;
+        }
+        if (runId) {
+          const finalStatus = agentRunStore.getRun(runId)?.status === 'cancelling' ? 'cancelled' : 'failed';
+          await cleanupAgentRun(runCheckpointDir, runId, agentRunStore, { finalStatus }).catch(() => {});
+        }
+        if (!res.headersSent) {
+          const status = Number(err?.status) || 500;
+          return res.status(status).json({ error: message, ...(err?.code ? { code: err.code } : {}) });
+        }
+        try { res.end(); } catch {}
       }
-      if (runId) {
-        const finalStatus = agentRunStore.getRun(runId)?.status === 'cancelling' ? 'cancelled' : 'failed';
-        await cleanupAgentRun(runCheckpointDir, runId, agentRunStore, { finalStatus }).catch(() => {});
-      }
-      if (!res.headersSent) {
-        const status = Number(err?.status) || 500;
-        return res.status(status).json({ error: message, ...(err?.code ? { code: err.code } : {}) });
-      }
-      try { res.end(); } catch {}
-    }
+    });
   });
 
   return router;

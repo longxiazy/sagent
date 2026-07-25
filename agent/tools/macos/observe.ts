@@ -1,3 +1,5 @@
+/** macOS 桌面 observation：优先调用原生 helper，失败时回退 AppleScript。 */
+
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -5,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { getMacOSCapabilityReport } from './permissions.ts';
 import { invokeMacOSHelper, resolveMacOSBackend } from './helper-client.ts';
 import { configStore } from '../../core/config-store.ts';
+import { isPrivateRun } from '../../../helpers/private-run.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCREENSHOT_DIR = path.resolve(__dirname, '../../../data/screenshots');
@@ -28,7 +31,9 @@ function execFileText(file: string, args: string[], signal?: AbortSignal): Promi
   });
 }
 
-async function captureScreenshot(runId, signal?: AbortSignal) {
+async function captureScreenshot(runId, signal?: AbortSignal, privateMode = false) {
+  // 截图包含完整桌面内容；隐私模式下连临时文件都不创建。
+  if (privateMode || isPrivateRun()) return '';
   const dirPath = path.join(SCREENSHOT_DIR, runId || 'default');
   await fs.mkdir(dirPath, { recursive: true });
   const filePath = path.join(dirPath, `screen-${Date.now()}.png`);
@@ -55,7 +60,7 @@ async function captureScreenshot(runId, signal?: AbortSignal) {
   }
 }
 
-async function observeWithShell(runId, signal?: AbortSignal) {
+async function observeWithShell(runId, signal?: AbortSignal, privateMode = false) {
   const frontmostApp = await execFileText('osascript', [
     '-e',
     'tell application "System Events" to name of first application process whose frontmost is true',
@@ -89,31 +94,33 @@ async function observeWithShell(runId, signal?: AbortSignal) {
     frontmostApp,
     frontmostWindowTitle,
     windows,
-    screenshotPath: await captureScreenshot(runId, signal),
+    screenshotPath: await captureScreenshot(runId, signal, privateMode),
   };
 }
 
-async function observeWithHelper(runId, signal?: AbortSignal) {
+async function observeWithHelper(runId, signal?: AbortSignal, privateMode = false) {
   const desktop = await invokeMacOSHelper('observe', { runId }, undefined, { signal });
   return {
     backend: 'helper',
     frontmostApp: desktop.frontmostApp || '',
     frontmostWindowTitle: desktop.frontmostWindowTitle || '',
     windows: Array.isArray(desktop.windows) ? desktop.windows.slice(0, 20) : [],
-    screenshotPath: await captureScreenshot(runId, signal),
+    screenshotPath: await captureScreenshot(runId, signal, privateMode),
   };
 }
 
-export async function observeMacOSDesktop({ runId, signal = undefined }) {
+export async function observeMacOSDesktop({ runId, signal = undefined, privateMode = false }) {
+  // 隐私模式仍采集窗口文本用于决策，但彻底跳过屏幕截图文件。
+  const skipScreenshot = privateMode === true || isPrivateRun();
   const capability = getMacOSCapabilityReport();
   const backend = resolveMacOSBackend();
   const desktop =
     backend.type === 'helper'
-      ? await observeWithHelper(runId, signal).catch(err => {
+      ? await observeWithHelper(runId, signal, skipScreenshot).catch(err => {
           if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : err;
-          return observeWithShell(runId, signal);
+          return observeWithShell(runId, signal, skipScreenshot);
         })
-      : await observeWithShell(runId, signal);
+      : await observeWithShell(runId, signal, skipScreenshot);
 
   return {
     ...desktop,

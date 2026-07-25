@@ -20,10 +20,10 @@ The project is designed for local use: you choose a project workspace, start an 
 
 ## Highlights
 
-- Multi-model chat and Agent mode with race or vote strategies.
+- Multi-model chat and Agent mode with race, vote, or progressive strategies.
 - macOS desktop observation, screenshots, browser automation, and optional Chrome DevTools MCP integration.
 - File, terminal, search, vision, MCP, and browser tools behind an approval-aware runtime.
-- Sandboxed Agent workers when launched with `npm run sandbox`.
+- Configurable short-lived Agent workers, with optional macOS sandboxing.
 - Project-scoped memory, traces, uploads, checkpoints, and run recovery.
 - Mobile-friendly progress view for devices on the same LAN.
 - Smoke tests and trace files for validating Agent behavior after changes.
@@ -44,12 +44,12 @@ cd sagent
 cp .env.example .env
 npm install
 cd client && npm install && cd ..
-npm run sandbox
+npm run dev
 ```
 
 Edit `.env` before starting if you have not added an API key yet. Open http://localhost:5173 when the dev server is ready.
 
-`npm run sandbox` starts the UI/API server normally and runs each Agent task in a short-lived macOS sandboxed worker. Use `npm run dev` only when you intentionally want the non-sandboxed development mode.
+`npm run dev` starts the UI/API development servers. By default, each Agent task runs in a short-lived Worker; on macOS, the Worker Sandbox option additionally applies `sandbox.sb`. The Worker and Sandbox switches live under Settings → Agent → Advanced and take effect after restarting the backend.
 
 After startup, use Settings to choose an Agent profile, edit basic or advanced runtime limits, and manage Chrome or generic MCP connections. These values are stored locally in `data/config.json`; secrets remain in `.env`.
 
@@ -77,7 +77,7 @@ docker run --env-file .env -p 5173:5173 -v "$(pwd)/data-docker:/app/data" sagent
 
 When the Agent needs approval, sagent shows an in-app approval panel and a browser desktop notification. Chromium-based browsers support inline Allow/Reject buttons; Safari and Firefox still show the notification, and clicking it returns focus to sagent.
 
-Dangerous operations such as deleting files, installing packages, or executing terminal commands require explicit approval. The sandbox boundary is controlled by [sandbox.sb](sandbox.sb) when running with `npm run sandbox`.
+Dangerous operations such as deleting files, installing packages, or executing terminal commands require explicit approval. When Worker Sandbox is enabled on macOS, its boundary is controlled by [sandbox.sb](sandbox.sb).
 
 ## Multi-Device View
 
@@ -92,7 +92,7 @@ VITE_HOST=0.0.0.0 npm run sandbox
 Devices on the same LAN can then open `http://<Mac-IP>:5173`. The first protected request prompts for the token. For a separately hosted frontend, list its exact origin in `SAGENT_CORS_ORIGINS`.
 
 - While an Agent run is active, secondary devices show the execution flow and receive the final result when it completes.
-- Chat history is local to each browser/device.
+- Normal chat history is stored by the backend under the configured data directory and is visible to authenticated devices; Private mode conversations are not persisted.
 - Only one Agent run can execute at a time; additional requests receive a 409 response.
 - API, OpenAI-compatible `/v1`, and screenshot routes require authentication whenever `SAGENT_API_TOKEN` is configured. Non-loopback backend listeners refuse to start without one.
 
@@ -100,11 +100,11 @@ Devices on the same LAN can then open `http://<Mac-IP>:5173`. The first protecte
 
 ### Multi-Model Agent
 
-Agent mode can call multiple models for each step. In race mode, the first valid result wins and the remaining requests are cancelled. In vote mode, all selected models run and the result is aggregated. The UI lets you select models, reorder priority, and switch strategies per run.
+Agent mode can call multiple models for each step. In race mode, the first valid result wins and the remaining requests are cancelled. In vote mode, all selected models run and successful decisions are aggregated. Progressive mode starts with the primary model, then lets the remaining models join the race if it is slow or fails. The UI lets you select models, reorder priority, and switch strategies per run.
 
 ### Checkpoint Recovery
 
-Each completed Agent step is written to `data/checkpoints/`. If the backend restarts and recovery is enabled, sagent restores the last run state and continues from the next step. Completed runs clean up their checkpoints automatically.
+Each completed step of a normal Agent run is written under that run's data directory in `checkpoints/`. If the backend restarts and recovery is enabled, sagent restores the last run state and continues from the next step. Completed runs clean up their checkpoints automatically; Private mode creates no checkpoints, so recovery and rollback are unavailable for that run.
 
 ### Cross-Session Memory
 
@@ -112,13 +112,13 @@ sagent stores project experience under the configured data directory. Memory inc
 
 ### Browser And MCP Integrations
 
-The built-in Browser is read-only and is limited to navigation and content extraction. All interactive web operations—including clicking, typing, login, form submission, upload, and download—are delegated to Chrome DevTools MCP through `chrome_list_tools` and `chrome_call_tool`. Generic MCP servers (including `codex mcp-server`) are exposed through `mcp_list_servers`, `mcp_list_tools`, and `mcp_call_tool`. All integrations are optional and documented in [CONFIGURATION.md](CONFIGURATION.md).
+The built-in Browser is read-only and is limited to navigation and content extraction. The “Private mode” toggle in the composer gives the built-in Browser a disposable profile for each task and removes its cookies and LocalStorage during normal task cleanup; it also skips persistence of chat sessions, app/run logs, LLM logs, traces, checkpoints, Worker logs, and sagent-managed screenshots. This isolation does not extend to external Chrome MCP: its browser profile and session are neither isolated nor cleared by Private mode. All interactive web operations—including clicking, typing, login, form submission, upload, and download—are delegated to Chrome DevTools MCP through `chrome_list_tools` and `chrome_call_tool`. Generic MCP servers (including `codex mcp-server`) are exposed through `mcp_list_servers`, `mcp_list_tools`, and `mcp_call_tool`. All integrations are optional and documented in [CONFIGURATION.md](CONFIGURATION.md).
 
 ## Common Commands
 
 ```bash
-npm run sandbox      # Start server and client with sandboxed Agent workers
-npm run dev          # Start server and client without sandboxed workers
+npm run dev          # Start the API server and Vite client; runner mode comes from Settings/config
+npm run prod         # Start the API server (and serve client/dist when it exists)
 npm run build        # Type-check backend and build frontend
 npm run lint         # Run ESLint
 npm test             # Run Vitest tests

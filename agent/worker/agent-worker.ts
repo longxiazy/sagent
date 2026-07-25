@@ -1,3 +1,14 @@
+/**
+ * Child-side Agent Worker entry.
+ *
+ * stdout is reserved for the JSON-line protocol, so console.log/debug are redirected
+ * to stderr. The private AsyncLocalStorage context wraps dynamic imports and the full
+ * Agent execution chain, ensuring module-level log/checkpoint adapters see the flag.
+ */
+
+import { withPrivateRun } from '../../helpers/private-run.ts';
+
+// Capture the original stdout writer before redirecting console output away from the protocol.
 const protocolWrite = process.stdout.write.bind(process.stdout);
 console.log = (...args) => console.error(...args);
 console.debug = (...args) => console.error(...args);
@@ -102,74 +113,85 @@ async function main() {
   const payload = startMessage.payload || {};
   runRecord = { runId: payload.runId, pendingRollback: null };
 
-  const { createClients } = await import('../core/ai-client.ts');
-  const { createProviderRegistry } = await import('../core/providers/registry.ts');
-  const { createDesktopAgentRunner } = await import('../desktop/agent.ts');
-  const { initLlmLogger, flushLlmLogs } = await import('../core/llm-logger.ts');
-  const { configStore } = await import('../core/config-store.ts');
-  const { DEFAULT_VISION_MODEL } = await import('../tools/vision/execute.ts');
-  const { DEFAULT_DISTILL_MODEL } = await import('../tools/browser/distill.ts');
-  const { initWebViewDataStore } = await import('../tools/browser/webview-session.ts');
-  flushLlmLogsBeforeExit = flushLlmLogs;
+  // Keep dynamic imports inside the context too, so any import-time initialization and
+  // async work spawned by those modules inherit the same private-run marker.
+  return withPrivateRun(payload.privateMode === true, async () => {
+    const { createClients } = await import('../core/ai-client.ts');
+    const { createProviderRegistry } = await import('../core/providers/registry.ts');
+    const { createDesktopAgentRunner } = await import('../desktop/agent.ts');
+    const { initLlmLogger, flushLlmLogs } = await import('../core/llm-logger.ts');
+    const { configStore } = await import('../core/config-store.ts');
+    const { DEFAULT_VISION_MODEL } = await import('../tools/vision/execute.ts');
+    const { DEFAULT_DISTILL_MODEL } = await import('../tools/browser/distill.ts');
+    const { initWebViewDataStore } = await import('../tools/browser/webview-session.ts');
+    flushLlmLogsBeforeExit = flushLlmLogs;
 
-  const memoryDir = payload.memoryDir || process.env.MEMORY_DIR || 'data';
-  initWebViewDataStore(memoryDir);
-  await configStore.init(memoryDir);
-  initLlmLogger(memoryDir);
+    const memoryDir = payload.memoryDir || process.env.MEMORY_DIR || 'data';
+    initWebViewDataStore(memoryDir);
+    await configStore.init(memoryDir);
+    initLlmLogger(memoryDir);
 
-  const { openai_client, gemini_client } = createClients();
-  const registry = createProviderRegistry({ openai_client, gemini_client });
-  const modelConfig = Array.isArray(payload.modelConfig) ? payload.modelConfig : [];
-  const cfg = configStore.get();
-  const runDesktopAgent = createDesktopAgentRunner({
-    registry,
-    openai_client,
-    modelConfig,
-    maxSteps: cfg.maxSteps,
-    defaultHeadless: payload.headless === true,
-    observeDesktop: cfg.observeDesktop,
-    modelTimeoutMs: cfg.modelTimeoutSec * 1000,
-    staggerDelayMs: cfg.staggerDelaySec * 1000,
-    batchSize: cfg.batchSize,
-    runStore: null,
-    approvalStore,
-    checkpointDir: payload.checkpointDir || memoryDir,
-    visionModel: payload.visionModel || process.env.VISION_MODEL || DEFAULT_VISION_MODEL,
-    distillModel: payload.distillModel || process.env.DISTILL_MODEL || DEFAULT_DISTILL_MODEL,
+    const { openai_client, gemini_client } = createClients();
+    const registry = createProviderRegistry({ openai_client, gemini_client });
+    const modelConfig = Array.isArray(payload.modelConfig) ? payload.modelConfig : [];
+    const cfg = configStore.get();
+    const runDesktopAgent = createDesktopAgentRunner({
+      registry,
+      openai_client,
+      modelConfig,
+      maxSteps: cfg.maxSteps,
+      defaultHeadless: payload.headless === true,
+      observeDesktop: cfg.observeDesktop,
+      modelTimeoutMs: cfg.modelTimeoutSec * 1000,
+      staggerDelayMs: cfg.staggerDelaySec * 1000,
+      batchSize: cfg.batchSize,
+      runStore: null,
+      approvalStore,
+      checkpointDir: payload.checkpointDir || memoryDir,
+      visionModel: payload.visionModel || process.env.VISION_MODEL || DEFAULT_VISION_MODEL,
+      distillModel: payload.distillModel || process.env.DISTILL_MODEL || DEFAULT_DISTILL_MODEL,
+    });
+
+    const checkpointWriter = {
+      saveCheckpoint(data: any) {
+        // Child and parent both reject private checkpoints; the duplicate guard protects
+        // against future callers bypassing either side of the bridge.
+        if (payload.privateMode === true) return;
+        writeProtocol({ type: 'checkpoint', data });
+      },
+      saveHealthySnapshot(data: any) {
+        if (payload.privateMode === true) return;
+        writeProtocol({ type: 'session_checkpoint_snapshot', data });
+      },
+    };
+
+    const result = await runDesktopAgent({
+      task: payload.task,
+      model: payload.model,
+      models: Array.isArray(payload.models) ? payload.models : [],
+      strategy: payload.strategy || 'race',
+      systemPrompt: payload.systemPrompt || '',
+      headless: payload.headless === true,
+      privateMode: payload.privateMode === true,
+      runId: payload.runId,
+      runRecord,
+      startedAt: payload.startedAt,
+      initialStep: payload.initialStep || 1,
+      initialHistory: Array.isArray(payload.initialHistory) ? payload.initialHistory : [],
+      conversationHistory: Array.isArray(payload.conversationHistory) ? payload.conversationHistory : [],
+      memory: payload.memory !== false,
+      onEvent: (event: any) => writeProtocol({ type: 'event', payload: event }),
+      cancelSignal: cancelAc.signal,
+      projectRoot: payload.projectRoot || null,
+      dataDir: payload.dataDir || null,
+      checkpointWriter,
+    });
+
+    // Flush normal-run LLM logs before the terminal protocol frame so the parent can
+    // safely resolve and start cleanup. In private mode the queue is empty.
+    await flushLlmLogsBeforeExit();
+    await writeProtocolAndWait({ type: 'result', result });
   });
-
-  const checkpointWriter = {
-    saveCheckpoint(data: any) {
-      writeProtocol({ type: 'checkpoint', data });
-    },
-    saveHealthySnapshot(data: any) {
-      writeProtocol({ type: 'session_checkpoint_snapshot', data });
-    },
-  };
-
-  const result = await runDesktopAgent({
-    task: payload.task,
-    model: payload.model,
-    models: Array.isArray(payload.models) ? payload.models : [],
-    strategy: payload.strategy || 'race',
-    systemPrompt: payload.systemPrompt || '',
-    headless: payload.headless === true,
-    runId: payload.runId,
-    runRecord,
-    startedAt: payload.startedAt,
-    initialStep: payload.initialStep || 1,
-    initialHistory: Array.isArray(payload.initialHistory) ? payload.initialHistory : [],
-    conversationHistory: Array.isArray(payload.conversationHistory) ? payload.conversationHistory : [],
-    memory: payload.memory !== false,
-    onEvent: (event: any) => writeProtocol({ type: 'event', payload: event }),
-    cancelSignal: cancelAc.signal,
-    projectRoot: payload.projectRoot || null,
-    dataDir: payload.dataDir || null,
-    checkpointWriter,
-  });
-
-  await flushLlmLogsBeforeExit();
-  await writeProtocolAndWait({ type: 'result', result });
 }
 
 main()
