@@ -1,8 +1,9 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { flushLlmLogs, initLlmLogger, logLlmRequest, logLlmResponse } from '../agent/core/llm-logger.ts';
+import { withPrivateRun } from '../helpers/private-run.ts';
 
 function todayDirName() {
   const d = new Date();
@@ -65,6 +66,22 @@ describe('llm-logger', () => {
       const raw = await readFile(file, 'utf8');
       expect(raw).toContain('"type":"request"');
       expect(raw).not.toContain('"role":"tools"');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not create a persistent LLM log during a private run', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'sagent-llm-logger-private-'));
+    try {
+      initLlmLogger(dir);
+      await withPrivateRun(true, async () => {
+        logLlmRequest('vendor/private-model', [{ role: 'user', content: 'secret' }]);
+        logLlmResponse('vendor/private-model', { usage: { prompt_tokens: 1 }, choices: [] });
+        await flushLlmLogs();
+      });
+
+      await expect(access(path.join(dir, 'llm-logs'))).rejects.toThrow();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

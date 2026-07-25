@@ -56,6 +56,9 @@ export const en = {
 
   // Input box
   'input.agentPlaceholder': 'Describe the task for the Agent…',
+  'input.privateMode': 'Private mode',
+  'input.privateModeOff': 'Enable private mode: this task will not save chat sessions, run logs, LLM logs, or screenshots; the built-in browser uses a temporary profile.',
+  'input.privateModeOn': 'Private mode is on: this task will not save chat sessions, run logs, LLM logs, or screenshots, and built-in browser data is cleared when it ends.',
   'context.label': 'Context estimate',
   'context.actualLabel': 'Actual context',
   'context.summary': 'First {used}/{limit} tok · {percent}%',
@@ -103,6 +106,11 @@ export const en = {
   'settings.maxResultChars': 'Max chars per step result',
   'settings.memoryEnabled': 'Enable memory',
   'settings.memoryDesc': 'Whether the agent uses project knowledge and the code graph to assist tasks (frontend preference, applies immediately).',
+  'settings.sandboxedWorkers': 'Enable isolated Workers',
+  'settings.workerSandbox': 'Enable macOS Sandbox',
+  'settings.executionRestartDesc': 'These are startup settings: restart the backend after saving for them to take effect. Worker Sandbox is unavailable when isolated Workers are disabled.',
+  'settings.workerSandboxEnvOverride': 'The AGENT_WORKER_SANDBOX environment variable is overriding this setting.',
+  'settings.executionRestartSaved': 'Worker startup settings saved; restart the backend for them to take effect.',
   'settings.observeDesktop': 'Observe macOS desktop',
   'settings.autoModelRouting': 'Dynamic model routing',
   'settings.profile': 'Execution profile',

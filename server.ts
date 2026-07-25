@@ -3,16 +3,16 @@
  * Main entry point — Express middleware, routing, agent runner setup, checkpoint resume
  *
  * 启动流程 / Startup:
- *   1. 加载 .env 配置
- *   2. 创建 LLM 客户端（NVIDIA / Gemini）
- *   3. 初始化 Agent 运行器、审批存储、记忆目录
- *   4. 挂载路由：agent、completions
- *   5. 检查断点（checkpoint），自动恢复上次未完成的任务
- *   6. 输出图形化启动信息（表格样式）
+ *   1. 加载 .env，并安装 Origin/CORS/API Auth/JSON 等安全中间件
+ *   2. 创建 Provider Registry，同步加载可用模型；全部供应商失败则终止启动
+ *   3. 初始化日志、WebView data store、结构化配置和项目注册表
+ *   4. 创建 run/approval store，并按启动配置一次性选择 Worker 或直跑 runner
+ *   5. 挂载截图、Agent、Completions、Suggestions 和前端静态资源路由
+ *   6. 开始监听，输出启动信息，再按配置扫描并恢复最后一个 checkpoint
  *
  * 配置 / Configuration:
  *   .env             — API Key、监听地址、认证和本地二进制覆盖
- *   data/config.json — Agent profile、上下文、工具和 MCP server
+ *   data/config.json — Agent profile/参数、工具、MCP server 和 execution 启动配置
  */
 
 import 'dotenv/config';
@@ -49,6 +49,8 @@ import { flushAllPersistenceTasks } from './helpers/persistence-queue.ts';
 import { persistRecoveredAgentRunMemory } from './routes/agent-run-memory-persist.ts';
 import { warnLegacyConfiguration } from './helpers/config-deprecations.ts';
 import { cleanupScreenshots } from './helpers/screenshot-store.ts';
+import { withPrivateRun } from './helpers/private-run.ts';
+import { removePrivateRunArtifacts } from './helpers/private-run-artifacts.ts';
 
 const securityConfig = loadServerSecurityConfig();
 const app = express();
@@ -107,6 +109,8 @@ const directRunDesktopAgent = createDesktopAgentRunner({
   visionModel: VISION_MODEL,
   distillModel: DISTILL_MODEL,
 });
+// runner 类型与 macOS Sandbox 都在启动时固定；UI 保存 execution 后必须重启，
+// 后端才会重新创建 Worker runner 或切回进程内直跑。
 const runDesktopAgent = agentSandboxedWorkers
   ? createSandboxedWorkerAgentRunner({
       memoryDir: MEMORY_DIR,
@@ -169,18 +173,28 @@ function defaultShutdownGraceMs() {
 }
 
 async function resumeFromCheckpoint(cp) {
-  const { runId, task, model, headless, history, step, maxSteps: _maxSteps, startedAt } = cp;
+  const { runId, task, model, headless, privateMode, history, step, maxSteps: _maxSteps, startedAt } = cp;
+  const agentPrivateMode = privateMode === true;
+  return withPrivateRun(agentPrivateMode, async () => {
   // checkpoint 自带项目落盘目录与项目根；旧 checkpoint（无项目）回退全局 MEMORY_DIR / process.cwd()。
   const dataDir = cp.dataDir || MEMORY_DIR;
   const projectRoot = cp.projectRoot || null;
+  if (agentPrivateMode) {
+    // 新版本隐私 run 根本不会创建 checkpoint；这里只兼容旧版本或异常残留，
+    // 恢复前先删除能按 runId 定位的历史产物，后续仍由隐私上下文禁止新写入。
+    await Promise.all([...new Set([dataDir, MEMORY_DIR])]
+      .map(dir => removePrivateRunArtifacts(dir, runId)));
+  }
   log.info(`[Resume] 恢复运行 run_id=${runId} step=${step} task=${task.slice(0, 60)}…`);
 
-  const sendEventWithTrace = createBaseEventSender(runId, agentRunStore, dataDir);
+  const sendEventWithTrace = createBaseEventSender(runId, agentRunStore, dataDir, {
+    persistTrace: !agentPrivateMode,
+  });
 
   const { systemPrompt } = await loadMemoryForPrompt(dataDir);
 
   // 旧 checkpoint 可能没有 trace；仅在 trace 缺失时重建历史，避免恢复时重复写入旧步骤。
-  const existingTraceEvents = await readTraceEvents(dataDir, runId);
+  const existingTraceEvents = agentPrivateMode ? [] : await readTraceEvents(dataDir, runId);
   if (existingTraceEvents.length === 0) {
     sendEventWithTrace({ type: 'status', status: 'starting', runId, message: '准备启动桌面 Agent' });
     for (const h of history) {
@@ -199,6 +213,7 @@ async function resumeFromCheckpoint(cp) {
       strategy: cp.strategy || 'race',
       systemPrompt,
       headless,
+      privateMode: privateMode === true,
       runId,
       runRecord,
       startedAt,
@@ -212,7 +227,7 @@ async function resumeFromCheckpoint(cp) {
       dataDir,
     });
     sendEventWithTrace({ type: 'done', runId, answer: result.answer, steps: result.steps, meta: { elapsed_ms: Date.now() - startedAt, step_count: result.steps.length } });
-    if (cp.memory !== false) {
+    if (cp.memory !== false && !agentPrivateMode) {
       try {
         const runRecord = agentRunStore.getRun(runId);
         const persistMemory = () => persistRecoveredAgentRunMemory({
@@ -234,6 +249,7 @@ async function resumeFromCheckpoint(cp) {
   } finally {
     await cleanupAgentRun(dataDir, runId, agentRunStore);
   }
+  });
 }
 
 /** 跨「全局 + 各项目」目录收集所有未完成 checkpoint，附带各自所在目录，按 startedAt 升序 */
@@ -302,16 +318,27 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
       } else {
         console.log(`[Resume] 发现 ${found.length} 个未完成任务，恢复最后一个: ${cp.runId}`);
         const resumeDataDir = cp.dataDir || MEMORY_DIR;
-        const existingTraceEvents = await readTraceEvents(resumeDataDir, cp.runId);
+        const existingTraceEvents = cp.privateMode === true
+          ? []
+          : await readTraceEvents(resumeDataDir, cp.runId);
         const initialEventSeq = existingTraceEvents.reduce(
           (next: number, event: any, index: number) => Number.isFinite(event?.seq)
             ? Math.max(next, Number(event.seq) + 1)
             : Math.max(next, index + 2),
           1,
         );
-        agentRunStore.createRun({ model: cp.model, task: cp.task, projectId: cp.dataDir ? undefined : null, dataDir: resumeDataDir, projectRoot: cp.projectRoot || null }, cp.startedAt, cp.runId, initialEventSeq);
+        agentRunStore.createRun({
+          model: cp.model,
+          task: cp.task,
+          privateMode: cp.privateMode === true,
+          projectId: cp.dataDir ? undefined : null,
+          dataDir: resumeDataDir,
+          projectRoot: cp.projectRoot || null,
+        }, cp.startedAt, cp.runId, initialEventSeq);
         resumeFromCheckpoint(cp).catch(err => {
-          log.error(`[Resume] 恢复失败 run_id=${cp.runId}:`, err.message);
+          if (cp.privateMode !== true) {
+            log.error(`[Resume] 恢复失败 run_id=${cp.runId}:`, err.message);
+          }
         });
         for (const other of found.slice(0, -1)) {
           removeCheckpoint(other.dir, other.cp.runId).catch(() => {});
@@ -343,8 +370,11 @@ function shutdown(signal: string) {
   shuttingDown = true;
 
   const activeRuns = agentRunStore.getRunningRuns();
-  const activeRunIds = activeRuns.map((run: any) => run.runId);
-  log.warn(`[Shutdown] 收到 ${signal}，关闭 HTTP server，取消 ${activeRuns.length} 个 active run${activeRunIds.length ? `: ${activeRunIds.join(', ')}` : ''}`);
+  // 关闭流程仍取消全部任务，但日志只展开普通 runId，避免泄露隐私任务标识。
+  const visibleActiveRunIds = activeRuns
+    .filter((run: any) => run.meta?.privateMode !== true)
+    .map((run: any) => run.runId);
+  log.warn(`[Shutdown] 收到 ${signal}，关闭 HTTP server，取消 ${activeRuns.length} 个 active run${visibleActiveRunIds.length ? `: ${visibleActiveRunIds.join(', ')}` : ''}`);
 
   httpServer.close(err => {
     if (err) log.warn(`[Shutdown] HTTP server close failed: ${err.message}`);

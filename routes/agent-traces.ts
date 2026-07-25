@@ -10,6 +10,10 @@ export function createAgentTraceRouter({ memoryDir, agentRunStore, projectStore 
   router.get('/api/agent/traces/:runId', async (req, res) => {
     const { runId } = req.params;
     const run = agentRunStore.getRun(runId);
+    if (run?.meta?.privateMode === true) {
+      // 隐私 run 的 trace 只存在内存事件流；不回读同 runId 的旧磁盘文件。
+      return res.status(404).json({ error: tReq(req, 'trace.notFound') });
+    }
     await run?.persistence?.flush();
     // trace 落盘目录优先取 run 记录里的 dataDir；run 已过期则用 ?projectId 解析；都没有回退全局。
     const pid = typeof req.query.projectId === 'string' ? req.query.projectId : null;

@@ -1,3 +1,9 @@
+/**
+ * Execute one Agent runner invocation and translate its outcome into terminal SSE events.
+ * On failure, normal runs attach the latest prior healthy snapshot as a rollback hint;
+ * private runs have no checkpointDir and therefore return no rollback suggestion.
+ */
+
 import { loadLatestHealthySnapshot } from '../agent/core/checkpoint.ts';
 import { log } from '../helpers/logger.ts';
 import type {
@@ -19,7 +25,7 @@ async function buildRollbackSuggestion({
   completedStepCount,
   observedStepCount,
 }: {
-  checkpointDir: string;
+  checkpointDir: string | null | undefined;
   runId: string;
   completedStepCount: number;
   observedStepCount: number;
@@ -55,6 +61,7 @@ export async function executeAgentRun({
   strategy,
   systemPrompt,
   headless,
+  privateMode,
   runId,
   runRecord,
   session,
@@ -74,6 +81,7 @@ export async function executeAgentRun({
   strategy: string;
   systemPrompt: string;
   headless: boolean;
+  privateMode: boolean;
   runId: string;
   runRecord: RunRecord;
   session: AgentRunSession;
@@ -82,7 +90,7 @@ export async function executeAgentRun({
   useMemory: boolean;
   checkpointInitialStep?: number;
   checkpointInitialHistory?: AgentStep[];
-  checkpointDir: string;
+  checkpointDir: string | null | undefined;
   projectRoot?: string;
   dataDir?: string;
 }) {
@@ -92,6 +100,7 @@ export async function executeAgentRun({
   let finalStatus: TerminalRunStatus = 'completed';
 
   try {
+    // Worker and direct runners share this contract, so route-level terminal handling is identical.
     agentResult = await runDesktopAgent({
       task,
       model,
@@ -99,6 +108,7 @@ export async function executeAgentRun({
       strategy,
       systemPrompt,
       headless,
+      privateMode,
       runId,
       runRecord,
       onEvent: session.sendEvent,
@@ -132,8 +142,9 @@ export async function executeAgentRun({
     const err = asError(value);
     agentError = err;
     finalStatus = err.message === 'Agent 已取消' ? 'cancelled' : 'failed';
-    log.error('Desktop agent error:', err.message);
+    if (!privateMode) log.error('Desktop agent error:', err.message);
     const { completedStepCount, observedStepCount } = session.getTrackingState();
+    // Suggest the last completed healthy step before the failing/observed step.
     const rollbackSuggestion = await buildRollbackSuggestion({
       checkpointDir,
       runId,

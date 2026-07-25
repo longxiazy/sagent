@@ -102,4 +102,26 @@ describe('structured configuration store', () => {
       resume: true,
     });
   });
+
+  it('persists Worker execution settings and validates boolean values', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'sagent-config-execution-update-'));
+    await configStore.init(dir);
+
+    await configStore.updateExecution({ sandboxedWorkers: false, workerSandbox: false });
+
+    expect(configStore.execution({})).toMatchObject({
+      sandboxedWorkers: false,
+      workerSandbox: false,
+    });
+    const saved = JSON.parse(await readFile(path.join(dir, 'config.json'), 'utf8'));
+    expect(saved.execution).toMatchObject({ sandboxedWorkers: false, workerSandbox: false });
+
+    await configStore.init(dir);
+    expect(configStore.execution({})).toMatchObject({
+      sandboxedWorkers: false,
+      workerSandbox: false,
+    });
+
+    await expect(configStore.updateExecution({ sandboxedWorkers: 'false' as any })).rejects.toThrow('sandboxedWorkers');
+  });
 });

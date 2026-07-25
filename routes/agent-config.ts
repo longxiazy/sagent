@@ -90,13 +90,17 @@ export function createAgentConfigRouter({ configStore, projectStore }: AgentRout
       profiles: configStore.profiles(),
       profile: configStore.document().profile || 'custom',
       tools: configStore.tools(),
+      // execution 是启动期配置；返回 effective 值与来源，便于 UI 解释环境变量覆盖。
+      execution: configStore.execution(),
+      executionSources: configStore.executionSources(),
       mcpServers: mcp.servers,
       mcpSources: mcp.sources,
     };
   };
 
-  // 当前 Agent 行为参数 + env 默认值（供前端「恢复默认」对照）+ Key 只读状态。
-  // ?projectId=<id> 时返回该项目的 tools override(vision/distill model);否则返回全局 tools。
+  // 当前 Agent 行为参数 + schema 内置默认值（供前端「恢复默认」对照）+ Key 只读状态。
+  // ?projectId=<id> 时只返回项目级 vision/distill override；否则返回全局 tools，
+  // 其中全局段还可能包含 screenshots 配置。
   router.get('/api/config', async (req, res) => {
     const payload: any = { ...configPayload(), keys: describeKeys() };
     const projectId = typeof req.query.projectId === 'string' ? req.query.projectId.trim() : '';
@@ -109,7 +113,7 @@ export function createAgentConfigRouter({ configStore, projectStore }: AgentRout
     res.json(payload);
   });
 
-  // 更新 tools.model(vision/distill)。body: { tools, projectId? };有 projectId 写项目级,否则全局。
+  // 更新 tools。项目级仅接受 vision/distill model；全局由 configStore 归一化并保留 screenshots。
   router.put('/api/config/tools', async (req, res) => {
     try {
       const projectId = typeof req.body?.projectId === 'string' ? req.body.projectId.trim() : '';
@@ -133,7 +137,18 @@ export function createAgentConfigRouter({ configStore, projectStore }: AgentRout
     }
   });
 
-  // 清空前台覆盖，回到内置默认值。
+  // 更新 Worker 启动配置；body: { sandboxedWorkers, workerSandbox }。
+  // 该配置只在后端下一次启动时读取，成功响应仍返回完整配置供前端同步状态。
+  router.put('/api/config/execution', async (req, res) => {
+    try {
+      await configStore.updateExecution(req.body ?? {});
+      res.json(configPayload());
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || tReq(req, 'config.validationFailed') });
+    }
+  });
+
+  // 只清空 Agent 参数覆盖并回到内置默认值；tools/MCP/execution 保持不变。
   router.post('/api/config/reset', async (_req, res) => {
     const agent = await configStore.reset();
     res.json(configPayload(agent));

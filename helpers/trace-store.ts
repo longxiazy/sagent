@@ -1,6 +1,9 @@
+/** Trace JSONL 的读写与按 runId 清理；写入端同时受隐私 AsyncLocalStorage 保护。 */
+
 import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { log } from './logger.ts';
+import { isPrivateRun } from './private-run.ts';
 
 function tracesDir(memoryDir: string) {
   return join(memoryDir, 'traces');
@@ -15,6 +18,8 @@ function validRunId(runId: string) {
 }
 
 export async function appendTraceEvent(memoryDir: string | undefined, runId: string, event: any) {
+  // 作为底层防线：只要调用链已标记为隐私，即使调用方漏传 persistTrace 也不落盘。
+  if (isPrivateRun()) return;
   if (!memoryDir || !validRunId(runId)) return;
 
   const dir = tracesDir(memoryDir);

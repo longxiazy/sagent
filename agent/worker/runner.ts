@@ -1,3 +1,13 @@
+/**
+ * Parent-side Agent Worker bridge.
+ *
+ * The parent sends commands as JSON lines on stdin; the child reserves stdout for
+ * JSON-line protocol messages and uses stderr for diagnostics. Normal runs persist
+ * stderr plus malformed stdout to worker-logs/<runId>.log; private runs keep both
+ * streams process-local. Checkpoint messages are serialized through the run's
+ * persistence queue before the result/error promise is settled.
+ */
+
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -152,7 +162,9 @@ export function createSandboxedWorkerAgentRunner({
       workerFile,
     });
 
-    const workerLog = createWorkerLogStream(dataDir, runId);
+    // stdout 是父子 JSON 行协议，stderr 是诊断输出；只有普通 run 才把 stderr
+    // 和无法解析的 stdout 行写入持久化 Worker 日志。
+    const workerLog = opts.privateMode === true ? null : createWorkerLogStream(dataDir, runId);
     const child = spawn(command, args, {
       cwd: REPO_ROOT,
       env: {
@@ -173,14 +185,18 @@ export function createSandboxedWorkerAgentRunner({
     let killTimer: NodeJS.Timeout | null = null;
 
     const persist = (task: () => Promise<any>) => {
+      // 父进程是 checkpoint 的最终落盘方；统一排队可保持 step 与 session 快照顺序。
       persistence.enqueue(task).catch(err => {
-        log.warn(`[Worker] persistence failed runId=${runId}: ${err?.message || err}`);
+        if (opts.privateMode !== true) {
+          log.warn(`[Worker] persistence failed runId=${runId}: ${err?.message || err}`);
+        }
       });
     };
 
     const finish = async (fn: () => void) => {
       if (settled) return;
       settled = true;
+      // 先等待所有已接收的 checkpoint 写完，再向路由暴露 result/error。
       await persistence.flush();
       fn();
     };
@@ -196,12 +212,12 @@ export function createSandboxedWorkerAgentRunner({
         return;
       }
       if (message.type === 'checkpoint') {
-        if (cancelRequested) return;
+        if (cancelRequested || opts.privateMode === true) return;
         persist(() => saveCheckpoint(dataDir, message.data));
         return;
       }
       if (message.type === 'session_checkpoint_snapshot') {
-        if (cancelRequested) return;
+        if (cancelRequested || opts.privateMode === true) return;
         persist(() => saveHealthySnapshot({ ...message.data, dir: dataDir }));
         return;
       }
@@ -221,7 +237,9 @@ export function createSandboxedWorkerAgentRunner({
             writeWorkerMessage(child, { type: 'approval_response', approvalId, decision });
           });
         } catch (err: any) {
-          log.warn(`[Worker] approval bridge failed runId=${runId}: ${err?.message || err}`);
+          if (opts.privateMode !== true) {
+            log.warn(`[Worker] approval bridge failed runId=${runId}: ${err?.message || err}`);
+          }
           writeWorkerMessage(child, { type: 'approval_response', approvalId: message.approvalId, decision: 'reject' });
         }
         return;
@@ -236,6 +254,7 @@ export function createSandboxedWorkerAgentRunner({
     };
 
     child.stdout.on('data', (chunk: Buffer) => {
+      // 协议按换行切帧；非 JSON 行不参与控制流，普通模式下仅作为诊断保存。
       stdoutBuffer += chunk.toString();
       let idx: number;
       while ((idx = stdoutBuffer.indexOf('\n')) !== -1) {
@@ -267,6 +286,7 @@ export function createSandboxedWorkerAgentRunner({
     const abortHandler = () => {
       if (cancelRequested) return;
       cancelRequested = true;
+      // 先给 Worker 协议级取消机会；超时后再依次升级为 SIGTERM / SIGKILL。
       writeWorkerMessage(child, { type: 'cancel' });
       const { terminateAfterMs, killAfterMs } = getWorkerCancelDelays();
       terminateTimer = setTimeout(() => {
@@ -307,7 +327,9 @@ export function createSandboxedWorkerAgentRunner({
       }
     });
 
-    log.info(`[Worker] spawn runId=${runId} sandbox=${sandbox} projectRoot=${projectRoot}`);
+    if (opts.privateMode !== true) {
+      log.info(`[Worker] spawn runId=${runId} sandbox=${sandbox} projectRoot=${projectRoot}`);
+    }
     writeWorkerMessage(child, {
       type: 'start',
       payload: {
@@ -317,6 +339,7 @@ export function createSandboxedWorkerAgentRunner({
         strategy: opts.strategy,
         systemPrompt: opts.systemPrompt,
         headless: opts.headless,
+        privateMode: opts.privateMode,
         runId,
         startedAt: opts.startedAt,
         initialStep: opts.initialStep,

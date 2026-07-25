@@ -1,5 +1,5 @@
 // Agent 行为参数配置 + API Key 只读状态 API。
-// GET 拉取当前配置/默认值/Key 状态；POST 保存参数；reset 恢复默认。
+// GET 拉取当前配置/内置默认值/Key 状态；POST 保存 Agent 参数；execution 单独 PUT，reset 只重置 Agent 覆盖。
 import { apiFetch } from './http.js';
 
 export async function fetchConfig(projectId) {
@@ -26,6 +26,18 @@ export async function saveConfig(patch) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// Worker/Sandbox 是后端启动配置，保存后需重启后端才会重新创建运行器。
+export async function saveExecution(execution) {
+  const res = await apiFetch('/api/config/execution', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(execution),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);

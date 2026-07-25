@@ -5825,6 +5825,20 @@ a.model-encyclopedia-field-value:hover {
 .toolbar-chip:hover { border-color: var(--c-primary-light); color: var(--c-primary); }
 .toolbar-chip.active { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-bg); }
 
+.private-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.private-mode-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
+.private-mode-toggle svg { flex: 0 0 auto; }
+.agent-composer--hero .private-mode-toggle {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+}
+
 textarea {
   width: 100%;
   resize: none;

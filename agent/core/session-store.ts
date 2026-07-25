@@ -1,7 +1,16 @@
+/**
+ * Chat session store — 按全局/项目 scope 保存聊天会话与 Agent 运行摘要。
+ *
+ * loadAll() 会读取 trace 恢复缺失会话；每个 dataDir 使用独立串行队列，避免
+ * 多个标签页并发更新互相覆盖。隐私模式仍可读现有文件，但 trace 恢复和
+ * activeSessionId 修正只体现在返回值中；upsert、删除和 run 摘要更新会直接跳过。
+ */
+
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createPersistenceQueue } from '../../helpers/persistence-queue.ts';
 import { listTraceRuns, readTraceEvents } from '../../helpers/trace-store.ts';
+import { isPrivateRun } from '../../helpers/private-run.ts';
 import { projectDataDir, type ProjectStore } from './project-store.ts';
 
 const SESSIONS_FILE = 'chat-sessions.json';
@@ -285,7 +294,12 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
     return { projectId, dataDir: projectDataDir(memoryDir, projectId) };
   };
 
-  async function loadScope(projectId: string | null, dataDir: string, logIndex: Map<string, RunLogEntry>) {
+  async function loadScope(
+    projectId: string | null,
+    dataDir: string,
+    logIndex: Map<string, RunLogEntry>,
+    { persist = true }: { persist?: boolean } = {},
+  ) {
     return queueFor(dataDir).enqueue(async () => {
       const state = await readScopeState(dataDir, projectId);
       const represented = new Set(state.sessions.flatMap(sessionRunIds));
@@ -307,14 +321,17 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
         state.activeSessionId = state.sessions.find(isActiveSession)?.id || null;
         changed = true;
       }
-      if (changed) await writeScopeState(dataDir, state);
+      // 隐私模式仍可读取现有会话供页面显示，但不能因为 trace 恢复或
+      // activeSessionId 修正而反向写入 chat-sessions.json。
+      if (changed && persist) await writeScopeState(dataDir, state);
       return state;
     });
   }
 
-  async function loadAll() {
+  async function loadAll({ persist = !isPrivateRun() }: { persist?: boolean } = {}) {
+    // persist=false 只禁止 loadScope 的恢复/active 修正写回，不影响页面读取现有会话。
     const logIndex = await loadRunLogIndex(memoryDir);
-    const loaded = await Promise.all(scopes().map(scope => loadScope(scope.projectId, scope.dataDir, logIndex)));
+    const loaded = await Promise.all(scopes().map(scope => loadScope(scope.projectId, scope.dataDir, logIndex, { persist })));
     const sessions = loaded.flatMap(state => state.sessions).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     const activeProjectId = projectStore.list().activeProjectId ?? null;
     const activeScopeIndex = scopes().findIndex(scope => scope.projectId === activeProjectId);
@@ -325,8 +342,11 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
   // 单条 upsert：客户端只同步“发生变化的那一条”会话，绝不推整份列表，
   // 因此不存在“列表里缺失即删除”的推断——过期客户端最多回退它见过的某条,
   // 无法删除它从未见过的会话。删除必须走显式 deleteSession。
-  async function upsertSession(rawSession: unknown) {
+  async function upsertSession(rawSession: unknown, { persist = !isPrivateRun() }: { persist?: boolean } = {}) {
     if (!rawSession || typeof rawSession !== 'object') throw new Error('session 必须是对象');
+    // 三层防线：调用方显式 persist=false、当前 AsyncLocalStorage 隐私上下文，
+    // 以及 payload 自带 privateMode，任一命中都只返回只读快照，不进入写队列。
+    if (!persist || isPrivateRun() || (rawSession as any).privateMode === true) return loadAll({ persist: false });
     const requestedProjectId = typeof (rawSession as any).projectId === 'string' && (rawSession as any).projectId
       ? (rawSession as any).projectId
       : null;
@@ -353,8 +373,13 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
 
   // 显式删除：从存量移除会话,并把它的 runId 加进 dismissedTraceRunIds
   // (阻止 trace 恢复复活它)。这是 dismissedTraceRunIds 唯一的写入点。
-  async function deleteSession(projectId: string | null, sessionId: string) {
+  async function deleteSession(
+    projectId: string | null,
+    sessionId: string,
+    { persist = !isPrivateRun() }: { persist?: boolean } = {},
+  ) {
     if (typeof sessionId !== 'string' || !sessionId) throw new Error('sessionId 不能为空');
+    if (!persist || isPrivateRun()) return loadAll({ persist: false });
     const scope = resolveScope(projectId);
     await queueFor(scope.dataDir).enqueue(async () => {
       const state = await readScopeState(scope.dataDir, scope.projectId);
@@ -388,7 +413,7 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
   }
 
   async function recordRunStart({
-    projectId, sessionId, runId, task, model, models, startedAt, retry,
+    projectId, sessionId, runId, task, model, models, startedAt, retry, privateMode,
   }: {
     projectId: string | null;
     sessionId: string | null;
@@ -398,7 +423,10 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
     models: string[];
     startedAt: number;
     retry?: boolean;
+    privateMode?: boolean;
   }) {
+    // 隐私 run 的过程和结果只在当前页面临时展示，不能创建/更新聊天会话。
+    if (privateMode === true || isPrivateRun()) return;
     const id = sessionId || `session_trace_${runId.slice(4)}`;
     await mutateScope(projectId, state => {
       let session = state.sessions.find(item => item.id === id);
@@ -421,7 +449,7 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
   }
 
   async function recordRunTerminal({
-    projectId, sessionId, runId, task, answer, error, models, status, startedAt, endedAt, meta,
+    projectId, sessionId, runId, task, answer, error, models, status, startedAt, endedAt, meta, privateMode,
   }: {
     projectId: string | null;
     sessionId: string | null;
@@ -434,7 +462,10 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
     startedAt: number;
     endedAt: number;
     meta?: Record<string, any>;
+    privateMode?: boolean;
   }) {
+    // 与 recordRunStart 保持相同的双重防线：显式标记或 AsyncLocalStorage 任一命中即跳过。
+    if (privateMode === true || isPrivateRun()) return;
     const id = sessionId || `session_trace_${runId.slice(4)}`;
     await mutateScope(projectId, state => {
       let session = state.sessions.find(item => item.id === id);

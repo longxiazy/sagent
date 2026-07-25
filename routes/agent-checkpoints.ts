@@ -20,6 +20,10 @@ export function createAgentCheckpointRouter({ checkpointDir, agentRunStore, memo
     }
     // 会话快照目录优先取 run 记录里的 dataDir；否则按 ?projectId 解析；都没有回退全局。
     const run = agentRunStore.getRun(runId);
+    if (run?.meta?.privateMode === true) {
+      // 隐私 run 从不创建快照；即使目录里有旧残留，也不能暴露给前端。
+      return res.json({ runId, checkpoints: [] });
+    }
     const pid = typeof req.query.projectId === 'string' ? req.query.projectId : null;
     const dir = run?.meta?.dataDir || resolveRunPaths(projectStore, pid, memoryDir).dataDir;
     try {
@@ -41,6 +45,10 @@ export function createAgentCheckpointRouter({ checkpointDir, agentRunStore, memo
     const activeRun = agentRunStore.getActiveRun();
     if (!activeRun) {
       return res.status(404).json({ error: tReq(req, 'checkpoint.noActiveRun') });
+    }
+    if (activeRun.meta?.privateMode === true) {
+      // 隐私 run 没有可恢复的快照；同时避免把 runId 写入持久化应用日志。
+      return res.status(400).json({ error: tReq(req, 'checkpoint.notEnabled') });
     }
     if (activeRun.rolledBack) {
       return res.status(409).json({ error: tReq(req, 'checkpoint.rollbackInProgress') });

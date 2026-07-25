@@ -9,12 +9,15 @@
  *   Step 级：{dir}/checkpoints/{runId}.json          （单文件，覆盖写入）
  *   Session 级：{dir}/session-checkpoints/{runId}/session-healthy-{step}.json
  *
- * 所有写入使用原子操作（先写 .tmp 再 rename）防崩溃损坏。
+ * 隐私 run 在已建立的异步上下文中跳过 Step checkpoint 和 Session 快照写入。
+ * 普通 run 的写入优先采用“先写 .tmp 再 rename”的原子替换；底层替换失败时
+ * 才回退为直接写目标文件，因此不能把所有路径都描述成严格原子写入。
  */
 
 import { mkdir, writeFile, readFile, unlink, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { log } from '../../helpers/logger.ts';
+import { isPrivateRun } from '../../helpers/private-run.ts';
 import type { ActionResultStatus, AgentRuntimeState, AgentStep, JsonObject, TokenUsage } from './contracts.ts';
 
 export type StepCheckpoint = { runId: string; [key: string]: unknown };
@@ -57,6 +60,8 @@ function tmpPath(dir: string, runId: string) {
 }
 
 export async function saveCheckpoint(dir: string, data: StepCheckpoint): Promise<void> {
+  // 先在这里拦截，避免隐私任务连 checkpoints 目录都创建出来。
+  if (isPrivateRun()) return;
   const cpDir = join(dir, 'checkpoints');
   await mkdir(cpDir, { recursive: true });
   const tmp = tmpPath(dir, data.runId);
@@ -204,6 +209,8 @@ export async function saveHealthySnapshot({
   resultError?: string | null;
   usage?: Partial<TokenUsage> | JsonObject;
 }): Promise<void> {
+  // 与 Step checkpoint 共用同一条隐私防线；回滚所需的快照也不能落盘。
+  if (isPrivateRun()) return;
   const cpDir = sessionDir(dir, runId);
   await mkdir(cpDir, { recursive: true });
 
@@ -300,7 +307,7 @@ export async function listSessionCheckpoints(dir: string, runId: string) {
 
 export { HEALTH_CHECKPOINT_INTERVAL, KEEP_HEALTHY, KEEP_FAILED };
 
-// ─── Session 快照清理（运行结束后调用）────────────────────────
+// ─── Session 快照清理（启动前、取消或运行结束时调用）──────────────
 
 export async function removeSessionCheckpoints(dir: string, runId: string) {
   const cpDir = sessionDir(dir, runId);

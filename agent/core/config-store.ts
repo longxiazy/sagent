@@ -5,10 +5,12 @@
  * 冻结的 Agent 行为参数收敛到这里。消费点改为每次读 get()，因此前台改完
  * 下次 agent 任务即自动生效，无需重启进程。
  *
- * 数据来源优先级：data/config.json（前台覆盖） > 内置 schema 默认值。
- *   - configDefaults() 返回内置默认值；Agent 运行时参数不再读取环境变量
- *   - config.json 保存 profile、Agent 覆盖、工具和 MCP server
- *   - reset() 清空覆盖，回到内置默认
+ * 两类配置的来源不同：
+ *   - 热生效 Agent 参数：data/config.json 的 agent 覆盖 > schema 内置默认值，
+ *     这些字段不再从环境变量读取。
+ *   - 启动期 execution 参数：同一 config.json 的 execution 段保存 Worker 部署选择；
+ *     resume 与 workerSandbox 仍可被对应环境变量覆盖，sandboxedWorkers 只取存储值。
+ *   - config.json 还保存 profile、tools、MCP server；reset() 只清空 Agent 覆盖。
  *
  * get() 是同步的（compressHistory 等热路径是同步函数）；current 在模块加载时
  * 即初始化为默认值，init() 再叠加 json，故任何时刻 get() 都安全。
@@ -33,6 +35,45 @@ import {
 
 export type { RuntimeConfig } from './config-schema.ts';
 
+export type ExecutionConfig = {
+  resume: boolean;
+  sandboxedWorkers: boolean;
+  workerSandbox: boolean;
+};
+
+export type ExecutionConfigSource = 'default' | 'user' | 'env';
+
+const EXECUTION_UPDATE_KEYS = ['sandboxedWorkers', 'workerSandbox'] as const;
+
+type ExecutionUpdate = Partial<Pick<ExecutionConfig, typeof EXECUTION_UPDATE_KEYS[number]>>;
+
+function envBool(env: Record<string, string | undefined>, name: string, fallback: boolean) {
+  const raw = env[name];
+  if (raw == null || String(raw).trim() === '') return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(String(raw).trim().toLowerCase());
+}
+
+function hasEnvValue(env: Record<string, string | undefined>, name: string) {
+  return env[name] != null && String(env[name]).trim() !== '';
+}
+
+function validateExecution(patch: any): { clean: ExecutionUpdate; errors: string[] } {
+  const clean: ExecutionUpdate = {};
+  const errors: string[] = [];
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    return { clean, errors: ['启动配置必须是对象'] };
+  }
+  for (const key of EXECUTION_UPDATE_KEYS) {
+    if (!(key in patch)) continue;
+    if (typeof patch[key] !== 'boolean') {
+      errors.push(`${key} 必须是布尔值`);
+      continue;
+    }
+    clean[key] = patch[key];
+  }
+  return { clean, errors };
+}
+
 /** 纯函数：返回内置默认值。 */
 export function computeDefaults(): RuntimeConfig {
   return configDefaults().values;
@@ -40,7 +81,7 @@ export function computeDefaults(): RuntimeConfig {
 
 /**
  * 纯函数：校验前台传来的 patch，返回 { clean, errors }。
- * - 只认识 FIELD_SPEC 里的键，未知键忽略
+ * - 只认识 AGENT_CONFIG_SCHEMA 里的键，未知键忽略
  * - int 字段必须是有限整数且在 [min,max]；bool 字段必须是布尔
  * - 任一字段非法记入 errors，且不进入 clean
  */
@@ -80,7 +121,7 @@ export function validateConfig(patch: any): { clean: Partial<RuntimeConfig>; err
   return { clean, errors };
 }
 
-/** 纯函数：默认值 + 覆盖项合并（覆盖项只取已知且非空的键）。 */
+/** 纯函数：默认值 + 覆盖项合并（覆盖项只取已知且非 null/undefined 的键）。 */
 export function mergeConfig(defaults: RuntimeConfig, overrides: Partial<RuntimeConfig> | null | undefined): RuntimeConfig {
   const merged = { ...defaults };
   if (overrides && typeof overrides === 'object') {
@@ -283,19 +324,40 @@ export const configStore = {
     return JSON.parse(JSON.stringify(document.tools || {}));
   },
 
-  execution(env: Record<string, string | undefined> = process.env) {
+  execution(env: Record<string, string | undefined> = process.env): ExecutionConfig {
     const stored = document.execution || {};
-    const envBool = (name: string, fallback: boolean) => {
-      const raw = env[name];
-      if (raw == null || String(raw).trim() === '') return fallback;
-      return ['1', 'true', 'yes', 'on'].includes(String(raw).trim().toLowerCase());
-    };
     return {
-      resume: envBool('AGENT_RESUME', stored.resume ?? true),
+      resume: envBool(env, 'AGENT_RESUME', stored.resume ?? true),
       // execution 是启动期部署选择。sandboxedWorkers 只由存储配置决定（默认沙箱），不再接受环境变量覆盖。
       sandboxedWorkers: stored.sandboxedWorkers ?? true,
-      workerSandbox: envBool('AGENT_WORKER_SANDBOX', stored.workerSandbox ?? true),
+      workerSandbox: envBool(env, 'AGENT_WORKER_SANDBOX', stored.workerSandbox ?? true),
     };
+  },
+
+  executionSources(env: Record<string, string | undefined> = process.env): Record<keyof ExecutionConfig, ExecutionConfigSource> {
+    const stored = document.execution || {};
+    return {
+      resume: hasEnvValue(env, 'AGENT_RESUME') ? 'env' : stored.resume != null ? 'user' : 'default',
+      sandboxedWorkers: stored.sandboxedWorkers != null ? 'user' : 'default',
+      workerSandbox: hasEnvValue(env, 'AGENT_WORKER_SANDBOX')
+        ? 'env'
+        : stored.workerSandbox != null
+          ? 'user'
+          : 'default',
+    };
+  },
+
+  /** 更新需要重启后端才能生效的 Worker 部署选项；Agent 与 execution 段共用同一个 config.json。 */
+  async updateExecution(patch: any): Promise<ExecutionConfig> {
+    const { clean, errors } = validateExecution(patch);
+    if (errors.length) throw new Error(errors.join('；'));
+    document = {
+      ...document,
+      execution: { ...(document.execution || {}), ...clean },
+    };
+    saveChain = saveChain.then(persist).catch(err => log.error('[Config] 保存启动配置失败:', err?.message || err));
+    await saveChain;
+    return this.execution();
   },
 
   async updateMcpServer(name: string, server: McpServerConfig | null): Promise<Record<string, McpServerConfig>> {
@@ -315,7 +377,7 @@ export const configStore = {
     return { ...next };
   },
 
-  /** 更新全局 tools.model 配置(vision/distill),sanitize 后落盘。 */
+  /** 更新全局 tools 配置（vision/distill/screenshots），sanitize 后落盘。 */
   async updateTools(tools: SagentConfigDocument['tools']): Promise<SagentConfigDocument['tools']> {
     const sanitized = normalizeConfigDocument({
       ...document,
@@ -352,7 +414,7 @@ export const configStore = {
     return current;
   },
 
-  /** 清空 Agent 覆盖，回到 env 默认；MCP 等其它配置保持不变。 */
+  /** 清空 Agent 覆盖，回到 schema 内置默认；MCP、tools、execution 等其它配置保持不变。 */
   async reset(): Promise<RuntimeConfig> {
     overrides = {};
     document = { ...document, profile: 'custom' };

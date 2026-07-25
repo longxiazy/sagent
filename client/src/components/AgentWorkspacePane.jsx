@@ -26,6 +26,7 @@ export function AgentWorkspacePane({
   disabled,
   sendButton,
   attachButton,
+  privateModeToggle,
   attachmentBar,
   contextMeter,
   renderMessageContent,
@@ -96,6 +97,7 @@ export function AgentWorkspacePane({
             rows={1}
             disabled={disabled}
             attachButton={attachButton}
+            privateModeToggle={privateModeToggle}
             sendButton={sendButton}
             attachmentBar={attachmentBar}
             contextMeter={contextMeter}

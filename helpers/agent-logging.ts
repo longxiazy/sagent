@@ -68,7 +68,9 @@ function summarizeAgentActionForLog(action) {
   return base;
 }
 
-export function logAgentEvent(event) {
+export function logAgentEvent(event, { persist = true }: { persist?: boolean } = {}) {
+  // private run 仍由上层发送 SSE；这里仅控制传统 app 运行日志是否持久化。
+  if (!persist) return;
   const time = formatLogTime();
 
   if (event.type === 'status') {

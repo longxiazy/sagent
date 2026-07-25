@@ -32,6 +32,7 @@ export function useAgentTransport({
   selectedAgentModels,
   agentStrategy,
   agentMemory,
+  agentPrivateMode,
   availableModels,
   // refs
   agentRunIdRef,
@@ -143,6 +144,7 @@ export function useAgentTransport({
         models: runModels,
         strategy: runStrategy,
         memory: agentMemory,
+        privateMode: agentPrivateMode,
         // 当前会话归属的项目，后端据此隔离记忆/文件根/trace/checkpoint。
         projectId: activeSession.projectId ?? null,
         sessionId,

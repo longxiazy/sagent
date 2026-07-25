@@ -111,7 +111,7 @@ interface EventTraceFields {
 
 export type AgentEvent = EventTraceFields & (
   | { type: 'status'; status: string; message?: string }
-  | { type: 'run_meta'; startedAt: number; model?: string; agentModels?: string[]; task?: string; sessionId?: string; projectId?: string | null; strategy?: string }
+  | { type: 'run_meta'; startedAt: number; model?: string; agentModels?: string[]; task?: string; sessionId?: string; projectId?: string | null; strategy?: string; privateMode?: boolean }
   | { type: 'step'; step: number; stage: 'observe'; observation: unknown }
   | { type: 'step'; step: number; stage: 'action'; rationale?: string; action: AgentAction; usage?: TokenUsage | null }
   | { type: 'step'; step: number; stage: 'result'; result: unknown; resultStatus?: ActionResultStatus; resultError?: string | null }
@@ -164,6 +164,7 @@ export interface RunMeta {
   agentModels?: string[];
   task?: string;
   attempt?: number;
+  privateMode?: boolean;
   projectId?: string | null;
   dataDir?: string;
   projectRoot?: string | null;
@@ -233,6 +234,7 @@ export interface AgentRuntimeState {
   runId?: string;
   onEvent?: AgentEventWriter;
   headless?: boolean;
+  privateMode?: boolean;
   browserSession?: {
     view?: { navigate(url: string): Promise<unknown>; [key: string]: unknown };
     [key: string]: unknown;
@@ -325,6 +327,7 @@ export interface DesktopAgentRunOptions {
   strategy?: string;
   systemPrompt?: string | null;
   headless?: boolean;
+  privateMode?: boolean;
   onEvent?: AgentEventWriter;
   cancelSignal?: AbortSignal;
   runId: string;

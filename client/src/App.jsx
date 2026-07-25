@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Menu, Settings } from 'lucide-react';
+import { Menu, Settings, ShieldCheck } from 'lucide-react';
 import './App.css';
 import { fetchAgentTrace } from './api/streams.js';
 import { ensureServiceWorker, notificationPermission, notificationsSupported, requestNotificationPermission } from './notifications.js';
@@ -101,14 +101,16 @@ function getTraceModels(trace) {
 }
 
 export default function App() {
+  const [agentPrivateMode, setAgentPrivateMode] = usePersistentState('agent_private_mode', false, booleanStorage);
   const {
     setChatState,
     sessions,
     activeSession,
     messages,
     updateSession,
+    preparePrivateMode,
     sessionsLoading,
-  } = useChatSessions();
+  } = useChatSessions({ privateMode: agentPrivateMode });
   const {
     projects,
     activeProjectId,
@@ -333,6 +335,12 @@ export default function App() {
         const data = await res.json();
         if (!data.active || aborted) return;
 
+        // 后端 run 元数据是隐私状态的权威来源。先冻结当前普通会话，再切换开关，
+        // 避免下面的重连占位消息被误当成“进入隐私前状态”并在退出后补写。
+        if (data.meta?.privateMode === true) {
+          preparePrivateMode();
+          setAgentPrivateMode(true);
+        }
         setAgentRunning(true);
         setAgentTrace([]);
         setReconnectedRun(true);
@@ -562,11 +570,10 @@ export default function App() {
   }, [sessionsLoading]);
 
   // 手机后台/切 tab 时浏览器会冻结 JS、节流网络，SSE reader 可能在后台错过
-  // done/error 事件；切回前台时如果前端还以为任务在跑，就调一次持久化的 trace
-  // 接口兜底：trace 里如果已经包含 done/error，把 answer 灌回对应 session 并
-  // 把 running 状态收掉，避免出现"任务已结束但 UI 一直转圈"。
+  // done/error 事件。普通 run 切回前台时可用持久化 trace 兜底；隐私 run 没有
+  // 磁盘 trace，只依赖当前 SSE/内存链路。
   useEffect(() => {
-    if (!agentRunning) return;
+    if (!agentRunning || agentPrivateMode) return;
     let cancelled = false;
 
     const checkOnVisible = async () => {
@@ -651,7 +658,7 @@ export default function App() {
     };
   // setter 引用稳定，rid 用 ref 读最新值
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentRunning]);
+  }, [agentPrivateMode, agentRunning]);
 
   useEffect(() => {
     textareaRef.current?.focus();
@@ -814,6 +821,7 @@ export default function App() {
     selectedAgentModels,
     agentStrategy,
     agentMemory,
+    agentPrivateMode,
     availableModels: agentAvailableModels,
     agentRunIdRef,
     agentAbortRef,
@@ -906,8 +914,7 @@ export default function App() {
     return usage;
   }, [sessions]);
 
-  // 工具栏控件实例化一次，在 hero 和 layout header 中复用——
-  // 行为/状态完全一致，没必要在两处分别构造。
+  // 工具栏元素集中构造，再传给 hero/workspace 两种布局；两处共享同一套状态和行为。
   const modelSelect = (
     <ModelSelector
       availableModels={agentAvailableModels}
@@ -998,6 +1005,24 @@ export default function App() {
       multiple
     />
   );
+  const privateModeToggle = (
+    // 这是 run 级开关；运行中锁定，避免同一 run 中途改变持久化策略。
+    <button
+      type="button"
+      className={`toolbar-chip private-mode-toggle${agentPrivateMode ? ' active' : ''}`}
+      onClick={() => {
+        if (!agentPrivateMode) preparePrivateMode();
+        setAgentPrivateMode(enabled => !enabled);
+      }}
+      disabled={sessionLocked}
+      aria-pressed={agentPrivateMode}
+      aria-label={t('input.privateMode')}
+      title={t(agentPrivateMode ? 'input.privateModeOn' : 'input.privateModeOff')}
+    >
+      <ShieldCheck size={14} strokeWidth={2} />
+      <span>{t('input.privateMode')}</span>
+    </button>
+  );
   const attachmentBar = (
     <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
   );
@@ -1076,7 +1101,7 @@ export default function App() {
           onKeyDown={handleKeyDown}
           textareaRef={textareaRef}
           sessionLocked={sessionLocked}
-          toolbarSlots={{ modelSelect, sendButton, attachButton }}
+          toolbarSlots={{ modelSelect, sendButton, attachButton, privateModeToggle }}
           attachmentBar={attachmentBar}
           contextMeter={contextMeter}
           suggestions={suggestions}
@@ -1144,6 +1169,7 @@ export default function App() {
               disabled={sessionLocked}
               sendButton={sendButton}
               attachButton={attachButton}
+              privateModeToggle={privateModeToggle}
               attachmentBar={attachmentBar}
               contextMeter={contextMeter}
               renderMessageContent={props => <MessageContent {...props} />}

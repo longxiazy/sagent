@@ -20,10 +20,10 @@ sagent 把 React Web UI、Bun/Express 后端和可调用工具的 Agent runtime 
 
 ## 核心特性
 
-- 多模型聊天和 Agent 模式，支持竞速与汇总策略。
+- 多模型聊天和 Agent 模式，支持竞速、投票汇总和渐进式竞速策略。
 - macOS 桌面观察、截图、浏览器自动化，以及可选的 Chrome DevTools MCP 集成。
 - 文件、终端、搜索、视觉、MCP、浏览器等工具统一接入 Agent runtime。
-- 使用 `npm run sandbox` 时，每次 Agent 任务都会进入短生命周期沙盒 worker。
+- 短生命周期 Agent Worker 可在设置中开关，macOS Sandbox 也可独立配置。
 - 项目级记忆、trace、上传文件、checkpoint 和中断恢复。
 - 局域网内手机、平板、电脑都能实时查看 Agent 进度。
 - 内置 smoke 测试和 trace 文件，方便功能开发后回归验证。
@@ -44,12 +44,12 @@ cd sagent
 cp .env.example .env
 npm install
 cd client && npm install && cd ..
-npm run sandbox
+npm run dev
 ```
 
 如果还没填 API Key，请先编辑 `.env`。开发服务启动后打开 http://localhost:5173。
 
-`npm run sandbox` 会正常启动 UI/API server，并让每次 Agent 任务在 macOS 沙盒 worker 中执行。只有明确需要无沙盒调试时，才使用 `npm run dev`。
+`npm run dev` 会启动 UI/API 开发服务。默认情况下，每次 Agent 任务都在短生命周期 Worker 中执行；在 macOS 上，开启 Worker Sandbox 后还会应用 `sandbox.sb`。这两个开关位于“设置 → Agent → 高级”，保存后需重启后端才生效。
 
 启动后可在设置页选择 Agent Profile、调整基础/高级运行参数，并管理 Chrome 或通用 MCP 连接。这些值保存在本地 `data/config.json`，密钥仍保留在 `.env`。
 
@@ -75,7 +75,7 @@ docker run --env-file .env -p 5173:5173 -v "$(pwd)/data-docker:/app/data" sagent
 
 Agent 等待审批时，sagent 会显示页面内审批面板，并发送浏览器桌面通知。Chromium 内核浏览器支持通知里的「允许 / 拒绝」按钮；Safari 和 Firefox 仍会弹出通知，点击后回到 sagent 页面处理审批。
 
-删除文件、安装依赖、执行终端命令等危险操作都需要显式确认。通过 `npm run sandbox` 启动时，沙盒权限边界由 [sandbox.sb](sandbox.sb) 控制。
+删除文件、安装依赖、执行终端命令等危险操作都需要显式确认。在 macOS 上启用 Worker Sandbox 时，沙盒权限边界由 [sandbox.sb](sandbox.sb) 控制。
 
 ## 多设备查看
 
@@ -90,7 +90,7 @@ VITE_HOST=0.0.0.0 npm run sandbox
 局域网设备随后可打开 `http://<Mac-IP>:5173`，首次受保护请求会要求输入 Token。独立部署前端时，还需通过 `SAGENT_CORS_ORIGINS` 配置精确来源。
 
 - Agent 运行中，其他设备展示执行流程，并在完成后收到最终结果。
-- 聊天历史保存在各自浏览器里，不跨设备共享。
+- 普通聊天历史由后端保存在配置的数据目录中，认证后的设备可以读取；隐私模式会话不会持久化。
 - 同一时间只能运行一个 Agent，新的任务请求会收到 409。
 - 配置 Token 后，API、OpenAI 兼容 `/v1` 和截图接口都需要认证；后端监听非 loopback 地址时，没有合规 Token 将拒绝启动。
 
@@ -98,11 +98,11 @@ VITE_HOST=0.0.0.0 npm run sandbox
 
 ### 多模型 Agent
 
-Agent 模式下，每一步都可以同时调用多个模型。竞速模式采用第一个有效结果并取消其余请求；汇总模式会等待所有选中模型并聚合结果。前端支持选择模型、调整优先级、切换策略。
+Agent 模式下，每一步都可以调用多个模型。竞速模式采用第一个有效结果并取消其余请求；投票模式会等待所有活动模型并聚合成功决策；渐进式模式先运行主模型，主模型过慢或失败时再让其余模型加入竞速。前端支持选择模型、调整优先级、切换策略。
 
 ### Checkpoint 恢复
 
-Agent 每完成一步都会写入 `data/checkpoints/`。如果后端重启且恢复已启用，sagent 会还原上次运行状态，并从下一步继续执行。正常完成的任务会自动清理 checkpoint。
+普通 Agent 每完成一步，都会在本次运行的数据目录下写入 `checkpoints/`。如果后端重启且恢复已启用，sagent 会还原上次运行状态，并从下一步继续执行。正常完成的任务会自动清理 checkpoint；隐私模式不会创建 checkpoint，因此该模式下不支持断点恢复和回滚。
 
 ### 跨会话记忆
 
@@ -110,13 +110,13 @@ sagent 会在配置的数据目录下保存项目经验，包括近期任务摘�
 
 ### 浏览器与 MCP 集成
 
-内置 Browser 仅用于只读信息浏览和正文提取；点击、输入、登录、提交、上传、下载等网页交互统一由 Chrome DevTools MCP 负责。Chrome MCP 会增加 `chrome_list_tools` 和 `chrome_call_tool`。包括 `codex mcp-server` 在内的通用 MCP server 会通过 `mcp_list_servers`、`mcp_list_tools` 和 `mcp_call_tool` 接入。所有集成都是可选能力，配置方式见 [CONFIGURATION.md](CONFIGURATION.md)。
+内置 Browser 仅用于只读信息浏览和正文提取；点击、输入、登录、提交、上传、下载等网页交互统一由 Chrome DevTools MCP 负责。输入框工具栏中的“隐私模式”会让本次任务使用一次性 Browser profile，并在任务正常收尾时删除 Cookie 和 LocalStorage；同时跳过聊天会话、应用/运行日志、LLM 日志、trace、checkpoint、Worker 日志和 sagent 自己管理的截图持久化。该隔离不覆盖外部 Chrome MCP：隐私模式既不会隔离它的浏览器 profile，也不会清除它的现有会话。Chrome MCP 会增加 `chrome_list_tools` 和 `chrome_call_tool`。包括 `codex mcp-server` 在内的通用 MCP server 会通过 `mcp_list_servers`、`mcp_list_tools` 和 `mcp_call_tool` 接入。所有集成都是可选能力，配置方式见 [CONFIGURATION.md](CONFIGURATION.md)。
 
 ## 常用命令
 
 ```bash
-npm run sandbox      # 沙盒 worker 模式启动 server 和 client
-npm run dev          # 无沙盒 worker 模式启动 server 和 client
+npm run dev          # 启动 API server 和 Vite client；运行器模式由设置/配置决定
+npm run prod         # 启动 API server（存在 client/dist 时同时提供前端）
 npm run build        # 后端类型检查 + 前端构建
 npm run lint         # 运行 ESLint
 npm test             # 运行 Vitest 测试

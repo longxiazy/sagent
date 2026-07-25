@@ -2,9 +2,9 @@
  * Agent Run Store — 管理 Agent 运行记录和 SSE 事件存储
  *
  * 调用场景：
- *   - server.js 启动时创建唯一实例
- *   - 传入 routes/agent.js 使用
- *   - POST /api/agent → createRun → 整个运行周期 → closeRun
+ *   - server.ts 启动时创建唯一实例并注入 Agent 路由/runner
+ *   - POST /api/agent → tryCreateRun → 整个运行周期 → closeRun
+ *   - checkpoint 恢复 → createRun(existingRunId) → closeRun
  *   - POST /api/agent/cancel → cancelRun
  *   - GET /api/agent/active → getActiveRun（前端刷新后检测是否有进行中的任务）
  *   - GET /api/agent/stream/:runId → getRun（SSE 重连回放事件）
@@ -14,7 +14,7 @@
  *     → addEvent × N（每个 SSE 事件追加到 events 数组）
  *     → cancelRun（可选，running → cancelling）
  *     → closeRun（completed / failed / cancelled）
- *     → 5 分钟后自动从内存中删除（给 SSE 重连留窗口）
+ *     → 普通 run 保留 5 分钟给 SSE 重连；隐私 run 立即从内存删除
  */
 
 import {
@@ -33,7 +33,7 @@ function createRunId() {
   return `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** 运行结束后保留在内存中的时长，超时自动清理 */
+/** 普通运行结束后保留在内存中的时长，超时自动清理 */
 const RUN_TTL_MS = 5 * 60 * 1000;
 
 export function createAgentRunStore({
@@ -59,6 +59,7 @@ export function createAgentRunStore({
       events: [],
       status,
       meta,
+      pendingRollback: null,
       nextEventSeq: Math.max(1, Math.floor(initialEventSeq)),
       persistence: createPersistenceQueue(),
     };
@@ -93,7 +94,7 @@ export function createAgentRunStore({
   return {
     /**
      * 创建新的运行记录
-     * 调用时机：POST /api/agent 收到任务后立即创建
+     * 调用时机：checkpoint 恢复，或无需原子占锁的内部调用
      */
     createRun(meta: RunMeta = {}, startedAt = Date.now(), existingRunId?: string, initialEventSeq = 1) {
       return insertRun(meta, startedAt, existingRunId, 'running', initialEventSeq);
@@ -166,9 +167,9 @@ export function createAgentRunStore({
 
     /**
      * 关闭运行（完成或出错后调用）
-     * 调用时机：POST /api/agent 的 finally 块
+     * 调用时机：新任务与 checkpoint 恢复的统一 cleanupAgentRun 收尾
      * 清理重连写入器，迁移到终态，
-     * 然后启动 5 分钟倒计时自动删除该记录
+     * 普通 run 启动 5 分钟倒计时自动删除；隐私 run 立即清除内存事件和记录。
      */
     closeRun(runId: string, outcome?: TerminalRunStatus) {
       const run = getRun(runId);
@@ -177,6 +178,12 @@ export function createAgentRunStore({
       run._reconnectWriters = null;
       const terminalStatus = outcome || (run.status === 'cancelling' ? 'cancelled' : 'completed');
       transitionRun(runId, terminalStatus);
+      if (run.meta?.privateMode === true) {
+        // 隐私任务不提供终态重连窗口，避免事件和运行元数据继续留在进程内存。
+        run.events.length = 0;
+        runs.delete(runId);
+        return run;
+      }
       run.cleanupTimer = setTimeout(() => {
         if (runs.get(runId) === run) runs.delete(runId);
       }, RUN_TTL_MS);
