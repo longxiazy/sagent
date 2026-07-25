@@ -127,7 +127,7 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
       .catch(e => { if (alive) setError(e.message); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, []);
+  }, [activeProjectId]);
 
   const setField = (key, value) => {
     setAgent(prev => ({ ...prev, [key]: value }));

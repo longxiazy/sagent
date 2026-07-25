@@ -241,7 +241,6 @@ export function useChatSessions({ privateMode = false } = {}) {
   const privateModeEnabled = privateMode === true;
   const [chatState, setChatState] = useState(() => normalizeChatState({ sessions: [], activeSessionId: null }));
   const chatStateRef = useRef(chatState);
-  chatStateRef.current = chatState;
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [sessionsError, setSessionsError] = useState(null);
   const hydratedRef = useRef(false);
@@ -252,10 +251,15 @@ export function useChatSessions({ privateMode = false } = {}) {
   // 隐私模式期间的会话只存在于内存。退出隐私模式时恢复进入前的快照，
   // 防止用户稍后切回普通模式时把隐私消息补写进 chat-sessions.json。
   const privateModeRef = useRef(privateModeEnabled);
+  const initialPrivateModeRef = useRef(privateModeEnabled);
   const privateSnapshotRef = useRef(null);
   const restoringPrivateRef = useRef(false);
   const { sessions, activeSessionId } = chatState;
   const activeSession = sessions.find(session => session.id === activeSessionId) || sessions[0];
+
+  useEffect(() => {
+    chatStateRef.current = chatState;
+  }, [chatState]);
 
   const preparePrivateMode = useCallback(() => {
     if (privateModeRef.current || !hydratedRef.current) return;
@@ -274,7 +278,7 @@ export function useChatSessions({ privateMode = false } = {}) {
     const controller = new AbortController();
     apiFetch('/api/sessions', {
       signal: controller.signal,
-      ...(privateModeEnabled ? { headers: { 'X-Private-Mode': 'true' } } : {}),
+      ...(initialPrivateModeRef.current ? { headers: { 'X-Private-Mode': 'true' } } : {}),
     })
       .then(async response => {
         const data = await response.json().catch(() => ({}));
@@ -309,7 +313,7 @@ export function useChatSessions({ privateMode = false } = {}) {
     if (privateModeEnabled && !previous) {
       if (hydratedRef.current) {
         privateSnapshotRef.current = {
-          chatState: cloneChatState(chatState),
+          chatState: cloneChatState(chatStateRef.current),
           lastSynced: cloneSyncedSessions(lastSyncedRef.current),
         };
       }
