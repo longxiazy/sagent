@@ -70,7 +70,7 @@ describe('model metadata', () => {
   it('loads static NVIDIA catalog metadata by id and aliases', () => {
     expect(getNvidiaCatalogModelMetadata('deepseek-ai/deepseek-v4-pro')).toMatchObject({
       label: 'deepseek-v4-pro',
-      contextWindow: 1_000_000,
+      contextWindow: 1_048_576,
       inputModalities: ['text'],
       outputModalities: ['text'],
       greetingScore: 100,
@@ -87,7 +87,7 @@ describe('model metadata', () => {
       agentCompatible: false,
     });
     expect(hasNvidiaCatalogModel('meta/llama-3.1-70b-instruct')).toBe(true);
-    expect(hasNvidiaCatalogModel('moonshotai/kimi-k2.6')).toBe(false);
+    expect(hasNvidiaCatalogModel('example/delisted-model-not-in-catalog')).toBe(false);
   });
 
   it('keeps zero greeting scores as measured values', () => {
@@ -129,7 +129,9 @@ describe('model metadata', () => {
         list: vi.fn().mockResolvedValue({
           data: [
             { id: 'deepseek-ai/deepseek-v4-pro' },
-            { id: 'moonshotai/kimi-k2.6' },
+            // 只在 /v1/models 里存在、公开 catalog 已下线的模型不应展示。
+            // 用一个不可能被上游重新收录的合成 id，避免测试随 catalog 刷新而失效。
+            { id: 'example/delisted-model-not-in-catalog' },
           ],
         }),
       },
@@ -172,7 +174,7 @@ describe('model metadata', () => {
       id: 'deepseek-ai/deepseek-v4-pro',
       label: 'deepseek-v4-pro',
       provider: 'nvidia',
-      contextWindow: 1_000_000,
+      contextWindow: 1_048_576,
       inputModalities: ['text'],
       outputModalities: ['text'],
       supportedGenerationMethods: expect.arrayContaining(['chat.completions', 'tool_calling']),
