@@ -668,10 +668,7 @@ function ModelPickerDropdown({
                           setSelectedModelIds(selectedModelIds.slice(0, -1));
                         }
                       }}
-                      onChange={e => {
-                        setQuery(e.target.value);
-                        setExpandedEncyclopediaModels([]);
-                      }}
+                      onChange={e => setQuery(e.target.value)}
                       placeholder={t('modelSelector.searchPlaceholder')}
                       disabled={disabled}
                     />
