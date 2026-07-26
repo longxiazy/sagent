@@ -48,7 +48,7 @@ import { executeTerminalAction } from '../tools/terminal/run.ts';
 import { createSharedBrowserSessionManager } from './browser-session-manager.ts';
 import { observeDesktopAgent } from './observer.ts';
 import { createDesktopPlanner, DEFAULT_MODEL_TIMEOUT_MS } from './planner.ts';
-import { saveCheckpoint, saveHealthySnapshot } from '../core/checkpoint.ts';
+import { saveHealthySnapshot } from '../core/checkpoint.ts';
 import { log } from '../../helpers/logger.ts';
 import { isPrivateRun, withPrivateRun } from '../../helpers/private-run.ts';
 import { configStore } from '../core/config-store.ts';
@@ -260,9 +260,8 @@ export function createDesktopAgentRunner({
       runStore,
     });
 
-    // 本次 run 的 checkpoint/回滚目录：命中项目用项目目录，否则回退工厂注入的全局目录。
-    // 隐私模式不创建 step checkpoint 或 session snapshot，避免任务上下文通过
-    // 恢复/回滚文件留下副本。
+    // 本次 run 的 session 回滚快照目录：命中项目用项目目录，否则回退工厂注入的全局目录。
+    // 隐私模式不创建 session snapshot，避免任务上下文通过回滚文件留下副本。
     const runCheckpointDir = effectivePrivateMode ? null : (dataDir || checkpointDir);
 
     // 通用 runtime 只控制循环；下面注入桌面 Agent 各阶段的具体实现。
@@ -276,21 +275,6 @@ export function createDesktopAgentRunner({
       // 会话级健康快照与手动回滚都使用本次 run 的隔离落盘目录；隐私模式为 null。
       sessionCheckpointDir: runCheckpointDir,
       runRecord,
-      onCheckpoint: runCheckpointDir
-        ? (history, step) => {
-            // 保存恢复循环所需的完整上下文。
-            const checkpoint = {
-              runId, task, model, systemPrompt, headless, privateMode: effectivePrivateMode,
-              history, step, maxSteps, startedAt,
-              agentModels, strategy, conversationHistory, memory,
-              projectRoot, dataDir,
-            };
-            const persist = () => checkpointWriter?.saveCheckpoint
-              ? checkpointWriter.saveCheckpoint(checkpoint)
-              : saveCheckpoint(runCheckpointDir, checkpoint);
-            return runRecord?.persistence ? runRecord.persistence.enqueue(persist) : persist();
-          }
-        : null,
       // 存在 run 持久化队列时，健康快照也进入该队列，避免并发写入导致次序错乱。
       saveSessionSnapshot: effectivePrivateMode
         ? undefined

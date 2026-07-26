@@ -1,6 +1,6 @@
 /**
- * Server — Sagent 主入口，配置 Express 中间件、路由、Agent 运行器、断点恢复
- * Main entry point — Express middleware, routing, agent runner setup, checkpoint resume
+ * Server — Sagent 主入口，配置 Express 中间件、路由、Agent 运行器
+ * Main entry point — Express middleware, routing, agent runner setup
  *
  * 启动流程 / Startup:
  *   1. 加载 .env，并安装 Origin/CORS/API Auth/JSON 等安全中间件
@@ -8,7 +8,7 @@
  *   3. 初始化日志、WebView data store、结构化配置和项目注册表
  *   4. 创建 run/approval store，并按启动配置一次性选择 Worker 或直跑 runner
  *   5. 挂载截图、Agent、Completions、Suggestions 和前端静态资源路由
- *   6. 开始监听，输出启动信息，再按配置扫描并恢复最后一个 checkpoint
+ *   6. 开始监听，输出启动信息
  *
  * 配置 / Configuration:
  *   .env             — API Key、监听地址、认证和本地二进制覆盖
@@ -37,20 +37,14 @@ import { createAgentScreenshotsRouter } from './routes/agent-screenshots.ts';
 import { createCompletionsRouter } from './routes/completions.ts';
 import { createSuggestionsRouter } from './routes/suggestions.ts';
 import { createSuggestionStore } from './helpers/suggestion-store.ts';
-import { listCheckpoints, clearCheckpoints, removeCheckpoint } from './agent/core/checkpoint.ts';
-import { createProjectStore, projectDataDir } from './agent/core/project-store.ts';
-import { createBaseEventSender, loadMemoryForPrompt, cleanupAgentRun } from './helpers/run-agent.ts';
-import { readTraceEvents } from './helpers/trace-store.ts';
+import { createProjectStore, projectDataDir, GLOBAL_SCOPE_ID } from './agent/core/project-store.ts';
 import { padEndW, truncateW } from './agent/core/utils.ts';
 import { log } from './helpers/logger.ts';
 import { configStore } from './agent/core/config-store.ts';
 import { createApiAuth, createCorsOptions, createOriginGuard, loadServerSecurityConfig } from './helpers/security.ts';
 import { flushAllPersistenceTasks } from './helpers/persistence-queue.ts';
-import { persistRecoveredAgentRunMemory } from './routes/agent-run-memory-persist.ts';
 import { warnLegacyConfiguration } from './helpers/config-deprecations.ts';
 import { cleanupScreenshots } from './helpers/screenshot-store.ts';
-import { withPrivateRun } from './helpers/private-run.ts';
-import { removePrivateRunArtifacts } from './helpers/private-run-artifacts.ts';
 
 const securityConfig = loadServerSecurityConfig();
 const app = express();
@@ -70,7 +64,10 @@ const modelConfig = await registry.loadModelConfig().catch((err: any) => {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST_DIR = path.resolve(__dirname, 'client/dist');
 const MEMORY_DIR = path.resolve(__dirname, process.env.MEMORY_DIR || 'data');
-const CHECKPOINT_DIR = MEMORY_DIR;
+// 无项目 run 数据的全局桶,与真实项目 {MEMORY_DIR}/projects/<id> 同级。
+// 也是 Session 回滚快照在无显式 dataDir 时的回退目录。
+const GLOBAL_SCOPE_DIR = projectDataDir(MEMORY_DIR, GLOBAL_SCOPE_ID);
+const CHECKPOINT_DIR = GLOBAL_SCOPE_DIR;
 
 initLlmLogger(MEMORY_DIR);
 initWebViewDataStore(MEMORY_DIR);
@@ -79,10 +76,9 @@ initWebViewDataStore(MEMORY_DIR);
 await configStore.init(MEMORY_DIR);
 warnLegacyConfiguration(configStore);
 const executionConfig = configStore.execution();
-const AGENT_RESUME = executionConfig.resume;
 
 // 项目注册表：每个项目隔离记忆/trace/checkpoint/uploads 与文件工具根。
-// 注册表为空时为「无项目」全局态，行为与引入项目概念前一致。
+// 注册表为空时为「无项目」全局态，数据落在 GLOBAL_SCOPE_DIR。
 const projectStore = createProjectStore(MEMORY_DIR);
 await projectStore.init();
 
@@ -172,98 +168,6 @@ function defaultShutdownGraceMs() {
   return terminateAfterMs + killAfterMs + 1000;
 }
 
-async function resumeFromCheckpoint(cp) {
-  const { runId, task, model, headless, privateMode, history, step, maxSteps: _maxSteps, startedAt } = cp;
-  const agentPrivateMode = privateMode === true;
-  return withPrivateRun(agentPrivateMode, async () => {
-  // checkpoint 自带项目落盘目录与项目根；旧 checkpoint（无项目）回退全局 MEMORY_DIR / process.cwd()。
-  const dataDir = cp.dataDir || MEMORY_DIR;
-  const projectRoot = cp.projectRoot || null;
-  if (agentPrivateMode) {
-    // 新版本隐私 run 根本不会创建 checkpoint；这里只兼容旧版本或异常残留，
-    // 恢复前先删除能按 runId 定位的历史产物，后续仍由隐私上下文禁止新写入。
-    await Promise.all([...new Set([dataDir, MEMORY_DIR])]
-      .map(dir => removePrivateRunArtifacts(dir, runId)));
-  }
-  log.info(`[Resume] 恢复运行 run_id=${runId} step=${step} task=${task.slice(0, 60)}…`);
-
-  const sendEventWithTrace = createBaseEventSender(runId, agentRunStore, dataDir, {
-    persistTrace: !agentPrivateMode,
-  });
-
-  const { systemPrompt } = await loadMemoryForPrompt(dataDir);
-
-  // 旧 checkpoint 可能没有 trace；仅在 trace 缺失时重建历史，避免恢复时重复写入旧步骤。
-  const existingTraceEvents = agentPrivateMode ? [] : await readTraceEvents(dataDir, runId);
-  if (existingTraceEvents.length === 0) {
-    sendEventWithTrace({ type: 'status', status: 'starting', runId, message: '准备启动桌面 Agent' });
-    for (const h of history) {
-      sendEventWithTrace({ type: 'step', step: h.step, stage: 'action', rationale: h.rationale, action: h.action });
-      sendEventWithTrace({ type: 'step', step: h.step, stage: 'result', result: h.result });
-    }
-  }
-  sendEventWithTrace({ type: 'status', status: 'resuming', runId, message: `从断点恢复：从第 ${step + 1} 步继续执行任务「${task.slice(0, 60)}」` });
-
-  try {
-    const runRecord = agentRunStore.getRun(runId);
-    const result = await runDesktopAgent({
-      task,
-      model,
-      models: cp.agentModels,
-      strategy: cp.strategy || 'race',
-      systemPrompt,
-      headless,
-      privateMode: privateMode === true,
-      runId,
-      runRecord,
-      startedAt,
-      initialStep: step + 1,
-      initialHistory: history,
-      conversationHistory: cp.conversationHistory || [],
-      memory: cp.memory !== false,
-      onEvent: sendEventWithTrace,
-      cancelSignal: runRecord?.cancelAc?.signal || new AbortController().signal,
-      projectRoot,
-      dataDir,
-    });
-    sendEventWithTrace({ type: 'done', runId, answer: result.answer, steps: result.steps, meta: { elapsed_ms: Date.now() - startedAt, step_count: result.steps.length } });
-    if (cp.memory !== false && !agentPrivateMode) {
-      try {
-        const runRecord = agentRunStore.getRun(runId);
-        const persistMemory = () => persistRecoveredAgentRunMemory({
-          memoryDir: dataDir,
-          task,
-          result,
-          model,
-          registry,
-        });
-        if (runRecord?.persistence) await runRecord.persistence.enqueue(persistMemory);
-        else await persistMemory();
-      } catch (err: any) {
-        log.warn('[Resume] Memory save failed:', err.message);
-      }
-    }
-  } catch (err: any) {
-    log.error(`[Resume] 失败 run_id=${runId}:`, err.message);
-    sendEventWithTrace({ type: 'error', runId, error: err.message });
-  } finally {
-    await cleanupAgentRun(dataDir, runId, agentRunStore);
-  }
-  });
-}
-
-/** 跨「全局 + 各项目」目录收集所有未完成 checkpoint，附带各自所在目录，按 startedAt 升序 */
-async function collectAllCheckpoints() {
-  const dirs = [MEMORY_DIR, ...projectStore.list().projects.map((p: any) => projectDataDir(MEMORY_DIR, p.projectId))];
-  const all: { cp: any; dir: string }[] = [];
-  for (const dir of dirs) {
-    const cps = await listCheckpoints(dir);
-    for (const cp of cps) all.push({ cp, dir });
-  }
-  all.sort((a, b) => (a.cp.startedAt || 0) - (b.cp.startedAt || 0));
-  return all;
-}
-
 const httpServer = app.listen(Number(PORT), HOST, async () => {
   const cfg = configStore.get();
   const chromeConfig = loadChromeMcpConfig();
@@ -286,7 +190,6 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
   ${row('Batch Size', cfg.batchSize)}
   ${hLine}
   ${row('Observe Desktop', cfg.observeDesktop)}
-  ${row('AGENT_RESUME', AGENT_RESUME)}
   ${row('AGENT_WORKERS', agentSandboxedWorkers ? (AGENT_WORKER_SANDBOX ? 'sandboxed' : 'plain') : 'disabled')}
   ${row('CHROME_PATH', process.env.AGENT_BROWSER_PATH || 'auto')}
   ${chromeConfig.enabled ? row('CHROME_MCP', `${chromeConfig.transport} @ ${chromeConfig.url || `${chromeConfig.host}:${chromeConfig.port}${chromeConfig.ssePath}`}`) : row('CHROME_MCP', 'disabled')}
@@ -297,63 +200,6 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
   ${row('GEMINI_API_KEY', process.env.GEMINI_API_KEY ? '✓ configured' : '✗ not set')}
   ╚${dLine.slice(2)}╝
   `);
-
-  if (AGENT_RESUME) {
-    const found = await collectAllCheckpoints();
-    if (found.length > 0) {
-      const { cp } = found[found.length - 1];
-      // 模型所属 provider 未配置（缺对应 API key）时跳过恢复
-      let providerAvailable = true;
-      try {
-        providerAvailable = Boolean(registry.resolve(cp.model, modelConfig)?.client);
-      } catch {
-        providerAvailable = false;
-      }
-      if (!providerAvailable) {
-        console.log(`[Resume] 跳过: ${cp.runId} 所需供应商未配置 API key，清理全部 checkpoint`);
-        for (const d of new Set(found.map(f => f.dir))) await clearCheckpoints(d);
-      } else if (cp.history?.some(h => h.action?.type === 'finish')) {
-        console.log(`[Resume] ${cp.runId} 已完成（含 finish 动作），跳过恢复，清理全部 checkpoint`);
-        for (const d of new Set(found.map(f => f.dir))) await clearCheckpoints(d);
-      } else {
-        console.log(`[Resume] 发现 ${found.length} 个未完成任务，恢复最后一个: ${cp.runId}`);
-        const resumeDataDir = cp.dataDir || MEMORY_DIR;
-        const existingTraceEvents = cp.privateMode === true
-          ? []
-          : await readTraceEvents(resumeDataDir, cp.runId);
-        const initialEventSeq = existingTraceEvents.reduce(
-          (next: number, event: any, index: number) => Number.isFinite(event?.seq)
-            ? Math.max(next, Number(event.seq) + 1)
-            : Math.max(next, index + 2),
-          1,
-        );
-        agentRunStore.createRun({
-          model: cp.model,
-          task: cp.task,
-          privateMode: cp.privateMode === true,
-          projectId: cp.dataDir ? undefined : null,
-          dataDir: resumeDataDir,
-          projectRoot: cp.projectRoot || null,
-        }, cp.startedAt, cp.runId, initialEventSeq);
-        resumeFromCheckpoint(cp).catch(err => {
-          if (cp.privateMode !== true) {
-            log.error(`[Resume] 恢复失败 run_id=${cp.runId}:`, err.message);
-          }
-        });
-        for (const other of found.slice(0, -1)) {
-          removeCheckpoint(other.dir, other.cp.runId).catch(() => {});
-        }
-      }
-    }
-  } else {
-    const remaining = await collectAllCheckpoints();
-    if (remaining.length > 0) {
-      console.log(`[Resume] AGENT_RESUME=false，清理 ${remaining.length} 个残留 checkpoint`);
-      for (const { dir } of remaining) {
-        await clearCheckpoints(dir);
-      }
-    }
-  }
 });
 
 let shuttingDown = false;

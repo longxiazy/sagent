@@ -343,9 +343,16 @@ function defaultFixtureId(runId: string) {
 
 export async function captureFixture(cfg: CliConfig): Promise<{ id: string; run: ReplayRun }> {
   const runId = cfg.runId!;
-  const events = await readTraceEvents(cfg.dataDir, runId);
+  // trace 按 scope 落盘:先查 --data-dir 根(项目目录直接指到这里),
+  // 再回退无项目全局桶 <data-dir>/projects/default。
+  const traceDirs = [cfg.dataDir, join(cfg.dataDir, 'projects', 'default')];
+  let events: any[] = [];
+  for (const dir of traceDirs) {
+    events = await readTraceEvents(dir, runId);
+    if (events.length) break;
+  }
   if (!events.length) {
-    throw new Error(`在 ${join(cfg.dataDir, 'traces')} 下找不到 ${runId} 的 trace（或文件为空）`);
+    throw new Error(`在 ${traceDirs.map(dir => join(dir, 'traces')).join(' 或 ')} 下找不到 ${runId} 的 trace（或文件为空）`);
   }
 
   const run = reconstructRunFromTrace(events as any);

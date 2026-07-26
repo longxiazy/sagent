@@ -46,7 +46,6 @@ export interface SagentConfigDocument {
     };
   };
   execution?: {
-    resume?: boolean;
     sandboxedWorkers?: boolean;
     workerSandbox?: boolean;
   };

@@ -131,7 +131,7 @@ built-in schema defaults
 
 Agent runtime tuning fields (`maxSteps`, `modelTimeoutSec`, `maxOutputTokens`, `staggerDelaySec`, `batchSize`, `observeDesktop`, `maxHistorySteps`, `maxResultChars`, `autoModelRouting`) are resolved only from the built-in schema defaults and `data/config.json` (editable via the Settings UI, hot-applied to the next run). They no longer read any `AGENT_*` environment variable.
 
-The `execution` section is startup-only. `sandboxedWorkers` is resolved solely from `data/config.json` (default `true` — the worker runner is selected unless the stored config sets it to `false`); it does not read any environment variable. `resume` and `workerSandbox` still honor `AGENT_RESUME` / `AGENT_WORKER_SANDBOX` overrides.
+The `execution` section is startup-only. `sandboxedWorkers` is resolved solely from `data/config.json` (default `true` — the worker runner is selected unless the stored config sets it to `false`); it does not read any environment variable. `workerSandbox` still honors the `AGENT_WORKER_SANDBOX` override.
 
 Provider keys and server deployment variables remain environment-only.
 

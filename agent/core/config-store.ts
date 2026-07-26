@@ -9,7 +9,7 @@
  *   - 热生效 Agent 参数：data/config.json 的 agent 覆盖 > schema 内置默认值，
  *     这些字段不再从环境变量读取。
  *   - 启动期 execution 参数：同一 config.json 的 execution 段保存 Worker 部署选择；
- *     resume 与 workerSandbox 仍可被对应环境变量覆盖，sandboxedWorkers 只取存储值。
+ *     workerSandbox 仍可被环境变量覆盖，sandboxedWorkers 只取存储值。
  *   - config.json 还保存 profile、tools、MCP server；reset() 只清空 Agent 覆盖。
  *
  * get() 是同步的（compressHistory 等热路径是同步函数）；current 在模块加载时
@@ -36,7 +36,6 @@ import {
 export type { RuntimeConfig } from './config-schema.ts';
 
 export type ExecutionConfig = {
-  resume: boolean;
   sandboxedWorkers: boolean;
   workerSandbox: boolean;
 };
@@ -252,7 +251,6 @@ export function normalizeConfigDocument(value: any): SagentConfigDocument {
       screenshots: normalizeScreenshots(value.tools?.screenshots),
     },
     execution: {
-      ...(typeof value.execution?.resume === 'boolean' ? { resume: value.execution.resume } : {}),
       ...(typeof value.execution?.sandboxedWorkers === 'boolean' ? { sandboxedWorkers: value.execution.sandboxedWorkers } : {}),
       ...(typeof value.execution?.workerSandbox === 'boolean' ? { workerSandbox: value.execution.workerSandbox } : {}),
     },
@@ -327,7 +325,6 @@ export const configStore = {
   execution(env: Record<string, string | undefined> = process.env): ExecutionConfig {
     const stored = document.execution || {};
     return {
-      resume: envBool(env, 'AGENT_RESUME', stored.resume ?? true),
       // execution 是启动期部署选择。sandboxedWorkers 只由存储配置决定（默认沙箱），不再接受环境变量覆盖。
       sandboxedWorkers: stored.sandboxedWorkers ?? true,
       workerSandbox: envBool(env, 'AGENT_WORKER_SANDBOX', stored.workerSandbox ?? true),
@@ -337,7 +334,6 @@ export const configStore = {
   executionSources(env: Record<string, string | undefined> = process.env): Record<keyof ExecutionConfig, ExecutionConfigSource> {
     const stored = document.execution || {};
     return {
-      resume: hasEnvValue(env, 'AGENT_RESUME') ? 'env' : stored.resume != null ? 'user' : 'default',
       sandboxedWorkers: stored.sandboxedWorkers != null ? 'user' : 'default',
       workerSandbox: hasEnvValue(env, 'AGENT_WORKER_SANDBOX')
         ? 'env'

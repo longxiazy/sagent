@@ -29,6 +29,8 @@ const mockRegistry: any = {
 };
 
 let tmpDir;
+// 无项目 scope 的落盘目录:tmpDir/projects/default 全局桶。
+let globalDataDir;
 let app;
 let agentRunStore;
 let approvalStore;
@@ -41,13 +43,14 @@ beforeEach(async () => {
   const { createAgentRunStore } = await import('../helpers/run-store.js');
   const { createApprovalStore } = await import('../agent/core/approval-store.js');
   const { configStore } = await import('../agent/core/config-store.js');
-  const { createProjectStore } = await import('../agent/core/project-store.js');
+  const { createProjectStore, projectDataDir, GLOBAL_SCOPE_ID } = await import('../agent/core/project-store.js');
 
   agentRunStore = createAgentRunStore();
   approvalStore = createApprovalStore();
-  // 空注册表 → resolveRunPaths 回退到 tmpDir/process.cwd()，与无项目态一致。
+  // 空注册表 → resolveRunPaths 回退到 tmpDir/projects/default 与 process.cwd()，与无项目态一致。
   projectStore = createProjectStore(tmpDir);
   await projectStore.init();
+  globalDataDir = projectDataDir(tmpDir, GLOBAL_SCOPE_ID);
   lastRunOptions = null;
 
   const router = createAgentRouter({
@@ -180,9 +183,9 @@ describe('POST /api/agent', () => {
     expect(lastRunOptions).toMatchObject({ privateMode: true });
     const responseText = typeof res.text === 'string' ? res.text : String(res.body || '');
     expect(responseText).toContain('"privateMode":true');
-    await expect(fs.access(path.join(tmpDir, 'traces'))).rejects.toThrow();
-    await expect(fs.access(path.join(tmpDir, 'checkpoints'))).rejects.toThrow();
-    await expect(fs.access(path.join(tmpDir, 'chat-sessions.json'))).rejects.toThrow();
+    await expect(fs.access(path.join(globalDataDir, 'traces'))).rejects.toThrow();
+    await expect(fs.access(path.join(globalDataDir, 'session-checkpoints'))).rejects.toThrow();
+    await expect(fs.access(path.join(globalDataDir, 'chat-sessions.json'))).rejects.toThrow();
   });
 
   it('rejects checkpoint retry and rollback requests for private runs', async () => {
@@ -272,7 +275,7 @@ describe('/api/sessions private-mode guard', () => {
         },
       });
     expect(initial.status).toBe(200);
-    const file = path.join(tmpDir, 'chat-sessions.json');
+    const file = path.join(globalDataDir, 'chat-sessions.json');
     const before = await fs.readFile(file, 'utf8');
 
     const privateUpdate = await request(app)
@@ -332,7 +335,7 @@ describe('POST /api/uploads', () => {
     expect(res.body.path).toMatch(/^@uploads\/\d{4}-\d{2}-\d{2}\//);
     expect(path.isAbsolute(res.body.path)).toBe(false);
     const relativeUploadPath = res.body.path.slice('@uploads/'.length);
-    await expect(fs.access(path.join(tmpDir, 'uploads', relativeUploadPath))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(globalDataDir, 'uploads', relativeUploadPath))).resolves.toBeUndefined();
   });
 });
 
@@ -340,7 +343,7 @@ describe('GET /api/agent/stream/:runId', () => {
   it('replays only events after the requested cursor with monotonic SSE ids', async () => {
     const { createBaseEventSender } = await import('../helpers/run-agent.ts');
     const run = agentRunStore.createRun({}, 1, 'run_cursor_reconnect');
-    const send = createBaseEventSender(run.runId, agentRunStore, tmpDir);
+    const send = createBaseEventSender(run.runId, agentRunStore, globalDataDir);
     send({ type: 'status', status: 'running', message: 'first' });
     send({ type: 'notification', level: 'info', message: 'second' });
     send({ type: 'done', answer: 'third' });
@@ -407,7 +410,7 @@ describe('GET /api/agent/stream/:runId', () => {
     const run = agentRunStore.createRun({ dataDir: projectDataDir }, 1, 'run_project_stream');
     const send = createBaseEventSender(run.runId, agentRunStore, projectDataDir);
     send({ type: 'notification', level: 'info', message: 'project trace' });
-    await appendTraceEvent(tmpDir, run.runId, { type: 'notification', message: 'global trace' });
+    await appendTraceEvent(globalDataDir, run.runId, { type: 'notification', message: 'global trace' });
     await run.persistence?.flush();
     agentRunStore.closeRun(run.runId, 'completed');
 
@@ -428,30 +431,30 @@ describe('GET /api/agent/stream/:runId', () => {
 });
 
 describe('POST /api/agent/cancel', () => {
-  it('removes checkpoints from the project run directory instead of the global directory', async () => {
-    const { saveCheckpoint } = await import('../agent/core/checkpoint.ts');
+  it('removes session checkpoints from the project run directory instead of the global directory', async () => {
+    const { saveHealthySnapshot } = await import('../agent/core/checkpoint.ts');
     const projectDataDir = path.join(tmpDir, 'projects', 'project-cancel');
     const run = agentRunStore.createRun({ dataDir: projectDataDir }, 1, 'run_project_cancel');
-    await saveCheckpoint(projectDataDir, { runId: run.runId, step: 1 });
-    await saveCheckpoint(tmpDir, { runId: run.runId, step: 99 });
+    await saveHealthySnapshot({ dir: projectDataDir, runId: run.runId, step: 1, history: [], state: null, result: 'ok' });
+    await saveHealthySnapshot({ dir: tmpDir, runId: run.runId, step: 99, history: [], state: null, result: 'ok' });
 
     const res = await request(app).post('/api/agent/cancel').send({ runId: run.runId });
 
     expect(res.status).toBe(200);
-    await expect(fs.access(path.join(projectDataDir, 'checkpoints', `${run.runId}.json`))).rejects.toThrow();
-    await expect(fs.access(path.join(tmpDir, 'checkpoints', `${run.runId}.json`))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(projectDataDir, 'session-checkpoints', run.runId))).rejects.toThrow();
+    await expect(fs.access(path.join(tmpDir, 'session-checkpoints', run.runId))).resolves.toBeUndefined();
     agentRunStore.closeRun(run.runId);
   });
 
-  it('queues cancellation cleanup after in-flight checkpoint writes', async () => {
-    const { saveCheckpoint } = await import('../agent/core/checkpoint.ts');
+  it('queues cancellation cleanup after in-flight session checkpoint writes', async () => {
+    const { saveHealthySnapshot } = await import('../agent/core/checkpoint.ts');
     const projectDataDir = path.join(tmpDir, 'projects', 'project-cancel-race');
     const run = agentRunStore.createRun({ dataDir: projectDataDir }, 1, 'run_project_cancel_race');
     let releaseWrite: () => void = () => {};
     const gate = new Promise<void>(resolve => { releaseWrite = resolve; });
     run.persistence?.enqueue(async () => {
       await gate;
-      await saveCheckpoint(projectDataDir, { runId: run.runId, step: 1 });
+      await saveHealthySnapshot({ dir: projectDataDir, runId: run.runId, step: 1, history: [], state: null, result: 'ok' });
     });
 
     const pendingResponse = request(app)
@@ -463,7 +466,7 @@ describe('POST /api/agent/cancel', () => {
     const res = await pendingResponse;
 
     expect(res.status).toBe(200);
-    await expect(fs.access(path.join(projectDataDir, 'checkpoints', `${run.runId}.json`))).rejects.toThrow();
+    await expect(fs.access(path.join(projectDataDir, 'session-checkpoints', run.runId))).rejects.toThrow();
     agentRunStore.closeRun(run.runId);
   });
 });

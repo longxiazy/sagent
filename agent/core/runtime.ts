@@ -359,7 +359,6 @@ export async function runAgentRuntime({
   shouldObserve = null,
   initialStep = 1,
   initialHistory = [],
-  onCheckpoint = null,
   saveSessionSnapshot = null,
   // v2: 会话检查点 & 手动回滚
   sessionCheckpointDir = null,
@@ -618,9 +617,6 @@ export async function runAgentRuntime({
           resultError,
         });
       }
-
-      // ---- 原有 checkpoint（step 级） ----
-      await onCheckpoint?.(history, step);
 
       // ---- 会话级健康快照（纳入持久化队列，结束前可完整 flush） ----
       if (sessionCheckpointDir && runRecord && step % HEALTH_CHECKPOINT_INTERVAL === 0) {

@@ -29,7 +29,6 @@ describe('private run context', () => {
     const runId = 'run_private_cleanup';
     const paths = [
       path.join(tmpDir, 'traces', `${runId}.jsonl`),
-      path.join(tmpDir, 'checkpoints', `${runId}.json`),
       path.join(tmpDir, 'session-checkpoints', runId, 'session-healthy-1.json'),
       path.join(tmpDir, 'worker-logs', `${runId}.log`),
       path.join(tmpDir, 'screenshots', runId, 'screen-1.png'),

@@ -24,7 +24,7 @@ sagent 把 React Web UI、Bun/Express 后端和可调用工具的 Agent runtime 
 - macOS 桌面观察、截图、浏览器自动化，以及可选的 Chrome DevTools MCP 集成。
 - 文件、终端、搜索、视觉、MCP、浏览器等工具统一接入 Agent runtime。
 - 短生命周期 Agent Worker 可在设置中开关，macOS Sandbox 也可独立配置。
-- 项目级记忆、trace、上传文件、checkpoint 和中断恢复。
+- 项目级记忆、trace、上传文件和会话回滚快照。
 - 局域网内手机、平板、电脑都能实时查看 Agent 进度。
 - 内置 smoke 测试和 trace 文件，方便功能开发后回归验证。
 
@@ -100,9 +100,9 @@ VITE_HOST=0.0.0.0 npm run sandbox
 
 Agent 模式下，每一步都可以调用多个模型。竞速模式采用第一个有效结果并取消其余请求；投票模式会等待所有活动模型并聚合成功决策；渐进式模式先运行主模型，主模型过慢或失败时再让其余模型加入竞速。前端支持选择模型、调整优先级、切换策略。
 
-### Checkpoint 恢复
+### 会话回滚
 
-普通 Agent 每完成一步，都会在本次运行的数据目录下写入 `checkpoints/`。如果后端重启且恢复已启用，sagent 会还原上次运行状态，并从下一步继续执行。正常完成的任务会自动清理 checkpoint；隐私模式不会创建 checkpoint，因此该模式下不支持断点恢复和回滚。
+普通 Agent 每完成一步，都会在本次运行的数据目录下 `session-checkpoints/` 写入一份健康快照，可将运行中的任务手动回滚到较早的步骤。取消任务会清理这些快照；隐私模式不创建快照，因此该模式下不支持回滚。后端重启后不再恢复中断的运行。
 
 ### 跨会话记忆
 
@@ -110,7 +110,7 @@ sagent 会在配置的数据目录下保存项目经验，包括近期任务摘�
 
 ### 浏览器与 MCP 集成
 
-内置 Browser 仅用于只读信息浏览和正文提取；点击、输入、登录、提交、上传、下载等网页交互统一由 Chrome DevTools MCP 负责。输入框工具栏中的“隐私模式”会让本次任务使用一次性 Browser profile，并在任务正常收尾时删除 Cookie 和 LocalStorage；同时跳过聊天会话、应用/运行日志、LLM 日志、trace、checkpoint、Worker 日志和 sagent 自己管理的截图持久化。该隔离不覆盖外部 Chrome MCP：隐私模式既不会隔离它的浏览器 profile，也不会清除它的现有会话。Chrome MCP 会增加 `chrome_list_tools` 和 `chrome_call_tool`。包括 `codex mcp-server` 在内的通用 MCP server 会通过 `mcp_list_servers`、`mcp_list_tools` 和 `mcp_call_tool` 接入。所有集成都是可选能力，配置方式见 [CONFIGURATION.md](CONFIGURATION.md)。
+内置 Browser 仅用于只读信息浏览和正文提取；点击、输入、登录、提交、上传、下载等网页交互统一由 Chrome DevTools MCP 负责。输入框工具栏中的“隐私模式”会让本次任务使用一次性 Browser profile，并在任务正常收尾时删除 Cookie 和 LocalStorage；同时跳过聊天会话、应用/运行日志、LLM 日志、trace、会话快照、Worker 日志和 sagent 自己管理的截图持久化。该隔离不覆盖外部 Chrome MCP：隐私模式既不会隔离它的浏览器 profile，也不会清除它的现有会话。Chrome MCP 会增加 `chrome_list_tools` 和 `chrome_call_tool`。包括 `codex mcp-server` 在内的通用 MCP server 会通过 `mcp_list_servers`、`mcp_list_tools` 和 `mcp_call_tool` 接入。所有集成都是可选能力，配置方式见 [CONFIGURATION.md](CONFIGURATION.md)。
 
 ## 常用命令
 
@@ -125,7 +125,7 @@ npm run stop         # 停止前后端进程
 npm run chrome:mcp   # 启动 Chrome DevTools MCP SSE bridge
 ```
 
-运行 smoke 测试时，先启动 sagent，再在另一个终端执行 `npm run smoke`。报告会写入 `data/smoke-reports/`，失败用例会打印对应的 `data/traces/` 文件路径。
+运行 smoke 测试时，先启动 sagent，再在另一个终端执行 `npm run smoke`。报告会写入 `data/smoke-reports/`，失败用例会打印对应的 `data/projects/default/traces/` 文件路径。
 
 ## 目录结构
 

@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { removeCheckpoint, removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
+import { removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
 import { deleteTrace } from './trace-store.ts';
 
 const SAFE_RUN_ID_RE = /^run_[a-z0-9]+_[a-z0-9]+$/i;
@@ -18,7 +18,6 @@ export async function removePrivateRunArtifacts(dataDir: string | undefined, run
 
   await Promise.all([
     deleteTrace(dataDir, runId),
-    removeCheckpoint(dataDir, runId),
     removeSessionCheckpoints(dataDir, runId),
     rm(join(dataDir, 'worker-logs', `${runId}.log`), { force: true }).catch(() => {}),
     rm(join(dataDir, 'screenshots', runId), { recursive: true, force: true }).catch(() => {}),

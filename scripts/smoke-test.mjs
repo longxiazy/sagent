@@ -332,7 +332,7 @@ async function main() {
     console.log(`  ${severityIcon(verdict.severity)} ${verdict.severity.padEnd(4)}  status=${status}  ${elapsed}  step=${stepCount}  model=${modelsUsed}  runId=${result.runId || '-'}`);
     for (const r of verdict.reasons) console.log(`        · ${r}`);
     if (verdict.severity !== 'pass' && result.runId) {
-      console.log(`        · trace: data/traces/${result.runId}.jsonl`);
+      console.log(`        · trace: data/projects/default/traces/${result.runId}.jsonl`);
     }
 
     // 客户端超时/异常退出但服务端 run 还在跑 → 必须主动 cancel,否则下一条会被 409 拦截
@@ -354,7 +354,7 @@ async function main() {
       stepCount: result.doneEvent?.meta?.step_count ?? null,
       modelsUsed: result.doneEvent?.meta?.models_used || [],
       elapsedMs: result.elapsedMs ?? null,
-      tracePath: result.runId ? `data/traces/${result.runId}.jsonl` : null,
+      tracePath: result.runId ? `data/projects/default/traces/${result.runId}.jsonl` : null,
       quality: result.doneEvent?.quality || null,
       answer: typeof result.doneEvent?.answer === 'string' ? result.doneEvent.answer.slice(0, 500) : null,
       error: result.errorEvent?.error || (result.ok ? null : result.reason),

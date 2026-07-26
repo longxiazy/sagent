@@ -1,26 +1,21 @@
 /**
- * Checkpoint — Agent 状态持久化：重启恢复 + 会话回滚
- *
- * 两套机制共用一个模块：
- *   1. Step 级检查点 — 每步覆盖写入，用于服务重启后恢复未完成任务
- *   2. Session 级快照 — 每步独立文件，用于运行中回滚到任意历史步骤
+ * Checkpoint — Session 级健康快照：运行中回滚到任意历史步骤
  *
  * 存储位置：
- *   Step 级：{dir}/checkpoints/{runId}.json          （单文件，覆盖写入）
  *   Session 级：{dir}/session-checkpoints/{runId}/session-healthy-{step}.json
  *
- * 隐私 run 在已建立的异步上下文中跳过 Step checkpoint 和 Session 快照写入。
- * 普通 run 的写入优先采用“先写 .tmp 再 rename”的原子替换；底层替换失败时
- * 才回退为直接写目标文件，因此不能把所有路径都描述成严格原子写入。
+ * 隐私 run 在已建立的异步上下文中跳过 Session 快照写入。普通 run 的写入优先
+ * 采用“先写 .tmp 再 rename”的原子替换；底层替换失败时才回退为直接写目标文件，
+ * 因此不能把所有路径都描述成严格原子写入。
+ *
+ * 历史注记：曾有一套 Step 级检查点(每步覆盖写 {dir}/checkpoints/{runId}.json)
+ * 用于服务重启后自动恢复未完成任务，现已移除；重启不再续跑历史 run。
  */
 
 import { mkdir, writeFile, readFile, unlink, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { log } from '../../helpers/logger.ts';
 import { isPrivateRun } from '../../helpers/private-run.ts';
 import type { ActionResultStatus, AgentRuntimeState, AgentStep, JsonObject, TokenUsage } from './contracts.ts';
-
-export type StepCheckpoint = { runId: string; [key: string]: unknown };
 
 export interface SessionSnapshot {
   type: 'healthy';
@@ -35,89 +30,11 @@ export interface SessionSnapshot {
   timestamp: number;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function isStepCheckpoint(value: unknown): value is StepCheckpoint {
-  return Boolean(value && typeof value === 'object' && typeof (value as Record<string, unknown>).runId === 'string');
-}
-
 // ─── 常量 ────────────────────────────────────────────────
 
 const HEALTH_CHECKPOINT_INTERVAL = 1;
 const KEEP_HEALTHY = 30;
 const KEEP_FAILED = 3;
-
-// ─── Step 级检查点（重启恢复）────────────────────────────
-
-function checkpointPath(dir: string, runId: string) {
-  return join(dir, 'checkpoints', `${runId}.json`);
-}
-
-function tmpPath(dir: string, runId: string) {
-  return join(dir, 'checkpoints', `${runId}.json.tmp`);
-}
-
-export async function saveCheckpoint(dir: string, data: StepCheckpoint): Promise<void> {
-  // 先在这里拦截，避免隐私任务连 checkpoints 目录都创建出来。
-  if (isPrivateRun()) return;
-  const cpDir = join(dir, 'checkpoints');
-  await mkdir(cpDir, { recursive: true });
-  const tmp = tmpPath(dir, data.runId);
-  const dest = checkpointPath(dir, data.runId);
-  const json = JSON.stringify(data);
-  try {
-    await writeFile(tmp, json, 'utf8');
-    await rename(tmp, dest);
-  } catch {
-    await writeFile(dest, json, 'utf8');
-  }
-}
-
-export async function listCheckpoints(dir: string): Promise<StepCheckpoint[]> {
-  const cpDir = join(dir, 'checkpoints');
-  try {
-    const files = await readdir(cpDir);
-    const checkpoints: StepCheckpoint[] = [];
-    for (const f of files) {
-      if (!f.endsWith('.json')) continue;
-      try {
-        const raw = await readFile(join(cpDir, f), 'utf8');
-        const parsed: unknown = JSON.parse(raw);
-        if (isStepCheckpoint(parsed)) checkpoints.push(parsed);
-        else log.warn(`Checkpoint validation failed: ${f}`);
-      } catch (err: unknown) {
-        log.warn(`Checkpoint parse failed: ${f}:`, errorMessage(err));
-      }
-    }
-    return checkpoints;
-  } catch {
-    return [];
-  }
-}
-
-export async function removeCheckpoint(dir: string, runId: string) {
-  try {
-    await unlink(checkpointPath(dir, runId));
-  } catch (err: unknown) {
-    log.debug(`Checkpoint remove failed for ${runId}:`, errorMessage(err));
-  }
-}
-
-export async function clearCheckpoints(dir: string) {
-  const cpDir = join(dir, 'checkpoints');
-  try {
-    const files = await readdir(cpDir);
-    for (const f of files) {
-      if (f.endsWith('.json')) {
-        await unlink(join(cpDir, f)).catch(() => {});
-      }
-    }
-  } catch (err: unknown) {
-    log.debug('Clear checkpoints failed:', errorMessage(err));
-  }
-}
 
 // ─── Session 级快照（回滚）─────────────────────────────────
 

@@ -82,24 +82,21 @@ describe('structured configuration store', () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'sagent-config-execution-'));
     await writeFile(path.join(dir, 'config.json'), JSON.stringify({
       version: 1,
-      execution: { sandboxedWorkers: false, workerSandbox: false, resume: false },
+      execution: { sandboxedWorkers: false, workerSandbox: false },
     }));
     await configStore.init(dir);
 
     expect(configStore.execution({})).toEqual({
       sandboxedWorkers: false,
       workerSandbox: false,
-      resume: false,
     });
-    // AGENT_SANDBOXED_WORKERS 不再被接受；仅 workerSandbox/resume 仍支持环境变量覆盖。
+    // AGENT_SANDBOXED_WORKERS 不再被接受；仅 workerSandbox 仍支持环境变量覆盖。
     expect(configStore.execution({
       AGENT_SANDBOXED_WORKERS: 'true',
       AGENT_WORKER_SANDBOX: 'true',
-      AGENT_RESUME: 'true',
     })).toEqual({
       sandboxedWorkers: false,
       workerSandbox: true,
-      resume: true,
     });
   });
 

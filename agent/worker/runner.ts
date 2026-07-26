@@ -12,7 +12,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { saveCheckpoint, saveHealthySnapshot } from '../core/checkpoint.ts';
+import { saveHealthySnapshot } from '../core/checkpoint.ts';
 import { createPersistenceQueue } from '../../helpers/persistence-queue.ts';
 import { log } from '../../helpers/logger.ts';
 import { getLogPolicy, pruneLogTreeSync, rotateLogFileSync } from '../../helpers/log-policy.ts';
@@ -209,11 +209,6 @@ export function createSandboxedWorkerAgentRunner({
           opts.runRecord.rolledBack = true;
         }
         opts.onEvent?.(message.payload);
-        return;
-      }
-      if (message.type === 'checkpoint') {
-        if (cancelRequested || opts.privateMode === true) return;
-        persist(() => saveCheckpoint(dataDir, message.data));
         return;
       }
       if (message.type === 'session_checkpoint_snapshot') {

@@ -8,7 +8,7 @@
  */
 
 import { loadMemory, buildMemoryPrompt } from '../agent/core/memory.ts';
-import { removeCheckpoint, removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
+import { removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
 import { shutdownChromeMcp, closeAllChromePagesQuiet, loadChromeMcpConfig } from '../agent/tools/chrome/mcp-client.ts';
 import { resetChromeSnapshotState } from '../agent/tools/chrome/execute.ts';
 import { appendTraceEvent } from './trace-store.ts';
@@ -172,8 +172,6 @@ export async function cleanupAgentRun(
     await withPrivateRun(true, () => removePrivateRunArtifacts(dataDir, runId));
   }
   if (checkpointDir && !privateMode) {
-    // step-level checkpoint 只用于崩溃恢复，任务完成后可删除
-    await removeCheckpoint(checkpointDir, runId).catch(() => {});
     // Session 快照用于回滚，默认保留；只有调用方明确要求批量收尾时才删除。
     if (removeSnapshots) {
       await removeSessionCheckpoints(checkpointDir, runId).catch(() => {});

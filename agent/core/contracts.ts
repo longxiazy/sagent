@@ -276,7 +276,6 @@ export interface RunAgentRuntimeOptions {
   shouldObserve?: ((lastAction: AgentAction) => boolean) | null;
   initialStep?: number;
   initialHistory?: AgentStep[];
-  onCheckpoint?: ((history: AgentStep[], step: number) => unknown | Promise<unknown>) | null;
   saveSessionSnapshot?: ((data: unknown) => unknown | Promise<unknown>) | null;
   sessionCheckpointDir?: string | null;
   runRecord?: Pick<RunRecord, 'runId' | 'pendingRollback' | 'rolledBack'> | null;
@@ -340,7 +339,6 @@ export interface DesktopAgentRunOptions {
   projectRoot?: string | null;
   dataDir?: string | null;
   checkpointWriter?: {
-    saveCheckpoint(data: unknown): void | Promise<void>;
     saveHealthySnapshot(data: unknown): void | Promise<void>;
   } | null;
 }
