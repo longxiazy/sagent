@@ -170,7 +170,7 @@ export function createDesktopAgentRunner({
       },
       fs: async (state, action) => executeFsAction(action, { cwd: state.projectRoot, dataDir: state.dataDir, signal: state.cancelSignal }),
       search: async (state, action) => executeSearchAction(action, { signal: state.cancelSignal }),
-      vision: async (state, action) => {
+      vision: async (state, action, context) => {
         // Vision 兜底模型按四级解析：项目覆盖 → 全局配置 → 环境变量 → 当前主模型。
         // vision 工具仍会优先选择本次 run 中明确具备图片输入能力的候选模型；
         // 若最终兜底模型不支持多模态，由工具返回实际调用错误。
@@ -191,6 +191,9 @@ export function createDesktopAgentRunner({
           signal: state.cancelSignal,
           projectRoot: state.projectRoot,
           dataDir: state.dataDir,
+          // question 就是用户对图片的要求本身；模型漏填时回落到任务描述，
+          // 而不是让整个 run 因为缺一个可推导的参数直接失败。
+          task: context?.task,
         });
       },
       chrome: async (state, action) => executeChromeAction(action, { signal: state.cancelSignal }),
