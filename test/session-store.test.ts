@@ -2,17 +2,20 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createProjectStore, projectDataDir } from '../agent/core/project-store.js';
+import { createProjectStore, projectDataDir, GLOBAL_SCOPE_ID } from '../agent/core/project-store.js';
 import { createSessionStore } from '../agent/core/session-store.js';
 import { appendTraceEvent } from '../helpers/trace-store.js';
 import { withPrivateRun } from '../helpers/private-run.js';
 
 describe('backend session store', () => {
   let tmpDir: string;
+  // 无项目 scope 的落盘目录:与项目目录同级的 projects/default 全局桶。
+  let globalDataDir: string;
   let projectStore: ReturnType<typeof createProjectStore>;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sagent-sessions-'));
+    globalDataDir = projectDataDir(tmpDir, GLOBAL_SCOPE_ID);
     projectStore = createProjectStore(tmpDir);
     await projectStore.init();
   });
@@ -23,7 +26,7 @@ describe('backend session store', () => {
 
   it('recovers a conversation from run_meta and terminal trace events', async () => {
     const runId = 'run_session_recover';
-    await appendTraceEvent(tmpDir, runId, {
+    await appendTraceEvent(globalDataDir, runId, {
       type: 'run_meta',
       runId,
       sessionId: 'session_backend',
@@ -32,7 +35,7 @@ describe('backend session store', () => {
       startedAt: 1000,
       timestamp: 1000,
     });
-    await appendTraceEvent(tmpDir, runId, {
+    await appendTraceEvent(globalDataDir, runId, {
       type: 'done',
       runId,
       answer: '恢复后的答案',
@@ -64,8 +67,8 @@ describe('backend session store', () => {
       `[2026-07-12T08:00:00.000Z INFO] POST /api/agent model=model-b headless=false task="旧版问题" run_id=${runId}\n`,
       'utf8',
     );
-    await appendTraceEvent(tmpDir, runId, { type: 'status', status: 'starting', timestamp: 1000 });
-    await appendTraceEvent(tmpDir, runId, { type: 'done', answer: '旧版答案', timestamp: 2000, meta: {} });
+    await appendTraceEvent(globalDataDir, runId, { type: 'status', status: 'starting', timestamp: 1000 });
+    await appendTraceEvent(globalDataDir, runId, { type: 'done', answer: '旧版答案', timestamp: 2000, meta: {} });
 
     const store = createSessionStore({ memoryDir: tmpDir, projectStore });
     const state = await store.loadAll();
@@ -78,10 +81,10 @@ describe('backend session store', () => {
     // 回归本次 bug：过期客户端只 upsert 它自己那条,完全没提到已存在的会话,
     // 已存在的会话必须原样保留、绝不能被“缺失”推断成删除。
     const runId = 'run_kept_trace';
-    await appendTraceEvent(tmpDir, runId, {
+    await appendTraceEvent(globalDataDir, runId, {
       type: 'run_meta', task: '保留我', model: 'model-a', startedAt: 1000, timestamp: 1000,
     });
-    await appendTraceEvent(tmpDir, runId, { type: 'done', answer: '答案', timestamp: 2000, meta: {} });
+    await appendTraceEvent(globalDataDir, runId, { type: 'done', answer: '答案', timestamp: 2000, meta: {} });
     const store = createSessionStore({ memoryDir: tmpDir, projectStore });
     const recovered = await store.loadAll();
     expect(recovered.sessions).toHaveLength(1);
@@ -98,10 +101,10 @@ describe('backend session store', () => {
 
   it('does not resurrect trace sessions after an explicit delete', async () => {
     const runId = 'run_removed_trace';
-    await appendTraceEvent(tmpDir, runId, {
+    await appendTraceEvent(globalDataDir, runId, {
       type: 'run_meta', task: '稍后删除', model: 'model-a', startedAt: 1000, timestamp: 1000,
     });
-    await appendTraceEvent(tmpDir, runId, { type: 'done', answer: '答案', timestamp: 2000, meta: {} });
+    await appendTraceEvent(globalDataDir, runId, { type: 'done', answer: '答案', timestamp: 2000, meta: {} });
     const store = createSessionStore({ memoryDir: tmpDir, projectStore });
     const recovered = await store.loadAll();
     expect(recovered.sessions).toHaveLength(1);
@@ -159,7 +162,7 @@ describe('backend session store', () => {
       privateMode: true,
     });
 
-    await expect(fs.access(path.join(tmpDir, 'chat-sessions.json'))).rejects.toThrow();
+    await expect(fs.access(path.join(globalDataDir, 'chat-sessions.json'))).rejects.toThrow();
 
     // 即使调用方漏传 privateMode，异步隐私上下文也会挡住写入。
     await withPrivateRun(true, () => store.upsertSession({
@@ -167,16 +170,16 @@ describe('backend session store', () => {
       messages: [{ role: 'user', content: '上下文隐私' }],
       updatedAt: 3000,
     }));
-    await expect(fs.access(path.join(tmpDir, 'chat-sessions.json'))).rejects.toThrow();
+    await expect(fs.access(path.join(globalDataDir, 'chat-sessions.json'))).rejects.toThrow();
 
-    await appendTraceEvent(tmpDir, 'run_readonly_recovery', {
+    await appendTraceEvent(globalDataDir, 'run_readonly_recovery', {
       type: 'run_meta',
       task: '只读恢复',
       model: 'model-read-only',
       startedAt: 4000,
       timestamp: 4000,
     });
-    await appendTraceEvent(tmpDir, 'run_readonly_recovery', {
+    await appendTraceEvent(globalDataDir, 'run_readonly_recovery', {
       type: 'done',
       answer: '只读答案',
       timestamp: 5000,
@@ -184,7 +187,7 @@ describe('backend session store', () => {
     });
     const readOnly = await store.loadAll({ persist: false });
     expect(readOnly.sessions.some(session => session.messages.some(message => message.content === '只读恢复'))).toBe(true);
-    await expect(fs.access(path.join(tmpDir, 'chat-sessions.json'))).rejects.toThrow();
+    await expect(fs.access(path.join(globalDataDir, 'chat-sessions.json'))).rejects.toThrow();
   });
 
   it('recovers project traces with the correct project ownership', async () => {

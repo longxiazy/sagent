@@ -26,6 +26,16 @@ import path from 'node:path';
 
 const PROJECTS_FILE = 'projects.json';
 
+/**
+ * 「无项目」run 数据的固定存储桶 id。让全局态的 traces/session-checkpoints/
+ * uploads/agent-memory.json 等落在 {MEMORY_DIR}/projects/default,与真实项目
+ * {MEMORY_DIR}/projects/<id> 同级,而非直接堆在 MEMORY_DIR 根。
+ *
+ * 注意:default 只是存储桶,不是一个项目——projects.json 注册表不含 default 条目,
+ * activeProjectId=null 语义不变。generateProjectId 只产 proj_* 前缀,永不与之冲突。
+ */
+export const GLOBAL_SCOPE_ID = 'default';
+
 function projectsFilePath(memoryRoot: string) {
   return path.join(memoryRoot, PROJECTS_FILE);
 }
@@ -211,7 +221,7 @@ export type ProjectStore = ReturnType<typeof createProjectStore>;
 /**
  * 解析一次 run / 读取的落盘目录与项目根。
  * - 传入有效 projectId 且项目存在: 用 {MEMORY_DIR}/projects/<id> 与 project.rootPath
- * - 未指定 projectId(null/空)或项目已删除: 回退全局 MEMORY_DIR 与 process.cwd()
+ * - 未指定 projectId(null/空)或项目已删除: 回退全局桶 {MEMORY_DIR}/projects/default 与 process.cwd()
  *
  * 注意: 这里**不**用 getActive() 兜底——「未指定」语义上等于全局，而非「当前激活项目」。
  * 否则旧的 null 会话读取 trace/memory 时会被错误地路由到激活项目目录(404/读错)。
@@ -230,7 +240,7 @@ export function resolveRunPaths(
       dataDir: projectDataDir(globalMemoryDir, project.projectId),
     };
   }
-  return { projectId: null, projectRoot: process.cwd(), dataDir: globalMemoryDir };
+  return { projectId: null, projectRoot: process.cwd(), dataDir: projectDataDir(globalMemoryDir, GLOBAL_SCOPE_ID) };
 }
 
 /**
@@ -243,7 +253,7 @@ export async function resolveRunPathsForExecution(
   globalMemoryDir: string,
 ): Promise<{ projectId: string | null; projectRoot: string; dataDir: string }> {
   if (!projectId) {
-    return { projectId: null, projectRoot: process.cwd(), dataDir: globalMemoryDir };
+    return { projectId: null, projectRoot: process.cwd(), dataDir: projectDataDir(globalMemoryDir, GLOBAL_SCOPE_ID) };
   }
   const project = projectStore.get(projectId);
   if (!project) {

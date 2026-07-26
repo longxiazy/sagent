@@ -16,7 +16,8 @@
     "prompt:bench": "bun scripts/prompt-benchmark.ts",
     "eval": "bun scripts/trace-eval.ts",
     "eval:capture": "bun scripts/trace-eval.ts capture",
-    "eval:live": "bun scripts/trace-eval.ts --live"
+    "eval:live": "bun scripts/trace-eval.ts --live",
+    "migrate:global": "bun scripts/migrate-global-scope.ts"
   },
   "dependencies": {
     "@google/genai": "^2.7.0",

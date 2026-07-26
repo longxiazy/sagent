@@ -4,7 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   createProjectStore,
+  projectDataDir,
+  resolveRunPaths,
   resolveRunPathsForExecution,
+  GLOBAL_SCOPE_ID,
 } from '../agent/core/project-store.ts';
 
 let tmpDir: string;
@@ -60,5 +63,21 @@ describe('project root validation', () => {
       .rejects.toThrow('项目根目录不存在或已移动');
     await expect(store.setActive(project.projectId))
       .rejects.toThrow('项目根目录不存在或已移动');
+  });
+});
+
+describe('global scope run paths', () => {
+  it('routes no-project runs to the projects/default bucket instead of the memory root', async () => {
+    const memoryDir = path.join(tmpDir, 'data');
+    const store = createProjectStore(memoryDir);
+    await store.init();
+    const expected = path.join(memoryDir, 'projects', GLOBAL_SCOPE_ID);
+    expect(projectDataDir(memoryDir, GLOBAL_SCOPE_ID)).toBe(expected);
+
+    const resolved = resolveRunPaths(store, null, memoryDir);
+    expect(resolved).toMatchObject({ projectId: null, dataDir: expected });
+
+    const forExecution = await resolveRunPathsForExecution(store, null, memoryDir);
+    expect(forExecution).toMatchObject({ projectId: null, dataDir: expected });
   });
 });

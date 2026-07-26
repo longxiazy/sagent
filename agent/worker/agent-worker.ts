@@ -153,12 +153,6 @@ async function main() {
     });
 
     const checkpointWriter = {
-      saveCheckpoint(data: any) {
-        // Child and parent both reject private checkpoints; the duplicate guard protects
-        // against future callers bypassing either side of the bridge.
-        if (payload.privateMode === true) return;
-        writeProtocol({ type: 'checkpoint', data });
-      },
       saveHealthySnapshot(data: any) {
         if (payload.privateMode === true) return;
         writeProtocol({ type: 'session_checkpoint_snapshot', data });

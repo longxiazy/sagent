@@ -6,7 +6,7 @@
 
 import { Router } from 'express';
 import type { AgentRouterContext } from './agent-types.ts';
-import { removeCheckpoint, removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
+import { removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
 import { readTraceEvents } from '../helpers/trace-store.ts';
 import { log } from '../helpers/logger.ts';
 import { tReq } from '../helpers/i18n.ts';
@@ -59,12 +59,10 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
     if (run && !privateMode) log.warn(`[Cancel] cancelRun 完成 runId=${runId}`);
     approvalStore.rejectAll();
     if (run && !privateMode) log.warn(`[Cancel] rejectAll 完成 runId=${runId}`);
-    // 立即清理 Step checkpoint 和 Session 快照，防止取消任务被恢复或回滚。
+    // 立即清理 Session 快照，防止取消任务被回滚。
     try {
-      const removeCancelledCheckpoints = () => Promise.all([
-        removeCheckpoint(run?.meta?.dataDir || checkpointDir, runId),
-        removeSessionCheckpoints(run?.meta?.dataDir || checkpointDir, runId),
-      ]);
+      const removeCancelledCheckpoints = () =>
+        removeSessionCheckpoints(run?.meta?.dataDir || checkpointDir, runId);
       if (run?.persistence) await run.persistence.enqueue(removeCancelledCheckpoints);
       else await removeCancelledCheckpoints();
       if (run && !privateMode) log.warn(`[Cancel] checkpoint 清理完成 runId=${runId}`);

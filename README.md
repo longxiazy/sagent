@@ -24,7 +24,7 @@ The project is designed for local use: you choose a project workspace, start an 
 - macOS desktop observation, screenshots, browser automation, and optional Chrome DevTools MCP integration.
 - File, terminal, search, vision, MCP, and browser tools behind an approval-aware runtime.
 - Configurable short-lived Agent workers, with optional macOS sandboxing.
-- Project-scoped memory, traces, uploads, checkpoints, and run recovery.
+- Project-scoped memory, traces, uploads, and session rollback snapshots.
 - Mobile-friendly progress view for devices on the same LAN.
 - Smoke tests and trace files for validating Agent behavior after changes.
 
@@ -102,9 +102,9 @@ Devices on the same LAN can then open `http://<Mac-IP>:5173`. The first protecte
 
 Agent mode can call multiple models for each step. In race mode, the first valid result wins and the remaining requests are cancelled. In vote mode, all selected models run and successful decisions are aggregated. Progressive mode starts with the primary model, then lets the remaining models join the race if it is slow or fails. The UI lets you select models, reorder priority, and switch strategies per run.
 
-### Checkpoint Recovery
+### Session Rollback
 
-Each completed step of a normal Agent run is written under that run's data directory in `checkpoints/`. If the backend restarts and recovery is enabled, sagent restores the last run state and continues from the next step. Completed runs clean up their checkpoints automatically; Private mode creates no checkpoints, so recovery and rollback are unavailable for that run.
+Each step of a normal Agent run writes a health snapshot under that run's data directory in `session-checkpoints/`, letting you manually roll a running task back to an earlier step. Cancelling a run clears its snapshots; Private mode creates none, so rollback is unavailable for that run. The backend does not resume interrupted runs after a restart.
 
 ### Cross-Session Memory
 
@@ -112,7 +112,7 @@ sagent stores project experience under the configured data directory. Memory inc
 
 ### Browser And MCP Integrations
 
-The built-in Browser is read-only and is limited to navigation and content extraction. The “Private mode” toggle in the composer gives the built-in Browser a disposable profile for each task and removes its cookies and LocalStorage during normal task cleanup; it also skips persistence of chat sessions, app/run logs, LLM logs, traces, checkpoints, Worker logs, and sagent-managed screenshots. This isolation does not extend to external Chrome MCP: its browser profile and session are neither isolated nor cleared by Private mode. All interactive web operations—including clicking, typing, login, form submission, upload, and download—are delegated to Chrome DevTools MCP through `chrome_list_tools` and `chrome_call_tool`. Generic MCP servers (including `codex mcp-server`) are exposed through `mcp_list_servers`, `mcp_list_tools`, and `mcp_call_tool`. All integrations are optional and documented in [CONFIGURATION.md](CONFIGURATION.md).
+The built-in Browser is read-only and is limited to navigation and content extraction. The “Private mode” toggle in the composer gives the built-in Browser a disposable profile for each task and removes its cookies and LocalStorage during normal task cleanup; it also skips persistence of chat sessions, app/run logs, LLM logs, traces, session snapshots, Worker logs, and sagent-managed screenshots. This isolation does not extend to external Chrome MCP: its browser profile and session are neither isolated nor cleared by Private mode. All interactive web operations—including clicking, typing, login, form submission, upload, and download—are delegated to Chrome DevTools MCP through `chrome_list_tools` and `chrome_call_tool`. Generic MCP servers (including `codex mcp-server`) are exposed through `mcp_list_servers`, `mcp_list_tools`, and `mcp_call_tool`. All integrations are optional and documented in [CONFIGURATION.md](CONFIGURATION.md).
 
 ## Common Commands
 
@@ -127,7 +127,7 @@ npm run stop         # Stop frontend and backend processes
 npm run chrome:mcp   # Start the Chrome DevTools MCP SSE bridge
 ```
 
-For smoke tests, start sagent first, then run `npm run smoke` in another terminal. Reports are written to `data/smoke-reports/`, and failed cases point to their trace files under `data/traces/`.
+For smoke tests, start sagent first, then run `npm run smoke` in another terminal. Reports are written to `data/smoke-reports/`, and failed cases point to their trace files under `data/projects/default/traces/`.
 
 ## Project Layout
 

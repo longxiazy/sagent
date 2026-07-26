@@ -11,7 +11,7 @@ import path from 'node:path';
 import { createPersistenceQueue } from '../../helpers/persistence-queue.ts';
 import { listTraceRuns, readTraceEvents } from '../../helpers/trace-store.ts';
 import { isPrivateRun } from '../../helpers/private-run.ts';
-import { projectDataDir, type ProjectStore } from './project-store.ts';
+import { projectDataDir, GLOBAL_SCOPE_ID, type ProjectStore } from './project-store.ts';
 
 const SESSIONS_FILE = 'chat-sessions.json';
 const SESSION_VERSION = 1;
@@ -281,14 +281,14 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
     return queue;
   };
   const scopes = () => [
-    { projectId: null as string | null, dataDir: memoryDir },
+    { projectId: null as string | null, dataDir: projectDataDir(memoryDir, GLOBAL_SCOPE_ID) },
     ...projectStore.list().projects.map((project: any) => ({
       projectId: project.projectId as string,
       dataDir: projectDataDir(memoryDir, project.projectId),
     })),
   ];
   const resolveScope = (projectId: string | null) => {
-    if (!projectId) return { projectId: null, dataDir: memoryDir };
+    if (!projectId) return { projectId: null, dataDir: projectDataDir(memoryDir, GLOBAL_SCOPE_ID) };
     const project = projectStore.get(projectId);
     if (!project) throw new Error(`项目不存在: ${projectId}`);
     return { projectId, dataDir: projectDataDir(memoryDir, projectId) };

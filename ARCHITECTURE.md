@@ -26,9 +26,9 @@ Agent runtime
           │
           ▼
 data directory
-  ├─ config.json
-  ├─ projects, memory and uploads
-  ├─ traces and checkpoints
+  ├─ config.json and other global files
+  ├─ projects/<id> and projects/default (per-scope memory, uploads,
+  │    traces and session-checkpoints)
   └─ local caches and smoke reports
 ```
 
@@ -40,7 +40,8 @@ data directory
 4. The project, run, approval and persistence stores are initialized.
 5. The server selects the direct runner or sandboxed worker runner. Explicit startup environment variables override stored `execution` values, so `npm run sandbox` always enables workers.
 6. API routes and the production client bundle are mounted.
-7. If recovery is enabled, incomplete checkpoints are inspected and resumed.
+
+The server no longer resumes incomplete runs on restart; Step-level checkpoints were removed. Session-level health snapshots remain for in-run manual rollback only.
 
 ## Configuration architecture
 
@@ -61,7 +62,7 @@ Agent tuning resolves as:
 schema defaults < data/config.json < per-run values
 ```
 
-Agent tuning fields no longer read `AGENT_*` environment variables — they come from the built-in schema defaults and `data/config.json` only. Startup-only execution flags are different: `resume`/`workerSandbox` honor `AGENT_RESUME`/`AGENT_WORKER_SANDBOX` env overrides, while `sandboxedWorkers` is resolved from stored config only (default `true`).
+Agent tuning fields no longer read `AGENT_*` environment variables — they come from the built-in schema defaults and `data/config.json` only. Startup-only execution flags are different: `workerSandbox` honors the `AGENT_WORKER_SANDBOX` env override, while `sandboxedWorkers` is resolved from stored config only (default `true`).
 
 ## Agent run lifecycle
 
@@ -72,7 +73,7 @@ Each step follows this loop:
 ```text
 observe → build bounded prompt → ask one or more models → select decision
         → classify policy → request approval when needed → execute tool
-        → persist trace/checkpoint → continue or finish
+        → persist trace + session snapshot → continue or finish
 ```
 
 The planner supports:
@@ -96,7 +97,7 @@ Chrome and generic MCP integrations are configured under `mcpServers` in `data/c
 
 ## Persistence and recovery
 
-Project data is isolated below the configured data directory. Traces are append-only run diagnostics; checkpoints contain resumable execution state. A completed or cancelled run removes its checkpoint, while an interrupted run can be restored after restart when recovery is enabled.
+Project data is isolated below the configured data directory. The no-project ("global") scope stores its run data under `projects/default/`, at the same level as each real project's `projects/<id>/`. Traces are append-only run diagnostics; session-checkpoints hold per-step health snapshots used for in-run manual rollback (a cancelled run removes them). There is no restart recovery.
 
 Writes that must survive shutdown are tracked through the persistence queue. Server shutdown first stops accepting work, cancels or drains active runs, flushes queued persistence and LLM logs, then exits.
 
