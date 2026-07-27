@@ -107,6 +107,37 @@ describe('vision tool model selection', () => {
       source: 'selected',
     });
   });
+
+  it('falls back to the task text when the model omits question', async () => {
+    const provider = {
+      completionJson: vi.fn().mockResolvedValue({
+        choices: [{ message: { content: '| A | B |' } }],
+      }),
+    };
+
+    const result = await executeVisionAction(
+      { image: DATA_URL },
+      {
+        registry: mockRegistry(provider),
+        visionModel: 'meta/llama-3.2-90b-vision-instruct',
+        task: '提取图片文字,形成表格',
+      }
+    );
+
+    const text = provider.completionJson.mock.calls[0][0].messages[0].content[0].text;
+    expect(text).toContain('提取图片文字,形成表格');
+    expect(result).not.toContain('缺少 question');
+  });
+
+  it('still reports missing question when no task is available either', async () => {
+    const provider = { completionJson: vi.fn() };
+
+    await expect(executeVisionAction(
+      { image: DATA_URL },
+      { registry: mockRegistry(provider), visionModel: 'meta/llama-3.2-90b-vision-instruct' }
+    )).resolves.toContain('缺少 question');
+    expect(provider.completionJson).not.toHaveBeenCalled();
+  });
 });
 
 describe('Gemini provider multimodal completion', () => {

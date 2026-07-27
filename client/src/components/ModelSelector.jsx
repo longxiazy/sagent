@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowUpDown, Check, ChevronDown, ChevronRight, ChevronUp, ExternalLink, HelpCircle, Search, Star, X } from 'lucide-react';
+import { ArrowUpDown, Check, ChevronDown, ChevronUp, ExternalLink, HelpCircle, Search, Star, X } from 'lucide-react';
 import { useT } from '../i18n/I18nProvider.jsx';
 import { jsonStorage, usePersistentState } from '../hooks/usePersistentState.js';
 import { modelGreetingScore, modelPrice, modelSpeed, sortModels } from '../utils/model-sort.js';
@@ -36,6 +36,17 @@ const ENCYCLOPEDIA_FIELD_DEFS = [
   { key: 'contextWindow', getValue: model => model?.contextWindow || model?.context_length || model?.inputTokenLimit, token: true },
   { key: 'greetingScore', getValue: model => modelGreetingScore(model) },
 ];
+
+// 行内“更多信息”只展示最有用的几项,避免把整份字段一次性倾倒出来。
+const INLINE_DETAIL_FIELD_DEFS = ENCYCLOPEDIA_FIELD_DEFS.filter(field => [
+  'supportedGenerationMethods',
+  'inputModalities',
+  'outputModalities',
+  'supportedParameters',
+  'aliases',
+  'updated',
+  'catalogUrl',
+].includes(field.key));
 
 function asList(value) {
   return Array.isArray(value)
@@ -148,12 +159,27 @@ function modelModalities(model) {
   ]);
 }
 
+// 能力筛选只保留这三个真正影响「模型能不能用来做什么」的指标。
+// 早先把 supportedParameters(temperature/top_p/stream…)和 supportedMessageTypes
+// (text/image…)也混进来，选项里塞满了与能力无关的采样参数和模态。
+const CAPABILITY_DEFS = [
+  { value: 'tool_calling', labelKey: 'modelSelector.capabilityToolCalling' },
+  { value: 'json_output', labelKey: 'modelSelector.capabilityJsonOutput' },
+  { value: 'reasoning', labelKey: 'modelSelector.capabilityReasoning' },
+];
+
 function modelCapabilities(model) {
-  return uniqueSorted([
-    ...asList(model?.supportedParameters || model?.supported_parameters),
-    ...asList(model?.supportedGenerationMethods || model?.supported_generation_methods),
-    ...asList(model?.supportedMessageTypes || model?.supported_message_types),
-  ]);
+  // 各 provider 的词汇不同（NVIDIA: tool_calling/json_output/reasoning；
+  // Gemini: generateContent 等），统一按 generation methods + parameters 归一。
+  const methods = lowerList(model?.supportedGenerationMethods || model?.supported_generation_methods);
+  const params = lowerList(model?.supportedParameters || model?.supported_parameters);
+  const has = (...needles) => needles.some(n => methods.includes(n) || params.includes(n));
+
+  const capabilities = [];
+  if (has('tool_calling', 'tools', 'function_calling')) capabilities.push('tool_calling');
+  if (has('json_output', 'response_format', 'structured_output')) capabilities.push('json_output');
+  if (has('reasoning', 'chat_template_kwargs', 'thinking')) capabilities.push('reasoning');
+  return capabilities;
 }
 
 function modelCategoryIds(model) {
@@ -310,9 +336,8 @@ function ModelPickerDropdown({
   const [capabilityFilter, setCapabilityFilter] = useState('all');
   const [contextFilter, setContextFilter] = useState('all');
   const [categoryFilters, setCategoryFilters] = useState([]);
-  const [encyclopediaOpen, setEncyclopediaOpen] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const [expandedEncyclopediaModels, setExpandedEncyclopediaModels] = useState([]);
   const [sortMode, setSortMode] = usePersistentState('model_picker_sort', 'recommended');
   const [storedFavoriteModelIds, setStoredFavoriteModelIds] = usePersistentState('model_picker_favorites', [], jsonStorage);
   const [recentSelections, setRecentSelections] = usePersistentState('model_picker_recent', {}, jsonStorage);
@@ -327,7 +352,7 @@ function ModelPickerDropdown({
 
   const openPanel = () => {
     setQuery('');
-    setEncyclopediaOpen(false);
+    setShowDetails(false);
     setFiltersExpanded(false);
     setOpen(o => !o);
   };
@@ -339,7 +364,6 @@ function ModelPickerDropdown({
     setCapabilityFilter('all');
     setContextFilter('all');
     setCategoryFilters([]);
-    setExpandedEncyclopediaModels([]);
   };
 
   const selectedModelIds = multiple
@@ -414,11 +438,6 @@ function ModelPickerDropdown({
     sortMode,
     { favoriteIds: favoriteModelIds, recentById },
   );
-  const filteredCatalogModels = sortModels(
-    filterModels(availableModels, query).filter(model => matchesComplexFilters(model, filters)),
-    sortMode,
-    { favoriteIds: favoriteModelIds, recentById },
-  );
   // 筛选结果每次渲染都是新数组,手动 useMemo 反而被 React Compiler 拒绝优化;
   // 这里直接调用,交给编译器自动 memo。
   const providerOptions = groupByProvider(availableModels).map(group => ({
@@ -426,10 +445,14 @@ function ModelPickerDropdown({
     count: group.models.length,
   }));
   const modalityOptions = countOptions(availableModels, modelModalities).slice(0, 10);
-  const capabilityOptions = countOptions(availableModels, modelCapabilities).slice(0, 12);
+  // 固定这三项能力（不按出现频率动态生成），计数为 0 的不展示
+  const capabilityCounts = countOptions(availableModels, modelCapabilities)
+    .reduce((acc, option) => ({ ...acc, [option.value]: option.count }), {});
+  const capabilityOptions = CAPABILITY_DEFS
+    .filter(def => (capabilityCounts[def.value] || 0) > 0)
+    .map(def => ({ value: def.value, label: t(def.labelKey), count: capabilityCounts[def.value] }));
   const categoryCounts = countOptions(availableModels, modelCategoryIds)
     .reduce((acc, option) => ({ ...acc, [option.value]: option.count }), {});
-  const encyclopediaGroups = groupByProvider(filteredCatalogModels);
   const visibleCount = selectedItems.length + filteredUnselected.length;
   const activeFilterCount = [
     providerFilter !== 'all',
@@ -465,7 +488,8 @@ function ModelPickerDropdown({
     const contextLabel = formatTokenLimit(item?.contextWindow || item?.context_length || item?.inputTokenLimit);
     const greetingScore = modelGreetingScore(item);
     return (
-      <span key={item.id} className={`model-option-wrapper ${isSelected ? 'selected' : ''}`}>
+      <div key={item.id} className={`model-option-cell ${isSelected ? 'selected' : ''}`}>
+      <span className={`model-option-wrapper ${isSelected ? 'selected' : ''}`}>
         <button
           className={`model-option ${isSelected ? 'selected' : ''}`}
           onClick={() => toggleModel(item.id)}
@@ -477,6 +501,7 @@ function ModelPickerDropdown({
           </span>
           <span className="model-option-text">
             <span className="model-option-title-row">
+              <span className="model-option-provider">{providerOf(item)}</span>
               <span className="model-option-name">{item.label || item.id}</span>
               <span className="model-option-metrics">
                 {sortMode === 'greeting' && greetingScore != null && (
@@ -492,7 +517,6 @@ function ModelPickerDropdown({
               </span>
             </span>
             {secondary && <span className="model-option-description">{secondary}</span>}
-            <span className="model-option-provider">{providerOf(item)}</span>
           </span>
         </button>
         <button
@@ -514,6 +538,15 @@ function ModelPickerDropdown({
           </span>
         )}
       </span>
+        {showDetails && (
+          <div className="model-option-details">
+            {renderModelBadges(item)}
+            <div className="model-option-detail-fields">
+              {INLINE_DETAIL_FIELD_DEFS.map(field => renderDetailField(item, field))}
+            </div>
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -522,12 +555,7 @@ function ModelPickerDropdown({
       key={value}
       type="button"
       className={`model-filter-chip ${current === value ? 'active' : ''}`}
-      onClick={() => {
-        onChange(value);
-        if (current !== value) {
-          setExpandedEncyclopediaModels([]);
-        }
-      }}
+      onClick={() => onChange(value)}
       aria-pressed={current === value}
     >
       <span>{label || value}</span>
@@ -536,7 +564,6 @@ function ModelPickerDropdown({
   );
 
   const toggleCategoryFilter = id => {
-    setExpandedEncyclopediaModels([]);
     setCategoryFilters(current => current.includes(id)
       ? current.filter(item => item !== id)
       : [...current, id]);
@@ -573,119 +600,20 @@ function ModelPickerDropdown({
     );
   };
 
-  const renderEncyclopediaField = (model, field) => {
-    const rawValue = field.getValue(model);
-    const value = formatEncyclopediaValue(rawValue, field);
+  const renderDetailField = (model, field) => {
+    const value = formatEncyclopediaValue(field.getValue(model), field);
     if (!value) return null;
     return (
-      <div key={field.key} className="model-encyclopedia-field">
-        <span className="model-encyclopedia-field-label">{field.key}</span>
-        {field.link && value ? (
-          <a className="model-encyclopedia-field-value" href={value} target="_blank" rel="noreferrer">{value}</a>
+      <div key={field.key} className="model-option-detail-row">
+        <span className="model-option-detail-label">{t(`modelSelector.field.${field.key}`)}</span>
+        {field.link ? (
+          <a className="model-option-detail-value" href={value} target="_blank" rel="noreferrer">{value}</a>
         ) : (
-          <span className="model-encyclopedia-field-value">{value}</span>
+          <span className="model-option-detail-value">{value}</span>
         )}
       </div>
     );
   };
-
-  const toggleEncyclopediaModel = id => {
-    setExpandedEncyclopediaModels(current => current.includes(id)
-      ? current.filter(item => item !== id)
-      : [...current, id]);
-  };
-
-  const renderEncyclopediaSummaryFacts = model => {
-    const facts = [
-      model?.publisher,
-      formatTokenLimit(model?.contextWindow || model?.context_length || model?.inputTokenLimit),
-      formatList(model?.inputModalities || model?.input_modalities),
-      formatList(model?.supportedGenerationMethods || model?.supported_generation_methods),
-    ].filter(Boolean);
-    if (!facts.length) return null;
-    return (
-      <span className="model-encyclopedia-summary-facts">
-        {facts.slice(0, 4).map(fact => <span key={fact}>{fact}</span>)}
-      </span>
-    );
-  };
-
-  const renderEncyclopediaItem = model => {
-    const expanded = expandedEncyclopediaModels.includes(model.id);
-    const hasFields = ENCYCLOPEDIA_FIELD_DEFS.some(field => formatEncyclopediaValue(field.getValue(model), field));
-    const isSelected = selectedSet.has(model.id);
-    const isFavorite = favoriteModelIds.includes(model.id);
-    return (
-      <article key={model.id} className={`model-encyclopedia-item ${expanded ? 'expanded' : ''}`}>
-        <div className="model-encyclopedia-row">
-          <button
-            type="button"
-            className="model-encyclopedia-summary"
-            onClick={() => toggleEncyclopediaModel(model.id)}
-            aria-expanded={expanded}
-          >
-            <span className="model-encyclopedia-chevron" aria-hidden="true">
-              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            </span>
-            <span className="model-encyclopedia-item-main">
-              <span className="model-encyclopedia-name">{model.label || model.id}</span>
-              <span className="model-encyclopedia-description">{model.description || model.id}</span>
-              <span className="model-encyclopedia-meta">
-                {renderModelBadges(model)}
-                {renderEncyclopediaSummaryFacts(model)}
-              </span>
-            </span>
-          </button>
-          <div className="model-encyclopedia-item-side">
-            <button
-              type="button"
-              className={`model-encyclopedia-favorite ${isFavorite ? 'active' : ''}`}
-              onClick={() => toggleFavorite(model.id)}
-              disabled={disabled}
-              title={t(isFavorite ? 'modelSelector.removeFavorite' : 'modelSelector.addFavorite')}
-              aria-label={t(isFavorite ? 'modelSelector.removeFavorite' : 'modelSelector.addFavorite')}
-              aria-pressed={isFavorite}
-            >
-              <Star size={14} fill={isFavorite ? 'currentColor' : 'none'} />
-            </button>
-            <button
-              type="button"
-              className={`model-encyclopedia-select ${isSelected ? 'selected' : ''}`}
-              onClick={() => toggleModel(model.id)}
-              disabled={disabled || (!multiple && isSelected)}
-              title={isSelected ? t('modelSelector.selected') : t(multiple ? 'modelSelector.selectConcurrent' : 'modelSelector.selectModel')}
-            >
-              {isSelected ? t('modelSelector.selected') : t('modelSelector.selectModel')}
-            </button>
-            <code>{model.id}</code>
-            {model.catalogUrl && (
-              <a href={model.catalogUrl} target="_blank" rel="noreferrer" title={t('modelSelector.catalogLink')}>
-                <ExternalLink size={14} />
-              </a>
-            )}
-          </div>
-        </div>
-        {expanded && hasFields && (
-          <div className="model-encyclopedia-fields">
-            {ENCYCLOPEDIA_FIELD_DEFS.map(field => renderEncyclopediaField(model, field))}
-          </div>
-        )}
-      </article>
-    );
-  };
-
-  const renderEncyclopediaGroup = group => (
-    <section key={group.provider} className="model-encyclopedia-tree-group">
-      <div className="model-encyclopedia-tree-heading">
-        <span className="model-encyclopedia-tree-dot" aria-hidden="true" />
-        <span className="model-encyclopedia-tree-provider">{group.provider}</span>
-        <span className="model-encyclopedia-tree-count">{group.models.length}</span>
-      </div>
-      <div className="model-encyclopedia-tree-children">
-        {group.models.map(renderEncyclopediaItem)}
-      </div>
-    </section>
-  );
 
   const renderSearchSelectedChip = item => (
     <span key={item.id} className="model-search-selected-chip">
@@ -725,25 +653,16 @@ function ModelPickerDropdown({
           headerActions={(
             <button
               type="button"
-              className={`model-picker-help ${encyclopediaOpen ? 'active' : ''}`}
-              onClick={() => {
-                setEncyclopediaOpen(current => {
-                  const next = !current;
-                  setFiltersExpanded(false);
-                  if (next) setExpandedEncyclopediaModels([]);
-                  return next;
-                });
-              }}
-              title={t('modelSelector.openEncyclopedia')}
-              aria-pressed={encyclopediaOpen}
+              className={`model-picker-help ${showDetails ? 'active' : ''}`}
+              onClick={() => setShowDetails(current => !current)}
+              title={t('modelSelector.toggleDetails')}
+              aria-pressed={showDetails}
             >
               <HelpCircle size={16} />
             </button>
           )}
         >
 
-            {!encyclopediaOpen && (
-              <>
                 <div className="model-picker-toolbar">
                   <div className="model-dropdown-search model-picker-search">
                     <Search size={15} />
@@ -769,10 +688,7 @@ function ModelPickerDropdown({
                           setSelectedModelIds(selectedModelIds.slice(0, -1));
                         }
                       }}
-                      onChange={e => {
-                        setQuery(e.target.value);
-                        setExpandedEncyclopediaModels([]);
-                      }}
+                      onChange={e => setQuery(e.target.value)}
                       placeholder={t('modelSelector.searchPlaceholder')}
                       disabled={disabled}
                     />
@@ -863,40 +779,13 @@ function ModelPickerDropdown({
                   <div className="model-filter-group model-filter-group-wide model-category-filter-group">
                     <span className="model-filter-label">{t('modelSelector.filterTaskType')}</span>
                     <div className="model-category-checkboxes">
-                      {MODEL_CATEGORY_DEFS.map(renderCategoryCheckbox)}
+                      {MODEL_CATEGORY_DEFS
+                        .filter(category => (categoryCounts[category.id] || 0) > 0 || categoryFilters.includes(category.id))
+                        .map(renderCategoryCheckbox)}
                     </div>
                   </div>
                 </div>
-              </>
-            )}
 
-            {encyclopediaOpen ? (
-              <div className="model-encyclopedia">
-                <div className="model-encyclopedia-head">
-                  <div>
-                    <h2>{t('modelSelector.encyclopediaTitle')}</h2>
-                    <p>{t('modelSelector.encyclopediaIntro')}</p>
-                  </div>
-                  <span className="model-encyclopedia-range">
-                    {t('modelSelector.encyclopediaCount', { count: filteredCatalogModels.length })}
-                  </span>
-                </div>
-                <div className="model-encyclopedia-guide">
-                  {MODEL_CATEGORY_DEFS.map(category => (
-                    <div key={category.id} className="model-encyclopedia-guide-item" title={`${t(category.labelKey)}: ${t(category.descKey)}`}>
-                      <strong>{t(category.labelKey)}</strong>
-                      <span>{t(category.descKey)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="model-encyclopedia-list">
-                  {encyclopediaGroups.length === 0
-                    ? <span className="model-options-empty">{t('modelSelector.noMatch')}</span>
-                    : encyclopediaGroups.map(renderEncyclopediaGroup)}
-                </div>
-              </div>
-            ) : (
-              <>
             {multiple && selectedModelIds.length > 1 && (
               <div className="strategy-toggle model-picker-strategy">
                 <button
@@ -932,8 +821,6 @@ function ModelPickerDropdown({
                 </div>
               </div>
             </div>
-              </>
-            )}
         </DialogShell>
       )}
     </div>

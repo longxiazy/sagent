@@ -35,6 +35,9 @@ npm-debug.log*
 
 /artifacts/
 
+# NVIDIA 模型目录抓取的原始 markdown
+/config/model-catalog/nvidia-markdown/
+
 todo.md
 /todo/
 

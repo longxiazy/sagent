@@ -65,6 +65,8 @@ interface VisionContext {
   signal?: AbortSignal;
   projectRoot?: string | null;
   dataDir?: string | null;
+  /** 当前任务描述；模型漏填 question 时作为兜底提问。 */
+  task?: string | null;
 }
 
 type CompletionLike = { choices?: Array<{ message?: { content?: unknown } }> };
@@ -243,11 +245,15 @@ async function toImageDataUrl(
 }
 
 export async function executeVisionAction(
-  action: Pick<ActionForTool<'vision'>, 'image' | 'question'> & Partial<Pick<ActionForTool<'vision'>, 'tool' | 'type'>>,
+  action: Pick<ActionForTool<'vision'>, 'image'>
+    & Partial<Pick<ActionForTool<'vision'>, 'question' | 'tool' | 'type'>>,
   context: VisionContext = {},
 ) {
   const image = typeof action?.image === 'string' ? action.image.trim() : '';
-  const question = typeof action?.question === 'string' ? action.question.trim() : '';
+  // question 本质就是用户对这张图的要求，任务描述本身即可充当。
+  // 模型漏填时回落到任务，避免整个 run 因一个可推导的参数直接失败。
+  const question = (typeof action?.question === 'string' ? action.question.trim() : '')
+    || (typeof context.task === 'string' ? context.task.trim() : '');
   if (!image) return 'image_analyze 失败：缺少 image 参数';
   if (!question) return 'image_analyze 失败：缺少 question 参数';
 

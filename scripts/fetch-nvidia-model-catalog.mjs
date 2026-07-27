@@ -4,8 +4,33 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const OUTPUT = path.join(ROOT, 'config/model-catalog/nvidia.json');
+const MARKDOWN_DIR = path.join(ROOT, 'config/model-catalog/nvidia-markdown');
 const BASE = 'https://build.nvidia.com';
 const CONCURRENCY = 8;
+
+async function saveMarkdown(href, markdown, contentType) {
+  // 目录页里混有指向外部网站的链接,只有站内 .md 路径才可能是模型说明文档
+  if (!/^\/[^?#]*\.md$/.test(String(href || ''))) {
+    console.error(`[skip] not a markdown path: ${href}`);
+    return false;
+  }
+  // 有些路径会返回渲染后的网站页面而不是 markdown,这类内容不落盘
+  if (/text\/html/i.test(contentType || '')
+    || /^\s*(<!doctype html|<html[\s>])/i.test(String(markdown || '').slice(0, 200))) {
+    console.error(`[skip] html page, not markdown: ${BASE}${href}`);
+    return false;
+  }
+  const relative = href.replace(/^\/+/, '');
+  const target = path.join(MARKDOWN_DIR, relative);
+  // href 里可能带 ..,确保写入位置不会逃出输出目录
+  if (target !== MARKDOWN_DIR && !target.startsWith(MARKDOWN_DIR + path.sep)) {
+    console.error(`[skip] path escapes output dir: ${href}`);
+    return false;
+  }
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, markdown);
+  return true;
+}
 
 function normalizeWhitespace(value = '') {
   return String(value).replace(/\s+/g, ' ').trim();
@@ -153,18 +178,48 @@ function normalizeModalities(items) {
   return [...modalities];
 }
 
+// 解析页面里的 `## Capabilities` 段，取出形如
+// `- **Function Calling:** Not supported` 的显式声明。
+// 返回 { '<字段名>': true|false }；没有该段落时返回 null。
+export function parseDeclaredCapabilities(markdown) {
+  const section = markdown.match(/\n#+\s*Capabilities\s*\n([\s\S]*?)(?=\n#+\s|$)/);
+  if (!section) return null;
+  const declared = {};
+  for (const line of section[1].split('\n')) {
+    const match = line.match(/^\s*[-*]\s*\*\*(.+?):?\*\*:?\s*(.*)$/);
+    if (!match) continue;
+    const value = match[2].trim();
+    if (!value) continue;
+    // 只认明确的 Supported / Not supported，其它措辞留给关键词兜底
+    if (/^not\s+supported$/i.test(value)) declared[match[1].trim()] = false;
+    else if (/^supported$/i.test(value)) declared[match[1].trim()] = true;
+  }
+  return Object.keys(declared).length > 0 ? declared : null;
+}
+
+// 能力判定：页面有显式声明就以它为准，否则回退到全文关键词猜测。
+// 关键词猜测无法区分「支持」和「Not supported」——两者都含同一个词，
+// 早先仅靠它导致 19 个模型把 Not supported 读成支持。
 function capabilitiesFromMarkdown(markdown) {
   const capabilities = new Set(['chat.completions']);
   const params = new Set(['temperature', 'top_p', 'max_tokens', 'stream']);
-  if (/tool calling|function\/tool calling|function calling|tool use|tool-call/i.test(markdown)) {
+  const declared = parseDeclaredCapabilities(markdown);
+
+  const resolve = (label, keywordRe) => {
+    const explicit = declared?.[label];
+    if (typeof explicit === 'boolean') return explicit;
+    return keywordRe.test(markdown);
+  };
+
+  if (resolve('Function Calling', /tool calling|function\/tool calling|function calling|tool use|tool-call/i)) {
     capabilities.add('tool_calling');
     params.add('tools');
   }
-  if (/structured json|json output|structured output/i.test(markdown)) {
+  if (resolve('Structured Output', /structured json|json output|structured output/i)) {
     capabilities.add('json_output');
     params.add('response_format');
   }
-  if (/reasoning_content|reasoning trace|reasoning mode|enable_thinking|thinking/i.test(markdown)) {
+  if (resolve('Reasoning', /reasoning_content|reasoning trace|reasoning mode|enable_thinking|thinking/i)) {
     capabilities.add('reasoning');
     params.add('chat_template_kwargs');
   }
@@ -213,10 +268,17 @@ function parseDetail(markdown, item) {
   };
 }
 
-async function fetchText(url) {
+async function fetchDoc(url) {
+  console.error(`[fetch] GET ${url}`);
   const res = await fetch(url);
+  console.error(`[fetch] ${res.status} ${res.statusText} ${url}`);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
-  return res.text();
+  return { text: await res.text(), contentType: res.headers.get('content-type') || '' };
+}
+
+async function fetchText(url) {
+  const { text } = await fetchDoc(url);
+  return text;
 }
 
 async function collectCatalogItems() {
@@ -231,7 +293,14 @@ async function collectCatalogItems() {
     page = next;
   }
   const byHref = new Map();
-  for (const item of all) byHref.set(item.href, item);
+  for (const item of all) {
+    // 目录里混有指向外部网站(https://…)和非 .md 页面的链接,直接跳过不再请求
+    if (!/^\/[^?#]*\.md$/.test(String(item.href || ''))) {
+      console.error(`[skip] external or non-markdown link: ${item.href}`);
+      continue;
+    }
+    byHref.set(item.href, item);
+  }
   return [...byHref.values()];
 }
 
@@ -264,7 +333,10 @@ async function main() {
   const items = await collectCatalogItems();
   const details = await mapConcurrent(items, async item => {
     try {
-      const markdown = await fetchText(`${BASE}${item.href}`);
+      const { text: markdown, contentType } = await fetchDoc(`${BASE}${item.href}`);
+      const saved = await saveMarkdown(item.href, markdown, contentType);
+      // 返回的是网站页面而不是 markdown,解析出来也是脏数据,直接跳过
+      if (!saved) return null;
       return parseDetail(markdown, item);
     } catch (err) {
       return {
@@ -278,7 +350,13 @@ async function main() {
 
   const models = {};
   const errors = [];
+  let skipped = 0;
   for (const detail of details) {
+    // null = 主动跳过的网站页面,不算抓取失败
+    if (detail === null) {
+      skipped += 1;
+      continue;
+    }
     if (!detail?.id) {
       errors.push(detail);
       continue;
@@ -298,7 +376,12 @@ async function main() {
 
   await fs.mkdir(path.dirname(OUTPUT), { recursive: true });
   await fs.writeFile(OUTPUT, `${JSON.stringify(payload, null, 2)}\n`);
-  console.log(JSON.stringify({ output: path.relative(ROOT, OUTPUT), count: payload.count, errors: errors.length }, null, 2));
+  console.log(JSON.stringify({
+    output: path.relative(ROOT, OUTPUT),
+    count: payload.count,
+    skipped,
+    errors: errors.length,
+  }, null, 2));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

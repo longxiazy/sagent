@@ -137,7 +137,8 @@ function normalizeVisionAction(type: string, action: JsonObject): AgentAction {
     const image = typeof action.image === 'string' ? action.image.trim() : '';
     const question = typeof action.question === 'string' ? action.question.trim() : '';
     if (!image) throw new Error('image_analyze 缺少 image');
-    if (!question) throw new Error('image_analyze 缺少 question');
+    // question 允许为空：它就是用户对图片的要求，执行时会回落到任务描述。
+    // 部分模型只填 image 就发起调用，不该因此让整个 run 失败。
     return {
       tool: 'vision',
       type,
