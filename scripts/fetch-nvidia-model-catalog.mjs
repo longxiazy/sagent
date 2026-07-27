@@ -178,18 +178,48 @@ function normalizeModalities(items) {
   return [...modalities];
 }
 
+// 解析页面里的 `## Capabilities` 段，取出形如
+// `- **Function Calling:** Not supported` 的显式声明。
+// 返回 { '<字段名>': true|false }；没有该段落时返回 null。
+export function parseDeclaredCapabilities(markdown) {
+  const section = markdown.match(/\n#+\s*Capabilities\s*\n([\s\S]*?)(?=\n#+\s|$)/);
+  if (!section) return null;
+  const declared = {};
+  for (const line of section[1].split('\n')) {
+    const match = line.match(/^\s*[-*]\s*\*\*(.+?):?\*\*:?\s*(.*)$/);
+    if (!match) continue;
+    const value = match[2].trim();
+    if (!value) continue;
+    // 只认明确的 Supported / Not supported，其它措辞留给关键词兜底
+    if (/^not\s+supported$/i.test(value)) declared[match[1].trim()] = false;
+    else if (/^supported$/i.test(value)) declared[match[1].trim()] = true;
+  }
+  return Object.keys(declared).length > 0 ? declared : null;
+}
+
+// 能力判定：页面有显式声明就以它为准，否则回退到全文关键词猜测。
+// 关键词猜测无法区分「支持」和「Not supported」——两者都含同一个词，
+// 早先仅靠它导致 19 个模型把 Not supported 读成支持。
 function capabilitiesFromMarkdown(markdown) {
   const capabilities = new Set(['chat.completions']);
   const params = new Set(['temperature', 'top_p', 'max_tokens', 'stream']);
-  if (/tool calling|function\/tool calling|function calling|tool use|tool-call/i.test(markdown)) {
+  const declared = parseDeclaredCapabilities(markdown);
+
+  const resolve = (label, keywordRe) => {
+    const explicit = declared?.[label];
+    if (typeof explicit === 'boolean') return explicit;
+    return keywordRe.test(markdown);
+  };
+
+  if (resolve('Function Calling', /tool calling|function\/tool calling|function calling|tool use|tool-call/i)) {
     capabilities.add('tool_calling');
     params.add('tools');
   }
-  if (/structured json|json output|structured output/i.test(markdown)) {
+  if (resolve('Structured Output', /structured json|json output|structured output/i)) {
     capabilities.add('json_output');
     params.add('response_format');
   }
-  if (/reasoning_content|reasoning trace|reasoning mode|enable_thinking|thinking/i.test(markdown)) {
+  if (resolve('Reasoning', /reasoning_content|reasoning trace|reasoning mode|enable_thinking|thinking/i)) {
     capabilities.add('reasoning');
     params.add('chat_template_kwargs');
   }

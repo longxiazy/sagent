@@ -159,12 +159,27 @@ function modelModalities(model) {
   ]);
 }
 
+// 能力筛选只保留这三个真正影响「模型能不能用来做什么」的指标。
+// 早先把 supportedParameters(temperature/top_p/stream…)和 supportedMessageTypes
+// (text/image…)也混进来，选项里塞满了与能力无关的采样参数和模态。
+const CAPABILITY_DEFS = [
+  { value: 'tool_calling', labelKey: 'modelSelector.capabilityToolCalling' },
+  { value: 'json_output', labelKey: 'modelSelector.capabilityJsonOutput' },
+  { value: 'reasoning', labelKey: 'modelSelector.capabilityReasoning' },
+];
+
 function modelCapabilities(model) {
-  return uniqueSorted([
-    ...asList(model?.supportedParameters || model?.supported_parameters),
-    ...asList(model?.supportedGenerationMethods || model?.supported_generation_methods),
-    ...asList(model?.supportedMessageTypes || model?.supported_message_types),
-  ]);
+  // 各 provider 的词汇不同（NVIDIA: tool_calling/json_output/reasoning；
+  // Gemini: generateContent 等），统一按 generation methods + parameters 归一。
+  const methods = lowerList(model?.supportedGenerationMethods || model?.supported_generation_methods);
+  const params = lowerList(model?.supportedParameters || model?.supported_parameters);
+  const has = (...needles) => needles.some(n => methods.includes(n) || params.includes(n));
+
+  const capabilities = [];
+  if (has('tool_calling', 'tools', 'function_calling')) capabilities.push('tool_calling');
+  if (has('json_output', 'response_format', 'structured_output')) capabilities.push('json_output');
+  if (has('reasoning', 'chat_template_kwargs', 'thinking')) capabilities.push('reasoning');
+  return capabilities;
 }
 
 function modelCategoryIds(model) {
@@ -430,7 +445,12 @@ function ModelPickerDropdown({
     count: group.models.length,
   }));
   const modalityOptions = countOptions(availableModels, modelModalities).slice(0, 10);
-  const capabilityOptions = countOptions(availableModels, modelCapabilities).slice(0, 12);
+  // 固定这三项能力（不按出现频率动态生成），计数为 0 的不展示
+  const capabilityCounts = countOptions(availableModels, modelCapabilities)
+    .reduce((acc, option) => ({ ...acc, [option.value]: option.count }), {});
+  const capabilityOptions = CAPABILITY_DEFS
+    .filter(def => (capabilityCounts[def.value] || 0) > 0)
+    .map(def => ({ value: def.value, label: t(def.labelKey), count: capabilityCounts[def.value] }));
   const categoryCounts = countOptions(availableModels, modelCategoryIds)
     .reduce((acc, option) => ({ ...acc, [option.value]: option.count }), {});
   const visibleCount = selectedItems.length + filteredUnselected.length;
