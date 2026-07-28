@@ -237,7 +237,7 @@ function appendHttpFetchReferences(answer: string, history: AgentStep[]) {
   }
   if (urls.length === 0) return answer;
 
-  const references = urls.map((url, index) => `${index + 1}. ${url}`).join('\n');
+  const references = urls.map((url, index) => `${index + 1}. [${url}](${url})`).join('\n');
   return `${String(answer || '').trim()}\n\n引用：\n${references}`;
 }
 

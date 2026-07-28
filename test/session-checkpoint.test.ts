@@ -230,7 +230,7 @@ describe('runtime: session checkpoint integration', () => {
       '官网确认该政策已经生效。',
       '',
       '引用：',
-      '1. https://official.example/a',
+      '1. [https://official.example/a](https://official.example/a)',
     ].join('\n'))).toBe(true);
     expect(result.answer).not.toContain('https://failed.example/b');
   });
