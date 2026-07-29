@@ -140,6 +140,101 @@ describe('vision tool model selection', () => {
   });
 });
 
+describe('vision tool output budget', () => {
+  it('requests an output budget large enough for detailed descriptions', async () => {
+    const provider = {
+      completionJson: vi.fn().mockResolvedValue({
+        choices: [{ message: { content: '图里有内容。' } }],
+      }),
+    };
+
+    await executeVisionAction(
+      { image: DATA_URL, question: '图里是什么？' },
+      { registry: mockRegistry(provider), visionModel: 'meta/llama-3.2-90b-vision-instruct' },
+    );
+
+    expect(provider.completionJson.mock.calls[0][0].max_tokens).toBe(4096);
+  });
+
+  it('flags answers cut off by the output limit', async () => {
+    const provider = {
+      completionJson: vi.fn().mockResolvedValue({
+        choices: [{ message: { content: '第一道菜是' }, finish_reason: 'length' }],
+      }),
+    };
+
+    const result = await executeVisionAction(
+      { image: DATA_URL, question: '图里是什么？' },
+      { registry: mockRegistry(provider), visionModel: 'meta/llama-3.2-90b-vision-instruct' },
+    );
+
+    expect(result).toContain('第一道菜是');
+    expect(result).toContain('被截断');
+  });
+
+  it('does not flag truncation when the model stops normally', async () => {
+    const provider = {
+      completionJson: vi.fn().mockResolvedValue({
+        choices: [{ message: { content: '图里有内容。' }, finish_reason: 'stop' }],
+      }),
+    };
+
+    const result = await executeVisionAction(
+      { image: DATA_URL, question: '图里是什么？' },
+      { registry: mockRegistry(provider), visionModel: 'meta/llama-3.2-90b-vision-instruct' },
+    );
+
+    expect(result).not.toContain('被截断');
+  });
+
+  it('falls back to reasoning text when content is empty', async () => {
+    const provider = {
+      completionJson: vi.fn().mockResolvedValue({
+        choices: [{ message: { content: '', reasoning_content: '我看到一份菜单。' } }],
+      }),
+    };
+
+    const result = await executeVisionAction(
+      { image: DATA_URL, question: '图里是什么？' },
+      { registry: mockRegistry(provider), visionModel: 'meta/llama-3.2-90b-vision-instruct' },
+    );
+
+    expect(result).toContain('我看到一份菜单。');
+    expect(result).not.toContain('未返回内容');
+  });
+
+  it('keeps reasoning text out of the result when content is present', async () => {
+    const provider = {
+      completionJson: vi.fn().mockResolvedValue({
+        choices: [{ message: { content: '图里有内容。', reasoning_content: '内部推理过程。' } }],
+      }),
+    };
+
+    const result = await executeVisionAction(
+      { image: DATA_URL, question: '图里是什么？' },
+      { registry: mockRegistry(provider), visionModel: 'meta/llama-3.2-90b-vision-instruct' },
+    );
+
+    expect(result).toContain('图里有内容。');
+    expect(result).not.toContain('内部推理过程。');
+  });
+
+  it('still reports empty output when neither content nor reasoning is returned', async () => {
+    const provider = {
+      completionJson: vi.fn().mockResolvedValue({
+        choices: [{ message: { content: '' } }],
+      }),
+    };
+
+    const result = await executeVisionAction(
+      { image: DATA_URL, question: '图里是什么？' },
+      { registry: mockRegistry(provider), visionModel: 'meta/llama-3.2-90b-vision-instruct' },
+    );
+
+    expect(result).toContain('未返回内容');
+  });
+});
+
 describe('Gemini provider multimodal completion', () => {
   it('converts OpenAI-style image_url parts to Gemini inlineData parts', async () => {
     const generateContent = vi.fn().mockResolvedValue({

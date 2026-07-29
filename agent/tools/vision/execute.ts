@@ -12,6 +12,16 @@
  * 调用场景：
  *   - 主 agent loop 中模型返回 { tool: 'vision', type: 'image_analyze', image, question }
  *   - 由 desktop/agent.ts 的 actionRouter 路由到此处
+ *
+ * 返回值契约：
+ *   本工具的返回字符串会被主 loop 当作该步的 result 写入 history，并参与后续决策，
+ *   因此「拿不到内容」与「内容不完整」必须在文本里可分辨——否则模型只能靠猜，
+ *   要么把半截结论当定论，要么对同一张图反复重试直到触发循环保护。
+ *   为此约定三种形态：
+ *     - 正常：image_analyze 结果（model=…）
+ *     - 降级：image_analyze 结果（model=…，仅推理内容）——正文通道为空时的兜底
+ *     - 失败：image_analyze 模型 … 未返回内容 / image_analyze 失败：…
+ *   前两种在输出被长度上限截断时，额外追加 TRUNCATION_NOTICE。
  */
 
 import fs from 'node:fs/promises';
@@ -23,6 +33,10 @@ import type { ProviderRegistry } from '../../core/providers/registry.ts';
 
 const REQUEST_TIMEOUT_MS = 60000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
+// 识图往往要逐项描述图中内容，输出长度远高于一次决策；且推理型模型会先消耗
+// 一部分预算在推理通道上，留给正文的额度更少。预算过紧会让回答在中途被硬切。
+const MAX_OUTPUT_TOKENS = 4096;
+const TRUNCATION_NOTICE = '\n\n[注意] 上述回答因达到输出长度上限而被截断，内容不完整。';
 export const DEFAULT_VISION_MODEL = 'meta/llama-3.2-90b-vision-instruct';
 
 const VISION_ANALYSIS_GUIDE = [
@@ -69,7 +83,12 @@ interface VisionContext {
   task?: string | null;
 }
 
-type CompletionLike = { choices?: Array<{ message?: { content?: unknown } }> };
+type CompletionLike = {
+  choices?: Array<{
+    message?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown };
+    finish_reason?: unknown;
+  }>;
+};
 type OpenAIClientLike = {
   chat: { completions: { create(request: unknown, options?: { signal?: AbortSignal }): Promise<unknown> } };
 };
@@ -105,6 +124,17 @@ function extractMessageText(content: unknown): string {
       })
       .join('')
       .trim();
+  }
+  return '';
+}
+
+// 不同 OpenAI 兼容端点对推理通道的字段命名不一致，逐个尝试已知别名。
+function extractReasoningText(message: unknown): string {
+  if (!message || typeof message !== 'object') return '';
+  const source = message as Record<string, unknown>;
+  for (const value of [source.reasoning_content, source.reasoning]) {
+    const text = extractMessageText(value);
+    if (text) return text;
   }
   return '';
 }
@@ -297,7 +327,7 @@ export async function executeVisionAction(
     const completion = (registry
       ? await registry.resolve(model, modelConfig).completionJson({
           model,
-          max_tokens: 1024,
+          max_tokens: MAX_OUTPUT_TOKENS,
           temperature: 0.2,
           top_p: 1,
           messages,
@@ -305,16 +335,31 @@ export async function executeVisionAction(
         })
       : await openai.chat.completions.create({
           model,
-          max_tokens: 1024,
+          max_tokens: MAX_OUTPUT_TOKENS,
           temperature: 0.2,
           messages,
         }, { signal: scope.signal })) as CompletionLike;
-    const raw = completion?.choices?.[0]?.message?.content;
+    const choice = completion?.choices?.[0];
+    const raw = choice?.message?.content;
     // 部分 OpenAI 兼容/多模态实现会把 content 返回为分段数组，需拼接文本片段，
     // 否则会被当作空内容误报“未返回内容”。
     const answer = extractMessageText(raw);
-    if (!answer) return `image_analyze 模型 ${model} 未返回内容`;
-    return `image_analyze 结果（model=${model}）:\n${answer}`;
+    // 输出预算耗尽时回答会停在半句，下游无法从文本本身分辨完整与否；
+    // 显式标注截断，避免把不完整结论当作定论，也便于上层决定是否重试。
+    const suffix = choice?.finish_reason === 'length' ? TRUNCATION_NOTICE : '';
+
+    if (answer) return `image_analyze 结果（model=${model}）:\n${answer}${suffix}`;
+
+    // 推理型模型可能把全部输出放进推理通道而让 content 为空，此时推理文本里
+    // 往往已包含可用的观察结果，作为降级结果返回好过丢弃整次调用。
+    // 只在 content 为空时兜底：正常返回不掺入推理文本，否则会挤占下游对结果的截断额度。
+    // 这也是不走 provider 的 preserveReasoningContent 的原因——那个选项会把推理
+    // 无条件前置到正文之前，正文反而会被下游截断规则挤出可见范围。
+    const reasoning = extractReasoningText(choice?.message);
+    if (reasoning) {
+      return `image_analyze 结果（model=${model}，仅推理内容）:\n${reasoning}${suffix}`;
+    }
+    return `image_analyze 模型 ${model} 未返回内容${suffix}`;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return `image_analyze 调用 NIM 失败：${msg}`;
