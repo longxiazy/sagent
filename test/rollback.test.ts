@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { saveHealthySnapshot } from '../agent/core/checkpoint.ts';
 import { resolveCheckpointSeed } from '../routes/agent-run-request.ts';
+import { buildRollbackSuggestion } from '../routes/agent-run-execution.ts';
 import type { AgentStep } from '../agent/core/contracts.ts';
 
 let tmpDir;
@@ -79,5 +80,80 @@ describe('resolveCheckpointSeed: rollback history correctness', () => {
     const { checkpointInitialStep, checkpointInitialHistory } = await resolveCheckpointSeed(tmpDir, null);
     expect(checkpointInitialStep).toBeUndefined();
     expect(checkpointInitialHistory).toBeUndefined();
+  });
+});
+
+describe('buildRollbackSuggestion: failure resume point', () => {
+  // 第 N 步失败时该步不会留下健康快照，1..N-1 则有。
+  async function seedFailureAt(runId: string, failingStep: number) {
+    for (let s = 1; s < failingStep; s += 1) {
+      await saveHealthySnapshot({
+        dir: tmpDir,
+        runId,
+        step: s,
+        history: makeHistory(Array.from({ length: s }, (_, i) => i + 1)),
+        state: null,
+        result: 'ok',
+      });
+    }
+  }
+
+  it('suggests re-running the failing step itself, not the healthy one before it', async () => {
+    const runId = 'run_suggest_5';
+    await seedFailureAt(runId, 5);
+
+    const suggestion = await buildRollbackSuggestion({
+      checkpointDir: tmpDir,
+      runId,
+      completedStepCount: 4,
+      observedStepCount: 5,
+    });
+
+    expect(suggestion?.step).toBe(5);
+    // 上下文取自最后一个健康步，仍是第 4 步。
+    expect(suggestion?.lastResult).toBe('step 4 result');
+  });
+
+  it('resumes exactly at the failing step when the suggestion is fed back', async () => {
+    const runId = 'run_suggest_roundtrip';
+    await seedFailureAt(runId, 5);
+
+    const suggestion = await buildRollbackSuggestion({
+      checkpointDir: tmpDir,
+      runId,
+      completedStepCount: 4,
+      observedStepCount: 5,
+    });
+    const { checkpointInitialStep, checkpointInitialHistory } = await resolveCheckpointSeed(tmpDir, {
+      runId,
+      step: suggestion?.step,
+    });
+
+    expect(checkpointInitialStep).toBe(5);
+    // 成功的 1..4 全部保留，不重跑。
+    expect(checkpointInitialHistory.map((h: any) => h.step)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('suggests starting over when the first step fails', async () => {
+    const runId = 'run_suggest_first';
+    await seedFailureAt(runId, 1);
+
+    const suggestion = await buildRollbackSuggestion({
+      checkpointDir: tmpDir,
+      runId,
+      completedStepCount: 0,
+      observedStepCount: 1,
+    });
+
+    expect(suggestion).toBeNull();
+  });
+
+  it('returns no suggestion for private runs without a checkpoint dir', async () => {
+    await expect(buildRollbackSuggestion({
+      checkpointDir: null,
+      runId: 'run_private',
+      completedStepCount: 4,
+      observedStepCount: 5,
+    })).resolves.toBeNull();
   });
 });
