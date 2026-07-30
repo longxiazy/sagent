@@ -63,3 +63,73 @@ describe('agent trace attempt boundaries', () => {
     expect(index.planAnchorIndexByStep.get('1:1')).toBe(2);
   });
 });
+
+describe('per-model previous request pairing', () => {
+  // 每步两个模型，各自请求内容不同，用于验证不会跨模型取值。
+  const multiModelTrace = [
+    { type: 'model_plan', step: 1, stage: 'start', models: ['m1', 'm2'], attempt: 1 },
+    { type: 'model_plan', step: 1, stage: 'success', model: 'm1', attempt: 1, requests: [['m1-step1']] },
+    { type: 'model_plan', step: 1, stage: 'success', model: 'm2', attempt: 1, requests: [['m2-step1']] },
+    { type: 'model_plan', step: 2, stage: 'start', models: ['m1', 'm2'], attempt: 1 },
+    { type: 'model_plan', step: 2, stage: 'success', model: 'm1', attempt: 1, requests: [['m1-step2']] },
+    { type: 'model_plan', step: 2, stage: 'success', model: 'm2', attempt: 1, requests: [['m2-step2']] },
+    { type: 'model_plan', step: 3, stage: 'start', models: ['m1', 'm2'], attempt: 1 },
+    { type: 'model_plan', step: 3, stage: 'success', model: 'm1', attempt: 1, requests: [['m1-step3']] },
+    { type: 'model_plan', step: 3, stage: 'success', model: 'm2', attempt: 1, requests: [['m2-step3']] },
+  ];
+
+  it('pairs each model with its own previous request', () => {
+    const { previousRequestByIndex } = buildAttemptTraceIndex(multiModelTrace);
+
+    expect(previousRequestByIndex.get(1)).toBe(null);
+    expect(previousRequestByIndex.get(2)).toBe(null);
+    expect(previousRequestByIndex.get(4)).toEqual(['m1-step1']);
+    expect(previousRequestByIndex.get(5)).toEqual(['m2-step1']);
+    expect(previousRequestByIndex.get(7)).toEqual(['m1-step2']);
+    expect(previousRequestByIndex.get(8)).toEqual(['m2-step2']);
+  });
+
+  it('snapshots the group anchor state instead of the end-of-trace state', () => {
+    const { previousRequestsByAnchorIndex } = buildAttemptTraceIndex(multiModelTrace);
+
+    expect(previousRequestsByAnchorIndex.get(0).size).toBe(0);
+
+    const atStep2 = previousRequestsByAnchorIndex.get(3);
+    expect(atStep2.get('m1')).toEqual(['m1-step1']);
+    expect(atStep2.get('m2')).toEqual(['m2-step1']);
+
+    const atStep3 = previousRequestsByAnchorIndex.get(6);
+    expect(atStep3.get('m1')).toEqual(['m1-step2']);
+    expect(atStep3.get('m2')).toEqual(['m2-step2']);
+  });
+
+  it('keeps the last attempt as the baseline when a step retries the same model', () => {
+    const { previousRequestByIndex } = buildAttemptTraceIndex([
+      { type: 'model_plan', step: 1, stage: 'success', model: 'm1', attempt: 1, requests: [['try1'], ['try2']] },
+      { type: 'model_plan', step: 2, stage: 'success', model: 'm1', attempt: 1, requests: [['step2']] },
+    ]);
+
+    expect(previousRequestByIndex.get(1)).toEqual(['try2']);
+  });
+
+  it('carries a model baseline across steps where it produced no request', () => {
+    const { previousRequestByIndex } = buildAttemptTraceIndex([
+      { type: 'model_plan', step: 1, stage: 'success', model: 'm1', attempt: 1, requests: [['m1-step1']] },
+      { type: 'model_plan', step: 2, stage: 'failed', model: 'm1', attempt: 1 },
+      { type: 'model_plan', step: 3, stage: 'success', model: 'm1', attempt: 1, requests: [['m1-step3']] },
+    ]);
+
+    expect(previousRequestByIndex.get(2)).toEqual(['m1-step1']);
+  });
+
+  it('exposes the same baseline by event identity for single-model steps', () => {
+    const trace = [
+      { type: 'model_plan', step: 1, stage: 'success', model: 'm1', attempt: 1, requests: [['m1-step1']] },
+      { type: 'model_plan', step: 2, stage: 'success', model: 'm1', attempt: 1, requests: [['m1-step2']] },
+    ];
+    const { previousRequestByEvent } = buildAttemptTraceIndex(trace);
+
+    expect(previousRequestByEvent.get(trace[0])).toBe(null);
+    expect(previousRequestByEvent.get(trace[1])).toEqual(['m1-step1']);
+  });
+});

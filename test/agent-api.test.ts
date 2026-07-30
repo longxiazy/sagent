@@ -339,6 +339,72 @@ describe('POST /api/uploads', () => {
   });
 });
 
+describe('GET /api/uploads/:date/:name', () => {
+  // 读取端点服务的是用户私有文件，越界与类型限制都必须挡在磁盘访问之前。
+  async function seedUpload(name: string, contents = 'image-bytes') {
+    const dir = path.join(globalDataDir, 'uploads', '2026-07-30');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, name), contents);
+    return `/api/uploads/2026-07-30/${name}`;
+  }
+
+  it('serves an uploaded image with its content type', async () => {
+    const url = await seedUpload('1785413794376-53bde5-photo.png');
+
+    const res = await request(app).get(url);
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('image/png');
+    expect(res.body.toString()).toBe('image-bytes');
+  });
+
+  it('rejects traversal attempts in the date segment', async () => {
+    const outside = path.join(globalDataDir, 'secret.png');
+    await fs.mkdir(globalDataDir, { recursive: true });
+    await fs.writeFile(outside, 'secret');
+
+    const res = await request(app).get('/api/uploads/..%2F..%2F/secret.png');
+
+    expect(res.status).not.toBe(200);
+    expect(res.text).not.toContain('secret');
+  });
+
+  it('rejects traversal attempts in the file segment', async () => {
+    const res = await request(app).get('/api/uploads/2026-07-30/..%2Fsecret.png');
+
+    expect(res.status).not.toBe(200);
+  });
+
+  it('refuses to serve non-image files even when they exist', async () => {
+    const url = await seedUpload('1785413794376-53bde5-notes.txt', 'plain text');
+
+    const res = await request(app).get(url);
+
+    expect(res.status).toBe(400);
+    expect(res.text).not.toContain('plain text');
+  });
+
+  it('does not follow symlinks that escape the uploads root', async () => {
+    const outside = path.join(globalDataDir, 'escaped.png');
+    await fs.mkdir(globalDataDir, { recursive: true });
+    await fs.writeFile(outside, 'escaped-bytes');
+    const dir = path.join(globalDataDir, 'uploads', '2026-07-30');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.symlink(outside, path.join(dir, 'link.png'));
+
+    const res = await request(app).get('/api/uploads/2026-07-30/link.png');
+
+    expect(res.status).toBe(400);
+    expect(res.text).not.toContain('escaped-bytes');
+  });
+
+  it('returns 404 for a missing attachment', async () => {
+    const res = await request(app).get('/api/uploads/2026-07-30/1785413794376-53bde5-nope.png');
+
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('GET /api/agent/stream/:runId', () => {
   it('replays only events after the requested cursor with monotonic SSE ids', async () => {
     const { createBaseEventSender } = await import('../helpers/run-agent.ts');

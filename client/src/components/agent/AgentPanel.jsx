@@ -83,12 +83,14 @@ function AgentTraceTimeline({
     firstEventIndexByAttempt,
     observeAnchorIndexByStep,
     planAnchorIndexByStep,
+    previousRequestByIndex,
+    previousRequestByEvent,
+    previousRequestsByAnchorIndex,
     singleModelSteps,
     multiModelSteps,
     terminalAttempts,
     latestAttempt,
   } = attemptIndex;
-  const previousRequests = new Map();
 
   return (
     <div className={`agent-trace${history ? ' agent-trace--history' : ''}`}>
@@ -96,12 +98,13 @@ function AgentTraceTimeline({
         const stepKey = event.step == null ? null : attemptStepKey(attempt, event.step);
         const stepEvents = stepKey ? (eventsByStep.get(stepKey) || []) : [];
         const stepModelEvent = stepEvents.find(e => e.type === 'model_plan' && (e.stage === 'success' || e.stage === 'winner'));
+        // 「上一轮请求」在索引阶段已按各模型自己的时间线算好，这里只做查表，
+        // 不在渲染过程中累积状态——那样会让读取时机决定读到的值。
+        // model_plan 事件按自身下标取；非 model_plan（单模型步骤渲染在 step 事件上）
+        // 只能拿到同 step 的 model_plan 事件对象，故按事件身份取。
         const previousRequest = event.type === 'model_plan'
-          ? (event.model ? previousRequests.get(event.model) : null)
-          : (stepModelEvent?.model ? previousRequests.get(stepModelEvent.model) : null);
-        if (event.type === 'model_plan' && event.model && Array.isArray(event.requests) && event.requests.length > 0) {
-          previousRequests.set(event.model, event.requests[event.requests.length - 1]);
-        }
+          ? (previousRequestByIndex.get(index) ?? null)
+          : (stepModelEvent ? (previousRequestByEvent.get(stepModelEvent) ?? null) : null);
         const groupedOutput = (event.type === 'terminal_output' || event.type === 'mcp_output')
           && (singleModelSteps.has(stepKey) || multiModelSteps.has(stepKey));
         const showAttemptBoundary = attempt > 1 && firstEventIndexByAttempt.get(attempt) === index;
@@ -115,7 +118,7 @@ function AgentTraceTimeline({
                 events={stepEvents}
                 step={event.step}
                 models={event.models}
-                previousRequests={previousRequests}
+                previousRequests={previousRequestsByAnchorIndex.get(index)}
                 selectedModelId={selectedModelId}
                 modelList={modelList}
                 agentFinished={attempt < latestAttempt || terminalAttempts.has(attempt) || (!running && attempt === latestAttempt)}

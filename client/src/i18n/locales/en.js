@@ -412,6 +412,7 @@ export const en = {
   'attachBtn.attach': 'Attach',
   'attachBar.failed': 'Upload failed',
   'attachBar.remove': 'Remove',
+  'attachBar.unavailable': 'Image unavailable',
   'banner.default': 'Desktop notifications are off. Turn them on to be alerted when the Agent is awaiting approval.',
   'banner.enable': 'Enable notifications',
   'banner.deniedPrefix': 'Desktop notifications are blocked by the browser. Open',
