@@ -413,6 +413,7 @@ export const zh = {
   'attachBtn.attach': '附件',
   'attachBar.failed': '上传失败',
   'attachBar.remove': '移除',
+  'attachBar.unavailable': '图片已不可用',
   'banner.default': '桌面通知未开启，开启后 Agent 等待审批时会在桌面提醒你。',
   'banner.enable': '开启桌面通知',
   'banner.deniedPrefix': '桌面通知被浏览器阻止了。打开',

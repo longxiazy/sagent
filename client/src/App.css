@@ -6159,6 +6159,22 @@ textarea:disabled {
   color: var(--c-danger);
 }
 
+/* 聊天记录里的附件 chip：复用输入框上方的 chip 外观，去掉只在输入框场景成立的
+   分隔线与删除按钮留白，并让缩略图可点开大图。 */
+.message-attachments {
+  padding: 0;
+  border-bottom: none;
+  margin: 6px 0 0;
+}
+
+.message-attachments .attachment-chip {
+  padding-right: 10px;
+}
+
+.message-attachments .attachment-thumb img.clickable {
+  cursor: zoom-in;
+}
+
 
 /* ── Responsive ── */
 

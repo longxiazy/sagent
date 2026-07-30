@@ -1172,7 +1172,7 @@ export default function App() {
               privateModeToggle={privateModeToggle}
               attachmentBar={attachmentBar}
               contextMeter={contextMeter}
-              renderMessageContent={props => <MessageContent {...props} />}
+              renderMessageContent={props => <MessageContent {...props} projectId={activeSession?.projectId ?? null} />}
               renderCopyButton={props => <CopyButton {...props} />}
               hasThinkContent={hasThinkContent}
               getModelLabel={modelId => availableModels.find(item => item.id === modelId)?.label || modelId}
