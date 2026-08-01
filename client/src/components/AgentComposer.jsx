@@ -10,11 +10,12 @@ export function AgentComposer({
   modelSelect = null,
   attachButton = null,
   privateModeToggle = null,
+  memoryToggle = null,
   sendButton = null,
   attachmentBar = null,
   contextMeter = null,
 }) {
-  const hasToolbar = Boolean(modelSelect || attachButton || privateModeToggle || contextMeter || sendButton);
+  const hasToolbar = Boolean(modelSelect || attachButton || privateModeToggle || memoryToggle || contextMeter || sendButton);
 
   return (
     <div className={`agent-composer agent-composer--${variant}`}>
@@ -33,6 +34,7 @@ export function AgentComposer({
           {modelSelect}
           {attachButton}
           {privateModeToggle}
+          {memoryToggle}
           {contextMeter && <div className="agent-composer-context">{contextMeter}</div>}
           {sendButton}
         </div>

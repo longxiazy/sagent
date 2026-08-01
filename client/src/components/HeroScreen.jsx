@@ -35,7 +35,7 @@ export function HeroScreen({
   onPickSuggestion,
   onSubmitSuggestion,
 }) {
-  const { modelSelect, sendButton, attachButton, privateModeToggle } = toolbarSlots;
+  const { modelSelect, sendButton, attachButton, privateModeToggle, memoryToggle } = toolbarSlots;
   const t = useT();
   const [suggestionsHidden, setSuggestionsHidden] = useState(readSuggestionsHidden);
 
@@ -68,6 +68,7 @@ export function HeroScreen({
           modelSelect={modelSelect}
           attachButton={attachButton}
           privateModeToggle={privateModeToggle}
+          memoryToggle={memoryToggle}
           sendButton={sendButton}
           attachmentBar={attachmentBar}
           contextMeter={contextMeter}

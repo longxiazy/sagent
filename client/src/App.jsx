@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Menu, Settings, ShieldCheck } from 'lucide-react';
+import { Menu, Settings, ShieldCheck, Brain } from 'lucide-react';
 import './App.css';
 import { fetchAgentTrace } from './api/streams.js';
 import { ensureServiceWorker, notificationPermission, notificationsSupported, requestNotificationPermission } from './notifications.js';
@@ -8,6 +8,7 @@ import { SessionSidebar } from './components/SessionSidebar.jsx';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 import { MessageContent } from './components/MessageContent.jsx';
 import { CopyButton } from './components/CopyButton.jsx';
+import { ToolbarSwitch } from './components/ToolbarSwitch.jsx';
 import { ResetDialog } from './components/dialogs/ResetDialog.jsx';
 import { ApprovalDialog } from './components/dialogs/ApprovalDialog.jsx';
 import { QuestionDialog } from './components/dialogs/QuestionDialog.jsx';
@@ -1007,21 +1008,27 @@ export default function App() {
   );
   const privateModeToggle = (
     // 这是 run 级开关；运行中锁定，避免同一 run 中途改变持久化策略。
-    <button
-      type="button"
-      className={`toolbar-chip private-mode-toggle${agentPrivateMode ? ' active' : ''}`}
-      onClick={() => {
-        if (!agentPrivateMode) preparePrivateMode();
-        setAgentPrivateMode(enabled => !enabled);
+    <ToolbarSwitch
+      icon={<ShieldCheck size={14} strokeWidth={2} />}
+      label={t('input.privateMode')}
+      checked={agentPrivateMode}
+      onChange={next => {
+        if (next) preparePrivateMode();
+        setAgentPrivateMode(next);
       }}
       disabled={sessionLocked}
-      aria-pressed={agentPrivateMode}
-      aria-label={t('input.privateMode')}
       title={t(agentPrivateMode ? 'input.privateModeOn' : 'input.privateModeOff')}
-    >
-      <ShieldCheck size={14} strokeWidth={2} />
-      <span>{t('input.privateMode')}</span>
-    </button>
+    />
+  );
+  const memoryToggle = (
+    // 记忆是前端偏好，立即生效于下一次任务，因此运行中也允许改。
+    <ToolbarSwitch
+      icon={<Brain size={14} strokeWidth={2} />}
+      label={t('input.memory')}
+      checked={agentMemory}
+      onChange={setAgentMemory}
+      title={t(agentMemory ? 'input.memoryOn' : 'input.memoryOff')}
+    />
   );
   const attachmentBar = (
     <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
@@ -1101,7 +1108,7 @@ export default function App() {
           onKeyDown={handleKeyDown}
           textareaRef={textareaRef}
           sessionLocked={sessionLocked}
-          toolbarSlots={{ modelSelect, sendButton, attachButton, privateModeToggle }}
+          toolbarSlots={{ modelSelect, sendButton, attachButton, privateModeToggle, memoryToggle }}
           attachmentBar={attachmentBar}
           contextMeter={contextMeter}
           suggestions={suggestions}
@@ -1170,6 +1177,7 @@ export default function App() {
               sendButton={sendButton}
               attachButton={attachButton}
               privateModeToggle={privateModeToggle}
+              memoryToggle={memoryToggle}
               attachmentBar={attachmentBar}
               contextMeter={contextMeter}
               renderMessageContent={props => <MessageContent {...props} projectId={activeSession?.projectId ?? null} />}
@@ -1201,7 +1209,7 @@ export default function App() {
       />
 
       {showReset && <ResetDialog onConfirm={handleReset} onCancel={() => setShowReset(false)} />}
-      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} agentMemory={agentMemory} setAgentMemory={setAgentMemory} activeProjectId={activeProjectId} projects={projects} />}
+      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} activeProjectId={activeProjectId} projects={projects} />}
       {showPromptPreview && visibleContextEstimate?.promptPreview?.text && (
         <PromptPreviewDialog
           estimate={visibleContextEstimate}

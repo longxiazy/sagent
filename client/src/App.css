@@ -5505,18 +5505,72 @@ a.model-option-detail-value:hover {
 .toolbar-chip:hover { border-color: var(--c-primary-light); color: var(--c-primary); }
 .toolbar-chip.active { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-bg); }
 
-.private-mode-toggle {
+/* 工具栏开关：胶囊内嵌 iOS 风格滑块。滑块本身即状态指示，
+   不再依赖整体描边颜色的细微差别，关/开一眼可辨。 */
+.toolbar-switch {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 6px;
+  position: relative;
+  user-select: none;
 }
-.private-mode-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
-.private-mode-toggle svg { flex: 0 0 auto; }
-.agent-composer--hero .private-mode-toggle {
+.toolbar-switch svg { flex: 0 0 auto; }
+.toolbar-switch-label { line-height: 1; }
+
+/* 真实 input 视觉隐藏但保留在可聚焦树里：状态与键盘操作仍由它承载。 */
+.toolbar-switch-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.toolbar-switch-track {
+  position: relative;
+  width: 26px;
+  height: 15px;
+  border-radius: var(--r-pill);
+  background: var(--c-border);
+  transition: background var(--ease);
+  flex: 0 0 auto;
+}
+
+.toolbar-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  transition: transform var(--ease);
+}
+
+.toolbar-switch.active .toolbar-switch-track { background: var(--c-primary); }
+.toolbar-switch.active .toolbar-switch-thumb { transform: translateX(11px); }
+
+/* 键盘聚焦落在隐藏的 input 上，把焦点环画到胶囊上以便看见。 */
+.toolbar-switch:has(.toolbar-switch-input:focus-visible) {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+.toolbar-switch.disabled { opacity: 0.5; cursor: not-allowed; }
+.toolbar-switch.disabled:hover { border-color: var(--c-border); color: var(--c-text-muted); }
+
+.agent-composer--hero .toolbar-switch {
   height: 34px;
   padding: 0 12px;
   border-radius: var(--r-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toolbar-switch-track,
+  .toolbar-switch-thumb { transition: none; }
 }
 
 textarea {
@@ -5890,6 +5944,30 @@ textarea:disabled {
 .settings-profile-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; color: var(--c-text-secondary); font-size: var(--f-sm); }
 /* Agent 页预设分段直接坐在内容面上,给灰底与白面拉开对比 */
 .settings-profile-row .settings-segment { background: var(--c-surface-inline); }
+/* 当前档位的一句话说明，紧跟分段控件。 */
+.settings-profile-hint {
+  margin: -8px 0 16px;
+  color: var(--c-text-muted);
+  font-size: var(--f-xs);
+  line-height: 1.5;
+}
+/* 字段级注解：说明该参数的实际作用范围，常驻。 */
+.settings-field-note {
+  margin: 6px 0 0;
+  color: var(--c-text-muted);
+  font-size: var(--f-xs);
+  line-height: 1.5;
+}
+/* 字段级警告：取值合法但搭配失效，只提示不阻断，故用 warning 而非 danger。 */
+.settings-field-warning {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--c-warning-bg);
+  color: var(--c-warning-text);
+  font-size: var(--f-xs);
+  line-height: 1.5;
+}
 .settings-advanced-toggle { display: inline-flex; align-items: center; gap: 5px; margin-top: 14px; padding: 5px 0; border: 0; background: transparent; color: var(--c-text-secondary); cursor: pointer; font-size: var(--f-sm); }
 .settings-advanced-toggle:hover { color: var(--c-text); }
 .settings-advanced-grid { margin-top: 10px; }
@@ -5906,6 +5984,29 @@ textarea:disabled {
 
 .settings-error { color: var(--c-danger); font-size: var(--f-sm); margin-top: 8px; }
 .settings-ok { color: var(--c-success); font-size: var(--f-sm); margin-top: 8px; }
+
+/* 标题栏的保存反馈。挨着关闭按钮，做成 badge 以免被误读为标题的一部分。 */
+.settings-saved-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  background: var(--c-success-bg);
+  color: var(--c-success-text);
+  font-size: var(--f-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  animation: settings-saved-in 160ms ease-out;
+}
+
+@keyframes settings-saved-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-saved-badge { animation: none; }
+}
 
 /* 设置里的分段切换控件（主题 / 语言） */
 .settings-segment {
@@ -5930,6 +6031,9 @@ textarea:disabled {
 .settings-segment-btn:not(:last-child) { border-right: 1px solid var(--c-border); }
 .settings-segment-btn:hover:not(.active) { background: var(--c-surface-hover); }
 .settings-segment-btn.active { background: var(--c-primary); color: var(--c-on-accent); }
+/* 「自定义」是当前状态的呈现而非可选项，恒为 disabled。
+   它需要和其它选中项一样醒目，因此不做灰化，只去掉可点击的手型。 */
+.settings-segment-btn.active:disabled { opacity: 1; cursor: default; }
 
 @media (max-width: 560px) {
   .settings-dialog {
