@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createDesktopPlanner } from '../agent/desktop/planner.ts';
+import { createDesktopPlanner } from '../agent/desktop/planner/index.ts';
 
 describe('desktop planner abort propagation', () => {
   it('aborts the provider request when the model deadline expires', async () => {
@@ -109,5 +109,139 @@ describe('desktop planner abort propagation', () => {
 
     expect(result.consensus.total).toBe(2);
     expect(events.some(event => event.stage === 'consensus')).toBe(true);
+  });
+});
+
+describe('race strategy batch scheduling', () => {
+  // 让每个模型都停在未决状态，这样批次推进只可能由错峰定时器驱动。
+  function pendingPlanner(events: any[], overrides: Record<string, any> = {}) {
+    const started: string[] = [];
+    const agentPlan = vi.fn(({ model }: { model: string }) => {
+      started.push(model);
+      return new Promise(() => {});
+    });
+    const planner = createDesktopPlanner({
+      registry: { resolve: () => ({ agentPlan }) },
+      modelConfig: [],
+      blacklistedModels: new Set(),
+      modelTimeoutMs: 60_000,
+      batchSize: 1,
+      staggerDelayMs: 10_000,
+      ...overrides,
+    });
+    return { planner, started };
+  }
+
+  function runRace(planner: any, agentModels: string[], events: any[]) {
+    // 不 await：race 只在有模型返回时才落定，这里所有模型都悬着。
+    planner({
+      model: agentModels[0],
+      agentModels,
+      strategy: 'race',
+      cancelSignal: new AbortController().signal,
+      onEvent: (event: any) => events.push(event),
+      step: 1,
+      task: 'test',
+      history: [],
+      observation: {},
+    }).catch(() => {});
+  }
+
+  it('launches the next batch once the stagger delay elapses', async () => {
+    vi.useFakeTimers();
+    try {
+      const events: any[] = [];
+      const { planner, started } = pendingPlanner(events);
+      runRace(planner, ['first-model', 'second-model'], events);
+      await vi.advanceTimersByTimeAsync(0);
+
+      // 首批立即启动，第二个模型此时只应处于排队态。
+      expect(started).toEqual(['first-model']);
+      expect(events.some(e => e.stage === 'pending' && e.model === 'second-model')).toBe(true);
+
+      // 差一点到点：仍不应启动。
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(started).toEqual(['first-model']);
+
+      // 到点后第二批必须启动——这正是此前缺失时间驱动而失效的行为。
+      await vi.advanceTimersByTimeAsync(1);
+      expect(started).toEqual(['first-model', 'second-model']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps advancing across more than two batches', async () => {
+    vi.useFakeTimers();
+    try {
+      const events: any[] = [];
+      const { planner, started } = pendingPlanner(events);
+      runRace(planner, ['m1', 'm2', 'm3'], events);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(started).toEqual(['m1']);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(started).toEqual(['m1', 'm2']);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(started).toEqual(['m1', 'm2', 'm3']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('launches every model at once when the stagger delay is zero', async () => {
+    vi.useFakeTimers();
+    try {
+      const events: any[] = [];
+      const { planner, started } = pendingPlanner(events, { staggerDelayMs: 0 });
+      runRace(planner, ['m1', 'm2', 'm3'], events);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(started).toEqual(['m1', 'm2', 'm3']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('skips the remaining wait when the whole batch fails', async () => {
+    vi.useFakeTimers();
+    try {
+      const started: string[] = [];
+      const agentPlan = vi.fn(({ model }: { model: string }) => {
+        started.push(model);
+        // 首个模型立即失败，后续模型悬停，便于观察续批时机。
+        return model === 'doomed' ? Promise.reject(new Error('boom')) : new Promise(() => {});
+      });
+      const planner = createDesktopPlanner({
+        registry: { resolve: () => ({ agentPlan }) },
+        modelConfig: [],
+        blacklistedModels: new Set(),
+        modelTimeoutMs: 60_000,
+        batchSize: 1,
+        staggerDelayMs: 10_000,
+      });
+
+      planner({
+        model: 'doomed',
+        agentModels: ['doomed', 'backup'],
+        strategy: 'race',
+        cancelSignal: new AbortController().signal,
+        step: 1,
+        task: 'test',
+        history: [],
+        observation: {},
+      }).catch(() => {});
+
+      // 整批失败应立刻续批，而不是干等满 10s。
+      await vi.advanceTimersByTimeAsync(0);
+      expect(started).toEqual(['doomed', 'backup']);
+
+      // 且失败续批撤销了原定时器，不会在到点时重复推进。
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(started).toEqual(['doomed', 'backup']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
