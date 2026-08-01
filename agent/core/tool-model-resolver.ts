@@ -41,7 +41,11 @@ export async function readProjectToolsOverride(dataDir: string | null | undefine
   }
 }
 
-/** 三层解析,返回该工具应使用的模型 id(可能为空字符串,交给调用方决定是否降级)。 */
+/**
+ * 四级解析，逐级回退：项目覆盖 → 全局配置 → 环境变量 → 当前主模型。
+ * 主模型是最后兜底，未必具备该工具所需的能力（如多模态），
+ * 因此返回值可能为空字符串，也可能是个不适用的模型，由调用方决定如何降级。
+ */
 export function resolveToolModel(
   tool: ToolName,
   {
