@@ -558,6 +558,8 @@ describe('agent prompts', () => {
   });
 
   it('bounds prompt history count and individual result size', () => {
+    // 显式传入限额：本用例验证的是「截断确实发生」，不应绑定 schema 默认值，
+    // 否则调整默认配置就会误伤这里。
     const compacted = compactAgentHistory(
       Array.from({ length: 9 }, (_, index) => ({
         step: index + 1,
@@ -565,6 +567,8 @@ describe('agent prompts', () => {
         action: { tool: 'browser', type: 'get_page_content' },
         result: 'x'.repeat(5000),
       })),
+      6,
+      4096,
     );
 
     expect(compacted).toHaveLength(6);
