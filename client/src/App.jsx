@@ -1136,7 +1136,6 @@ export default function App() {
             sessionTitle={sessionTitle}
             sessionLocked={sessionLocked}
             messagesLength={messages.length}
-            modelSelect={modelSelect}
             agentActionsHostRef={setAgentActionsHost}
             onToggleSessions={() => sidebarPinned ? setSidebarPinned(false) : setShowSessions(v => !v)}
             onCreateSession={handleCreateSession}
@@ -1175,6 +1174,7 @@ export default function App() {
               placeholder={t('input.agentPlaceholder')}
               disabled={sessionLocked}
               sendButton={sendButton}
+              modelSelect={modelSelect}
               attachButton={attachButton}
               privateModeToggle={privateModeToggle}
               memoryToggle={memoryToggle}

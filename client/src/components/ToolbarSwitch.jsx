@@ -25,6 +25,9 @@ export function ToolbarSwitch({ icon = null, label, checked, onChange, disabled 
         checked={checked}
         onChange={event => onChange?.(event.target.checked)}
         disabled={disabled}
+        // 窄屏下 label 文字被 CSS 隐藏，display:none 的内容不会被读屏朗读，
+        // 届时 checkbox 将失去可访问名称。这里固定挂一份，与视觉无关。
+        aria-label={label}
       />
       <span className="toolbar-switch-track" aria-hidden="true">
         <span className="toolbar-switch-thumb" />
