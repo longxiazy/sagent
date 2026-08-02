@@ -1,13 +1,15 @@
 /**
  * Vision Tool — image_analyze 工具实现
  *
- * 把一张图片（本地路径或 http(s) URL）转成 data URL，
- * 优先调用本次 Agent 选择的可视觉模型，否则回退到 VISION_MODEL，
- * 让模型针对 question 给出回答（一次性单轮调用，不进入主 agent loop）。
+ * 把一张图片（本地路径、@uploads 附件或 http(s) URL）转成 data URL，
+ * 交给一个具备图片输入能力的模型回答 question（一次性单轮调用，不进入主 agent loop）。
  *
- * 默认模型: meta/llama-3.2-90b-vision-instruct（NIM 上常驻的视觉模型）
- *   可通过环境变量 VISION_MODEL 覆盖，例如 meta/llama-3.2-11b-vision-instruct
- *   或 microsoft/phi-3.5-vision-instruct。
+ * 模型选择分两步（见 resolveVisionModel）：
+ *   1. 优先从本次 run 选中的模型里挑一个支持图片输入的——它已是用户的选择，
+ *      能省掉一次跨模型切换。
+ *   2. 都不支持时才用兜底模型 visionModel，该值由 desktop/agent.ts 经
+ *      resolveToolModel 四级解析后传入：项目覆盖 → 全局配置 → VISION_MODEL → 主模型。
+ *      兜底模型不保证支持多模态，若不支持则由实际调用报错暴露。
  *
  * 调用场景：
  *   - 主 agent loop 中模型返回 { tool: 'vision', type: 'image_analyze', image, question }

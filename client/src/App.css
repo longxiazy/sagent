@@ -628,6 +628,23 @@ select,
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  gap: 6px;
+}
+
+/* dock 变体的工具栏以 28px 胶囊为基准（附件、隐私、记忆）。模型选择器的默认
+   尺寸是给 header 用的 34px 方角，直接放进来会高出一截、圆角也对不上。 */
+.agent-composer--dock .agent-composer-toolbar .model-dropdown-trigger {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  font-size: var(--f-xs);
+  color: var(--c-text-muted);
+  max-width: 180px;
+}
+
+.agent-composer--dock .agent-composer-toolbar .model-dropdown-trigger:hover:not(:disabled) {
+  border-color: var(--c-primary-light);
+  color: var(--c-primary);
 }
 
 .agent-composer-context {
@@ -2841,6 +2858,8 @@ a.model-option-detail-value:hover {
   padding: 12px 16px;
   font-size: var(--f-base);
   line-height: 1.6;
+  /* flex 子项默认最小宽度是内容宽度，长 URL 会把气泡顶出 max-width。 */
+  min-width: 0;
 }
 
 @media (min-width: 900px) {
@@ -3050,9 +3069,13 @@ a.model-option-detail-value:hover {
 .md-body h3 { font-size: var(--f-base); }
 .md-body strong { font-weight: 600; }
 .md-body blockquote { border-left: 3px solid var(--c-border); margin: 8px 0; padding: 4px 12px; color: var(--c-text-secondary); }
-.md-body a { color: var(--c-primary); text-decoration: underline; }
+/* 长 URL / 无空格长串是不可断的连续字符，不处理会撑破气泡并带出横向滚动。
+   overflow-wrap: anywhere 只在放不下时才断，正常文本仍按词换行。
+   代码块与表格例外：它们自己有 overflow-x，断行反而破坏可读性。 */
+.md-body { overflow-wrap: anywhere; min-width: 0; }
+.md-body a { color: var(--c-primary); text-decoration: underline; overflow-wrap: anywhere; }
 .md-body table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: var(--f-sm); display: block; overflow-x: auto; }
-.md-body th, .md-body td { border: 1px solid var(--c-border); padding: 6px 10px; text-align: left; }
+.md-body th, .md-body td { border: 1px solid var(--c-border); padding: 6px 10px; text-align: left; overflow-wrap: normal; }
 .md-body th { background: var(--c-surface-dim); font-weight: 500; }
 
 .inline-code {
@@ -3071,6 +3094,8 @@ a.model-option-detail-value:hover {
   padding: 12px 14px;
   max-width: 100%;
   overflow-x: auto;
+  /* 抵消 .md-body 的 anywhere：代码靠自身横向滚动，强行断行会打乱缩进与语义。 */
+  overflow-wrap: normal;
 }
 
 .cursor {
@@ -5505,18 +5530,72 @@ a.model-option-detail-value:hover {
 .toolbar-chip:hover { border-color: var(--c-primary-light); color: var(--c-primary); }
 .toolbar-chip.active { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-bg); }
 
-.private-mode-toggle {
+/* 工具栏开关：胶囊内嵌 iOS 风格滑块。滑块本身即状态指示，
+   不再依赖整体描边颜色的细微差别，关/开一眼可辨。 */
+.toolbar-switch {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 6px;
+  position: relative;
+  user-select: none;
 }
-.private-mode-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
-.private-mode-toggle svg { flex: 0 0 auto; }
-.agent-composer--hero .private-mode-toggle {
+.toolbar-switch svg { flex: 0 0 auto; }
+.toolbar-switch-label { line-height: 1; }
+
+/* 真实 input 视觉隐藏但保留在可聚焦树里：状态与键盘操作仍由它承载。 */
+.toolbar-switch-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.toolbar-switch-track {
+  position: relative;
+  width: 26px;
+  height: 15px;
+  border-radius: var(--r-pill);
+  background: var(--c-border);
+  transition: background var(--ease);
+  flex: 0 0 auto;
+}
+
+.toolbar-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  transition: transform var(--ease);
+}
+
+.toolbar-switch.active .toolbar-switch-track { background: var(--c-primary); }
+.toolbar-switch.active .toolbar-switch-thumb { transform: translateX(11px); }
+
+/* 键盘聚焦落在隐藏的 input 上，把焦点环画到胶囊上以便看见。 */
+.toolbar-switch:has(.toolbar-switch-input:focus-visible) {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+.toolbar-switch.disabled { opacity: 0.5; cursor: not-allowed; }
+.toolbar-switch.disabled:hover { border-color: var(--c-border); color: var(--c-text-muted); }
+
+.agent-composer--hero .toolbar-switch {
   height: 34px;
   padding: 0 12px;
   border-radius: var(--r-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toolbar-switch-track,
+  .toolbar-switch-thumb { transition: none; }
 }
 
 textarea {
@@ -5890,6 +5969,30 @@ textarea:disabled {
 .settings-profile-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; color: var(--c-text-secondary); font-size: var(--f-sm); }
 /* Agent 页预设分段直接坐在内容面上,给灰底与白面拉开对比 */
 .settings-profile-row .settings-segment { background: var(--c-surface-inline); }
+/* 当前档位的一句话说明，紧跟分段控件。 */
+.settings-profile-hint {
+  margin: -8px 0 16px;
+  color: var(--c-text-muted);
+  font-size: var(--f-xs);
+  line-height: 1.5;
+}
+/* 字段级注解：说明该参数的实际作用范围，常驻。 */
+.settings-field-note {
+  margin: 6px 0 0;
+  color: var(--c-text-muted);
+  font-size: var(--f-xs);
+  line-height: 1.5;
+}
+/* 字段级警告：取值合法但搭配失效，只提示不阻断，故用 warning 而非 danger。 */
+.settings-field-warning {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--c-warning-bg);
+  color: var(--c-warning-text);
+  font-size: var(--f-xs);
+  line-height: 1.5;
+}
 .settings-advanced-toggle { display: inline-flex; align-items: center; gap: 5px; margin-top: 14px; padding: 5px 0; border: 0; background: transparent; color: var(--c-text-secondary); cursor: pointer; font-size: var(--f-sm); }
 .settings-advanced-toggle:hover { color: var(--c-text); }
 .settings-advanced-grid { margin-top: 10px; }
@@ -5906,6 +6009,29 @@ textarea:disabled {
 
 .settings-error { color: var(--c-danger); font-size: var(--f-sm); margin-top: 8px; }
 .settings-ok { color: var(--c-success); font-size: var(--f-sm); margin-top: 8px; }
+
+/* 标题栏的保存反馈。挨着关闭按钮，做成 badge 以免被误读为标题的一部分。 */
+.settings-saved-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  background: var(--c-success-bg);
+  color: var(--c-success-text);
+  font-size: var(--f-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  animation: settings-saved-in 160ms ease-out;
+}
+
+@keyframes settings-saved-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-saved-badge { animation: none; }
+}
 
 /* 设置里的分段切换控件（主题 / 语言） */
 .settings-segment {
@@ -5930,6 +6056,9 @@ textarea:disabled {
 .settings-segment-btn:not(:last-child) { border-right: 1px solid var(--c-border); }
 .settings-segment-btn:hover:not(.active) { background: var(--c-surface-hover); }
 .settings-segment-btn.active { background: var(--c-primary); color: var(--c-on-accent); }
+/* 「自定义」是当前状态的呈现而非可选项，恒为 disabled。
+   它需要和其它选中项一样醒目，因此不做灰化，只去掉可点击的手型。 */
+.settings-segment-btn.active:disabled { opacity: 1; cursor: default; }
 
 @media (max-width: 560px) {
   .settings-dialog {
@@ -6215,17 +6344,18 @@ textarea:disabled {
 }
 
 @media (min-width: 640px) and (max-width: 1099px) {
+  /* 顶栏恒为单行：模型选择器已移到输入框工具栏，右侧只剩三个图标按钮，
+     不再需要换行。空间不足时压缩标题（它自带 ellipsis），而不是把顶栏撑高。 */
   .header {
     padding: 10px 14px;
-    height: auto;
-    min-height: 52px;
-    flex-wrap: wrap;
+    height: 52px;
+    flex-wrap: nowrap;
   }
 
   .header-right {
-    flex: 1 1 100%;
+    flex: 0 0 auto;
     justify-content: flex-end;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .messages {
@@ -6339,11 +6469,12 @@ textarea:disabled {
     height: 100%;
   }
 
+  /* 恒为单行。顶部安全区靠 padding 避让，因此高度用 min-height 而非固定值，
+     但不允许换行——空间不足时压缩标题，而不是把顶栏撑成两行。 */
   .header {
     padding: calc(6px + env(safe-area-inset-top)) 10px 6px;
-    height: auto;
     min-height: 44px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .header-left {
@@ -6352,11 +6483,10 @@ textarea:disabled {
   }
 
   .header-right {
-    flex: 1 1 100%;
+    flex: 0 0 auto;
     gap: 4px;
     justify-content: flex-end;
     flex-wrap: nowrap;
-    min-width: 0;
   }
 
   .header-session-title {
@@ -6380,11 +6510,68 @@ textarea:disabled {
     gap: 8px;
   }
 
-  .agent-workspace-composer {
-    padding: 0 12px calc(8px + env(safe-area-inset-bottom));
+  /* 工具栏共 6 个元素（模型/附件/隐私/记忆/上下文/发送），窄屏单行放不下会被硬挤压。
+     拆成两行：模型选择器最宽且最常用，独占第一行不受挤压；其余五个走第二行，
+     由 .agent-composer-context 的 flex:1 继续把发送按钮顶到右端。 */
+  .agent-composer--dock .agent-composer-toolbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
   }
 
+  .agent-composer--dock .agent-composer-toolbar .model-select-row {
+    flex: 1 0 100%;
+  }
+
+  .agent-composer--dock .agent-composer-toolbar .model-dropdown-trigger {
+    max-width: 100%;
+  }
+
+  /* 输入框改为浮在消息流之上，让内容能滚进 Home Indicator 那条区域——
+     此前那里是输入框 padding 撑出的同色留白，内容到不了，视觉上像被截断。
+
+     两处配套：
+     1. .messages 补一段等于输入框实高的底部 padding（--composer-height 由
+        useElementHeightVar 实测写入），否则最后一条会被永久遮住。输入框高度是
+        变的（textarea 增长 / 工具栏折行 / 附件栏），写死数值必然失准。
+     2. 输入框自身仍靠 padding-bottom 避开安全区，不会被指示条压住。 */
+  .agent-workspace-pane {
+    position: relative;
+  }
+
+  .agent-workspace-pane > .messages {
+    padding-bottom: calc(var(--composer-height, 96px) + 8px);
+    scroll-padding-bottom: calc(var(--composer-height, 96px) + 8px);
+  }
+
+  .agent-workspace-composer {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-width: none;
+    padding: 0 12px calc(8px + env(safe-area-inset-bottom));
+    /* 不铺不透明背景：输入框自身是半透明 + backdrop-filter，浮起来后内容从
+       下方透出并模糊，正是想要的毛玻璃观感。铺底色会把这个效果盖掉。 */
+    background: transparent;
+    pointer-events: none;
+  }
+
+  /* 输入框上方一小段渐隐，让滚入的内容淡出而不是被硬边切断。
+     放在伪元素里而不是容器背景上——后者会盖住输入框自身的毛玻璃。 */
+  .agent-workspace-composer::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    height: 20px;
+    background: linear-gradient(to bottom, transparent, var(--c-bg));
+    pointer-events: none;
+  }
+
+  /* 容器整体不接收事件（让下方内容可滚动），只把交互还给输入框本身。 */
   .agent-workspace-composer > .input-area {
+    pointer-events: auto;
     padding-top: 6px;
   }
 
@@ -6729,6 +6916,16 @@ textarea:disabled {
     display: none;
   }
 
+  /* 极窄屏（SE/mini）第二行仍然吃紧：开关只留图标与滑块，与附件按钮同一处理。
+     滑块本身已表达开/关，去掉文字不损失状态可读性。含义靠 title 与图标传达。 */
+  .agent-composer--dock .toolbar-switch .toolbar-switch-label {
+    display: none;
+  }
+
+  .agent-composer--dock .toolbar-switch {
+    padding: 0 8px;
+  }
+
   .attach-btn {
     padding: 0 8px;
   }
@@ -6737,16 +6934,6 @@ textarea:disabled {
   .model-dropdown {
     min-width: 0;
     max-width: 100%;
-  }
-
-  .header-right .model-select-row {
-    flex: 1 1 auto;
-    justify-content: flex-end;
-    max-width: calc(100% - 104px);
-  }
-
-  .header-right .model-dropdown {
-    width: 100%;
   }
 
   .model-dropdown {
@@ -6758,11 +6945,6 @@ textarea:disabled {
     width: min(100%, 176px);
     max-width: 100%;
     padding: 0 8px;
-  }
-
-  .header-right .model-dropdown-trigger {
-    width: 100%;
-    min-width: 0;
   }
 
   .model-picker-mask {

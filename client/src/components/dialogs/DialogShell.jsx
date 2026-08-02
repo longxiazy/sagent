@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useT } from '../../i18n/I18nProvider.jsx';
 
@@ -48,7 +49,10 @@ export function DialogShell({
     if (!closeDisabled) onClose?.();
   };
 
-  return (
+  // 经 portal 挂到 body：遮罩靠 position: fixed 铺满视口，而 fixed 会被任何带
+  // transform / filter / backdrop-filter 的祖先降级为相对该祖先定位。输入框
+  // (.agent-composer--dock) 就带 backdrop-filter，弹层留在原地会被压缩进输入框。
+  return createPortal((
     <div className={`model-picker-mask ${maskClassName}`.trim()} onPointerDown={closeFromMask}>
       <div
         className={`model-picker-dialog ${dialogClassName}`.trim()}
@@ -81,5 +85,5 @@ export function DialogShell({
         {footer}
       </div>
     </div>
-  );
+  ), document.body);
 }

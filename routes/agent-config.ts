@@ -88,7 +88,9 @@ export function createAgentConfigRouter({ configStore, projectStore }: AgentRout
       sources: configStore.sources(),
       schema: configStore.schema(),
       profiles: configStore.profiles(),
-      profile: configStore.document().profile || 'custom',
+      profile: configStore.profile(),
+      // 搭配失效的提示（如历史窗口大于总步数）。不阻断保存，由前端展示。
+      warnings: configStore.warnings(),
       tools: configStore.tools(),
       // execution 是启动期配置；返回 effective 值与来源，便于 UI 解释环境变量覆盖。
       execution: configStore.execution(),

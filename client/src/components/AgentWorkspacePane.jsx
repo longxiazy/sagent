@@ -1,6 +1,11 @@
-import { Fragment } from 'react';
+import { Fragment, useRef } from 'react';
 import { AgentComposer } from './AgentComposer.jsx';
+import { useElementHeightVar } from '../hooks/useElementHeightVar.js';
+import { useIsMobile } from '../hooks/useIsMobile.js';
 import { lastUserMessageIndex } from '../utils/agent-workspace.js';
+
+// 与 CSS 里输入框改为浮层的断点保持一致。
+const FLOATING_COMPOSER_BREAKPOINT = 640;
 
 function formatMessageModels(message, getModelLabel) {
   const ids = Array.isArray(message.modelsUsed) && message.modelsUsed.length > 0
@@ -25,8 +30,10 @@ export function AgentWorkspacePane({
   placeholder,
   disabled,
   sendButton,
+  modelSelect,
   attachButton,
   privateModeToggle,
+  memoryToggle,
   attachmentBar,
   contextMeter,
   renderMessageContent,
@@ -35,6 +42,11 @@ export function AgentWorkspacePane({
   getModelLabel,
   formatMsgTime,
 }) {
+  const composerRef = useRef(null);
+  const isMobile = useIsMobile(FLOATING_COMPOSER_BREAKPOINT);
+  // 窄屏下输入框浮在消息流之上，消息区靠这个变量预留等高的底部空间。
+  useElementHeightVar(composerRef, '--composer-height', { enabled: isMobile });
+
   const traceAfterIndex = lastUserMessageIndex(messages);
 
   const renderAgentPanel = key => agentPanel ? (
@@ -85,7 +97,7 @@ export function AgentWorkspacePane({
         })}
         <div ref={bottomRef} />
       </div>
-      <div className="agent-workspace-composer">
+      <div className="agent-workspace-composer" ref={composerRef}>
         <div className="input-area">
           <AgentComposer
             variant="dock"
@@ -96,8 +108,10 @@ export function AgentWorkspacePane({
             placeholder={placeholder}
             rows={1}
             disabled={disabled}
+            modelSelect={modelSelect}
             attachButton={attachButton}
             privateModeToggle={privateModeToggle}
+            memoryToggle={memoryToggle}
             sendButton={sendButton}
             attachmentBar={attachmentBar}
             contextMeter={contextMeter}

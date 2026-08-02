@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Palette, SlidersHorizontal, Brain, KeyRound, Minus, Plus, Plug, ChevronDown, ChevronRight, Trash2, Boxes } from 'lucide-react';
+import { Palette, SlidersHorizontal, KeyRound, Minus, Plus, Plug, ChevronDown, ChevronRight, Trash2, Boxes } from 'lucide-react';
 import { fetchConfig, saveConfig, saveExecution, saveTools, resetConfig, applyConfigProfile, saveMcpServer, deleteMcpServer, testMcpServer } from '../../api/config.js';
 import { useTheme } from '../../theme/ThemeProvider.jsx';
 import { useI18n, useT } from '../../i18n/I18nProvider.jsx';
@@ -26,6 +26,9 @@ const NUMBER_FIELD_STEPS = {
   maxResultChars: 1000,
 };
 
+// 标题栏「已保存」的停留时长：够看清，又不至于在后续操作时还挂着。
+const SAVED_HINT_MS = 2500;
+
 const THEME_OPTIONS = [
   { value: 'light', labelKey: 'appearance.theme.light' },
   { value: 'dark', labelKey: 'appearance.theme.dark' },
@@ -38,8 +41,7 @@ const FONT_SIZE_OPTIONS = [
   { value: 'large', labelKey: 'appearance.fontSize.large' },
 ];
 
-const PROFILE_OPTIONS = ['fast', 'balanced', 'deep', 'safe'];
-
+const PROFILE_OPTIONS = ['fast', 'economy', 'deep', 'besteffort'];
 const DEFAULT_EXECUTION = {
   sandboxedWorkers: true,
   workerSandbox: true,
@@ -64,7 +66,6 @@ const GROUPS = [
   { id: 'appearance', labelKey: 'settings.group.appearance', Icon: Palette },
   { id: 'agent', labelKey: 'settings.group.agent', Icon: SlidersHorizontal },
   { id: 'models', labelKey: 'settings.group.models', Icon: Boxes },
-  { id: 'memory', labelKey: 'settings.group.memory', Icon: Brain },
   { id: 'mcp', labelKey: 'settings.group.mcp', Icon: Plug },
   { id: 'apiKeys', labelKey: 'settings.group.apiKeys', Icon: KeyRound },
 ];
@@ -72,7 +73,7 @@ const GROUPS = [
 // 设置面板：左导航分组 + 右内容。
 // 外观（主题/语言，前台即时生效）、Agent 参数（保存后下次任务生效）、
 // Worker 部署开关（保存后需重启）、记忆前端偏好和 API Key 只读展示。
-export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activeProjectId = null, projects = [] }) {
+export function SettingsDialog({ onClose, activeProjectId = null, projects = [] }) {
   const t = useT();
   const { theme, setTheme, fontSize, setFontSize } = useTheme();
   const { locale, setLocale } = useI18n();
@@ -87,6 +88,8 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
   const [schema, setSchema] = useState({});
   const [profile, setProfile] = useState('custom');
   const [profiles, setProfiles] = useState({});
+  // 取值搭配失效的提示（如历史窗口大于总步数）。后端按生效值判定，不阻断保存。
+  const [warnings, setWarnings] = useState([]);
   const [mcpServers, setMcpServers] = useState(DEFAULT_MCP_SERVERS);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [mcpStatus, setMcpStatus] = useState({});
@@ -98,6 +101,14 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
   const [saved, setSaved] = useState(false);
   const [restartRequired, setRestartRequired] = useState(false);
 
+  // 「已保存」移到标题栏后不再受内容区滚动位置影响，会一直停在视线里；
+  // 定时撤下，避免它退化成常驻噪音。用户在此期间改动配置也会立即清除（见 setField）。
+  useEffect(() => {
+    if (!saved) return undefined;
+    const timer = setTimeout(() => setSaved(false), SAVED_HINT_MS);
+    return () => clearTimeout(timer);
+  }, [saved]);
+
   const applyConfigData = data => {
     if (data.agent) setAgent(data.agent);
     if (data.tools) setTools({ vision: data.tools.vision || {}, distill: data.tools.distill || {} });
@@ -107,6 +118,8 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
     if (data.schema) setSchema(data.schema);
     if (data.profile) setProfile(data.profile);
     if (data.profiles) setProfiles(data.profiles);
+    // 需无条件同步：警告消除时后端返回空数组，用 if 判断会让旧提示残留。
+    setWarnings(Array.isArray(data.warnings) ? data.warnings : []);
     if (data.mcpServers) {
       setMcpServers({
         ...data.mcpServers,
@@ -306,10 +319,16 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
     }
   };
 
+  // 部分字段的实际行为无法从名字看出（如 maxResultChars 只作用于最近几步），
+  // 用一行注解说明；warnings 则是取值搭配失效时的提示，由后端按生效值判定。
+  const FIELD_NOTES = { maxResultChars: 'settings.resultCharsNote' };
+
   const numberField = (key, labelKey) => {
     const limit = numberFieldLimit(key);
     const value = Number(agent[key]);
     const displayValue = Number.isFinite(value) ? value : limit.min;
+    const note = FIELD_NOTES[key];
+    const warning = warnings.find(item => item.key === key);
     return (
       <div key={key} className="settings-field">
         <span className="settings-field-label">
@@ -341,6 +360,8 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
             <Plus size={16} strokeWidth={2} />
           </button>
         </div>
+        {note && <p className="settings-field-note">{t(note)}</p>}
+        {warning && <p className="settings-field-warning">{t(`settings.warning.${warning.code}`, warning.params)}</p>}
       </div>
     );
   };
@@ -534,10 +555,25 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
                       className={`settings-segment-btn${profile === item ? ' active' : ''}`}
                       onClick={() => handleProfile(item)}
                       disabled={saving || !profiles[item]}
+                      title={t(`settings.profileHint.${item}`)}
                     >{t(`settings.profile.${item}`)}</button>
                   ))}
+                  {/* 自定义不是可选目标，而是「参数不匹配任何档位」的结果，
+                      因此只在命中时出现且不可点击——点它没有对应的一组值可应用。 */}
+                  {profile === 'custom' && (
+                    <button
+                      type="button"
+                      className="settings-segment-btn active"
+                      disabled
+                      title={t('settings.profileCustomHint')}
+                    >{t('settings.profile.custom')}</button>
+                  )}
                 </div>
               </div>
+              {/* 当前档位的说明。自定义没有固定语义，只提示它是手动调整的结果。 */}
+              <p className="settings-profile-hint">
+                {profile === 'custom' ? t('settings.profileCustomHint') : t(`settings.profileHint.${profile}`)}
+              </p>
               <div className="settings-grid">
                 {BASIC_AGENT_FIELDS.map(f => numberField(f.key, f.labelKey))}
                 <label className="settings-field settings-field-switch">
@@ -648,24 +684,6 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
       );
     }
 
-    if (activeGroup === 'memory') {
-      return (
-        <div className="settings-section">
-          <p className="dialog-desc">{t('settings.memoryDesc')}</p>
-          <div className="settings-grid">
-            <label className="settings-field settings-field-switch">
-              <span>{t('settings.memoryEnabled')}</span>
-              <input
-                type="checkbox"
-                checked={!!agentMemory}
-                onChange={e => setAgentMemory(e.target.checked)}
-              />
-            </label>
-          </div>
-        </div>
-      );
-    }
-
     if (activeGroup === 'mcp') {
       return (
         <div className="settings-section">
@@ -715,15 +733,20 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
     );
   };
 
-  // Agent 页保存热配置及已修改的 execution，Models 页保存工具覆盖；
-  // 外观/记忆是即时前端偏好，Memory 页沿用现有共享 footer。
-  const showSaveBar = activeGroup === 'agent' || activeGroup === 'memory' || activeGroup === 'models';
+  // Agent 页保存热配置及已修改的 execution，Models 页保存工具覆盖；外观是即时前端偏好，无需保存。
+  // 记忆开关已移至输入框工具栏（与隐私模式并列），不再占一个设置分组。
+  const showSaveBar = activeGroup === 'agent' || activeGroup === 'models';
   const activeGroupLabel = t(GROUPS.find(group => group.id === activeGroup)?.labelKey || 'settings.title');
 
   return (
     <DialogShell
       title={t('settings.title')}
       subtitle={activeGroupLabel}
+      // 保存反馈放在标题栏：保存按钮在底部 footer，而内容区可滚动，
+      // 提示原先跟在配置项末尾，长页面下保存后往往看不到。
+      headerActions={showSaveBar && saved && !error
+        ? <span className="settings-saved-badge" role="status">{t('common.saved')}</span>
+        : null}
       onClose={onClose}
       closeDisabled={saving}
       maskClassName="settings-mask"
@@ -753,8 +776,9 @@ export function SettingsDialog({ onClose, agentMemory, setAgentMemory, activePro
 
           <div className="settings-content settings-dialog-content">
             {renderGroup()}
+            {/* 错误留在内容区：它需要紧挨出错的配置项，且不该自动消失。
+                重启提示同理，是持久状态而非一次性反馈。 */}
             {showSaveBar && error && <p className="settings-error">{error}</p>}
-            {showSaveBar && saved && !error && <p className="settings-ok">{t('common.saved')}</p>}
             {activeGroup === 'agent' && restartRequired && !error && <p className="settings-ok">{t('settings.executionRestartSaved')}</p>}
           </div>
         </div>

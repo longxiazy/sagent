@@ -2,13 +2,12 @@ import { Menu, Moon, Settings, Sun, Trash2 } from 'lucide-react';
 import { useTheme } from '../theme/ThemeProvider.jsx';
 import { useT } from '../i18n/I18nProvider.jsx';
 
-// 已开始会话后的顶部 header：左侧菜单/新建/标题，右侧模型选择/清空。
-// modelSelect 由父组件传 slot 进来（同一控件在 hero 和 header 共用）。
+// 已开始会话后的顶部 header：左侧菜单/新建/标题，右侧主题/设置/清空。
+// 模型选择器不在这里——它和附件、隐私等一起放在输入框工具栏，与首页保持一致。
 export function AppHeader({
   sessionTitle,
   sessionLocked,
   messagesLength,
-  modelSelect,
   agentActionsHostRef,
   onToggleSessions,
   onCreateSession,
@@ -29,7 +28,6 @@ export function AppHeader({
         <span className="header-session-title">{sessionTitle}</span>
       </div>
       <div className="header-right">
-        {modelSelect}
         <div className="header-agent-actions" ref={agentActionsHostRef} />
         <button className="header-icon-btn" onClick={toggleTheme} title={t('appearance.toggleTheme')}>
           {resolvedTheme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}

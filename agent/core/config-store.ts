@@ -26,6 +26,8 @@ import {
   AGENT_CONFIG_SCHEMA,
   CONFIG_PROFILES,
   configDefaults,
+  collectConfigWarnings,
+  detectProfile,
   type ConfigProfile,
   type RuntimeConfig,
   type RuntimeConfigKey,
@@ -229,7 +231,9 @@ export function normalizeConfigDocument(value: any): SagentConfigDocument {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return { version: 1, agent: {}, mcpServers: {} };
   }
-  const profile = ['fast', 'balanced', 'deep', 'safe', 'custom'].includes(value.profile)
+  // 这里的 profile 只用于把档位展开成实际覆盖值（档位「如何生效」），
+  // 不作为「当前属于哪个档位」的依据——后者由 configStore.profile() 从生效值反推。
+  const profile = ['fast', 'economy', 'deep', 'besteffort', 'custom'].includes(value.profile)
     ? value.profile as ConfigProfile
     : 'custom';
   const agentOverrides = validateConfig(value.agent ?? {}).clean;
@@ -308,6 +312,20 @@ export const configStore = {
 
   profiles() {
     return CONFIG_PROFILES;
+  },
+
+  /**
+   * 当前生效值所属的档位，由实际取值反推而非读取记录的标签。
+   * 这样「从未配置过」会正确归到 economy（生效值即内置默认），
+   * 「把参数改回某档位原值」也会自动回到该档位。
+   */
+  profile(): ConfigProfile {
+    return detectProfile(current);
+  },
+
+  /** 当前生效值里搭配失效的项。只提示不拦截，见 collectConfigWarnings。 */
+  warnings() {
+    return collectConfigWarnings(current);
   },
 
   document(): SagentConfigDocument {

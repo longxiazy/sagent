@@ -1,3 +1,27 @@
+/**
+ * 动态模型路由 —— 按任务难度重排候选模型的优先级
+ *
+ * 只调整顺序，不增删模型。真正消费这个顺序的是 planner：race 分批启动时排在
+ * 前面的先跑，progressive 只把第一个当主模型。因此「重排顺序」实际等价于
+ * 「决定谁承担主要工作」。vote 会启动全部模型，顺序对它没有影响。
+ *
+ * 由 agent.autoModelRouting 开关控制。四档预设一律关闭，默认也关闭——
+ * 评分是启发式推断（见下），未必比用户自己排的顺序更准，因此不预设开启，
+ * 交由用户按自己的模型组合判断是否需要。
+ *
+ * 难度判定（estimateTaskComplexity）按优先级短路，前一条命中就不再往下看：
+ *   1. 最近三步内出现过失败 → high。失败往往意味着任务比表面复杂，换强模型重试。
+ *   2. 已进入执行阶段且非首步 → high。写文件、跑命令这类有副作用的动作出错代价高。
+ *   3. 任务描述的关键词倾向 → high / low
+ *   4. 都不命中 → medium，此时不重排，保持用户给定的顺序。
+ *
+ * 评分（scoreModelForRouting）只能靠模型名与目录元信息做启发式推断——没有统一的
+ * 能力字段可用，所以用参数量、上下文窗口和名称里的档位词（pro/flash/mini 等）
+ * 拼出 capability / economy 两个分值。low 任务偏向 economy，high 任务偏向 capability。
+ * 这是「猜」而非「测」，所以只用于排序，不用于淘汰模型：猜错最多是顺序不佳，
+ * 不会让任何模型不可用。
+ */
+
 import type { ModelInfo } from './providers/types.ts';
 
 type Complexity = 'low' | 'medium' | 'high';

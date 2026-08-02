@@ -8,11 +8,21 @@
  *   本文件负责注入桌面 Agent 的状态、规划、审批、工具路由和清理实现。
  *
  * 多模型规划 / Multi-model planning:
- *   createDesktopPlanner() 支持三种策略：
- *   - race: 批量错峰启动，首个有效结果胜出，其余取消
- *   - vote: 等待所有活动模型结束后汇总成功结果；任一模型返回 finish 时立即结束
- *   - progressive: 先运行主模型，超过等待阈值或失败后再让其余模型加入竞速
- *   模型超时会在本次 run 内加入黑名单；“整批失败后启动下一批”仅适用于 race。
+ *   createDesktopPlanner() 支持三种策略。策略只决定「怎么调度这批模型」，
+ *   不增删模型本身；候选集与顺序由调用方传入（可再经动态模型路由重排）。
+ *
+ *   - race（UI「竞速」，默认）: 按 batchSize 分批、批间隔 staggerDelaySec 错峰启动，
+ *     首个有效结果胜出并取消其余。整批全失败时立即跳过延迟启动下一批——
+ *     这条「整批失败即续批」的规则仅 race 有。延迟低、token 省，但结果取决于谁最快。
+ *   - vote（UI「汇总」）: 同时启动全部活动模型并等待都结束，再由 multi-model.ts
+ *     聚合出多数一致的决策。质量更稳，代价是延迟取决于最慢的模型，且每个模型
+ *     都要跑满。例外：任一模型返回 finish 就立即短路收尾，不等其余。
+ *   - progressive: 先只跑主模型，4s 内出结果就独占；超时未返回或主模型提前失败，
+ *     才唤醒其余模型加入竞速。比 race 更省 token，适合主模型通常够用的场景。
+ *     **未接入 UI**——前端只发 race/vote，但 POST /api/agent 的 strategy 字段
+ *     不做白名单校验，所以 API 直调可以使用它。
+ *
+ *   模型超时会在本次 run 内加入黑名单；三种策略共用该黑名单与限流冷却。
  *
  * 观测 / Observation:
  *   observeDesktopAgent() 并行采集已启用的桌面状态和已建立的内置浏览器状态：
@@ -27,7 +37,7 @@
  *   - server.ts 的 resumeFromCheckpoint() 从断点恢复任务
  *
  * 主要职责边界 / Module boundaries:
- *   - planner.ts: 模型路由及 race / vote / progressive 调度
+ *   - planner/: 模型路由及 race / vote / progressive 调度
  *   - core/multi-model.ts: 多模型结果聚合
  *   - core/prompts.ts: 各 provider 的消息构建
  *   - observer.ts: 桌面与浏览器 observation 采集
@@ -47,7 +57,7 @@ import { executeGenericMcpAction } from '../tools/mcp/execute.ts';
 import { executeTerminalAction } from '../tools/terminal/run.ts';
 import { createSharedBrowserSessionManager } from './browser-session-manager.ts';
 import { observeDesktopAgent } from './observer.ts';
-import { createDesktopPlanner, DEFAULT_MODEL_TIMEOUT_MS } from './planner.ts';
+import { createDesktopPlanner, DEFAULT_MODEL_TIMEOUT_MS } from './planner/index.ts';
 import { saveHealthySnapshot } from '../core/checkpoint.ts';
 import { log } from '../../helpers/logger.ts';
 import { isPrivateRun, withPrivateRun } from '../../helpers/private-run.ts';
@@ -228,7 +238,9 @@ export function createDesktopAgentRunner({
     task,
     model,
     models: agentModels,
-    strategy = 'progressive',
+    // 与 UI 选择器和 POST /api/agent 的默认值保持一致。此处曾默认 progressive，
+    // 而调用方总会显式传值，导致这个默认值既不生效又与其它两处不符。
+    strategy = 'race',
     systemPrompt = null,
     headless = defaultHeadless,
     privateMode = false,
