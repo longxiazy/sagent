@@ -122,15 +122,15 @@ describe('model metadata', () => {
     expect(getGeminiCatalogModelMetadata('gemini-2.5-flash')).toEqual({});
   });
 
-  it('only exposes official NVIDIA API models still present in the public catalog', async () => {
+  it('exposes NVIDIA API models even when they are absent from the local catalog', async () => {
     const provider = createOpenAICompatProvider({
       chat: { completions: { create: vi.fn() } },
       models: {
         list: vi.fn().mockResolvedValue({
           data: [
             { id: 'deepseek-ai/deepseek-v4-pro' },
-            // 只在 /v1/models 里存在、公开 catalog 已下线的模型不应展示。
-            // 用一个不可能被上游重新收录的合成 id，避免测试随 catalog 刷新而失效。
+            // 本地 catalog 只是元数据快照，不能过滤 NVIDIA API 实际返回的模型。
+            // 使用合成 id，避免测试随 catalog 刷新而失效。
             { id: 'example/delisted-model-not-in-catalog' },
           ],
         }),
@@ -139,10 +139,15 @@ describe('model metadata', () => {
 
     await expect(provider.listModels()).resolves.toEqual([
       expect.objectContaining({ id: 'deepseek-ai/deepseek-v4-pro' }),
+      expect.objectContaining({
+        id: 'example/delisted-model-not-in-catalog',
+        label: 'example/delisted-model-not-in-catalog',
+        provider: 'nvidia',
+      }),
     ]);
   });
 
-  it('does not apply the NVIDIA catalog allowlist to custom OpenAI-compatible endpoints', async () => {
+  it('does not attach NVIDIA catalog metadata to custom OpenAI-compatible endpoints', async () => {
     const provider = createOpenAICompatProvider({
       chat: { completions: { create: vi.fn() } },
       models: {
