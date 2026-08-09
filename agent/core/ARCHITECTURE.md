@@ -23,7 +23,7 @@
 │  planner.ts · openai-compatible-request.ts                     │
 │  nvidia-response-parsers.ts · prompts.ts · tool-definitions.ts │
 │  model-routing.ts · multi-model.ts · context-estimate.ts       │
-│  tool-model-resolver.ts · summarizer.ts                        │
+│  tool-model-resolver.ts                                        │
 ├────────────────────────────────────────────────────────────────┤
 │  存储层（跨请求状态与落盘）                                    │
 │  approval-store.ts · session-store.ts · project-store.ts       │
@@ -66,7 +66,6 @@
 - **model-routing.ts** — 按任务难度启发式重排候选模型顺序（只排序不增删）。
 - **multi-model.ts** — vote 策略的结果聚合（按 action 键取多数派 + consensus 字段）。
 - **context-estimate.ts** — token/上下文占用估算：窗口推断、payload 递归估算、prompt 预览、风险档（≥80% danger）。
-- **summarizer.ts** — provider `summarize()` 的封装（框式日志 + 异常重抛）。**当前无调用方**，记忆压缩路径尚未接入。
 - **tool-model-resolver.ts** — vision/distill 等子任务的模型四级解析：项目覆盖 → 全局配置 → 环境变量 → 主模型兜底。
 
 ### 5. 存储层
@@ -90,7 +89,7 @@
 ### 7. providers/（目录，简述）
 
 - **registry.ts** — 供应商注册表与模型元信息解析。
-- **openai-compat.ts / gemini.ts** — 两家供应商的 `agentPlan/chat/compact/confidentCompletion/summarize` 接口适配，内部复用 `planner.ts`、`prompts.ts`、`ai-client.ts` 的共享模块。
+- **openai-compat.ts / gemini.ts** — 两家供应商的 `agentPlan/completionJson/completionStream/listModels` 接口适配，内部复用 `planner.ts`、`prompts.ts`、`ai-client.ts` 的共享模块。
 
 ## 依赖方向
 

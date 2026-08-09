@@ -8,7 +8,7 @@
  *
  * 加第四家供应商：写 createXxxProvider() 实现 LLMProvider 接口，在下方
  * createProviderRegistry() 里 `if (xxx_client) providers.push(...)` 加一行即可。
- * planner / routes / summarizer / server 这些核心调用点无需改动。
+ * planner / routes / server 这些核心调用点无需改动。
  */
 
 import { createOpenAICompatProvider } from './openai-compat.ts';

@@ -26,7 +26,6 @@ import {
 } from '../../../helpers/streaming.ts';
 import { retryAsync } from '../../../helpers/retry.ts';
 import { log } from '../../../helpers/logger.ts';
-import { buildSummaryPrompt } from './summary-prompt.ts';
 import { extractModelMetadata } from './model-metadata.ts';
 import { getNvidiaCatalogModelMetadata } from './nvidia-catalog.ts';
 import type {
@@ -36,7 +35,6 @@ import type {
   AgentPlanResult,
   CompletionOpts,
   CompletionStreamOpts,
-  SummarizeOpts,
 } from './types.ts';
 
 const REASONING_HEADER = '[Thinking / 推理过程]';
@@ -240,18 +238,6 @@ export function createOpenAICompatProvider(
       }
       writeSseDone(res);
       res.end();
-    },
-
-    async summarize(opts: SummarizeOpts) {
-      const { text, model } = opts;
-      const prompt = buildSummaryPrompt(text);
-      const resp = await retryAsync(() => client.chat.completions.create({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-        max_tokens: 800,
-      }));
-      return resp?.choices?.[0]?.message?.content || text.slice(0, 300);
     },
   };
 }
