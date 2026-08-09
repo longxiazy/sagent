@@ -83,11 +83,6 @@ export function resolveAgentMaxTokens({
   );
 }
 
-/** 从 context-length 错误文案中提取重试可用 max_tokens；不可重试时返回 null。 */
-export function maxTokensFromContextLengthError(err: any) {
-  return contextLengthDetailsFromError(err)?.retryMaxTokens ?? null;
-}
-
 function contextLengthDetailsFromError(err: any) {
   const message = String(err?.message || err?.error?.message || '');
   const match = message.match(/maximum context length is\s+(\d+)\s+tokens[\s\S]*?\((\d+)\s+in the messages,\s*(\d+)\s+in the completion\)/i);

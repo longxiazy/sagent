@@ -259,14 +259,6 @@ export function parseSafeCommand(command: string): ParsedSafeCommand {
   };
 }
 
-export function getFirstToken(command: string) {
-  try {
-    return tokenize(String(command || '').trim())[0] || '';
-  } catch {
-    return '';
-  }
-}
-
 export function canRunSafe(command: string) {
   try {
     parseSafeCommand(command);

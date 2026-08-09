@@ -32,6 +32,7 @@ import { createClients, deriveProviderName } from './agent/core/ai-client.ts';
 import { createProviderRegistry } from './agent/core/providers/registry.ts';
 import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
 import { loadChromeMcpConfig } from './agent/tools/chrome/mcp-client.ts';
+import { closeAllGenericMcpClients } from './agent/tools/mcp/client.ts';
 import { createAgentRouter } from './routes/agent.ts';
 import { createAgentScreenshotsRouter } from './routes/agent-screenshots.ts';
 import { createCompletionsRouter } from './routes/completions.ts';
@@ -207,7 +208,14 @@ let exiting = false;
 async function exitAfterFlush(code: number) {
   if (exiting) return;
   exiting = true;
-  await Promise.allSettled([flushAllPersistenceTasks(), flushLlmLogs()]);
+  // 通用 MCP 的 stdio server 是本进程 spawn 的子进程，只有 close() 才会 SIGTERM 它们。
+  // 沙箱模式下 worker 退出会连带回收，但 sandboxedWorkers=false 时 agent 就跑在本进程，
+  // 不显式关闭会残留子进程。
+  await Promise.allSettled([
+    flushAllPersistenceTasks(),
+    flushLlmLogs(),
+    closeAllGenericMcpClients(),
+  ]);
   process.exit(code);
 }
 
