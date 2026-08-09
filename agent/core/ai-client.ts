@@ -14,8 +14,13 @@ import { GoogleGenAI } from '@google/genai';
 
 export { createModelTools } from './tool-definitions.ts';
 
-// 过滤掉不适合做 agent 决策的模型：向量/重排、视觉/OCR、纯代码补全、内容安全护栏等。
-// 这类模型在供应商接口里和对话模型混在一起，全塞进前端下拉会很难选。
+/**
+ * 过滤掉不适合做 agent 决策的模型：向量/重排、视觉/OCR、纯代码补全、内容安全护栏等。
+ * 这类模型在供应商接口里和对话模型混在一起，全塞进前端下拉会很难选。
+ *
+ * 用法：传入模型 id，命中噪声特征返回 false。
+ * 当前使用：providers/gemini.ts 与 providers/openai-compat.ts 拉取模型列表时的过滤。
+ */
 const NON_CHAT_MODEL_RE =
   /embed|rerank|retriever|bge-|arctic-embed|nvclip|fuyu|deplot|vila|neva|kosmos|ocr|paddle|-vision|vision-|-vl-|codegemma|starcoder|codellama|-coder|coder-|guard|safety|topic-control/i;
 
@@ -23,8 +28,13 @@ export function isChatCapableModel(id: string) {
   return !NON_CHAT_MODEL_RE.test(id);
 }
 
-// 从 baseURL 域名推断供应商展示名，用于前端/日志展示当前连的是哪家。
-// 例：api.freemodel.dev → freemodel，integrate.api.nvidia.com → nvidia，留空 → nvidia。
+/**
+ * 从 baseURL 域名推断供应商展示名，用于前端/日志展示当前连的是哪家。
+ * 例：api.freemodel.dev → freemodel，integrate.api.nvidia.com → nvidia，留空 → nvidia。
+ *
+ * 用法：传入 baseURL，解析失败或未传时回退 'nvidia'。
+ * 当前使用：server.ts 启动横幅、routes/agent-config.ts 的 provider 展示、providers/openai-compat.ts 的模型注册名。
+ */
 export function deriveProviderName(baseURL?: string) {
   if (!baseURL) return 'nvidia';
   try {
@@ -38,6 +48,11 @@ export function deriveProviderName(baseURL?: string) {
   }
 }
 
+/**
+ * 按 .env 构造 OpenAI(NVIDIA) / Gemini 两套 SDK 客户端。
+ * 用法：启动时调用一次；缺任一 key 时对应客户端为 null，两者都缺则抛错拒绝启动。
+ * 当前使用：server.ts 主进程启动、agent-worker.ts 沙箱 worker 启动、scripts/trace-eval-live.ts 离线评估。
+ */
 export function createClients() {
   const nvidiaKey = process.env.NVIDIA_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;

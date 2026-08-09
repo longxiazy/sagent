@@ -32,8 +32,11 @@ export interface SessionSnapshot {
 
 // ─── 常量 ────────────────────────────────────────────────
 
+/** 健康快照写入间隔（每 N 步写一次，当前恒为 1，即每步都写） */
 const HEALTH_CHECKPOINT_INTERVAL = 1;
+/** 健康快照最多保留份数，超出删除最旧的 */
 const KEEP_HEALTHY = 30;
+/** 失败快照保留份数（当前未落盘 failed 快照，保留以备扩展） */
 const KEEP_FAILED = 3;
 
 // ─── Session 级快照（回滚）─────────────────────────────────
@@ -42,6 +45,10 @@ function sessionDir(dir: string, runId: string) {
   return join(dir, 'session-checkpoints', runId);
 }
 
+/**
+ * 列出已有 Session 快照的运行 ID。
+ * 当前使用：agent-run-start.ts 启动清理时枚举并删除旧快照。
+ */
 export async function listSessionCheckpointRuns(dir: string) {
   const scDir = join(dir, 'session-checkpoints');
   try {
@@ -105,6 +112,11 @@ async function pruneSnapshots(dir: string, runId: string, type: string, keepCoun
   } catch { /* ignore */ }
 }
 
+/**
+ * 保存某一步的健康快照（history/state/用量/健康度），原子写入后裁剪超量快照。
+ * 用法：每步结束后调用；隐私 run 跳过落盘。
+ * 当前使用：runtime.ts 步骤循环（经 persistence 队列）、worker runner.ts 的桥接写入。
+ */
 export async function saveHealthySnapshot({
   dir,
   runId,
@@ -168,6 +180,11 @@ export async function saveHealthySnapshot({
   await pruneSnapshots(dir, runId, 'healthy', KEEP_HEALTHY);
 }
 
+/**
+ * 读取某运行 step ≤ upToStep 的最新健康快照，用于回滚。
+ * 当前使用：runtime.ts 回滚时取目标步骤的前一步、
+ * agent-run-request.ts / agent-run-execution.ts 的会话恢复。
+ */
 export async function loadLatestHealthySnapshot(dir: string, runId: string, upToStep: number): Promise<SessionSnapshot | null> {
   const cpDir = sessionDir(dir, runId);
   try {
@@ -194,6 +211,10 @@ export async function loadLatestHealthySnapshot(dir: string, runId: string, upTo
   }
 }
 
+/**
+ * 列出某运行的全部快照元信息（step/type/health/时间），供前端回滚面板展示。
+ * 当前使用：routes/agent-checkpoints.ts。
+ */
 export async function listSessionCheckpoints(dir: string, runId: string) {
   const cpDir = sessionDir(dir, runId);
   try {
@@ -226,6 +247,10 @@ export { HEALTH_CHECKPOINT_INTERVAL, KEEP_HEALTHY, KEEP_FAILED };
 
 // ─── Session 快照清理（启动前、取消或运行结束时调用）──────────────
 
+/**
+ * 删除某运行的全部 Session 快照（取消、完成、启动清理时调用）。
+ * 当前使用：helpers/run-agent.ts、helpers/private-run-artifacts.ts、routes/agent-run-control.ts、routes/agent-run-start.ts。
+ */
 export async function removeSessionCheckpoints(dir: string, runId: string) {
   const cpDir = sessionDir(dir, runId);
   await rm(cpDir, { recursive: true, force: true });

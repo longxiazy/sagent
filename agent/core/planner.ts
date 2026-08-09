@@ -5,7 +5,7 @@
  * 解析或动作校验失败时直接抛错，由上层决定结束单模型任务或标记多模型中的该模型失败。
  *
  * 调用场景：
- *   - agent/desktop/agent.js 的 singleModelPlan() 中通过 createJsonPlanner() 创建
+ *   - providers/openai-compat.ts 的 createJsonPlanner() 创建（agent 决策器）
  *   - 每次 runtime 循环的 decide 步骤调用 planner({ model, task, step, history, observation })
  *
  */
@@ -41,6 +41,11 @@ function firstPositiveNumber(values: any[]) {
   return null;
 }
 
+/**
+ * 解析模型输出上限：min(请求值, 模型 outputLimit, 上下文余量)。
+ * 上下文余量 = 窗口 - 估算 prompt×1.25 - 5% 保留；至少留 1 token。
+ * 当前使用：createJsonPlanner 的正常/compact 分支、providers/gemini.ts 的 maxOutputTokens。
+ */
 export function resolveAgentMaxTokens({
   model,
   modelConfig,
@@ -78,6 +83,7 @@ export function resolveAgentMaxTokens({
   );
 }
 
+/** 从 context-length 错误文案中提取重试可用 max_tokens；不可重试时返回 null。 */
 export function maxTokensFromContextLengthError(err: any) {
   return contextLengthDetailsFromError(err)?.retryMaxTokens ?? null;
 }
@@ -107,11 +113,18 @@ function contextLengthDetailsFromError(err: any) {
   };
 }
 
+/** catalog 声明支持 tools 参数才走原生 function calling（否则 JSON-in-prompt）。 */
 export function modelSupportsNativeToolCalls(model: string, modelConfig: any[] | null | undefined) {
   const modelInfo = findModelInfo(model, modelConfig);
   return Array.isArray(modelInfo?.supportedParameters) && modelInfo.supportedParameters.includes('tools');
 }
 
+/**
+ * 创建单模型决策器：构造请求 → 解析响应 → 归一化动作。
+ * 用法：openai-compat provider 装配时调用一次，返回的 plan() 供 decide 步骤复用；
+ * 上下文不足时自动降 max_tokens / 切 compact prompt / 回退 JSON-in-prompt 重试。
+ * 当前使用：providers/openai-compat.ts 的 agent 决策器。
+ */
 export function createJsonPlanner({
   client,
   temperature = 0.1,

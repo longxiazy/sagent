@@ -262,7 +262,8 @@ export function normalizeConfigDocument(value: any): SagentConfigDocument {
 }
 
 export const configStore = {
-  /** 启动时调用一次：设定落盘目录并加载 json 覆盖。 */
+  /** 启动时调用一次：设定落盘目录并加载 json 覆盖（含 legacy runtime-config.json 迁移）。
+   *  当前使用：server.ts、agent/worker/agent-worker.ts、scripts 离线脚本（trace-eval / prompt-benchmark）。 */
   async init(persistDir: string): Promise<RuntimeConfig> {
     defaultsState = configDefaults();
     defaultValues = defaultsState.values;
@@ -288,7 +289,8 @@ export const configStore = {
     return current;
   },
 
-  /** 同步返回当前完整配置（热路径用）。 */
+  /** 同步返回当前完整配置（热路径用）。
+   *  当前使用：runtime.ts、planner.ts、providers/gemini.ts、tools/mcp 等运行时各处，改完配置无需重启立即生效。 */
   get(): RuntimeConfig {
     return current;
   },
@@ -298,6 +300,8 @@ export const configStore = {
     return { ...defaultValues };
   },
 
+  /** 各字段当前来源（default/user）。
+   *  当前使用：routes/agent-config.ts 的 GET /api/agent/config 展示来源标记。 */
   sources(): Record<RuntimeConfigKey, 'default' | 'user'> {
     const sources = { ...defaultsState.sources } as Record<RuntimeConfigKey, 'default' | 'user'>;
     for (const key of AGENT_CONFIG_KEYS) {
@@ -349,6 +353,8 @@ export const configStore = {
     };
   },
 
+  /** 各部署项当前来源（default/user/env）。
+   *  当前使用：routes/agent-config.ts 的 GET /api/agent/config 展示来源标记。 */
   executionSources(env: Record<string, string | undefined> = process.env): Record<keyof ExecutionConfig, ExecutionConfigSource> {
     const stored = document.execution || {};
     return {
@@ -361,7 +367,8 @@ export const configStore = {
     };
   },
 
-  /** 更新需要重启后端才能生效的 Worker 部署选项；Agent 与 execution 段共用同一个 config.json。 */
+  /** 更新需要重启后端才能生效的 Worker 部署选项；与 Agent 段共用 config.json。
+   *  当前使用：routes/agent-config.ts 的 PUT /api/agent/execution。 */
   async updateExecution(patch: any): Promise<ExecutionConfig> {
     const { clean, errors } = validateExecution(patch);
     if (errors.length) throw new Error(errors.join('；'));
@@ -374,6 +381,9 @@ export const configStore = {
     return this.execution();
   },
 
+  /** 新增/替换/删除一个 MCP server 配置（server 为 null 即删除），校验后落盘。
+   *  当前使用：routes/agent-config.ts 的 PUT/DELETE /api/agent/mcp-servers/:name，
+   *  以及 tools/mcp/client.ts、chrome/mcp-client.ts 读取运行时连接参数。 */
   async updateMcpServer(name: string, server: McpServerConfig | null): Promise<Record<string, McpServerConfig>> {
     const key = String(name || '').trim();
     if (!key) throw new Error('MCP server 名称不能为空');
@@ -403,7 +413,8 @@ export const configStore = {
     return sanitized;
   },
 
-  /** 校验并合并 patch，落盘后返回最新配置。校验失败抛错（含原因）。 */
+  /** 校验并合并 patch，落盘后返回最新配置。校验失败抛错（含原因）。
+   *  当前使用：routes/agent-config.ts 的 PATCH /api/agent/config（设置 UI 保存）。 */
   async update(patch: any): Promise<RuntimeConfig> {
     const { clean, errors } = validateConfig(patch);
     if (errors.length) {
@@ -417,6 +428,8 @@ export const configStore = {
     return current;
   },
 
+  /** 应用某个预设档位：以档位取值覆盖 Agent 参数，并在 document 中记录 profile 标签。
+   *  当前使用：routes/agent-config.ts 的 POST /api/agent/profile。 */
   async applyProfile(profile: Exclude<ConfigProfile, 'custom'>): Promise<RuntimeConfig> {
     const values = CONFIG_PROFILES[profile];
     if (!values) throw new Error(`未知配置 profile: ${profile}`);
@@ -428,7 +441,8 @@ export const configStore = {
     return current;
   },
 
-  /** 清空 Agent 覆盖，回到 schema 内置默认；MCP、tools、execution 等其它配置保持不变。 */
+  /** 清空 Agent 覆盖，回到 schema 内置默认；MCP、tools、execution 等其它配置保持不变。
+   *  当前使用：routes/agent-config.ts 的 POST /api/agent/reset。 */
   async reset(): Promise<RuntimeConfig> {
     overrides = {};
     document = { ...document, profile: 'custom' };

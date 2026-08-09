@@ -1,11 +1,27 @@
+/**
+ * Context Estimate — 提示词 token/上下文占用估算
+ *
+ * 用途：按供应商实际 prompt 构造逻辑（gemini → contents，nvidia → messages）
+ * 估算单步 payload 的 token 与模型上下文窗口的占用比例，供前端显示
+ * 「预计上下文占用/风险」及 prompt 预览。
+ *
+ * 调用场景：
+ *   - routes/agent-context.ts：单个模型估算 + 多模型汇总（max/平均/风险档）
+ *   - agent/core/planner.ts：单模型上下文窗口推断与 token 估算
+ *   - scripts/prompt-benchmark.ts / trace-eval.ts：离线提示词对比与 trace 回放统计
+ */
+
 import {
   buildGeminiAgentPromptPayload,
   buildNvidiaTaskMessages,
 } from './prompts.ts';
 
+/** 未识别模型的兜底上下文窗口。 */
 const DEFAULT_CONTEXT_WINDOW = 128_000;
+/** prompt 预览文本截断上限。 */
 const PROMPT_PREVIEW_CHAR_LIMIT = 60_000;
 
+/** 从模型信息对象中依次尝试各命名习惯的窗口字段（contextWindow/context_window 等）。 */
 function explicitContextWindow(model: any) {
   const candidates = [
     model?.contextWindow,
@@ -24,6 +40,10 @@ function explicitContextWindow(model: any) {
   return null;
 }
 
+/**
+ * 推断模型上下文窗口：优先取 modelInfo 显式字段，否则按模型 id 关键词匹配已知档位。
+ * 当前使用：routes/agent-context.ts 的估算、planner.ts 的窗口判断。
+ */
 export function inferContextWindow(modelId = '', modelInfo: any = null) {
   const explicit = explicitContextWindow(modelInfo);
   if (explicit) return explicit;
@@ -37,6 +57,7 @@ export function inferContextWindow(modelId = '', modelInfo: any = null) {
   return DEFAULT_CONTEXT_WINDOW;
 }
 
+/** 估算纯文本 token 数：CJK 按 0.75 计、其它按 4 字符计，空串返回 0。 */
 export function estimateTextTokens(text = '') {
   const value = String(text || '');
   if (!value) return 0;
@@ -45,6 +66,8 @@ export function estimateTextTokens(text = '') {
   return Math.max(1, Math.ceil(cjk * 0.75 + asciiLike / 4));
 }
 
+/** 递归估算任意 payload（字符串/数字/数组/对象）的 token 数。
+ *  当前使用：planner.ts 的 prompt token 统计、prompt-benchmark.ts 与 trace-eval.ts 的离线对比。 */
 export function estimatePayloadTokens(value: any): number {
   if (value == null) return 0;
   if (typeof value === 'string') return estimateTextTokens(value);
@@ -65,6 +88,7 @@ export function formatTokenCount(tokens: number) {
   return String(Math.round(tokens));
 }
 
+/** 占用比例 → 风险档：≥80% danger，≥50% warning，否则 ok。 */
 export function riskForRatio(ratio: number) {
   if (ratio >= 0.8) return 'danger';
   if (ratio >= 0.5) return 'warning';
@@ -102,6 +126,7 @@ function formatGeminiContents(contents: any[]) {
   }).join('\n\n');
 }
 
+/** 把请求 payload 各段拼成可读文本预览（截断 60k 字符），供前端展示。 */
 export function buildPromptPreview({
   payload,
   modelId,
@@ -190,6 +215,8 @@ function buildPlanningPayload({
   };
 }
 
+/** 单模型上下文占用估算：按供应商构造实际 payload 后估算 token 与占用比例。
+ *  当前使用：routes/agent-context.ts（GET /api/agent/context-estimate）。 */
 export function buildModelContextEstimate({
   modelId,
   modelInfo,
@@ -231,6 +258,8 @@ export function buildModelContextEstimate({
   };
 }
 
+/** 汇总多模型估算：取 max 最坏情况与平均值，去掉 promptPreview 后返回。
+ *  当前使用：routes/agent-context.ts 的汇总响应。 */
 export function summarizeContextEstimates(modelEstimates: any[]) {
   const estimates = modelEstimates.length > 0 ? modelEstimates : [{
     modelId: null,

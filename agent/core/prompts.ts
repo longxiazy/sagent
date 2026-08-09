@@ -1,3 +1,18 @@
+/**
+ * Prompts — Agent 提示词构造
+ *
+ * 用途：根据任务/历史/观察/会话上下文，按需选择工具并构造两套供应商的请求提示：
+ *   - buildNvidiaTaskMessages / buildNvidiaAgentTools：OpenAI 兼容（NVIDIA）消息与 tools
+ *   - buildGeminiAgentPromptPayload / buildGeminiTaskMessages：Gemini contents/systemInstruction
+ * 内置 capability 推断（任务关键词、历史用过工具、Chrome/MCP 可用性、拦截/失败提示），
+ * 同一套规则同时驱动全量 prompt、compact prompt 与原生 tool-call 模式的工具选择。
+ *
+ * 调用场景：
+ *   - providers/openai-compat.ts / providers/gemini.ts：provider 的 agentPlan 请求构造
+ *   - context-estimate.ts：估算实际 prompt 的 token 占用
+ *   - scripts/prompt-benchmark.ts / trace-eval.ts：离线提示词对比与回放
+ */
+
 import { buildChromePromptLines, isChromeMcpAvailable } from '../tools/chrome/mcp-client.ts';
 import { isGenericMcpEnabled, listGenericMcpServers } from '../tools/mcp/client.ts';
 import { configStore } from './config-store.ts';
@@ -85,6 +100,7 @@ function buildNvidiaActionExampleLinesFromDefinitions(definitions: ModelToolDefi
   return definitions.map(definition => JSON.stringify(actionExampleForTool(definition)));
 }
 
+/** 生成 NVIDIA 提示中的代表性动作示例 JSON 行（按工具分组各取一个）。 */
 export function buildNvidiaActionExampleLines(options: PromptToolOptions = {}) {
   return buildNvidiaActionExampleLinesFromDefinitions(selectPromptToolDefinitions(options));
 }
@@ -158,6 +174,7 @@ function comparableConversationText(value: string) {
     .replace(/[\s\p{P}\p{S}]+/gu, '');
 }
 
+/** 清洗会话历史：去掉空的/助手指代回声/连续重复，只保留近 10 条 user/assistant。 */
 export function sanitizeConversationHistory(value: PromptCapabilityContext['conversationHistory']) {
   if (!Array.isArray(value)) return [];
   const sanitized: Array<{ role: 'user' | 'assistant'; content: string }> = [];
@@ -186,6 +203,7 @@ export function sanitizeConversationHistory(value: PromptCapabilityContext['conv
   return sanitized;
 }
 
+/** 按任务/历史推断需要启用哪些工具（核心工具常驻，其余按需分组加入）。 */
 export function selectGeminiToolNames(context: PromptCapabilityContext = {}) {
   const selected = new Set(CORE_TOOL_NAMES);
   const text = capabilityText(context);
@@ -228,6 +246,7 @@ function historyShowsBrowserBlock(history: any[] | undefined) {
   ));
 }
 
+/** 任务描述/历史/观察是否暗示需要 Chrome MCP（交互意图、拦截、已用过 chrome）。 */
 export function shouldIncludeChromePromptDetails({ task = '', history = [], observation }: PromptCapabilityContext = {}) {
   return CHROME_TASK_RE.test(task)
     || INTERACTIVE_BROWSER_TASK_RE.test(task)
@@ -236,6 +255,7 @@ export function shouldIncludeChromePromptDetails({ task = '', history = [], obse
     || BROWSER_BLOCK_RE.test(String(observation?.browser?.text || ''));
 }
 
+/** 通用 MCP 是否启用且任务涉及 MCP/Codex/外部工具能力。 */
 export function shouldIncludeGenericMcpDetails({ task = '', history = [] }: PromptCapabilityContext = {}) {
   return isGenericMcpEnabled() && (GENERIC_MCP_TASK_RE.test(task) || historyUsesTool(history, 'mcp'));
 }
@@ -359,6 +379,8 @@ function buildCurrentDateTimeContext(now = new Date()) {
   };
 }
 
+/** 压缩历史：截取最近 maxEntries 步并按 maxResultChars 精简每条结果。
+ *  当前使用：buildGeminiTaskMessages / buildNvidiaTaskMessages（compact 分支按 2 步/1500 字）。 */
 export function compactAgentHistory(history: any[], maxEntries?: number, maxResultChars?: number, task = '') {
   if (!Array.isArray(history) || history.length === 0) return [];
   const config = configStore.get();
@@ -442,6 +464,7 @@ function buildCompactAgentRuleLines(
   ];
 }
 
+/** Gemini 侧 system 指令：基础角色 + 按能力展开的共享规则集。 */
 export function buildDesktopAgentSystemPrompt(
   systemPrompt: string | null,
   capabilityContext: PromptCapabilityContext = {},
@@ -457,8 +480,8 @@ export function buildDesktopAgentSystemPrompt(
     .join('\n');
 }
 
-// Gemini 决策消息：把 task/step/history/observation 这坨 JSON 塞进一个
-// user part，system 由 provider 单独传。
+/** Gemini 决策请求：历史/观察/会话以 JSON user part 下发，system 由 provider 单独传。
+ *  当前使用：buildGeminiAgentPromptPayload 与 context-estimate.ts 的估算。 */
 export function buildGeminiTaskMessages({
   task,
   step,
@@ -490,6 +513,8 @@ export function buildGeminiTaskMessages({
   return { contents };
 }
 
+/** 完整 Gemini 请求负载：systemInstruction + contents + functionDeclarations 工具。
+ *  当前使用：providers/gemini.ts 的 agentPlan、context-estimate.ts 的估算。 */
 export function buildGeminiAgentPromptPayload(context: any) {
   const capabilityContext = { ...context, includeInactiveCapabilityHints: false };
   const includeToolNames = context.finalOnly
@@ -523,7 +548,8 @@ export function buildGeminiAgentPromptPayload(context: any) {
   };
 }
 
-// 原生 tool-call 模式下随请求发送的 OpenAI tools 数组；工具选择逻辑与全量提示保持一致。
+/** NVIDIA 原生 tool-call 模式的 tools 数组（工具选择逻辑与全量提示保持一致）。
+ *  当前使用：providers/openai-compat.ts 的 buildTools（planner 原生调用）。 */
 export function buildNvidiaAgentTools(context: {
   task: string;
   history: any[];
@@ -538,6 +564,9 @@ export function buildNvidiaAgentTools(context: {
   }).map(toolToOpenAiTool);
 }
 
+/** NVIDIA 决策消息：system（协议+规则+示例+签名）+ user（task/history/观察 JSON）。
+ *  支持 compact / finalOnly / nativeTools 三种变体。
+ *  当前使用：providers/openai-compat.ts 的 buildMessages/buildCompactMessages、context-estimate.ts 估算。 */
 export function buildNvidiaTaskMessages({
   task,
   systemPrompt,

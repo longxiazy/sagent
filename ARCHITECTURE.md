@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the repository-wide architecture. For React-specific details, see [client/ARCHITECTURE.md](client/ARCHITECTURE.md). Configuration formats and migration rules are documented in [CONFIGURATION.md](CONFIGURATION.md).
+This document describes the repository-wide architecture. For React-specific details, see [client/ARCHITECTURE.md](client/ARCHITECTURE.md). For the `agent/core/` module breakdown, see [agent/core/ARCHITECTURE.md](agent/core/ARCHITECTURE.md). Configuration formats and migration rules are documented in [CONFIGURATION.md](CONFIGURATION.md).
 
 ## System overview
 

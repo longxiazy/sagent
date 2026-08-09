@@ -6,17 +6,16 @@
  *
  * 处理流程：
  *   1. 校验 action 和 action.type 必须存在
- *   2. 推断 tool（通过 action-types.js 的 inferTool）
+ *   2. 推断 tool（通过 action-types.ts 的 inferTool，缺失时报错）
  *   3. 根据 tool 路由到对应的 normalize 函数：
- *      - normalizeBrowserAction — 校验 URL、限制 wait 秒数等
+ *      - normalizeBrowserAction — 校验 URL、限制 wait 秒数等（fetch 已并入 browser）
  *      - normalizeFsAction      — 校验路径、限制读取字节数等
  *      - normalizeTerminalAction — 设置超时、白名单命令等
- *      - normalizeMacOsAction   — 校验坐标、按键名等
+ *      - normalizeSearchAction / normalizeVisionAction / normalizeMcpAction
  *      - normalizeCoreAction    — finish/ask_user/notify_user
- *      - normalizeFetchAction   — 校验 URL、修复 extractLinks 参数错位等
  *
  * 调用场景：
- *   - planner/provider 的 agentPlan() 作为 normalizeDecision 使用
+ *   - providers/gemini 与 openai-compat 的 agentPlan() 作为 normalizeDecision 传入
  */
 
 import { cleanText } from './utils.ts';
@@ -301,6 +300,8 @@ function normalizeCoreAction(type: string, action: JsonObject): AgentAction {
   throw new Error(`不支持的核心动作: ${type}`);
 }
 
+/** 归一化入口：校验 + 清洗 LLM 动作，产出内部标准 AgentDecision。
+ *  当前使用：gemini/openai-compat provider 的 agentPlan（normalizeDecision）。 */
 export function normalizeDesktopAgentDecision(payload: unknown): AgentDecision {
   if (!isRecord(payload) || !isRecord(payload.action)) {
     throw new Error('模型未返回 action');

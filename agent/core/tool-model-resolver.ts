@@ -21,7 +21,8 @@ export interface ToolsOverride {
   distill?: { model?: string };
 }
 
-/** 读 <dataDir>/config.json 的 tools 段;读不到 / 坏文件 / 无 dataDir → 空。 */
+/** 读 <dataDir>/config.json 的 tools 段;读不到 / 坏文件 / 无 dataDir → 空。
+ *  当前使用：desktop/agent.ts 的 vision/distill 模型解析、routes/agent-config.ts 的项目配置读写。 */
 export async function readProjectToolsOverride(dataDir: string | null | undefined): Promise<ToolsOverride> {
   if (!dataDir) return {};
   try {
@@ -45,6 +46,7 @@ export async function readProjectToolsOverride(dataDir: string | null | undefine
  * 四级解析，逐级回退：项目覆盖 → 全局配置 → 环境变量 → 当前主模型。
  * 主模型是最后兜底，未必具备该工具所需的能力（如多模态），
  * 因此返回值可能为空字符串，也可能是个不适用的模型，由调用方决定如何降级。
+ * 当前使用：desktop/agent.ts 的 distill 摘要模型与 vision 视觉模型解析。
  */
 export function resolveToolModel(
   tool: ToolName,
@@ -69,7 +71,8 @@ export function resolveToolModel(
   return (mainModel || '').trim();
 }
 
-/** 写项目级 tools override 到 <dataDir>/config.json(合并保留其他字段);model 空串=清除该项。 */
+/** 写项目级 tools override 到 <dataDir>/config.json(合并保留其他字段);model 空串=清除该项。
+ *  当前使用：routes/agent-config.ts 的项目配置保存。 */
 export async function writeProjectToolsOverride(
   dataDir: string,
   tools: ToolsOverride,

@@ -78,6 +78,8 @@ function inferPhase(history: any[]): Phase {
   return recent.some(entry => MUTATING_ACTIONS.has(actionKey(entry?.action))) ? 'execute' : 'explore';
 }
 
+/** 按短路优先级判定任务难度（失败/执行阶段/关键词→high,查询类→low,否则 medium 不重排）。
+ *  当前使用：routeAgentModels 内部、desktop/planner/index.ts 的难度评估。 */
 export function estimateTaskComplexity({
   task,
   step = 1,
@@ -132,6 +134,8 @@ function largestParameterB(text: string) {
   return largest;
 }
 
+/** 启发式给模型打分：从名称/元信息推断参数量、上下文、档位词，产出 capability/economy 两分。
+ *  当前使用：routeAgentModels 的重排、model-routing.test.ts 的评分对照。 */
 export function scoreModelForRouting(model: string, modelConfig?: ModelInfo[] | null) {
   const info = modelInfoFor(model, modelConfig);
   const text = modelText(model, info);
@@ -164,6 +168,8 @@ function sortByScore(models: string[], scorer: (model: string, index: number) =>
   });
 }
 
+/** 入口：按难度重排候选模型顺序（只排序不增删）。开关关闭/单模型/medium 时不重排。
+ *  当前使用：desktop/planner/index.ts 在启动 race/progressive 前调用，结果经 routing 事件下发给前端。 */
 export function routeAgentModels({
   enabled,
   primaryModel,

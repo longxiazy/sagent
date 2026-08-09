@@ -1,3 +1,8 @@
+/**
+ * Agent 取消/超时统一工具。
+ * throwIfAborted 在异步操作检查点做取消检查;createAbortScope 将用户取消、
+ * deadline、局部超时合并为单一 AbortSignal 传给模型请求与 IO。
+ */
 export type AbortScope = {
   signal: AbortSignal;
   deadline: number | null;
@@ -8,11 +13,23 @@ function abortReason(signal: AbortSignal, fallback: string): Error {
   const reason = signal.reason;
   return reason instanceof Error ? reason : new Error(typeof reason === 'string' ? reason : fallback);
 }
+/**
+ * signal 已中止时抛出中止错误,否则无操作。
+ * 用法：在异步操作的关键检查点调用,取消后立即中断并保留原始 reason。
+ * 当前使用：fs/execute.ts、terminal/run.ts 等工具执行的循环检查点,
+ * vision/execute.ts 与 desktop/planner/single-model.ts 的 scope.signal 检查。
+ */
 export function throwIfAborted(signal?: AbortSignal | null, fallback = 'Agent 已取消'): void {
   if (signal?.aborted) throw abortReason(signal, fallback);
 }
 
-/** 将父级取消、绝对 deadline 和局部 timeout 合并为单一 AbortSignal。 */
+/**
+ * 将父级取消、绝对 deadline 和局部 timeout 合并为单一 AbortSignal。
+ * 用法：把多个取消来源合并后传给模型请求/IO;结束后必须在 finally 中调用 scope.cleanup() 释放监听与定时器。
+ * 当前使用：vision/execute.ts（图片下载与 image_analyze 请求,221/299）、
+ * search/execute.ts（web_search 请求,122）、
+ * desktop/planner/single-model.ts（三路信号竞速与模型超时,47/81）。
+ */
 export function createAbortScope({
   signals = [],
   deadline = null,

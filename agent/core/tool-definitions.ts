@@ -1,9 +1,11 @@
 /**
  * Tool Definitions — Agent 可用的所有工具 schema 定义
  *
- * 定义了 DesktopAgent 能调用的全部工具（只读浏览器、文件系统、终端、HTTP 抓取、核心动作）。
+ * 定义了 DesktopAgent 能调用的全部工具（只读浏览器、文件系统、终端、搜索、视觉、核心动作），
+ * Chrome MCP 与通用 MCP 工具在对应能力可用时动态注入；可用 includeToolNames 收敛子集。
  *
  * 调用场景：
+ *   - prompts.ts 选工具后构造提示（selectPromptToolDefinitions）
  *   - 各 provider 的 agentPlan() 将工具列表传给对应模型 API
  */
 
@@ -24,6 +26,7 @@ export type ModelToolDefinition = {
   };
 };
 
+/** 按开关与白名单生成工具定义列表（Chrome/MCP 可用时插入，includeToolNames 过滤子集）。 */
 export function createModelTools({
   includeChromeMcp = true,
   includeGenericMcp = true,
@@ -337,8 +340,8 @@ export function createModelTools({
   return selected;
 }
 
-// Gemini FunctionDeclaration：name/description + parametersJsonSchema（标准 JSON Schema，
-// 与内部 input_schema 同构，直接复用）。
+/** Gemini FunctionDeclaration：name/description + parametersJsonSchema（标准 JSON Schema，与内部 input_schema 同构，直接复用）。
+ *  当前使用：prompts.ts 的 buildGeminiAgentPromptPayload。 */
 export function toolToGeminiTool(tool: ModelToolDefinition) {
   return {
     name: tool.name,
@@ -347,7 +350,8 @@ export function toolToGeminiTool(tool: ModelToolDefinition) {
   };
 }
 
-// OpenAI 兼容端点的 function calling 格式：input_schema 即标准 JSON Schema，直接作 parameters。
+/** OpenAI 兼容端点的 function calling 格式：input_schema 即标准 JSON Schema，直接作 parameters。
+ *  当前使用：prompts.ts 的 buildNvidiaAgentTools。 */
 export function toolToOpenAiTool(tool: ModelToolDefinition) {
   return {
     type: 'function' as const,

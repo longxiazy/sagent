@@ -1,3 +1,15 @@
+/**
+ * Result Quality — 运行结果质量评估
+ *
+ * 用途：run 结束后按任务类型与步骤执行情况评估质量分档：
+ *   - 高风险/时效任务(医保/财经/政策等)要求官方来源，缺失 → done_unverified
+ *   - 要求浏览网页却未取得任何有效观测 → done_degraded
+ *   - 存在失败/异常步骤 → done_degraded
+ * 评估随 done 事件下发给前端展示,也用于 run 收尾的 quality 字段。
+ *
+ * 调用场景：desktop/agent.ts 在 run 结束时调用 assessResultQuality。
+ */
+
 import type { AgentStep, ResultQuality } from './contracts.ts';
 
 const HIGH_STAKES_TASK_PATTERNS = [
@@ -87,6 +99,7 @@ function resultHasUsableOfficialContent(step: any) {
   return result.trim().length >= 80;
 }
 
+/** 任务是否属于需要权威来源的高风险类别（医保/财经/合规/政策等）。 */
 export function taskRequiresVerifiedSources(task: string) {
   return HIGH_STAKES_TASK_PATTERNS.some(pattern => pattern.test(task || ''));
 }
@@ -110,6 +123,10 @@ function browseStepProducedContent(step: any) {
   return result.length >= 400;
 }
 
+/**
+ * 评估一次 run 的质量：分档(done/unverified/degraded) + 官方来源步 + 失败步 + 原因。
+ * 注意：浏览类工具列表示例 (chrome_list_tools/mcp_list_*) 不视为失败。
+ */
 export function assessResultQuality({ task, steps = [], answer = '' }: { task: string; steps?: AgentStep[]; answer?: string }): ResultQuality {
   const requiresVerifiedSources = taskRequiresVerifiedSources(task);
   const hasBrowseIntent = taskHasBrowseIntent(task);

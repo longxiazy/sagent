@@ -1,3 +1,15 @@
+/**
+ * Result Extraction — 工具结果压缩/摘要提取
+ *
+ * 用途：历史/观察中的长文本结果超限时，按相关性挑选句子压缩到预算内：
+ *   - 单段文本：按信息密度评分选句（年份/数字/术语命中得分），四个区段各保一个高信息句
+ *   - 并行来源（--- 分隔）：先提取来源标题头，再对每个来源独立压缩，保留来源对应关系
+ *
+ * 调用场景：
+ *   - agent/core/prompts.ts 的 compactAgentHistory：历史进入提示前的逐条压缩
+ *   - agent/core/runtime.ts 的覆写结果上限：步骤用量的压缩
+ */
+
 const PARALLEL_SEPARATOR = /\n\s*---\s*\n/g;
 const GENERIC_SIGNAL_RE = /增长|下降|同比|环比|总额|收入|产值|占比|比例|达到|完成|新增|减少|投资|消费|人口|就业|研发|创新|数据|结论|结果|失败|错误|warning|error|failed|increase|decrease|total|revenue|rate|percent/i;
 const TASK_STOP_TERMS = new Set(['近三', '三年', '发展', '情况', '调查', '分析', '查询', '获取', '信息', '什么', '如何', '需要', '这个', '一下']);

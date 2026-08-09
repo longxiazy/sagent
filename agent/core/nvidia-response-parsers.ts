@@ -320,6 +320,11 @@ const DEFAULT_CONFIG = {
 
 // ── Factory ──
 
+/**
+ * 工厂：按模型 ID 返回对应策略链的解析器（未知模型走 DEFAULT_CONFIG）。
+ * 返回的 parseResponse 会兜底还原字符串响应体，并附 usage/reasoning/rawContent。
+ * 当前使用：planner.ts 的 createJsonPlanner（正常与重试路径）、scripts/trace-eval.ts 的离线回放。
+ */
 export function createModelResponseParser(model) {
   const config = MODEL_CONFIGS[model] || DEFAULT_CONFIG;
   const chain = config.chain.map(name => STRATEGIES[name]);
