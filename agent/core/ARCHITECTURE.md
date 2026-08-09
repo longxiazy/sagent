@@ -1,6 +1,6 @@
 # agent/core 架构说明
 
-本文件描述 `agent/core/` 下的全部模块：职责、依赖与数据流。整体架构和运行细节见根目录 [ARCHITECTURE.md](../../ARCHITECTURE.md) 与 [CLAUDE.md](../../CLAUDE.md)。
+本文件描述 `agent/core/` 下的全部模块：职责、依赖与数据流。`agent/` 整体分工与一次 run 的端到端链路见 [agent/ARCHITECTURE.md](../ARCHITECTURE.md)；仓库级架构见根目录 [ARCHITECTURE.md](../../ARCHITECTURE.md) 与 [CLAUDE.md](../../CLAUDE.md)。
 
 `agent/core/` 是 Agent 运行时的心脏：步骤循环与动作分发（runtime/router）**只依赖注入进来的函数**（initialize/observe/decide/authorize/execute/cleanup），不认识任何具体工具实现；同时这里提供全部共享的状态仓库、配置边界与纯函数工具。
 
