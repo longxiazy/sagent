@@ -43,6 +43,13 @@ export const ATTR = {
   TOOL_TYPE: 'gen_ai.tool.type',
   TOOL_CALL_ID: 'gen_ai.tool.call.id',
 
+  // —— 内容（Opt-In，默认不采集，见 content.ts）——
+  INPUT_MESSAGES: 'gen_ai.input.messages',
+  OUTPUT_MESSAGES: 'gen_ai.output.messages',
+  SYSTEM_INSTRUCTIONS: 'gen_ai.system_instructions',
+  TOOL_CALL_ARGUMENTS: 'gen_ai.tool.call.arguments',
+  TOOL_CALL_RESULT: 'gen_ai.tool.call.result',
+
   // —— 错误（stable，非 GenAI 专属）——
   ERROR_TYPE: 'error.type',
 
@@ -67,7 +74,13 @@ export const SAGENT_ATTR = {
   PLAN_STAGE: 'sagent.plan.stage',
   APPROVAL_DECISION: 'sagent.approval.decision',
   QUALITY_STATUS: 'sagent.quality.status',
+  /** 以下为内容属性，仅在显式开启内容捕获时出现（见 content.ts）。 */
+  REASONING: 'sagent.reasoning',
+  OBSERVATION: 'sagent.observation',
 } as const;
+
+/** span 属性值类型。内容属性同为字符串，故与普通属性同类型。 */
+export type ContentAttributeValue = string | number | boolean;
 
 /** Agent 名。span 名形如 `invoke_agent sagent`，也用作 service.name。 */
 export const AGENT_NAME = 'sagent';

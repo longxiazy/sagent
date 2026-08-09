@@ -123,6 +123,8 @@ trace = chat session
 
 Attributes follow the OpenTelemetry GenAI semantic conventions (`gen_ai.operation.name`, `gen_ai.request.model`, `gen_ai.usage.*`, `gen_ai.tool.name`); project-specific fields use a separate `sagent.*` namespace. Constants live in `helpers/telemetry/semconv.ts`.
 
+**Content capture is opt-in.** The GenAI conventions treat prompts, model outputs and tool payloads as sensitive and large, and require instrumentations not to capture them by default while offering an opt-in switch. Spans therefore carry only structured metadata — tool names, statuses, token counts, durations. Passing `--content` to the export script additionally writes `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result`, each truncated per field (`--max-content`, default 4096 chars). Nothing is lost by the default: the full content always lives in the trace JSONL, and `helpers/telemetry/content.ts` regenerates span attributes from it on demand. Credentials are already redacted before events are persisted, but task text and page content are not — that is business data, and it leaves the machine when pushed to a shared collector.
+
 Timing is a known approximation: events record only the end of each phase, so a span starts at the previous event's timestamp. The one exception is tool execution, whose start is marked precisely by the `action` event.
 
 Export recorded traces with `npm run trace:otlp` (see README). Private runs never persist a trace and therefore produce nothing to export.

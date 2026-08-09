@@ -28,6 +28,7 @@
  */
 
 import { spanIdFor, traceIdFor } from './ids.ts';
+import { createContentCapture, type ContentCaptureOptions } from './content.ts';
 import {
   AGENT_NAME,
   ATTR,
@@ -67,7 +68,7 @@ export interface EventTraceRef {
   parent_id: string | null;
 }
 
-export interface SpanAssemblerOptions {
+export interface SpanAssemblerOptions extends ContentCaptureOptions {
   /** 会话 ID，决定 trace_id。缺省时按 session-store 的同一规则从 runId 回退。 */
   sessionId?: string | null;
   runId: string;
@@ -114,9 +115,13 @@ export function createSpanAssembler({
   runId,
   attempt: defaultAttempt = 1,
   projectId = null,
+  captureContent = false,
+  maxContentChars,
 }: SpanAssemblerOptions) {
   const resolvedSessionId = String(sessionId || '').trim() || fallbackSessionId(runId);
   const traceId = traceIdFor(resolvedSessionId);
+  // 默认不采集内容（遵循 OTel GenAI 约定）；关闭时下面所有 content.set* 都是 no-op。
+  const content = createContentCapture({ captureContent, maxContentChars });
 
   const completed: OpenSpan[] = [];
   /** 所有创建过的 span，按 key 索引（含已关闭的）。 */
@@ -288,6 +293,7 @@ export function createSpanAssembler({
         if (event.privateMode === true) {
           setAttr(owner.attributes, SAGENT_ATTR.RUN_PRIVATE, true);
         }
+        content.setTask(owner.attributes, event.task);
         break;
       }
 
@@ -306,6 +312,7 @@ export function createSpanAssembler({
             startTimeMs: spanStart,
             attributes: { [SAGENT_ATTR.STEP_STAGE]: 'observe', [SAGENT_ATTR.STEP_NUMBER]: step },
           });
+          content.setObservation(owner.attributes, event.observation);
           closeSpan(owner.key, ts);
           break;
         }
@@ -326,6 +333,7 @@ export function createSpanAssembler({
           });
           setAttr(owner.attributes, SAGENT_ATTR.ACTION_TOOL, event.action?.tool);
           setAttr(owner.attributes, SAGENT_ATTR.ACTION_TYPE, event.action?.type);
+          content.setToolArguments(owner.attributes, event.action);
           break;
         }
 
@@ -342,6 +350,7 @@ export function createSpanAssembler({
           },
         });
         setAttr(owner.attributes, SAGENT_ATTR.RESULT_STATUS, event.resultStatus);
+        content.setToolResult(owner.attributes, event.result);
         if (event.resultStatus === 'failed' || event.resultStatus === 'rejected') {
           owner.status = { code: STATUS_CODE.ERROR, message: event.resultError || undefined };
           setAttr(
@@ -392,6 +401,14 @@ export function createSpanAssembler({
           },
         });
         setAttr(owner.attributes, SAGENT_ATTR.PLAN_STAGE, event.stage);
+        // success/winner 才带模型产出；thinking 阶段还没有内容可记。
+        if (event.action || event.rationale || event.reasoning) {
+          content.setDecision(owner.attributes, {
+            rationale: event.rationale,
+            action: event.action,
+            reasoning: event.reasoning,
+          });
+        }
         if (event.usage) {
           recordUsage(step, model, event.usage);
           setAttr(owner.attributes, ATTR.USAGE_INPUT_TOKENS, Number(event.usage.prompt_tokens));
@@ -426,6 +443,7 @@ export function createSpanAssembler({
             ...(step == null ? {} : { [SAGENT_ATTR.STEP_NUMBER]: step }),
           },
         });
+        content.setToolArguments(owner.attributes, event.action);
         break;
       }
 
@@ -492,6 +510,7 @@ export function createSpanAssembler({
         setAttr(owner.attributes, SAGENT_ATTR.QUALITY_STATUS, (event.quality as any)?.status);
         setAttr(owner.attributes, ATTR.REQUEST_MODEL, runModel);
         setAttr(owner.attributes, SAGENT_ATTR.RUN_STRATEGY, runStrategy);
+        content.setAnswer(owner.attributes, event.answer);
         owner.status = { code: STATUS_CODE.OK };
         closeSpan('run', ts);
         break;

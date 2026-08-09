@@ -46,6 +46,9 @@ export function createBaseEventSender(
   } = {},
 ) {
   // 组装器同时负责 span 树与阶段时长；原先分散的 stageTimes/modelTimes 已并入其中。
+  // 这里只取它算出的 trace/span ID 回填进事件，不导出 span，因此不开内容捕获——
+  // 内容本来就完整存在 JSONL 事件里，再往 span 属性复制一份纯属浪费内存。
+  // 需要内容时由 scripts/trace-to-otlp.ts --content 在导出时按需生成。
   const assembler = createSpanAssembler({ sessionId, runId, attempt, projectId });
   // 阶段起点：事件流只在阶段结束时给时间点，duration_ms 沿用「距上一相关事件」的口径。
   const stageTimes = new Map<string, number>();

@@ -124,6 +124,14 @@ npm run trace:otlp -- <runId> --pretty
 
 产物默认写入 `data/otlp-exports/`。`--all` 转换全部已录制运行，`--project <id>` 指定项目 scope。
 
+默认情况下 span 只带结构化元数据——工具名、状态、token 数、时长——因为 GenAI 约定把提示词和模型输出视为敏感内容，要求默认不采集、由用户主动开启。加 `--content` 可一并导出任务正文、模型理由、工具入参和结果：
+
+```bash
+npm run trace:otlp -- <runId> --content --max-content 2000
+```
+
+默认不采集并不丢数据：完整内容始终留在 trace JSONL 里，需要时按需重新生成。凭据在写 trace 时已脱敏，但任务正文和页面内容不会——推送到共享后端前请先确认。
+
 想看瀑布图，启动任意兼容 OTLP 的接收端并推送过去即可。Jaeger 最快：
 
 ```bash

@@ -14,7 +14,16 @@
  *   --endpoint <url>      OTLP/HTTP 接收端，如 http://localhost:4318/v1/traces
  *   --header k=v          附加 HTTP 头，可重复（给需要认证的 collector）
  *   --service <name>      service.name（默认 sagent）
+ *   --content             把任务/决策/工具入参与结果写进 span（默认不写，见下）
+ *   --max-content <n>     单个内容字段的字符上限（默认 4096）
  *   --pretty              输出缩进 JSON，便于人读
+ *
+ * 关于 --content：
+ *   OTel GenAI 约定要求内容默认不采集、但提供 opt-in 开关，理由是这些内容既敏感
+ *   又体积大。不加此参数时 span 只含结构化元数据（工具名、状态、token 数、时长）；
+ *   加上之后才写入 gen_ai.input.messages / output.messages / tool.call.arguments /
+ *   tool.call.result。内容已在写 trace 时脱敏过凭据，但任务正文、页面内容等业务
+ *   数据会随 span 进入 collector——推送到共享后端前请确认这是你想要的。
  *
  * 每个 run 单独发送/单独成文件：run 是 sagent 里天然的批次边界，一次失败不影响其它 run。
  * 同一 chat session 的多个 run 会共享 trace_id，Jaeger 收到后自动归并成一棵 trace。
@@ -28,6 +37,7 @@ import { basename, join, resolve } from 'node:path';
 import { listTraceRuns, readTraceEvents } from '../helpers/trace-store.ts';
 import { parseTraceLines } from '../agent/core/trace-replay.ts';
 import { createSpanAssembler, type AssembledSpan } from '../helpers/telemetry/span-assembler.ts';
+import { DEFAULT_MAX_CONTENT_CHARS } from '../helpers/telemetry/content.ts';
 import { buildOtlpTracePayload, postOtlpTraces } from '../helpers/telemetry/otlp-json.ts';
 import { projectDataDir, GLOBAL_SCOPE_ID } from '../agent/core/project-store.ts';
 
@@ -41,6 +51,8 @@ interface Options {
   headers: Record<string, string>;
   service: string;
   pretty: boolean;
+  captureContent: boolean;
+  maxContentChars: number;
 }
 
 const USAGE = `
@@ -54,10 +66,16 @@ const USAGE = `
   --endpoint <url>      OTLP/HTTP 接收端,如 http://localhost:4318/v1/traces
   --header k=v          附加 HTTP 头,可重复
   --service <name>      service.name(默认 sagent)
+  --content             把任务/决策/工具入参与结果写进 span(默认不写)
+  --max-content <n>     单个内容字段的字符上限(默认 4096)
   --pretty              缩进输出
   -h, --help            显示帮助
 
 未指定 --endpoint 时写入 <data-dir>/otlp-exports/<runId>.otlp.json。
+
+内容捕获: 按 OTel GenAI 约定,内容默认不进 span——只有结构化元数据(工具名、
+状态、token 数、时长)。加 --content 才写入任务正文、模型理由、工具入参和结果。
+凭据已在落 trace 时脱敏,但业务数据会随 span 进入 collector,推给共享后端前请确认。
 
 想看瀑布图, 先起一个本地 Jaeger:
   docker run -d --name jaeger -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one:latest
@@ -76,6 +94,8 @@ function parseArgs(argv: string[]): Options {
     headers: {},
     service: 'sagent',
     pretty: false,
+    captureContent: false,
+    maxContentChars: DEFAULT_MAX_CONTENT_CHARS,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -92,6 +112,14 @@ function parseArgs(argv: string[]): Options {
       case '--pretty':
         options.pretty = true;
         break;
+      case '--content':
+        options.captureContent = true;
+        break;
+      case '--max-content': {
+        const value = Number(argv[++i]);
+        if (Number.isFinite(value) && value > 0) options.maxContentChars = Math.floor(value);
+        break;
+      }
       case '--data-dir':
         options.dataDir = resolve(argv[++i] || '');
         break;
@@ -157,12 +185,14 @@ function maxAttempt(events: any[]): number {
  * 与在线路径共用 createSpanAssembler，因此产出的 span 与运行时写进 JSONL 的
  * trace_id/span_id 完全一致。
  */
-function assembleRun(runId: string, events: any[]): AssembledSpan[] {
+function assembleRun(runId: string, events: any[], options: Options): AssembledSpan[] {
   const assembler = createSpanAssembler({
     sessionId: sessionIdFromEvents(events),
     runId,
     attempt: maxAttempt(events),
     projectId: projectIdFromEvents(events),
+    captureContent: options.captureContent,
+    maxContentChars: options.maxContentChars,
   });
   // 事件先按 seq 排序：SSE 重连回放可能让文件内顺序与逻辑顺序不一致。
   const ordered = [...events].sort((a, b) => {
@@ -197,6 +227,12 @@ async function main() {
     process.exit(2);
   }
 
+  // 内容捕获 + 远端推送 = 业务数据出本机。给一行明确提示，别让人事后才发现。
+  if (options.captureContent) {
+    const where = options.endpoint ? `发送到 ${options.endpoint}` : '写入导出文件';
+    console.error(`⚠ 已开启 --content：任务正文、模型理由、工具入参与结果将随 span ${where}。`);
+  }
+
   let failures = 0;
   for (const target of [...new Set(targets)]) {
     let runId: string;
@@ -215,7 +251,7 @@ async function main() {
       continue;
     }
 
-    const spans = assembleRun(runId, events);
+    const spans = assembleRun(runId, events, options);
     const payload = buildOtlpTracePayload(spans, { serviceName: options.service });
     const traceId = spans[0]?.traceId || '(空)';
 

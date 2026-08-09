@@ -126,6 +126,14 @@ npm run trace:otlp -- <runId> --pretty
 
 Output lands in `data/otlp-exports/`. Use `--all` to convert every recorded run, and `--project <id>` to select a project scope.
 
+By default spans carry only structured metadata — tool names, statuses, token counts, durations — because the GenAI conventions treat prompts and outputs as sensitive and require opt-in. Add `--content` to also export the task text, model rationale, tool arguments and tool results:
+
+```bash
+npm run trace:otlp -- <runId> --content --max-content 2000
+```
+
+Nothing is lost by the default: full content always remains in the trace JSONL and is regenerated on demand. Credentials are redacted before traces are written, but task text and page content are not — review before pushing to a shared backend.
+
 To view the waterfall, start any OTLP-compatible collector and push to it. Jaeger is the quickest:
 
 ```bash

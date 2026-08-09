@@ -37,6 +37,18 @@ function assemble(events: any[], { runId = 'run_test_a', attempt = 1, sessionId 
   return assembler.flush();
 }
 
+/** 同上，但开启内容捕获（默认关闭，见 helpers/telemetry/content.ts）。 */
+function assembleWithContent(events: any[], maxContentChars?: number) {
+  const assembler = createSpanAssembler({
+    sessionId: 'session_c',
+    runId: 'run_test_a',
+    captureContent: true,
+    maxContentChars,
+  });
+  for (const event of events) assembler.consume(event);
+  return assembler.flush();
+}
+
 const byName = (spans: AssembledSpan[], name: string) => spans.find(span => span.name === name);
 const parentOf = (spans: AssembledSpan[], span: AssembledSpan | undefined) =>
   spans.find(candidate => candidate.spanId === span?.parentSpanId);
@@ -226,6 +238,114 @@ describe('OTel span assembler', () => {
     expect(assembler.sessionId).toBe(fallbackSessionId(runId));
     expect(assembler.sessionId).toBe('session_trace_mrjcxla1_n5534t');
     expect(assembler.traceId).toBe(traceIdFor(`session_trace_${runId.slice(4)}`));
+  });
+});
+
+describe('内容捕获（opt-in）', () => {
+  const CONTENT_KEYS = [
+    ATTR.INPUT_MESSAGES,
+    ATTR.OUTPUT_MESSAGES,
+    ATTR.TOOL_CALL_ARGUMENTS,
+    ATTR.TOOL_CALL_RESULT,
+    SAGENT_ATTR.REASONING,
+    SAGENT_ATTR.OBSERVATION,
+  ];
+
+  /** 带内容的事件流：task / rationale / action 参数 / result / answer 齐全。 */
+  function richRun(): any[] {
+    return [
+      { type: 'run_meta', startedAt: 1_000, model: 'm1', strategy: 'race', sessionId: 'session_c', task: '统计仓库里的 TODO', timestamp: 1_000 },
+      { type: 'step', step: 1, stage: 'observe', observation: { url: 'https://example.com', title: '首页' }, timestamp: 1_100 },
+      { type: 'model_plan', step: 1, stage: 'winner', model: 'm1', rationale: '先列目录', reasoning: '需要先知道有哪些文件', action: { tool: 'fs', type: 'list_dir', path: '/repo' }, usage: { prompt_tokens: 10, completion_tokens: 2 }, timestamp: 1_500 },
+      { type: 'step', step: 1, stage: 'action', rationale: '先列目录', action: { tool: 'fs', type: 'list_dir', path: '/repo' }, timestamp: 1_600 },
+      { type: 'step', step: 1, stage: 'result', result: 'a.ts\nb.ts', resultStatus: 'success', timestamp: 1_700 },
+      { type: 'done', answer: '共 2 个文件', meta: { status: 'done' }, timestamp: 1_800 },
+    ];
+  }
+
+  const allAttributes = (spans: AssembledSpan[]) =>
+    spans.flatMap(span => Object.keys(span.attributes));
+
+  it('默认不写入任何内容属性', () => {
+    const spans = assemble(richRun(), { sessionId: 'session_c' });
+    const keys = allAttributes(spans);
+    for (const contentKey of CONTENT_KEYS) {
+      expect(keys).not.toContain(contentKey);
+    }
+    // 结构化元数据不受影响，照常存在
+    expect(byName(spans, 'execute_tool fs.list_dir')!.attributes[ATTR.TOOL_NAME]).toBe('fs.list_dir');
+  });
+
+  it('开启后按 GenAI messages schema 写入任务与回答', () => {
+    const spans = assembleWithContent(richRun());
+    const run = byName(spans, 'invoke_agent sagent')!;
+
+    expect(JSON.parse(run.attributes[ATTR.INPUT_MESSAGES] as string)).toEqual([
+      { role: 'user', parts: [{ type: 'text', content: '统计仓库里的 TODO' }] },
+    ]);
+    expect(JSON.parse(run.attributes[ATTR.OUTPUT_MESSAGES] as string)).toEqual([
+      { role: 'assistant', parts: [{ type: 'text', content: '共 2 个文件' }], finish_reason: 'stop' },
+    ]);
+  });
+
+  it('模型决策写成 text + tool_call 两个 part', () => {
+    const spans = assembleWithContent(richRun());
+    const chat = byName(spans, 'chat m1')!;
+
+    expect(JSON.parse(chat.attributes[ATTR.OUTPUT_MESSAGES] as string)).toEqual([
+      {
+        role: 'assistant',
+        parts: [
+          { type: 'text', content: '先列目录' },
+          { type: 'tool_call', name: 'fs.list_dir', arguments: { path: '/repo' } },
+        ],
+        finish_reason: 'stop',
+      },
+    ]);
+    // 思维链没有对应的 gen_ai 属性，放私有命名空间
+    expect(chat.attributes[SAGENT_ATTR.REASONING]).toBe('需要先知道有哪些文件');
+  });
+
+  it('工具入参与结果分别写入，且入参剔除 tool/type 本身', () => {
+    const execute = byName(assembleWithContent(richRun()), 'execute_tool fs.list_dir')!;
+
+    expect(JSON.parse(execute.attributes[ATTR.TOOL_CALL_ARGUMENTS] as string)).toEqual({ path: '/repo' });
+    expect(execute.attributes[ATTR.TOOL_CALL_RESULT]).toBe('a.ts\nb.ts');
+  });
+
+  it('观察内容写入私有属性', () => {
+    const observe = byName(assembleWithContent(richRun()), 'observe')!;
+    expect(observe.attributes[SAGENT_ATTR.OBSERVATION]).toContain('example.com');
+  });
+
+  it('超长内容按上限截断，不丢整条属性', () => {
+    const events = richRun();
+    events[4] = { type: 'step', step: 1, stage: 'result', result: 'x'.repeat(5_000), resultStatus: 'success', timestamp: 1_700 };
+    const execute = byName(assembleWithContent(events, 100), 'execute_tool fs.list_dir')!;
+
+    const result = execute.attributes[ATTR.TOOL_CALL_RESULT] as string;
+    expect(result).toContain('[truncated 4900 chars]');
+    expect(result.startsWith('x'.repeat(100))).toBe(true);
+  });
+
+  it('内容捕获不改变 span 树与 ID —— 只是多了属性', () => {
+    const plain = assemble(richRun(), { sessionId: 'session_c' });
+    const withContent = assembleWithContent(richRun());
+
+    expect(withContent.map(span => span.spanId)).toEqual(plain.map(span => span.spanId));
+    expect(withContent.map(span => span.name)).toEqual(plain.map(span => span.name));
+    expect(withContent.map(span => span.parentSpanId)).toEqual(plain.map(span => span.parentSpanId));
+  });
+
+  it('内容属性能正常序列化进 OTLP', () => {
+    const payload: any = buildOtlpTracePayload(assembleWithContent(richRun()));
+    const spans = payload.resourceSpans[0].scopeSpans[0].spans;
+    const run = spans.find((span: any) => span.name === 'invoke_agent sagent');
+    const input = run.attributes.find((attr: any) => attr.key === ATTR.INPUT_MESSAGES);
+
+    // 规范说结构化属性在 span 上尚未普遍支持，应序列化为 JSON 字符串
+    expect(input.value.stringValue).toBeTypeOf('string');
+    expect(JSON.parse(input.value.stringValue)[0].role).toBe('user');
   });
 });
 
