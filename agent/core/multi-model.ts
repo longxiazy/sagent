@@ -1,5 +1,5 @@
 /**
- * 多模型结果聚合 —— 按 action 键(tool.type)分组取多数派,产出共识字段。
+ * 多模型结果聚合 —— 按 action 键（tool.type）分组取多数派，产出共识字段。
  * 用法：vote 策略收齐所有模型决策后调用；空列表返回 null，单模型直接带 unanimous 共识返回。
  * 当前使用：desktop/planner/strategies/vote.ts。
  */

@@ -141,8 +141,8 @@ export const CONFIG_PROFILES: Record<Exclude<ConfigProfile, 'custom'>, Partial<R
 
 /**
  * 取内置默认值全集（来源固定为 'default'）。
- * 用法：配置解析的最底层来源，供 config-store 与档位展开使用；
- * 当前使用：config-store.ts 的解析起始点、detectProfile 的对照基准。
+ * 用法：配置解析的最底层来源。
+ * 当前使用：config-store.ts 的 init()/computeDefaults() 与单例初始值。
  * Agent 运行时参数只从内置默认 + data/config.json 解析，不再读取环境变量。
  */
 export function configDefaults(): {

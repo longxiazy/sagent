@@ -14,16 +14,15 @@ import { GoogleGenAI } from '@google/genai';
 
 export { createModelTools } from './tool-definitions.ts';
 
-/**
- * 过滤掉不适合做 agent 决策的模型：向量/重排、视觉/OCR、纯代码补全、内容安全护栏等。
- * 这类模型在供应商接口里和对话模型混在一起，全塞进前端下拉会很难选。
- *
- * 用法：传入模型 id，命中噪声特征返回 false。
- * 当前使用：providers/gemini.ts 与 providers/openai-compat.ts 拉取模型列表时的过滤。
- */
+// 过滤掉不适合做 agent 决策的模型：向量/重排、视觉/OCR、纯代码补全、内容安全护栏等。
+// 这类模型在供应商接口里和对话模型混在一起，全塞进前端下拉会很难选。
 const NON_CHAT_MODEL_RE =
   /embed|rerank|retriever|bge-|arctic-embed|nvclip|fuyu|deplot|vila|neva|kosmos|ocr|paddle|-vision|vision-|-vl-|codegemma|starcoder|codellama|-coder|coder-|guard|safety|topic-control/i;
 
+/**
+ * 模型 id 是否适合做 agent 决策；命中上面的噪声特征返回 false。
+ * 当前使用：providers/gemini.ts 与 providers/openai-compat.ts 拉取模型列表时的过滤。
+ */
 export function isChatCapableModel(id: string) {
   return !NON_CHAT_MODEL_RE.test(id);
 }

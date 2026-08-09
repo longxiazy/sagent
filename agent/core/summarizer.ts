@@ -1,10 +1,11 @@
 /**
- * Summarizer — 文本摘要调用封装（记忆/历史压缩用）
+ * Summarizer — 记忆摘要调用封装
  *
  * 用途：通过 provider registry 的 summarize 能力对长文本做摘要，
  * 并在控制台输出醒目的框式请求/响应/失败日志。
  *
- * 调用场景：记忆摘要等需要压缩长文本的路径（按 registry 中可用模型调用）。
+ * 调用场景：当前无调用方。记忆压缩路径尚未接入，保留此封装待接。
+ * 若长期无人使用应连同 providers 的 summarize 一并评估是否删除。
  */
 
 import { displayWidth, padEndW } from './utils.ts';

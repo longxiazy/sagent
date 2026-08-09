@@ -16,7 +16,6 @@ export function safeJson(value) {
 }
 
 /** 压缩连续空白并截断到 maxLength（超长加 …）。 */
-
 export function cleanText(value, maxLength = 240) {
   if (typeof value !== 'string') {
     return '';
@@ -26,8 +25,7 @@ export function cleanText(value, maxLength = 240) {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
-/** 显示宽度：CJK/全角/韩文按 2 列计，其余按 1 列（对齐日志框用,与 truncateW 的宽字符口径不同）。 */
-
+/** 显示宽度：CJK/全角/韩文按 2 列计，其余按 1 列（对齐日志框用，与 truncateW 的宽字符口径不同）。 */
 export function displayWidth(str) {
   let w = 0;
   for (const ch of str) {
@@ -53,7 +51,6 @@ export function padEndW(str, targetWidth) {
 }
 
 /** 按显示宽度截断到 maxWidth（超长末尾换 …）。 */
-
 export function truncateW(str, maxWidth) {
   if (displayWidth(str) <= maxWidth) return str;
   let w = 0;

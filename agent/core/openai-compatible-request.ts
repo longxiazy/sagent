@@ -15,7 +15,7 @@ const DEFAULT_THINKING_CHAT_TEMPLATE_KWARGS = {
   reasoning_effort: 'high',
 };
 
-/** deepseek 系列默认追加 thinking chat_template_kwargs,其它模型不加。 */
+/** deepseek 系列默认追加 thinking chat_template_kwargs，其它模型不加。 */
 export function defaultChatTemplateKwargsForModel(model: string) {
   return /deepseek/i.test(model)
     ? { ...DEFAULT_THINKING_CHAT_TEMPLATE_KWARGS }
@@ -47,7 +47,7 @@ export function isUnsupportedSystemRoleError(err: any) {
   );
 }
 
-/** 把 system 消息合并进首条 user 消息（保留原文前缀),无 user 时补一条。 */
+/** 把 system 消息合并进首条 user 消息（保留原文前缀），无 user 时补一条。 */
 export function withoutSystemRole(request: any) {
   const messages = Array.isArray(request?.messages) ? request.messages : [];
   const systemText = messages
@@ -86,7 +86,7 @@ function normalizeChatTemplateKwargs(value: any) {
 }
 
 /**
- * 构造 chat.completions 请求体：合并 thinking 模板参数、tools/tool_choice,
+ * 构造 chat.completions 请求体：合并 thinking 模板参数、tools/tool_choice，
  * 并按 supportedMessageRoles 决定是否折叠 system role。
  * 当前使用：planner.ts 与 openai-compat.ts 的请求构造。
  */
@@ -135,7 +135,7 @@ export function buildChatCompletionRequest(
 }
 
 // 尽管模型在 catalog 中声明支持 tools，个别端点/版本仍可能拒绝该参数；命中后由 planner 回退 JSON-in-prompt。
-/** 识别「不支持 tools」类错误,供 planner 回退 JSON-in-prompt。 */
+/** 识别「不支持 tools」类错误，供 planner 回退 JSON-in-prompt。 */
 export function isUnsupportedToolsError(err: any) {
   const message = String(err?.message || err?.error?.message || '').toLowerCase();
   const status = err?.status || err?.statusCode || 0;

@@ -22,7 +22,7 @@ import { isPrivateRun } from '../../helpers/private-run.ts';
 let logDir = 'data/llm-logs';
 
 /** 启动时调用一次：设定日志根目录并按保留策略清理过期日志树。
- *  当前使用：server.ts:72、agent/worker/agent-worker.ts:132（沙箱 worker）。 */
+ *  当前使用：server.ts 启动、agent/worker/agent-worker.ts（沙箱 worker 启动）。 */
 export function initLlmLogger(baseDir) {
   logDir = join(baseDir, 'llm-logs');
   pruneLogTreeSync(logDir, getLogPolicy().retentionDays);

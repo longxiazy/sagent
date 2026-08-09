@@ -301,7 +301,7 @@ export const configStore = {
   },
 
   /** 各字段当前来源（default/user）。
-   *  当前使用：routes/agent-config.ts 的 GET /api/agent/config 展示来源标记。 */
+   *  当前使用：routes/agent-config.ts 的 GET /api/config 展示来源标记。 */
   sources(): Record<RuntimeConfigKey, 'default' | 'user'> {
     const sources = { ...defaultsState.sources } as Record<RuntimeConfigKey, 'default' | 'user'>;
     for (const key of AGENT_CONFIG_KEYS) {
@@ -354,7 +354,7 @@ export const configStore = {
   },
 
   /** 各部署项当前来源（default/user/env）。
-   *  当前使用：routes/agent-config.ts 的 GET /api/agent/config 展示来源标记。 */
+   *  当前使用：routes/agent-config.ts 的 GET /api/config 展示来源标记。 */
   executionSources(env: Record<string, string | undefined> = process.env): Record<keyof ExecutionConfig, ExecutionConfigSource> {
     const stored = document.execution || {};
     return {
@@ -368,7 +368,7 @@ export const configStore = {
   },
 
   /** 更新需要重启后端才能生效的 Worker 部署选项；与 Agent 段共用 config.json。
-   *  当前使用：routes/agent-config.ts 的 PUT /api/agent/execution。 */
+   *  当前使用：routes/agent-config.ts 的 PUT /api/config/execution。 */
   async updateExecution(patch: any): Promise<ExecutionConfig> {
     const { clean, errors } = validateExecution(patch);
     if (errors.length) throw new Error(errors.join('；'));
@@ -382,7 +382,7 @@ export const configStore = {
   },
 
   /** 新增/替换/删除一个 MCP server 配置（server 为 null 即删除），校验后落盘。
-   *  当前使用：routes/agent-config.ts 的 PUT/DELETE /api/agent/mcp-servers/:name，
+   *  当前使用：routes/agent-config.ts 的 PUT/DELETE /api/config/mcp/:name，
    *  以及 tools/mcp/client.ts、chrome/mcp-client.ts 读取运行时连接参数。 */
   async updateMcpServer(name: string, server: McpServerConfig | null): Promise<Record<string, McpServerConfig>> {
     const key = String(name || '').trim();
@@ -414,7 +414,7 @@ export const configStore = {
   },
 
   /** 校验并合并 patch，落盘后返回最新配置。校验失败抛错（含原因）。
-   *  当前使用：routes/agent-config.ts 的 PATCH /api/agent/config（设置 UI 保存）。 */
+   *  当前使用：routes/agent-config.ts 的 POST /api/config（设置 UI 保存）。 */
   async update(patch: any): Promise<RuntimeConfig> {
     const { clean, errors } = validateConfig(patch);
     if (errors.length) {
@@ -429,7 +429,7 @@ export const configStore = {
   },
 
   /** 应用某个预设档位：以档位取值覆盖 Agent 参数，并在 document 中记录 profile 标签。
-   *  当前使用：routes/agent-config.ts 的 POST /api/agent/profile。 */
+   *  当前使用：routes/agent-config.ts 的 POST /api/config/profile。 */
   async applyProfile(profile: Exclude<ConfigProfile, 'custom'>): Promise<RuntimeConfig> {
     const values = CONFIG_PROFILES[profile];
     if (!values) throw new Error(`未知配置 profile: ${profile}`);
@@ -442,7 +442,7 @@ export const configStore = {
   },
 
   /** 清空 Agent 覆盖，回到 schema 内置默认；MCP、tools、execution 等其它配置保持不变。
-   *  当前使用：routes/agent-config.ts 的 POST /api/agent/reset。 */
+   *  当前使用：routes/agent-config.ts 的 POST /api/config/reset。 */
   async reset(): Promise<RuntimeConfig> {
     overrides = {};
     document = { ...document, profile: 'custom' };

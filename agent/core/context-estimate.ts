@@ -216,7 +216,7 @@ function buildPlanningPayload({
 }
 
 /** 单模型上下文占用估算：按供应商构造实际 payload 后估算 token 与占用比例。
- *  当前使用：routes/agent-context.ts（GET /api/agent/context-estimate）。 */
+ *  当前使用：routes/agent-context.ts（POST /api/agent/context）。 */
 export function buildModelContextEstimate({
   modelId,
   modelInfo,

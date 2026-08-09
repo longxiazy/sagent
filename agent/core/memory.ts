@@ -11,9 +11,10 @@
  *   buildMemoryPrompt() 将记忆注入 Agent 的 systemPrompt（上限 3000 字）
  *
  * 调用场景 / Callers:
- *   - routes/agent.js POST /api/agent 开始前: loadMemory → buildMemoryPrompt
- *   - routes/agent.js 任务完成后: extractProjectKnowledge → saveMemory
- *   - routes/agent.js GET /api/agent/memory: 返回完整记忆数据供前端展示
+ *   - helpers/run-agent.ts 的 loadMemoryForPrompt（run 开始前）: loadMemory → buildMemoryPrompt
+ *   - routes/agent-run-memory-persist.ts 任务完成后: extractProjectKnowledge → saveMemory
+ *   - routes/agent-memory.ts GET /api/agent/memory: 返回完整记忆数据供前端展示
+ *   - routes/agent-memory.ts DELETE /api/agent/memory: clearMemory 清空
  *
  * 存储位置: {MEMORY_DIR}/agent-memory.json
  *

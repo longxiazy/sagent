@@ -18,7 +18,7 @@
  *   5. tryTextFinish     — 兜底：把纯文本当作 finish 动作
  *
  * 调用场景：
- *   - planner.js 的 createJsonPlanner() 每次收到 LLM 响应后调用 parser(response)
+ *   - planner.ts 的 createJsonPlanner() 每次收到 LLM 响应后调用 parser(response)
  *   - 同一个 parser 实例也会用于解析重试响应
  */
 

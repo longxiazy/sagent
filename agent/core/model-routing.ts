@@ -78,7 +78,7 @@ function inferPhase(history: any[]): Phase {
   return recent.some(entry => MUTATING_ACTIONS.has(actionKey(entry?.action))) ? 'execute' : 'explore';
 }
 
-/** 按短路优先级判定任务难度（失败/执行阶段/关键词→high,查询类→low,否则 medium 不重排）。
+/** 按短路优先级判定任务难度（失败/执行阶段/关键词→high，查询类→low，否则 medium 不重排）。
  *  当前使用：routeAgentModels 内部、desktop/planner/index.ts 的难度评估。 */
 export function estimateTaskComplexity({
   task,

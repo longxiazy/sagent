@@ -5,9 +5,9 @@
  *   - 高风险/时效任务(医保/财经/政策等)要求官方来源，缺失 → done_unverified
  *   - 要求浏览网页却未取得任何有效观测 → done_degraded
  *   - 存在失败/异常步骤 → done_degraded
- * 评估随 done 事件下发给前端展示,也用于 run 收尾的 quality 字段。
+ * 评估随 done 事件下发给前端展示，也用于 run 收尾的 quality 字段。
  *
- * 调用场景：desktop/agent.ts 在 run 结束时调用 assessResultQuality。
+ * 调用场景：agent/core/runtime.ts 的步骤循环收尾处调用 assessResultQuality。
  */
 
 import type { AgentStep, ResultQuality } from './contracts.ts';
