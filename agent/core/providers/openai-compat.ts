@@ -24,11 +24,9 @@ import {
   writeSse,
   writeSseDone,
 } from '../../../helpers/streaming.ts';
-import { retryAsync } from '../../../helpers/retry.ts';
 import { log } from '../../../helpers/logger.ts';
-import { buildSummaryPrompt } from './summary-prompt.ts';
 import { extractModelMetadata } from './model-metadata.ts';
-import { getNvidiaCatalogModelMetadata, hasNvidiaCatalogModel } from './nvidia-catalog.ts';
+import { getNvidiaCatalogModelMetadata } from './nvidia-catalog.ts';
 import type {
   LLMProvider,
   ModelInfo,
@@ -36,7 +34,6 @@ import type {
   AgentPlanResult,
   CompletionOpts,
   CompletionStreamOpts,
-  SummarizeOpts,
 } from './types.ts';
 
 const REASONING_HEADER = '[Thinking / 推理过程]';
@@ -126,15 +123,6 @@ async function* preserveReasoningContentStream(stream: AsyncIterable<any>) {
   }
 }
 
-function isOfficialNvidiaEndpoint(baseURL?: string) {
-  if (!baseURL) return true;
-  try {
-    return new URL(baseURL).hostname.toLowerCase() === 'integrate.api.nvidia.com';
-  } catch {
-    return false;
-  }
-}
-
 export function createOpenAICompatProvider(
   client: any,
   { baseURL = process.env.NVIDIA_BASE_URL }: { baseURL?: string } = {},
@@ -165,14 +153,12 @@ export function createOpenAICompatProvider(
     async listModels() {
       const models: ModelInfo[] = [];
       const providerName = deriveProviderName(baseURL);
-      const useNvidiaCatalogAllowlist = isOfficialNvidiaEndpoint(baseURL);
       // 失败直接抛错，由 registry 聚合原因；全部供应商失败时中止启动。
       const list = await client.models.list();
       for (const m of list.data || []) {
         if (m?.id && isChatCapableModel(m.id)) {
-          // NVIDIA 的公开 catalog 比 /v1/models 下线信息更新更及时；两边都存在才展示。
-          // 自定义 OpenAI 兼容端点不使用 NVIDIA catalog，避免误删第三方模型。
-          if (useNvidiaCatalogAllowlist && !hasNvidiaCatalogModel(m.id)) continue;
+          // `/v1/models` 是可用模型的唯一来源。NVIDIA 本地目录只用于补充展示元数据，
+          // 不应因目录快照滞后或缺项而过滤掉 API 实际返回的模型。
           const catalogMetadata = providerName === 'nvidia' ? getNvidiaCatalogModelMetadata(m.id) : {};
           const providerMetadata = extractModelMetadata(m);
           models.push({
@@ -251,18 +237,6 @@ export function createOpenAICompatProvider(
       }
       writeSseDone(res);
       res.end();
-    },
-
-    async summarize(opts: SummarizeOpts) {
-      const { text, model } = opts;
-      const prompt = buildSummaryPrompt(text);
-      const resp = await retryAsync(() => client.chat.completions.create({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-        max_tokens: 800,
-      }));
-      return resp?.choices?.[0]?.message?.content || text.slice(0, 300);
     },
   };
 }

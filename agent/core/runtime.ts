@@ -14,18 +14,24 @@
  *
  * 历史截断 / Progressive history truncation：
  *   compressHistory() 发给 LLM 前截断历史，防止上下文超限：
- *   - 保留最近 AGENT_MAX_HISTORY_STEPS（默认 20）步
- *   - 渐进截断 result：最近 3 步保留最多 MAX_RESULT_CHARS 字符，4-10 步 2500 字符，11+ 步 1000 字符
+ *   - 保留最近 maxHistorySteps 步（配置默认 8）
+ *   - 渐进截断 result：最近 3 步保留最多 maxResultChars 字符，4-10 步 2500 字符，11+ 步 1000 字符
  *   - 超出步数压缩为一行摘要
- *   - 可通过 data/config.json 的 maxHistorySteps / maxResultChars 配置
+ *   - 可通过 data/config.json 的 maxHistorySteps / maxResultChars 配置（configStore 热生效）
+ *
+ * 防循环 / Loop guards：
+ *   - 相同动作连续重复（结果指纹相同）自动停止并提示
+ *   - 同一图片连续 image_analyze 超过阈值自动停止
+ *   - finish 只是回显 task 的「回声 finish」判为失败
  *
  * 调用场景：
- *   - agent/desktop/agent.js 的 runDesktopAgent() 是唯一的调用方，
+ *   - agent/desktop/agent.ts 的 runDesktopAgent() 是唯一的调用方，
  *     注入所有具体实现后调用 runAgentRuntime({ ... })
+ *   - worker 沙箱模式下由 agent/worker/runner.ts 桥接执行
  *
  * v2 增强：
- *   - 会话级健康检查点（session-checkpoint.js 集成）
- *   - 前端可触发手动回滚
+ *   - 会话级健康快照（saveHealthySnapshot / loadLatestHealthySnapshot）
+ *   - 前端可触发手动回滚（runRecord.pendingRollback）
  */
 
 import { log } from "../../helpers/logger.js";
@@ -62,6 +68,7 @@ function comparableTaskText(value: unknown) {
     .replace(/[\s\p{P}\p{S}]+/gu, '');
 }
 
+/** finish 的 answer 只是重复 task 原文时判定为「回声 finish」，阻止空转。 */
 export function isTaskEchoFinish(task: string, action: AgentAction | undefined) {
   if (action?.type !== 'finish') return false;
   const normalizedTask = comparableTaskText(task);
@@ -98,6 +105,7 @@ export function extractTaskImageAttachmentPaths(task: string) {
   return paths;
 }
 
+/** 把模型的 @attachment/N 引用替换为任务附件块中的真实 @uploads 路径。 */
 export function bindVisionActionToTaskAttachment(task: string, action: AgentAction) {
   if (action?.tool !== 'vision' || action.type !== 'image_analyze') return action;
 
@@ -345,6 +353,13 @@ function summarizeActionForLoop(action) {
   return target ? `${tool}.${type} ${String(target).slice(0, 120)}` : `${tool}.${type}`;
 }
 
+/**
+ * 运行完整的 Agent 步骤循环（依赖注入全部由调用方提供）。
+ * 用法：desktop/agent.ts 的 runDesktopAgent 注入具体实现后调用；
+ * 每步自动处理：回滚检查 → 观察 → 决策(含回声/循环防护) → 授权 → 执行 → 快照，
+ * 步数用尽时做 finalOnly 总结，最后附质量评估与引用列表。
+ * 当前使用：agent/desktop/agent.ts、agent/worker/runner.ts（沙箱桥接）。
+ */
 export async function runAgentRuntime({
   task,
   maxSteps = 8,

@@ -21,6 +21,8 @@ import { isPrivateRun } from '../../helpers/private-run.ts';
 
 let logDir = 'data/llm-logs';
 
+/** 启动时调用一次：设定日志根目录并按保留策略清理过期日志树。
+ *  当前使用：server.ts 启动、agent/worker/agent-worker.ts（沙箱 worker 启动）。 */
 export function initLlmLogger(baseDir) {
   logDir = join(baseDir, 'llm-logs');
   pruneLogTreeSync(logDir, getLogPolicy().retentionDays);
@@ -86,6 +88,8 @@ function flushQueuedFile(filePath) {
   return trackFlush(flushLog(filePath, pending));
 }
 
+/** 进程退出/关停前调用：冲刷所有已排队与进行中的写入。
+ *  当前使用：server.ts 关停钩子、worker 退出路径。 */
 export async function flushLlmLogs() {
   do {
     await Promise.all([...writeQueue.keys()].map(flushQueuedFile));
@@ -95,6 +99,10 @@ export async function flushLlmLogs() {
   } while (writeQueue.size > 0 || activeFlushes.size > 0);
 }
 
+/**
+ * 记录一次模型请求：脱敏后入 JSONL 队列，并返回脱敏后的 messages 给调用方继续使用。
+ * 当前使用：planner.ts 的重试循环、providers/gemini.ts 的请求前。
+ */
 export function logLlmRequest(model, messages, tools = null) {
   const hasTools = Array.isArray(tools) && tools.length > 0;
   // tools 是请求的独立字段、不在 messages 里；以 {role:'tools'} 伪消息并入，
@@ -109,6 +117,8 @@ export function logLlmRequest(model, messages, tools = null) {
   return safeMessages;
 }
 
+/** 记录一次模型响应（含用量），脱敏后入队。
+ *  当前使用：planner.ts 成功路径、providers/gemini.ts 响应后。 */
 export function logLlmResponse(model, response) {
   const usage = response.usage || {};
   if (!isPrivateRun()) {
@@ -119,6 +129,8 @@ export function logLlmResponse(model, response) {
   log.debug(`[LLM] ← ${model} tokens=${tokens}`);
 }
 
+/** 记录一次模型调用错误：诊断信息脱敏后入队，同时打控制台警告。
+ *  当前使用：planner.ts 各重试/回退分支（含 context-too-small、compact 重试）。 */
 export function logLlmError(model, err, context = {}) {
   if (!isPrivateRun()) {
     const line = JSON.stringify(redactSensitiveData({ time: timeStr(), type: 'error', model, context, error: extractErrorDiagnostics(err) }));

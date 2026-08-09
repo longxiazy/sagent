@@ -97,6 +97,8 @@ interface StepDraft {
   observation?: JsonObject;
 }
 
+/** 把 JSONL 事件流重建为可评测的 ReplayRun（与 runtime.ts 组装 history 口径一致）。
+ *  当前使用：scripts/trace-eval.ts 的离线评估、测试复用。 */
 export function reconstructRunFromTrace(events: AgentEvent[]): ReplayRun {
   let runId = '';
   let task = '';

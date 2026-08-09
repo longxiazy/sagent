@@ -511,7 +511,18 @@ export function createSessionStore({ memoryDir, projectStore }: { memoryDir: str
     });
   }
 
-  return { loadAll, upsertSession, deleteSession, recordRunStart, recordRunTerminal };
+  return {
+    /** 读取全部 scope 的会话（含 trace 恢复），返回按时间排序的列表与当前激活会话。 */
+    loadAll,
+    /** 单条 upsert：客户端只同步变更的那条会话；隐私模式返回只读快照不写入。 */
+    upsertSession,
+    /** 显式删除会话并把其 runId 记入 dismissed，阻止 trace 恢复复活。 */
+    deleteSession,
+    /** 任务开始时记录 user 消息 + pending 占位；隐私 run 跳过。 */
+    recordRunStart,
+    /** 任务结束后把 pending 替换为最终结果并写 agentMeta；隐私 run 跳过。 */
+    recordRunTerminal,
+  };
 }
 
 export type SessionStore = ReturnType<typeof createSessionStore>;

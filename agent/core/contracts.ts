@@ -7,6 +7,7 @@
 
 export type JsonObject = Record<string, unknown>;
 
+/** 模型用量统计（OpenAI 兼容命名，部分供应商只有前两项）。 */
 export interface TokenUsage {
   prompt_tokens: number;
   completion_tokens: number;
@@ -67,6 +68,7 @@ export type AgentAction =
 export type AgentTool = AgentAction['tool'];
 export type ActionForTool<T extends AgentTool> = Extract<AgentAction, { tool: T }>;
 
+/** 模型单步决策：理由 + 归一化动作（+ 用量/推理内容）。 */
 export interface AgentDecision {
   rationale: string;
   action: AgentAction;
@@ -76,8 +78,10 @@ export interface AgentDecision {
   consensus?: JsonObject;
 }
 
+/** 动作执行结果状态：成功 / 失败 / 被拒绝。 */
 export type ActionResultStatus = 'success' | 'failed' | 'rejected';
 
+/** 单步记录：决策 + 执行结果，构成回滚/历史/快照的最小单元。 */
 export interface AgentStep {
   step: number;
   rationale: string;
@@ -92,6 +96,7 @@ export interface AgentStep {
 
 export type AgentObservation = JsonObject;
 
+/** SSE 事件的公共追踪字段（可选，trace/用量）。 */
 interface EventTraceFields {
   seq?: number;
   runId?: string;
@@ -130,6 +135,7 @@ export type AgentEvent = EventTraceFields & (
 
 export type AgentEventWriter = (event: AgentEvent) => void;
 
+/** 运行生命周期状态。 */
 export type RunStatus =
   | 'starting'
   | 'running'
@@ -149,6 +155,7 @@ export const ACTIVE_RUN_STATUSES: ReadonlySet<RunStatus> = new Set<RunStatus>([
   'cancelling',
 ]);
 
+/** 状态机的合法迁移表；非法迁移在 transitionRun 中被拒绝。 */
 export const RUN_STATUS_TRANSITIONS: Readonly<Record<RunStatus, ReadonlySet<RunStatus>>> = {
   starting: new Set(['running', 'cancelling', 'failed']),
   running: new Set(['waiting_approval', 'cancelling', 'completed', 'failed']),
@@ -176,6 +183,7 @@ export interface WorkerControl {
   rollback?: (targetStep: number) => void;
 }
 
+/** 运行期记录：run 状态、事件流、取消句柄，及 worker/rollback 桥接。 */
 export interface RunRecord {
   runId: string;
   startedAt: number;
@@ -195,6 +203,7 @@ export interface RunRecord {
   cleanupTimer?: NodeJS.Timeout;
 }
 
+/** 单例运行仓库接口：创建/查询/迁移状态/追加事件/取消与关闭。 */
 export interface AgentRunStore {
   createRun(meta?: RunMeta, startedAt?: number, existingRunId?: string, initialEventSeq?: number): RunRecord;
   tryCreateRun(meta?: RunMeta, startedAt?: number, existingRunId?: string, initialEventSeq?: number):
@@ -210,6 +219,7 @@ export interface AgentRunStore {
   closeRun(runId: string, outcome?: TerminalRunStatus): RunRecord | null;
 }
 
+/** 审批请求载荷：类型（审批/提问）+ 所属 run + 触发动作。 */
 export interface ApprovalPayload {
   type: 'approval_required' | 'question_required';
   runId: string;
@@ -230,6 +240,7 @@ export interface ApprovalStore {
   rejectAll(): void;
 }
 
+/** 步骤循环可见的运行时状态（观察/取消/配置的载体，运行时内任意扩展）。 */
 export interface AgentRuntimeState {
   runId?: string;
   onEvent?: AgentEventWriter;
@@ -290,10 +301,12 @@ export interface AgentExecutionContext {
   rationale?: string;
 }
 
+/** 审批/授权结论：批准（可带回应）或拒绝（带原因）。 */
 export type AgentAuthorization =
   | { status: 'approved'; response?: string }
   | { status: 'rejected'; message: string; response?: string };
 
+/** 按工具分组注册执行器的映射（runtime 步骤循环按 action.tool 分发）。 */
 export type ActionHandlerMap<State extends AgentRuntimeState = AgentRuntimeState> = {
   [Tool in AgentTool]?: (
     state: State,

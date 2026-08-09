@@ -56,9 +56,10 @@ describe('model metadata', () => {
       },
     });
 
+    // 本地目录已不含 label，label 回退到 API 返回的原始 id。
     await expect(provider.listModels()).resolves.toEqual([expect.objectContaining({
       id: 'meta/llama-3.1-8b-instruct',
-      label: 'llama-3.1-8b-instruct',
+      label: 'meta/llama-3.1-8b-instruct',
       provider: 'nvidia',
       contextWindow: 128_000,
       inputModalities: ['text'],
@@ -67,26 +68,25 @@ describe('model metadata', () => {
     })]);
   });
 
-  it('loads static NVIDIA catalog metadata by id and aliases', () => {
-    expect(getNvidiaCatalogModelMetadata('deepseek-ai/deepseek-v4-pro')).toMatchObject({
-      label: 'deepseek-v4-pro',
-      contextWindow: 1_048_576,
-      inputModalities: ['text'],
-      outputModalities: ['text'],
+  it('merges greeting scores and local overrides by id and aliases', () => {
+    // config/model-catalog/nvidia.json 已清空（models: {}），`/v1/models` 是可用模型的
+    // 唯一来源。getNvidiaCatalogModelMetadata 现在只剩 greeting-scores 与 overrides
+    // 两个数据源，不再提供 label/contextWindow/modalities 这类目录快照字段。
+    expect(getNvidiaCatalogModelMetadata('deepseek-ai/deepseek-v4-pro')).toEqual({
       greetingScore: 100,
       greetingAverageLatencyMs: 44_199,
       greetingSuccesses: 3,
     });
-    expect(getNvidiaCatalogModelMetadata('meta/llama-3.1-70b-instruct')).toMatchObject({
-      label: 'llama-3.1-70b-instruct',
-      publisher: 'meta',
+    // 别名归一化：下划线转点、大小写不敏感。
+    expect(getNvidiaCatalogModelMetadata('META/LLAMA-3.1-70B-INSTRUCT')).toMatchObject({
+      greetingScore: 100,
+      greetingSuccesses: 3,
     });
-    expect(getNvidiaCatalogModelMetadata('upstage/solar-10.7b-instruct')).toMatchObject({
-      label: 'solar-10.7b-instruct',
-      contextWindow: 4_096,
+    expect(getNvidiaCatalogModelMetadata('upstage/solar-10.7b-instruct')).toEqual({
       agentCompatible: false,
     });
-    expect(hasNvidiaCatalogModel('meta/llama-3.1-70b-instruct')).toBe(true);
+    // 目录已空，任何 id 都不再命中 catalog 允许清单。
+    expect(hasNvidiaCatalogModel('meta/llama-3.1-70b-instruct')).toBe(false);
     expect(hasNvidiaCatalogModel('example/delisted-model-not-in-catalog')).toBe(false);
   });
 
@@ -122,15 +122,15 @@ describe('model metadata', () => {
     expect(getGeminiCatalogModelMetadata('gemini-2.5-flash')).toEqual({});
   });
 
-  it('only exposes official NVIDIA API models still present in the public catalog', async () => {
+  it('exposes NVIDIA API models even when they are absent from the local catalog', async () => {
     const provider = createOpenAICompatProvider({
       chat: { completions: { create: vi.fn() } },
       models: {
         list: vi.fn().mockResolvedValue({
           data: [
             { id: 'deepseek-ai/deepseek-v4-pro' },
-            // 只在 /v1/models 里存在、公开 catalog 已下线的模型不应展示。
-            // 用一个不可能被上游重新收录的合成 id，避免测试随 catalog 刷新而失效。
+            // 本地 catalog 只是元数据快照，不能过滤 NVIDIA API 实际返回的模型。
+            // 使用合成 id，避免测试随 catalog 刷新而失效。
             { id: 'example/delisted-model-not-in-catalog' },
           ],
         }),
@@ -139,10 +139,15 @@ describe('model metadata', () => {
 
     await expect(provider.listModels()).resolves.toEqual([
       expect.objectContaining({ id: 'deepseek-ai/deepseek-v4-pro' }),
+      expect.objectContaining({
+        id: 'example/delisted-model-not-in-catalog',
+        label: 'example/delisted-model-not-in-catalog',
+        provider: 'nvidia',
+      }),
     ]);
   });
 
-  it('does not apply the NVIDIA catalog allowlist to custom OpenAI-compatible endpoints', async () => {
+  it('does not attach NVIDIA catalog metadata to custom OpenAI-compatible endpoints', async () => {
     const provider = createOpenAICompatProvider({
       chat: { completions: { create: vi.fn() } },
       models: {
@@ -158,7 +163,7 @@ describe('model metadata', () => {
     ]);
   });
 
-  it('enriches NVIDIA model listings from the static catalog without changing ids', async () => {
+  it('enriches NVIDIA model listings with local metadata without changing ids', async () => {
     const provider = createOpenAICompatProvider({
       chat: { completions: { create: vi.fn() } },
       models: {
@@ -170,14 +175,13 @@ describe('model metadata', () => {
       },
     });
 
+    // 目录已清空，API 未返回的字段不再被补齐；只有 greeting-scores/overrides 会合并进来。
     await expect(provider.listModels()).resolves.toEqual([expect.objectContaining({
       id: 'deepseek-ai/deepseek-v4-pro',
-      label: 'deepseek-v4-pro',
+      label: 'deepseek-ai/deepseek-v4-pro',
       provider: 'nvidia',
-      contextWindow: 1_048_576,
-      inputModalities: ['text'],
-      outputModalities: ['text'],
-      supportedGenerationMethods: expect.arrayContaining(['chat.completions', 'tool_calling']),
+      greetingScore: 100,
+      greetingSuccesses: 3,
     })]);
   });
 

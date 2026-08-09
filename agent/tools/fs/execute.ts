@@ -1,10 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { execFile, spawn } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import { throwIfAborted } from '../../core/abort.ts';
-
-const execFileAsync = promisify(execFile);
 
 function resolveInputPath(rawPath, cwd = process.cwd()) {
   if (!rawPath || rawPath === '.') {

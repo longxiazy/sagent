@@ -183,7 +183,3 @@ export async function closeBrowserSession(session = sharedSession) {
     sharedSession = null;
   }
 }
-
-export async function closeWebView() {
-  await closeBrowserSession(sharedSession);
-}

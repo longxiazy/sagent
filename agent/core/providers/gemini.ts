@@ -18,7 +18,6 @@ import { resolveAgentMaxTokens } from '../planner.ts';
 import { logLlmRequest, logLlmResponse } from '../llm-logger.ts';
 import { initSse, writeSse, writeSseDone } from '../../../helpers/streaming.ts';
 import { retryAsync } from '../../../helpers/retry.ts';
-import { buildSummaryPrompt } from './summary-prompt.ts';
 import { extractModelMetadata } from './model-metadata.ts';
 import { getGeminiCatalogModelMetadata } from './gemini-catalog.ts';
 import { configStore } from '../config-store.ts';
@@ -29,7 +28,6 @@ import type {
   AgentPlanResult,
   CompletionOpts,
   CompletionStreamOpts,
-  SummarizeOpts,
 } from './types.ts';
 
 // Gemini usageMetadata → 内部归一 usage。
@@ -126,7 +124,7 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
     },
 
     async agentPlan(opts: AgentPlanOpts): Promise<AgentPlanResult> {
-      const { model, signal, systemPrompt, modelConfig } = opts;
+      const { model, signal, modelConfig } = opts;
       const {
         systemInstruction: system,
         contents,
@@ -231,17 +229,6 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
       }
       writeSseDone(res);
       res.end();
-    },
-
-    async summarize(opts: SummarizeOpts) {
-      const { text, model } = opts;
-      const prompt = buildSummaryPrompt(text);
-      const response = await retryAsync(() => client.models.generateContent({
-        model,
-        contents: prompt,
-        config: { maxOutputTokens: 800, temperature: 0.1 },
-      } as any));
-      return (response as any).text || text.slice(0, 300);
     },
   };
 }

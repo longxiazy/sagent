@@ -18,7 +18,7 @@
  *   5. tryTextFinish     — 兜底：把纯文本当作 finish 动作
  *
  * 调用场景：
- *   - planner.js 的 createJsonPlanner() 每次收到 LLM 响应后调用 parser(response)
+ *   - planner.ts 的 createJsonPlanner() 每次收到 LLM 响应后调用 parser(response)
  *   - 同一个 parser 实例也会用于解析重试响应
  */
 
@@ -320,6 +320,11 @@ const DEFAULT_CONFIG = {
 
 // ── Factory ──
 
+/**
+ * 工厂：按模型 ID 返回对应策略链的解析器（未知模型走 DEFAULT_CONFIG）。
+ * 返回的 parseResponse 会兜底还原字符串响应体，并附 usage/reasoning/rawContent。
+ * 当前使用：planner.ts 的 createJsonPlanner（正常与重试路径）、scripts/trace-eval.ts 的离线回放。
+ */
 export function createModelResponseParser(model) {
   const config = MODEL_CONFIGS[model] || DEFAULT_CONFIG;
   const chain = config.chain.map(name => STRATEGIES[name]);

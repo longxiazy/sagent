@@ -6,6 +6,7 @@
  *   - cleanText: 压缩空白 + 截断。用于截断 LLM 输出、rationale、记忆摘要等
  */
 
+/** 安全序列化；循环引用等异常时返回占位符，避免日志崩溃。 */
 export function safeJson(value) {
   try {
     return JSON.stringify(value);
@@ -14,6 +15,7 @@ export function safeJson(value) {
   }
 }
 
+/** 压缩连续空白并截断到 maxLength（超长加 …）。 */
 export function cleanText(value, maxLength = 240) {
   if (typeof value !== 'string') {
     return '';
@@ -23,6 +25,7 @@ export function cleanText(value, maxLength = 240) {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
+/** 显示宽度：CJK/全角/韩文按 2 列计，其余按 1 列（对齐日志框用，与 truncateW 的宽字符口径不同）。 */
 export function displayWidth(str) {
   let w = 0;
   for (const ch of str) {
@@ -41,11 +44,13 @@ export function displayWidth(str) {
   return w;
 }
 
+/** 按显示宽度补齐空格到 targetWidth。 */
 export function padEndW(str, targetWidth) {
   const padding = Math.max(0, targetWidth - displayWidth(str));
   return str + ' '.repeat(padding);
 }
 
+/** 按显示宽度截断到 maxWidth（超长末尾换 …）。 */
 export function truncateW(str, maxWidth) {
   if (displayWidth(str) <= maxWidth) return str;
   let w = 0;

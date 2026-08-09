@@ -2,10 +2,10 @@
  * LLMProvider — 可插拔的 LLM 供应商统一接口
  *
  * 每家供应商（Gemini / OpenAI 兼容）把自身的 API 差异
- * （client 构造、模型列表、模型归属判断、agent 决策、chat/completion、记忆摘要、
+ * （client 构造、模型列表、模型归属判断、agent 决策、chat/completion、
  *  usage 归一化）全部封装在各自的 createXxxProvider() 工厂里。
  *
- * 核心调用点（planner / routes / summarizer / server）只面向本接口 + registry，
+ * 核心调用点（planner / routes / server）只面向本接口 + registry，
  * 不再出现 `isClaudeModel ? ... : ...` 这类二选一硬编码。
  *
  * 加第四家 = 新增一个 createXxxProvider() 实现这些方法 + registry 里注册一行。
@@ -89,11 +89,6 @@ export interface CompletionStreamOpts extends CompletionOpts {
   res: Response;
 }
 
-export interface SummarizeOpts {
-  text: string;
-  model: string;
-}
-
 export interface LLMProvider {
   // 内部路由标识，registry.resolve 用；与 ModelInfo.provider（展示名）不同。
   readonly name: 'gemini' | 'openai-compat';
@@ -115,7 +110,4 @@ export interface LLMProvider {
 
   // /v1/chat/completions 流式：流式写 SSE（含 [DONE]）。
   completionStream(opts: CompletionStreamOpts): Promise<void>;
-
-  // 记忆压缩用的一次性文本摘要。
-  summarize(opts: SummarizeOpts): Promise<string>;
 }

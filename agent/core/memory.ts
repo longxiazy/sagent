@@ -11,9 +11,10 @@
  *   buildMemoryPrompt() 将记忆注入 Agent 的 systemPrompt（上限 3000 字）
  *
  * 调用场景 / Callers:
- *   - routes/agent.js POST /api/agent 开始前: loadMemory → buildMemoryPrompt
- *   - routes/agent.js 任务完成后: extractProjectKnowledge → saveMemory
- *   - routes/agent.js GET /api/agent/memory: 返回完整记忆数据供前端展示
+ *   - helpers/run-agent.ts 的 loadMemoryForPrompt（run 开始前）: loadMemory → buildMemoryPrompt
+ *   - routes/agent-run-memory-persist.ts 任务完成后: extractProjectKnowledge → saveMemory
+ *   - routes/agent-memory.ts GET /api/agent/memory: 返回完整记忆数据供前端展示
+ *   - routes/agent-memory.ts DELETE /api/agent/memory: clearMemory 清空
  *
  * 存储位置: {MEMORY_DIR}/agent-memory.json
  *
@@ -40,6 +41,11 @@ function emptyMemory() {
   };
 }
 
+/**
+ * 读取 {dir}/agent-memory.json，缺失/损坏时返回空记忆结构。
+ * 当前使用：helpers/run-agent.ts 的 loadMemoryForPrompt（run 开始前）、
+ * agent-run-memory-persist.ts 的保存前读取、agent-memory.ts 的展示与清理。
+ */
 export async function loadMemory(dir) {
   const filePath = path.join(dir, MEMORY_FILE);
   try {
@@ -57,6 +63,8 @@ export async function loadMemory(dir) {
   }
 }
 
+/** 原子写入（先写 .tmp 再 rename）记忆文件。
+ *  当前使用：agent-run-memory-persist.ts（任务完成后沉淀）、clearMemory/clearProjectKnowledge。 */
 export async function saveMemory(dir, memory) {
   const filePath = path.join(dir, MEMORY_FILE);
   const tmpPath = filePath + '.tmp';
@@ -65,6 +73,8 @@ export async function saveMemory(dir, memory) {
   await fs.rename(tmpPath, filePath);
 }
 
+/** 把记忆渲染成 systemPrompt 片段（默认截断 3000 字）；无记忆时返回空串。
+ *  当前使用：helpers/run-agent.ts 的 loadMemoryForPrompt。 */
 export function buildMemoryPrompt(memory, { maxChars = MAX_CHARS } = {}) {
   const parts = [];
 
@@ -109,6 +119,8 @@ export function buildMemoryPrompt(memory, { maxChars = MAX_CHARS } = {}) {
   return result;
 }
 
+/** 从 run 结果中提炼知识写回记忆：目录结构/文件路径/编辑器偏好/答案经验，各自限量去重。
+ *  当前使用：agent-run-memory-persist.ts（任务完成后）。 */
 export function extractProjectKnowledge(memory, { task: _task, result }) {
   const pk = memory.projectKnowledge;
   const steps = result?.steps || [];
@@ -165,12 +177,15 @@ export function extractProjectKnowledge(memory, { task: _task, result }) {
   }
 }
 
+/** 清空全部记忆并落盘。
+ *  当前使用：routes/agent-memory.ts 的 DELETE /api/agent/memory。 */
 export async function clearMemory(dir) {
   const fresh = emptyMemory();
   await saveMemory(dir, fresh);
   return fresh;
 }
 
+/** 只清项目知识、保留其余记忆，落盘后返回。 */
 export async function clearProjectKnowledge(dir) {
   const memory = await loadMemory(dir);
   memory.projectKnowledge = emptyMemory().projectKnowledge;

@@ -45,14 +45,17 @@ export function projectDataDir(memoryRoot: string, projectId: string) {
   return path.join(memoryRoot, 'projects', projectId);
 }
 
+/** 生成唯一项目 id：proj_ 前缀 + 时间戳(36 进制) + 随机后缀 */
 function generateProjectId() {
   return `proj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
+/** 空注册表结构（无项目合法状态）。 */
 function emptyRegistry() {
   return { version: 1, activeProjectId: null as string | null, projects: [] as any[] };
 }
 
+/** 读取注册表；缺失/损坏时回退空注册表。 */
 async function readRegistry(memoryRoot: string) {
   try {
     const raw = await fs.readFile(projectsFilePath(memoryRoot), 'utf8');
@@ -67,6 +70,7 @@ async function readRegistry(memoryRoot: string) {
   }
 }
 
+/** 原子写入注册表（先写 .tmp 再 rename）。 */
 async function writeRegistry(memoryRoot: string, registry: any) {
   const filePath = projectsFilePath(memoryRoot);
   const tmp = filePath + '.tmp';
@@ -75,6 +79,7 @@ async function writeRegistry(memoryRoot: string, registry: any) {
   await fs.rename(tmp, filePath);
 }
 
+/** 校验项目名/根路径非空且根路径为绝对路径，返回归一化结果。 */
 function normalizeProjectInput({ name, rootPath }: { name?: string; rootPath?: string }) {
   const trimmedName = String(name || '').trim();
   const trimmedRoot = String(rootPath || '').trim();
@@ -137,14 +142,17 @@ export function createProjectStore(memoryRoot: string) {
       return registry;
     },
 
+    /** 全部项目与当前激活 id（routes/agent-projects.ts 展示用）。 */
     list() {
       return { activeProjectId: registry.activeProjectId, projects: registry.projects };
     },
 
+    /** 按 id 查项目，不存在返回 null。 */
     get(projectId: string): Project | null {
       return registry.projects.find((p: Project) => p.projectId === projectId) || null;
     },
 
+    /** 当前激活项目，无则 null。 */
     getActive(): Project | null {
       if (!registry.activeProjectId) return null;
       return store.get(registry.activeProjectId);
@@ -156,10 +164,12 @@ export function createProjectStore(memoryRoot: string) {
       return store.getActive();
     },
 
+    /** 项目数据目录（含 default 全局桶）。 */
     dataDir(projectId: string) {
       return projectDataDir(memoryRoot, projectId);
     },
 
+    /** 新建项目：校验根路径、首个自动激活、初始化数据目录。 */
     async create({ name, rootPath }: { name?: string; rootPath?: string }) {
       const normalized = normalizeProjectInput({ name, rootPath });
       normalized.rootPath = await validateProjectRoot(normalized.rootPath);
@@ -173,6 +183,7 @@ export function createProjectStore(memoryRoot: string) {
       return project;
     },
 
+    /** 改项目名/根路径（重新校验根目录），落盘后返回更新后的项目。 */
     async update(projectId: string, patch: { name?: string; rootPath?: string }) {
       const project = store.get(projectId);
       if (!project) throw new Error('项目不存在');
