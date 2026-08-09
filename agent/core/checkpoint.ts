@@ -36,8 +36,6 @@ export interface SessionSnapshot {
 const HEALTH_CHECKPOINT_INTERVAL = 1;
 /** 健康快照最多保留份数，超出删除最旧的 */
 const KEEP_HEALTHY = 30;
-/** 失败快照保留份数（当前未落盘 failed 快照，保留以备扩展） */
-const KEEP_FAILED = 3;
 
 // ─── Session 级快照（回滚）─────────────────────────────────
 
@@ -63,10 +61,6 @@ function healthyPath(dir: string, runId: string, step: number) {
   return join(sessionDir(dir, runId), `session-healthy-${step}.json`);
 }
 
-function failedPath(dir: string, runId: string, step: number) {
-  return join(sessionDir(dir, runId), `session-failed-${step}.json`);
-}
-
 function assessHealth(result: unknown, resultStatus?: ActionResultStatus): SessionSnapshot['health'] {
   if (resultStatus === 'failed') return 'unhealthy';
   if (resultStatus === 'rejected') return 'degraded';
@@ -89,7 +83,7 @@ function sanitizeState(state: AgentRuntimeState | null | undefined): JsonObject 
   return safe;
 }
 
-async function pruneSnapshots(dir: string, runId: string, type: string, keepCount: number) {
+async function pruneSnapshots(dir: string, runId: string, keepCount: number) {
   const cpDir = sessionDir(dir, runId);
   try {
     const files = await readdir(cpDir);
@@ -99,9 +93,9 @@ async function pruneSnapshots(dir: string, runId: string, type: string, keepCoun
       }
     }
     const snapshots = files
-      .filter(f => f.startsWith(`session-${type}-`) && f.endsWith('.json'))
+      .filter(f => f.startsWith('session-healthy-') && f.endsWith('.json'))
       .map(f => {
-        const match = f.match(new RegExp(`session-${type}-(\\d+)\\.json$`));
+        const match = f.match(/session-healthy-(\d+)\.json$/);
         return { file: f, step: match ? parseInt(match[1], 10) : 0 };
       })
       .sort((a, b) => b.step - a.step);
@@ -177,7 +171,7 @@ export async function saveHealthySnapshot({
     await writeFile(filePath, data, 'utf8');
   }
 
-  await pruneSnapshots(dir, runId, 'healthy', KEEP_HEALTHY);
+  await pruneSnapshots(dir, runId, KEEP_HEALTHY);
 }
 
 /**
@@ -243,7 +237,7 @@ export async function listSessionCheckpoints(dir: string, runId: string) {
 
 // ─── 导出常量 ────────────────────────────────────────────
 
-export { HEALTH_CHECKPOINT_INTERVAL, KEEP_HEALTHY, KEEP_FAILED };
+export { HEALTH_CHECKPOINT_INTERVAL, KEEP_HEALTHY };
 
 // ─── Session 快照清理（启动前、取消或运行结束时调用）──────────────
 
