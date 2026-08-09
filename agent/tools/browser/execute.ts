@@ -1,6 +1,5 @@
 import { getWebView } from './webview-session.ts';
 import { isChromeMcpAvailable } from '../chrome/mcp-client.ts';
-import { log } from '../../../helpers/logger.ts';
 
 const ACTION_SETTLE_MS = 600;
 const NAV_RETRY_MS = 500;

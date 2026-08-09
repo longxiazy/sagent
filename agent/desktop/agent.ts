@@ -59,7 +59,6 @@ import { createSharedBrowserSessionManager } from './browser-session-manager.ts'
 import { observeDesktopAgent } from './observer.ts';
 import { createDesktopPlanner, DEFAULT_MODEL_TIMEOUT_MS } from './planner/index.ts';
 import { saveHealthySnapshot } from '../core/checkpoint.ts';
-import { log } from '../../helpers/logger.ts';
 import { isPrivateRun, withPrivateRun } from '../../helpers/private-run.ts';
 import { configStore } from '../core/config-store.ts';
 import type { ProviderRegistry } from '../core/providers/registry.ts';

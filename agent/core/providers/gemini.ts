@@ -124,7 +124,7 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
     },
 
     async agentPlan(opts: AgentPlanOpts): Promise<AgentPlanResult> {
-      const { model, signal, systemPrompt, modelConfig } = opts;
+      const { model, signal, modelConfig } = opts;
       const {
         systemInstruction: system,
         contents,

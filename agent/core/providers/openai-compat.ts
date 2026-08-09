@@ -24,7 +24,6 @@ import {
   writeSse,
   writeSseDone,
 } from '../../../helpers/streaming.ts';
-import { retryAsync } from '../../../helpers/retry.ts';
 import { log } from '../../../helpers/logger.ts';
 import { extractModelMetadata } from './model-metadata.ts';
 import { getNvidiaCatalogModelMetadata } from './nvidia-catalog.ts';
