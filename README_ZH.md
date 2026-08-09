@@ -116,13 +116,17 @@ sagent 会在配置的数据目录下保存项目经验，包括近期任务摘�
 
 每次 Agent 运行都会被记录成一棵 OpenTelemetry span 树：一个聊天会话是一条 trace，会话里的每次运行是一个根 span，每一步展开成 `observe`、每个参与决策的模型各一个 `chat`、以及 `execute_tool`。属性遵循 GenAI 语义约定，因此这些数据可直接被标准工具消费——Jaeger、Zipkin、Grafana Tempo 或各类托管服务都可以。
 
-Trace 以 JSONL 形式写在各项目的 `traces/` 目录下，并携带 W3C 合规的追踪 ID。用下面的命令转成 OTLP/JSON：
+Trace 以 JSONL 形式写在各项目的 `traces/` 目录下，并携带 W3C 合规的追踪 ID。先看有哪些可导出，再转换：
+
+```bash
+npm run trace:otlp -- --list
+```
 
 ```bash
 npm run trace:otlp -- <runId> --pretty
 ```
 
-产物默认写入 `data/otlp-exports/`。`--all` 转换全部已录制运行，`--project <id>` 指定项目 scope。
+产物默认写入 `data/otlp-exports/`。`--all` 转换全部已录制运行，`--project <id>` 指定项目 scope——注意位置参数是 **run id**，项目要走 `--project`。
 
 默认情况下 span 只带结构化元数据——工具名、状态、token 数、时长——因为 GenAI 约定把提示词和模型输出视为敏感内容，要求默认不采集、由用户主动开启。加 `--content` 可一并导出任务正文、模型理由、工具入参和结果：
 

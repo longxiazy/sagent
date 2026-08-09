@@ -6,6 +6,7 @@ import { createSpanAssembler, fallbackSessionId, type AssembledSpan } from '../h
 import { buildOtlpTracePayload } from '../helpers/telemetry/otlp-json.ts';
 import { isValidSpanId, isValidTraceId, spanIdFor, traceIdFor } from '../helpers/telemetry/ids.ts';
 import { parseTraceLines } from '../agent/core/trace-replay.ts';
+import { explainMissingTarget, parseArgs } from '../scripts/trace-to-otlp.ts';
 import { createAgentRunStore } from '../helpers/run-store.ts';
 import { createBaseEventSender } from '../helpers/run-agent.ts';
 import { readTraceEvents } from '../helpers/trace-store.ts';
@@ -346,6 +347,54 @@ describe('内容捕获（opt-in）', () => {
     // 规范说结构化属性在 span 上尚未普遍支持，应序列化为 JSON 字符串
     expect(input.value.stringValue).toBeTypeOf('string');
     expect(JSON.parse(input.value.stringValue)[0].role).toBe('user');
+  });
+});
+
+describe('trace-to-otlp CLI', () => {
+  it('解析参数与默认值', () => {
+    const defaults = parseArgs([]);
+    expect(defaults.projectId).toBe('default');
+    expect(defaults.captureContent).toBe(false);
+    expect(defaults.all).toBe(false);
+    expect(defaults.service).toBe('sagent');
+
+    const parsed = parseArgs([
+      'run_abc_def', '--project', 'proj_x', '--content',
+      '--max-content', '512', '--endpoint', 'http://localhost:4318/v1/traces',
+      '--header', 'Authorization=Bearer t',
+    ]);
+    expect(parsed.targets).toEqual(['run_abc_def']);
+    expect(parsed.projectId).toBe('proj_x');
+    expect(parsed.captureContent).toBe(true);
+    expect(parsed.maxContentChars).toBe(512);
+    expect(parsed.endpoint).toBe('http://localhost:4318/v1/traces');
+    expect(parsed.headers).toEqual({ Authorization: 'Bearer t' });
+  });
+
+  it('把项目 id 误当 runId 传时，直接给出正确命令', () => {
+    const options = parseArgs([]);
+
+    // 用户实际踩到的两种写法
+    for (const wrong of ['proj_mqn6awue_mzq0', 'projects/proj_mqn6awue_mzq0']) {
+      const message = explainMissingTarget(wrong, [], options);
+      expect(message).toContain('这看起来是项目 id');
+      expect(message).toContain('--project proj_mqn6awue_mzq0');
+    }
+  });
+
+  it('runId 找不到时列出该 scope 下实际有哪些 run', () => {
+    const options = parseArgs(['--project', 'proj_x']);
+    const runs = Array.from({ length: 8 }, (_, index) => `run_r${index}_aaa`);
+    const message = explainMissingTarget('run_typo', runs, options);
+
+    expect(message).toContain('run_r0_aaa');
+    expect(message).toContain('共 8 个');       // 超过 5 个时提示总数
+    expect(message).not.toContain('run_r6_aaa'); // 只预览前 5 个
+  });
+
+  it('scope 内没有任何 run 时引导去看别的项目', () => {
+    const message = explainMissingTarget('run_typo', [], parseArgs([]));
+    expect(message).toContain('--list');
   });
 });
 

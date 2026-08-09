@@ -10,6 +10,7 @@
  *   --data-dir <path>     运行时数据目录（默认 ./data）
  *   --project <id>        指定项目 scope（默认全局桶 projects/default）
  *   --all                 转换该 scope 下全部 run
+ *   --list                列出可转换的 run 与项目，不做转换
  *   --out <path>          输出文件（单个 run 时有效；默认写 <data-dir>/otlp-exports/）
  *   --endpoint <url>      OTLP/HTTP 接收端，如 http://localhost:4318/v1/traces
  *   --header k=v          附加 HTTP 头，可重复（给需要认证的 collector）
@@ -32,7 +33,7 @@
  * 所以早期那些 span_id 为 "step_1_observe" 的旧格式文件也能正确转换，无需迁移。
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { listTraceRuns, readTraceEvents } from '../helpers/trace-store.ts';
 import { parseTraceLines } from '../agent/core/trace-replay.ts';
@@ -41,11 +42,12 @@ import { DEFAULT_MAX_CONTENT_CHARS } from '../helpers/telemetry/content.ts';
 import { buildOtlpTracePayload, postOtlpTraces } from '../helpers/telemetry/otlp-json.ts';
 import { projectDataDir, GLOBAL_SCOPE_ID } from '../agent/core/project-store.ts';
 
-interface Options {
+export interface Options {
   targets: string[];
   dataDir: string;
   projectId: string;
   all: boolean;
+  list: boolean;
   out: string | null;
   endpoint: string | null;
   headers: Record<string, string>;
@@ -60,6 +62,7 @@ const USAGE = `
 
 选项:
   --all                 转换该 scope 下全部已录制 run
+  --list                列出可转换的 run 与项目,不做转换
   --data-dir <path>     运行时数据目录(默认 ./data)
   --project <id>        项目 scope(默认全局桶 projects/default)
   --out <path>          输出文件(单个 run 时有效)
@@ -83,12 +86,13 @@ const USAGE = `
 然后打开 http://localhost:16686 按 service 搜索。
 `.trim();
 
-function parseArgs(argv: string[]): Options {
+export function parseArgs(argv: string[]): Options {
   const options: Options = {
     targets: [],
     dataDir: resolve(process.cwd(), 'data'),
     projectId: GLOBAL_SCOPE_ID,
     all: false,
+    list: false,
     out: null,
     endpoint: null,
     headers: {},
@@ -108,6 +112,9 @@ function parseArgs(argv: string[]): Options {
         break;
       case '--all':
         options.all = true;
+        break;
+      case '--list':
+        options.list = true;
         break;
       case '--pretty':
         options.pretty = true;
@@ -214,16 +221,77 @@ async function loadTarget(target: string, dataDir: string, projectId: string) {
   return { runId: target, events: await readTraceEvents(scopeDir, target) };
 }
 
+/**
+ * 列出可转换的内容。给的是「有哪些 run 可选」和「有哪些项目 scope」，
+ * 因为不知道 runId 时无从下手，而 runId 又不在任何 UI 里显示。
+ */
+async function listAvailable(options: Options, availableRuns: string[]) {
+  console.log(`项目 scope: ${options.projectId}    数据目录: ${options.dataDir}\n`);
+
+  if (availableRuns.length === 0) {
+    console.log('该 scope 下没有已录制的 run。');
+  } else {
+    console.log(`可转换的 run（${availableRuns.length} 个）:`);
+    for (const runId of availableRuns) console.log(`  ${runId}`);
+  }
+
+  // 顺带列出其它项目，省得为了找项目 id 再去翻目录。
+  try {
+    const entries = await readdir(join(options.dataDir, 'projects'), { withFileTypes: true });
+    const others = entries
+      .filter(entry => entry.isDirectory() && entry.name !== options.projectId)
+      .map(entry => entry.name);
+    if (others.length > 0) {
+      console.log(`\n其它项目 scope（用 --project 切换）:`);
+      for (const projectId of others) console.log(`  ${projectId}`);
+    }
+  } catch {
+    // 没有 projects/ 目录时不提示，属正常情况。
+  }
+}
+
+/**
+ * 目标找不到时给出可执行的下一步，而不是只说「没找到」。
+ *
+ * 最常见的误用是把项目 id 当位置参数传（形如 proj_xxx 或 projects/proj_xxx）——
+ * 项目应该走 --project，位置参数是 runId。这里直接认出来并给出正确命令。
+ */
+export function explainMissingTarget(target: string, availableRuns: string[], options: Options) {
+  const projectMatch = target.match(/^(?:projects\/)?(proj_[a-z0-9_]+)$/i);
+  if (projectMatch) {
+    return [
+      `✗ ${target}: 这看起来是项目 id，不是 runId。项目用 --project 指定：`,
+      `    npm run trace:otlp -- --all --project ${projectMatch[1]}`,
+    ].join('\n');
+  }
+
+  const lines = [`✗ ${target}: 没有可用事件（run 不存在，或属于其它 --project）`];
+  if (availableRuns.length > 0) {
+    const preview = availableRuns.slice(0, 5).join('\n    ');
+    const more = availableRuns.length > 5 ? `\n    …共 ${availableRuns.length} 个，用 --list 查看全部` : '';
+    lines.push(`  当前 scope（--project ${options.projectId}）下的 run：\n    ${preview}${more}`);
+  } else {
+    lines.push(`  当前 scope（--project ${options.projectId}）下没有任何已录制 run。用 --list 查看其它项目。`);
+  }
+  return lines.join('\n');
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const scopeDir = projectDataDir(options.dataDir, options.projectId);
+  const availableRuns = await listTraceRuns(scopeDir);
+
+  if (options.list) {
+    await listAvailable(options, availableRuns);
+    process.exit(0);
+  }
 
   let targets = options.targets;
   if (options.all) {
-    targets = [...targets, ...(await listTraceRuns(scopeDir))];
+    targets = [...targets, ...availableRuns];
   }
   if (targets.length === 0) {
-    console.error(`未指定要转换的 run。\n\n${USAGE}`);
+    console.error(`未指定要转换的 run。用 --list 查看有哪些可转换，或 --all 全部转换。\n\n${USAGE}`);
     process.exit(2);
   }
 
@@ -246,7 +314,7 @@ async function main() {
     }
 
     if (events.length === 0) {
-      console.error(`✗ ${target}: 没有可用事件（run 不存在，或属于其它 --project）`);
+      console.error(explainMissingTarget(target, availableRuns, options));
       failures += 1;
       continue;
     }
@@ -277,7 +345,9 @@ async function main() {
   process.exit(failures > 0 ? 2 : 0);
 }
 
-main().catch(err => {
-  console.error(`[trace-to-otlp] 执行失败: ${err?.message || err}`);
-  process.exit(2);
-});
+if (import.meta.main) {
+  main().catch(err => {
+    console.error(`[trace-to-otlp] 执行失败: ${err?.message || err}`);
+    process.exit(2);
+  });
+}

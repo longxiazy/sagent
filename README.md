@@ -118,13 +118,17 @@ The built-in Browser is read-only and is limited to navigation and content extra
 
 Every Agent run is recorded as an OpenTelemetry span tree: a chat session is one trace, each run within it is a root span, and each step expands into `observe`, one `chat` span per model consulted, and `execute_tool`. Attributes follow the GenAI semantic conventions, so the data works with any standard tool — Jaeger, Zipkin, Grafana Tempo, or a hosted backend.
 
-Traces are written as JSONL under each project's `traces/` directory and carry W3C-compliant identifiers. Convert them to OTLP/JSON with:
+Traces are written as JSONL under each project's `traces/` directory and carry W3C-compliant identifiers. List what can be exported, then convert:
+
+```bash
+npm run trace:otlp -- --list
+```
 
 ```bash
 npm run trace:otlp -- <runId> --pretty
 ```
 
-Output lands in `data/otlp-exports/`. Use `--all` to convert every recorded run, and `--project <id>` to select a project scope.
+Output lands in `data/otlp-exports/`. Use `--all` to convert every recorded run, and `--project <id>` to select a project scope — note that the positional argument is a **run id**; projects go through `--project`.
 
 By default spans carry only structured metadata — tool names, statuses, token counts, durations — because the GenAI conventions treat prompts and outputs as sensitive and require opt-in. Add `--content` to also export the task text, model rationale, tool arguments and tool results:
 
