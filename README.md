@@ -114,6 +114,30 @@ sagent stores project experience under the configured data directory. Memory inc
 
 The built-in Browser is read-only and is limited to navigation and content extraction. The “Private mode” toggle in the composer gives the built-in Browser a disposable profile for each task and removes its cookies and LocalStorage during normal task cleanup; it also skips persistence of chat sessions, app/run logs, LLM logs, traces, session snapshots, Worker logs, and sagent-managed screenshots. This isolation does not extend to external Chrome MCP: its browser profile and session are neither isolated nor cleared by Private mode. All interactive web operations—including clicking, typing, login, form submission, upload, and download—are delegated to Chrome DevTools MCP through `chrome_list_tools` and `chrome_call_tool`. Generic MCP servers (including `codex mcp-server`) are exposed through `mcp_list_servers`, `mcp_list_tools`, and `mcp_call_tool`. All integrations are optional and documented in [CONFIGURATION.md](CONFIGURATION.md).
 
+### OpenTelemetry Traces
+
+Every Agent run is recorded as an OpenTelemetry span tree: a chat session is one trace, each run within it is a root span, and each step expands into `observe`, one `chat` span per model consulted, and `execute_tool`. Attributes follow the GenAI semantic conventions, so the data works with any standard tool — Jaeger, Zipkin, Grafana Tempo, or a hosted backend.
+
+Traces are written as JSONL under each project's `traces/` directory and carry W3C-compliant identifiers. Convert them to OTLP/JSON with:
+
+```bash
+npm run trace:otlp -- <runId> --pretty
+```
+
+Output lands in `data/otlp-exports/`. Use `--all` to convert every recorded run, and `--project <id>` to select a project scope.
+
+To view the waterfall, start any OTLP-compatible collector and push to it. Jaeger is the quickest:
+
+```bash
+docker run -d --name jaeger -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one:latest
+```
+
+```bash
+npm run trace:otlp -- --all --endpoint http://localhost:4318/v1/traces
+```
+
+Then open `http://localhost:16686` and search for the `sagent` service. Private-mode runs persist no trace and therefore export nothing.
+
 ## Common Commands
 
 ```bash
@@ -123,6 +147,7 @@ npm run build        # Type-check backend and build frontend
 npm run lint         # Run ESLint
 npm test             # Run Vitest tests
 npm run smoke        # Run Agent smoke scenarios against a running server
+npm run trace:otlp   # Convert recorded traces to OpenTelemetry OTLP/JSON
 npm run stop         # Stop frontend and backend processes
 npm run chrome:mcp   # Start the Chrome DevTools MCP SSE bridge
 ```

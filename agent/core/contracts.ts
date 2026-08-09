@@ -96,7 +96,16 @@ export interface AgentStep {
 
 export type AgentObservation = JsonObject;
 
-/** SSE 事件的公共追踪字段（可选，trace/用量）。 */
+/**
+ * SSE 事件的公共追踪字段（可选，trace/用量）。
+ *
+ * trace_id / span_id / parent_id 是 W3C Trace Context 合规值（32/16 位小写 hex），
+ * 由 helpers/telemetry/ 的哈希函数确定性派生：
+ *   trace_id ← sessionId（同一 chat session 的多次 run 共享，各自是一个根 span）
+ *   span_id  ← runId + attempt + span 路径
+ * 因此写 JSONL 时与离线重放时算出的 span 树完全一致，可直接转 OTLP
+ * 供 Jaeger / Zipkin 消费（见 scripts/trace-to-otlp.ts）。
+ */
 interface EventTraceFields {
   seq?: number;
   runId?: string;
@@ -105,7 +114,6 @@ interface EventTraceFields {
   trace_id?: string;
   span_id?: string;
   parent_id?: string;
-  operation?: string;
   start_time?: number;
   end_time?: number;
   duration_ms?: number;
