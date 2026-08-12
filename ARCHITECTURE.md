@@ -101,6 +101,34 @@ Project data is isolated below the configured data directory. The no-project ("g
 
 Writes that must survive shutdown are tracked through the persistence queue. Server shutdown first stops accepting work, cancels or drains active runs, flushes queued persistence and LLM logs, then exits.
 
+## Tracing and OpenTelemetry
+
+Every SSE event carries W3C Trace Context identifiers, so a recorded trace is an OpenTelemetry span tree rather than a proprietary log. `helpers/telemetry/` owns this translation:
+
+- `ids.ts` derives identifiers by hashing rather than randomness. `trace_id = sha256(sessionId)`, `span_id = sha256(runId + attempt + span path)`. Because the derivation is pure, the main process, a sandboxed worker and an offline replay all compute the same tree without sharing state — which is why the worker boundary needs no context propagation.
+- `span-assembler.ts` turns the ordered event stream into spans. It runs at `createBaseEventSender` in `helpers/run-agent.ts`, the single point where every event converges (worker events are bridged there by `agent/worker/runner.ts`), so both runners are covered without touching the step loop in `agent/core/runtime.ts`.
+- `otlp-json.ts` serializes spans into OTLP/JSON. No OpenTelemetry SDK dependency is required.
+
+A **chat session is one trace**; each run within it is a root span, so multiple runs in a conversation appear as one tree with several roots. Retries reuse the `runId` but increment `attempt`, which feeds the span-id hash and therefore keeps each attempt distinct.
+
+```text
+trace = chat session
+└── invoke_agent sagent          run root span (gen_ai.conversation.id = sessionId)
+    └── step N
+        ├── observe              environment observation
+        ├── chat <model>         one per model participating in the decision
+        ├── execute_tool <tool>  terminal/MCP output is attached as span events
+        └── approval             only when an approval or question was raised
+```
+
+Attributes follow the OpenTelemetry GenAI semantic conventions (`gen_ai.operation.name`, `gen_ai.request.model`, `gen_ai.usage.*`, `gen_ai.tool.name`); project-specific fields use a separate `sagent.*` namespace. Constants live in `helpers/telemetry/semconv.ts`.
+
+**Content capture is opt-in.** The GenAI conventions treat prompts, model outputs and tool payloads as sensitive and large, and require instrumentations not to capture them by default while offering an opt-in switch. Spans therefore carry only structured metadata — tool names, statuses, token counts, durations. Passing `--content` to the export script additionally writes `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result`, each truncated per field (`--max-content`, default 4096 chars). Nothing is lost by the default: the full content always lives in the trace JSONL, and `helpers/telemetry/content.ts` regenerates span attributes from it on demand. Credentials are already redacted before events are persisted, but task text and page content are not — that is business data, and it leaves the machine when pushed to a shared collector.
+
+Timing is a known approximation: events record only the end of each phase, so a span starts at the previous event's timestamp. The one exception is tool execution, whose start is marked precisely by the `action` event.
+
+Export recorded traces with `npm run trace:otlp` (see README). Private runs never persist a trace and therefore produce nothing to export.
+
 ## Frontend boundaries
 
 The React client keeps browser-local chat presentation state while the backend owns Agent execution state. On refresh, the client queries the active run and reconnects to its SSE stream. When a mobile browser resumes after being backgrounded, it fetches the persisted trace to recover terminal events that may have been missed.

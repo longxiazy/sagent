@@ -112,6 +112,42 @@ sagent 会在配置的数据目录下保存项目经验，包括近期任务摘�
 
 内置 Browser 仅用于只读信息浏览和正文提取；点击、输入、登录、提交、上传、下载等网页交互统一由 Chrome DevTools MCP 负责。输入框工具栏中的“隐私模式”会让本次任务使用一次性 Browser profile，并在任务正常收尾时删除 Cookie 和 LocalStorage；同时跳过聊天会话、应用/运行日志、LLM 日志、trace、会话快照、Worker 日志和 sagent 自己管理的截图持久化。该隔离不覆盖外部 Chrome MCP：隐私模式既不会隔离它的浏览器 profile，也不会清除它的现有会话。Chrome MCP 会增加 `chrome_list_tools` 和 `chrome_call_tool`。包括 `codex mcp-server` 在内的通用 MCP server 会通过 `mcp_list_servers`、`mcp_list_tools` 和 `mcp_call_tool` 接入。所有集成都是可选能力，配置方式见 [CONFIGURATION.md](CONFIGURATION.md)。
 
+### OpenTelemetry 追踪
+
+每次 Agent 运行都会被记录成一棵 OpenTelemetry span 树：一个聊天会话是一条 trace，会话里的每次运行是一个根 span，每一步展开成 `observe`、每个参与决策的模型各一个 `chat`、以及 `execute_tool`。属性遵循 GenAI 语义约定，因此这些数据可直接被标准工具消费——Jaeger、Zipkin、Grafana Tempo 或各类托管服务都可以。
+
+Trace 以 JSONL 形式写在各项目的 `traces/` 目录下，并携带 W3C 合规的追踪 ID。先看有哪些可导出，再转换：
+
+```bash
+npm run trace:otlp -- --list
+```
+
+```bash
+npm run trace:otlp -- <runId> --pretty
+```
+
+产物默认写入 `data/otlp-exports/`。`--all` 转换全部已录制运行，`--project <id>` 指定项目 scope——注意位置参数是 **run id**，项目要走 `--project`。
+
+默认情况下 span 只带结构化元数据——工具名、状态、token 数、时长——因为 GenAI 约定把提示词和模型输出视为敏感内容，要求默认不采集、由用户主动开启。加 `--content` 可一并导出任务正文、模型理由、工具入参和结果：
+
+```bash
+npm run trace:otlp -- <runId> --content --max-content 2000
+```
+
+默认不采集并不丢数据：完整内容始终留在 trace JSONL 里，需要时按需重新生成。凭据在写 trace 时已脱敏，但任务正文和页面内容不会——推送到共享后端前请先确认。
+
+想看瀑布图，启动任意兼容 OTLP 的接收端并推送过去即可。Jaeger 最快：
+
+```bash
+docker run -d --name jaeger -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one:latest
+```
+
+```bash
+npm run trace:otlp -- --all --endpoint http://localhost:4318/v1/traces
+```
+
+然后打开 `http://localhost:16686` 搜索 `sagent` 服务。隐私模式的运行不落 trace，因此也没有可导出的内容。
+
 ## 常用命令
 
 ```bash
@@ -121,6 +157,7 @@ npm run build        # 后端类型检查 + 前端构建
 npm run lint         # 运行 ESLint
 npm test             # 运行 Vitest 测试
 npm run smoke        # 对运行中的服务执行 Agent 冒烟场景
+npm run trace:otlp   # 把录制的 trace 转成 OpenTelemetry OTLP/JSON
 npm run stop         # 停止前后端进程
 npm run chrome:mcp   # 启动 Chrome DevTools MCP SSE bridge
 ```

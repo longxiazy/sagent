@@ -1,0 +1,63 @@
+/**
+ * W3C Trace Context ID 派生 —— 确定性哈希，不用随机数。
+ *
+ * 为什么用哈希而不是随机 ID：
+ *   sagent 的 span 是「事后从事件流翻译出来」的，同一份数据会被多个地方独立处理——
+ *   主进程写 JSONL 时算一次，离线转换脚本读 JSONL 时又算一次；sandboxed worker 和
+ *   主进程也各自持有事件副本。用哈希意味着「输入相同 → ID 必然相同」，这些地方
+ *   无需共享任何状态就能得到一致的 trace 树，也因此 worker 边界完全不需要传播 context。
+ *
+ * 格式要求（W3C Trace Context §3.2.2）：
+ *   - trace_id：32 位小写 hex，不得全零
+ *   - span_id：16 位小写 hex，不得全零
+ * 全零是协议里的「无效 ID」哨兵值，collector 会拒收，所以 allZero 时回退到一个
+ * 固定的非零值（sha256 碰撞出全零的概率可忽略，但兜底成本更低）。
+ */
+
+import { createHash } from 'node:crypto';
+
+const TRACE_ID_HEX_LEN = 32;
+const SPAN_ID_HEX_LEN = 16;
+
+/** 全零无效时的兜底值：仍是合法 hex，且能在 trace 里被一眼认出来。 */
+const TRACE_ID_FALLBACK = 'f'.repeat(TRACE_ID_HEX_LEN);
+const SPAN_ID_FALLBACK = 'f'.repeat(SPAN_ID_HEX_LEN);
+
+function hashHex(parts: Array<string | number | undefined | null>, length: number) {
+  // 用 NUL 分隔，避免 ['a','bc'] 与 ['ab','c'] 拼出同一个字符串。
+  const input = parts.map(part => String(part ?? '')).join('\0');
+  return createHash('sha256').update(input).digest('hex').slice(0, length);
+}
+
+function nonZero(hex: string, fallback: string) {
+  return /^0+$/.test(hex) ? fallback : hex;
+}
+
+/**
+ * 会话级 trace ID。同一 chat session 的多次 run 共享它，因此在 Jaeger 里
+ * 表现为一棵含多个根 span 的树（每次 run 一个根）。
+ *
+ * 无显式 sessionId 时调用方应传入与 session-store 相同的回退值
+ * （`session_trace_${runId.slice(4)}`），保证同一 run 在各处算出同一个 trace。
+ */
+export function traceIdFor(sessionId: string): string {
+  return nonZero(hashHex(['sagent.trace', sessionId], TRACE_ID_HEX_LEN), TRACE_ID_FALLBACK);
+}
+
+/**
+ * span ID。key 是 span 在 run 内的稳定路径（如 `step.3.execute`）。
+ *
+ * attempt 参与哈希：fromCheckpoint 重试会复用 runId，若不掺 attempt，重跑的第 3 步
+ * 会与首次的第 3 步撞同一个 span ID，在 trace 里互相覆盖。
+ */
+export function spanIdFor(runId: string, attempt: number, key: string): string {
+  return nonZero(hashHex(['sagent.span', runId, attempt, key], SPAN_ID_HEX_LEN), SPAN_ID_FALLBACK);
+}
+
+export function isValidTraceId(value: unknown): boolean {
+  return typeof value === 'string' && /^[0-9a-f]{32}$/.test(value) && !/^0+$/.test(value);
+}
+
+export function isValidSpanId(value: unknown): boolean {
+  return typeof value === 'string' && /^[0-9a-f]{16}$/.test(value) && !/^0+$/.test(value);
+}

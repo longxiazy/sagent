@@ -2,7 +2,7 @@
  * Run Agent — 任务执行的共享工具函数
  *
  * 从 server.ts 和 routes/agent-run-*.ts 提取的公共逻辑：
- *   - 事件分发（store + reconnect 转发）
+ *   - 事件分发（store + reconnect 转发 + OTel span 组装）
  *   - 记忆加载 + systemPrompt 构建
  *   - 运行收尾（持久化 flush、checkpoint/隐私产物清理、Chrome MCP 状态清理、run 关闭）
  */
@@ -12,85 +12,63 @@ import { removeSessionCheckpoints } from '../agent/core/checkpoint.ts';
 import { shutdownChromeMcp, closeAllChromePagesQuiet, loadChromeMcpConfig } from '../agent/tools/chrome/mcp-client.ts';
 import { resetChromeSnapshotState } from '../agent/tools/chrome/execute.ts';
 import { appendTraceEvent } from './trace-store.ts';
+import { createSpanAssembler } from './telemetry/span-assembler.ts';
 import { log } from './logger.ts';
 import { isPrivateRun, withPrivateRun } from './private-run.ts';
 import { removePrivateRunArtifacts } from './private-run-artifacts.ts';
 import type { AgentEvent, AgentRunStore, TerminalRunStatus } from '../agent/core/contracts.ts';
 import { redactSensitiveData } from './redact.ts';
 
-function spanPart(value: any) {
-  return String(value ?? '')
-    .replace(/[^a-z0-9_-]+/gi, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 80) || 'unknown';
-}
-
-function buildSpanId(payload: any) {
-  if (payload?.span_id) return payload.span_id;
-
-  if (payload?.type === 'step') {
-    return `step_${spanPart(payload.step)}_${spanPart(payload.stage)}`;
-  }
-  if (payload?.type === 'model_plan') {
-    return `step_${spanPart(payload.step)}_plan_${spanPart(payload.stage)}_${spanPart(payload.model || 'group')}`;
-  }
-  if (payload?.type === 'terminal_output') {
-    return `step_${spanPart(payload.step)}_terminal_${spanPart(payload.phase)}_${spanPart(payload.sequence ?? '')}`;
-  }
-  if (payload?.type === 'session_checkpoint') {
-    return `step_${spanPart(payload.step)}_checkpoint`;
-  }
-  return spanPart(payload?.type || 'event');
-}
-
-function buildParentId(payload: any) {
-  if (payload?.parent_id) return payload.parent_id;
-  if (payload?.step == null) return null;
-  if (payload?.type === 'terminal_output') return `step_${spanPart(payload.step)}_execute`;
-  if (payload?.type === 'model_plan') return `step_${spanPart(payload.step)}_observe`;
-  if (payload?.type === 'step' && payload.stage === 'action') return `step_${spanPart(payload.step)}_observe`;
-  if (payload?.type === 'step' && payload.stage === 'result') return `step_${spanPart(payload.step)}_action`;
-  if (payload?.type === 'step') return `step_${spanPart(payload.step)}`;
-  return null;
-}
-
-function buildOperation(payload: any) {
-  if (payload?.operation) return payload.operation;
-  if (payload?.type === 'step') {
-    if (payload.stage === 'result') return 'execute';
-    return payload.stage || 'step';
-  }
-  if (payload?.type === 'model_plan') return 'decide';
-  if (payload?.type === 'terminal_output') return 'terminal';
-  return payload?.type || 'event';
-}
-
+/**
+ * 事件流的统一出口：盖上 OTel 追踪字段、脱敏、进 run store、落 JSONL trace。
+ *
+ * 这是全系统唯一的事件汇聚点——sandboxed worker 的事件经 agent/worker/runner.ts
+ * 桥接回主进程后也走这里，所以在此组装 span 就同时覆盖两种 runner，
+ * runtime.ts 的步骤循环无需改动，也不必跨进程传播 OTel context。
+ *
+ * trace_id / span_id / parent_id 由 span-assembler 派生，是 W3C 合规的 hex，
+ * 可被 Jaeger / Zipkin 等标准工具消费（转换见 scripts/trace-to-otlp.ts）。
+ */
 export function createBaseEventSender(
   runId: string,
   agentRunStore: AgentRunStore,
   memoryDir?: string,
-  { persistTrace = true }: { persistTrace?: boolean } = {},
+  {
+    persistTrace = true,
+    sessionId = null,
+    attempt = 1,
+    projectId = null,
+  }: {
+    persistTrace?: boolean;
+    sessionId?: string | null;
+    attempt?: number;
+    projectId?: string | null;
+  } = {},
 ) {
+  // 组装器同时负责 span 树与阶段时长；原先分散的 stageTimes/modelTimes 已并入其中。
+  // 这里只取它算出的 trace/span ID 回填进事件，不导出 span，因此不开内容捕获——
+  // 内容本来就完整存在 JSONL 事件里，再往 span 属性复制一份纯属浪费内存。
+  // 需要内容时由 scripts/trace-to-otlp.ts --content 在导出时按需生成。
+  const assembler = createSpanAssembler({ sessionId, runId, attempt, projectId });
+  // 阶段起点：事件流只在阶段结束时给时间点，duration_ms 沿用「距上一相关事件」的口径。
   const stageTimes = new Map<string, number>();
   const modelTimes = new Map<string, number>();
 
   return (payload: AgentEvent): AgentEvent => {
     const timestamp = Number.isFinite(payload?.timestamp) ? payload.timestamp : Date.now();
-    const attemptPrefix = Number.isInteger(payload?.attempt) && Number(payload.attempt) > 0
-      ? `attempt_${payload.attempt}_`
-      : '';
-    const spanId = `${attemptPrefix}${buildSpanId(payload)}`;
-    const rawParentId = buildParentId(payload);
-    const parentId = rawParentId ? `${attemptPrefix}${rawParentId}` : null;
-    const event = redactSensitiveData({
+    // 先脱敏再组装，保证 span 属性继承的是已脱敏内容。
+    const redacted = redactSensitiveData({
       ...payload,
       runId: payload?.runId || runId,
       timestamp,
-      trace_id: payload?.trace_id || runId,
-      span_id: spanId,
-      operation: buildOperation(payload),
-      ...(parentId ? { parent_id: parentId } : {}),
     }) as AgentEvent;
+    const traceRef = assembler.consume(redacted);
+    const event = {
+      ...redacted,
+      trace_id: traceRef.trace_id,
+      span_id: traceRef.span_id,
+      ...(traceRef.parent_id ? { parent_id: traceRef.parent_id } : {}),
+    } as AgentEvent;
 
     if (event.usage) {
       event.input_tokens = event.input_tokens ?? event.usage.prompt_tokens ?? null;

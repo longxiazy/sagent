@@ -99,6 +99,10 @@ export function createAgentRunSession({
   const rawSendEvent = buildSseWriter(res);
   const baseSendEvent = createBaseEventSender(runId, agentRunStore, memoryDir, {
     persistTrace: !agentPrivateMode,
+    // trace_id 由 sessionId 派生：同一 chat session 的多次 run 落在同一棵 OTel trace 下。
+    sessionId,
+    attempt,
+    projectId,
   });
   const sendEvent = (payload: AgentEvent) => {
     // Tracking happens before storage/streaming so terminal metrics and model attribution
