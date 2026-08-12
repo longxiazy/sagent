@@ -357,12 +357,28 @@ export default function App() {
         const task = data.task || t('agent.taskFallback');
         const activeRunModels = uniqueModelIds(data.meta?.agentModels);
         const activeRunPrimaryModel = activeRunModels[0] || data.model || undefined;
+        // run 归属哪个会话由后端说了算：发起任务时带上的 sessionId 一直存在
+        // run.meta 里。曾经改用“首条用户消息 == task”来猜，多轮对话里首条消息
+        // 是最早那个问题、task 是最新一轮（例如“继续”），必然失配，于是每次
+        // 刷新都新建一个占位会话——真会话的运行记录也就跟着从面板上消失了。
+        const runSessionId = typeof data.meta?.sessionId === 'string' && data.meta.sessionId
+          ? data.meta.sessionId
+          : null;
+        const runProjectId = typeof data.meta?.projectId === 'string' && data.meta.projectId
+          ? data.meta.projectId
+          : null;
         setChatState(prev => {
-          const cur = prev.sessions.find(s => s.id === prev.activeSessionId);
-          const firstUser = cur?.messages?.find(m => m.role === 'user');
-          if (firstUser && firstUser.content === task) {
+          // 老 run 可能没带 sessionId（升级前发起的），这时退回原来的文本比对。
+          const owner = runSessionId
+            ? prev.sessions.find(s => s.id === runSessionId)
+            : (() => {
+                const cur = prev.sessions.find(s => s.id === prev.activeSessionId);
+                const firstUser = cur?.messages?.find(m => m.role === 'user');
+                return firstUser && firstUser.content === task ? cur : null;
+              })();
+          if (owner) {
             const sessions = prev.sessions.map(session => {
-              if (session.id !== prev.activeSessionId) return session;
+              if (session.id !== owner.id) return session;
               const messages = session.messages.map(message => {
                 const isRunUser = message.role === 'user' && message.content === task;
                 const isPendingAssistant = message.role === 'assistant' && message.pending === 'run';
@@ -381,9 +397,12 @@ export default function App() {
                 agentMeta: null,
               });
             });
-            return normalizeChatState({ ...prev, sessions });
+            return normalizeChatState({ ...prev, sessions, activeSessionId: owner.id });
           }
           const cleanSession = createSession({
+            // 后端知道这个 run 属于哪个会话就沿用它，别再生成一个新 id：
+            // 否则本地占位会话和后端记录会分叉成两条。
+            ...(runSessionId ? { id: runSessionId } : {}),
             messages: [
               { role: 'user', content: task, ts: data.startedAt || Date.now(), ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}), ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}) },
               { role: 'assistant', content: t('agent.running'), pending: 'run', ts: Date.now(), ...(activeRunPrimaryModel ? { model: activeRunPrimaryModel } : {}), ...(activeRunModels.length > 0 ? { modelsUsed: activeRunModels } : {}) },
@@ -391,6 +410,9 @@ export default function App() {
             model: activeRunPrimaryModel,
             modelsUsed: activeRunModels,
             agentRunId: data.runId,
+            // 跟着 run 的项目走。留空会落进全局桶，而侧栏按当前项目过滤，
+            // 于是这条会话既是激活态又不在列表里。
+            projectId: runProjectId,
           });
           return normalizeChatState({
             sessions: [cleanSession, ...prev.sessions],
