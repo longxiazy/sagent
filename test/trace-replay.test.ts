@@ -6,6 +6,7 @@ import {
   parseTraceLines,
   reconstructRunFromTrace,
 } from '../agent/core/trace-replay.ts';
+import { formatRawOutputForError, RAW_OUTPUT_MARKER } from '../agent/core/utils.ts';
 
 function line(event: Record<string, unknown>) {
   return JSON.stringify(event);
@@ -57,7 +58,21 @@ describe('parseTraceLines', () => {
 });
 
 describe('extractRawOutputFromError', () => {
+  it('unwraps the fenced raw output block', () => {
+    const raw = '{"rationale":"r","action":{"tool":"terminal","command":"echo "---""}}';
+    const error = `模型动作解析失败: 解析失败; ${RAW_OUTPUT_MARKER}\n${formatRawOutputForError(raw)}`;
+    // 未转义的裸引号必须原样还原——这正是解析失败语料要保留的信息
+    expect(extractRawOutputFromError(error)).toBe(raw);
+  });
+
+  it('unwraps raw output that itself contains a ``` fence', () => {
+    const raw = '```json {"action":{"type":"finish"} ```';
+    const error = `解析失败; ${RAW_OUTPUT_MARKER}\n${formatRawOutputForError(raw)}`;
+    expect(extractRawOutputFromError(error)).toBe(raw);
+  });
+
   it('decodes the JSON-encoded raw output tail', () => {
+    // 旧格式：磁盘上的历史 trace 不会重写，必须继续可读
     const raw = '{"rationale":"r","action":{"tool":"core","type":"finish"';
     const error = `模型动作解析失败: 解析失败; 原始输出=${JSON.stringify(raw)}`;
     expect(extractRawOutputFromError(error)).toBe(raw);

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createJsonPlanner } from '../agent/core/planner.ts';
+import { extractRawOutputFromError } from '../agent/core/trace-replay.ts';
 import { normalizeDesktopAgentDecision } from '../agent/core/schemas.ts';
 
 function completion(content: unknown) {
@@ -37,6 +38,31 @@ describe('createJsonPlanner', () => {
     })).rejects.toThrow();
 
     expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports unescaped raw output verbatim in a fenced block', async () => {
+    // 真实 case：模型没转义 shell 命令里的引号。错误信息必须让「有没有转义」一眼可见，
+    // 不能再用 JSON.stringify —— 那会给每个 " 都加反斜杠，两种情况长得几乎一样。
+    const raw = '{"rationale":"看目录","action":{"tool":"terminal","type":"run_safe","command":"ls -la && echo "---""}}';
+    const create = vi.fn().mockResolvedValue(completion(raw));
+    const planner = createJsonPlanner({
+      client: { chat: { completions: { create } } },
+      buildMessages: () => [{ role: 'user', content: 'list dir' }],
+      normalizeDecision: normalizeDesktopAgentDecision,
+    });
+
+    const error = await planner({
+      model: 'deepseek-ai/deepseek-v4-flash',
+      task: 'list dir',
+      step: 1,
+      history: [],
+      observation: {},
+    }).then(() => null, (err: Error) => err);
+
+    expect(error?.message).toContain('```\n' + raw + '\n```');
+    expect(error?.message).not.toContain('\\"');
+    // planner 写入 ↔ trace-replay 读出：解析失败语料必须能原样还原
+    expect(extractRawOutputFromError(error?.message)).toBe(raw);
   });
 
   it('fails immediately when model output cannot be parsed', async () => {

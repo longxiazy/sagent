@@ -10,7 +10,7 @@
  *
  */
 
-import { cleanText, safeJson } from './utils.ts';
+import { cleanText, formatRawOutputForError, RAW_OUTPUT_MARKER } from './utils.ts';
 import { createModelResponseParser } from './nvidia-response-parsers.ts';
 import { logLlmError, logLlmRequest, logLlmResponse } from './llm-logger.ts';
 import { log } from '../../helpers/logger.ts';
@@ -322,6 +322,7 @@ export function createJsonPlanner({
       typeof buildParserError === 'function'
         ? buildParserError(new Error('解析失败'), content, context)
         : '模型动作解析失败';
-    throw new Error(`${msg}; 原始输出=${safeJson(cleanText(content, 10240))}`);
+    // 原文用围栏代码块原样附上，不做 JSON 编码：模型「有没有转义引号」必须一眼可见。
+    throw new Error(`${msg}; ${RAW_OUTPUT_MARKER}\n${formatRawOutputForError(cleanText(content, 10240))}`);
   };
 }
