@@ -135,6 +135,15 @@ export type AgentEvent = EventTraceFields & (
 
 export type AgentEventWriter = (event: AgentEvent) => void;
 
+/**
+ * 一条 SSE 重连连接。close 让 run 结束时能主动收尾——只把写入器丢掉的话，
+ * 浏览器那端的 reader 会一直挂着等永远不来的下一个事件。
+ */
+export interface ReconnectWriter {
+  send: AgentEventWriter;
+  close: () => void;
+}
+
 /** 运行生命周期状态。 */
 export type RunStatus =
   | 'starting'
@@ -196,7 +205,7 @@ export interface RunRecord {
     enqueue<T>(task: () => T | Promise<T>): Promise<T>;
     flush(): Promise<void>;
   };
-  _reconnectWriters?: AgentEventWriter[] | null;
+  _reconnectWriters?: ReconnectWriter[] | null;
   pendingRollback?: number | null;
   rolledBack?: boolean;
   workerControl?: WorkerControl | null;

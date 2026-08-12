@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Menu, Settings, ShieldCheck, Brain } from 'lucide-react';
 import './App.css';
-import { fetchAgentTrace } from './api/streams.js';
+import { fetchAgentTrace, parseSseFrame } from './api/streams.js';
 import { ensureServiceWorker, notificationPermission, notificationsSupported, requestNotificationPermission } from './notifications.js';
 import { AgentWorkspacePane } from './components/AgentWorkspacePane.jsx';
 import { SessionSidebar } from './components/SessionSidebar.jsx';
@@ -49,7 +49,7 @@ import {
 import { formatMsgTime } from './utils/format.js';
 import { shuffled } from './utils/random.js';
 import { hasThinkContent } from './utils/markdown.js';
-import { appendUniqueTraceEvent } from './utils/agent-trace.js';
+import { appendUniqueTraceEvent, latestTerminalEvent } from './utils/agent-trace.js';
 import { buildActualContextEstimate } from './utils/context-usage.js';
 import { buildAgentMetaFromSession } from './utils/agent-stats.js';
 
@@ -407,6 +407,18 @@ export default function App() {
         const decoder = new TextDecoder();
         let buffer = '';
 
+        // cursor=0 会回放整条 trace，其中包含此前失败 attempt 的 done/error。
+        // 那些只是历史，不能用来结束当前运行态——否则刚接回的 run 会立刻被
+        // 旧 attempt 的 error 打回“已结束”，占位消息还会被写成失败。
+        // 以 run 当前 attempt 为界；重连期间真的又开一次 attempt 时同步抬高。
+        let liveAttempt = Number.isInteger(data.meta?.attempt) && data.meta.attempt > 0
+          ? data.meta.attempt
+          : 1;
+        const isReplayedTerminal = event => {
+          const attempt = Number(event?.attempt);
+          return Number.isInteger(attempt) && attempt > 0 && attempt < liveAttempt;
+        };
+
         while (!aborted) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -415,12 +427,16 @@ export default function App() {
           buffer = lines.pop() || '';
 
           for (const line of lines) {
-            const dataLine = line.replace(/^data:\s*/, '');
-            if (!dataLine || dataLine === '[DONE]') continue;
             try {
-              const event = JSON.parse(dataLine);
+              const event = parseSseFrame(line);
+              if (!event) continue;
 
               if (event.type === 'run_meta') {
+                // 回放里每个 attempt 都有一条 run_meta，据此把界推到最新一次重试。
+                const metaAttempt = Number(event.attempt);
+                if (Number.isInteger(metaAttempt) && metaAttempt > liveAttempt) {
+                  liveAttempt = metaAttempt;
+                }
                 setAgentStartedAt(event.startedAt || null);
                 if (event.task) reconnectTaskRef.current = event.task;
                 const metaModels = uniqueModelIds(event.agentModels);
@@ -470,6 +486,7 @@ export default function App() {
               }
 
               if (event.type === 'done') {
+                if (isReplayedTerminal(event)) continue;
                 setAgentRunning(false);
                 const modelsUsed = uniqueModelIds(event.meta?.models_used);
                 const primaryDoneModel = modelsUsed[0] || activeRunPrimaryModel;
@@ -512,6 +529,7 @@ export default function App() {
               }
 
               if (event.type === 'error') {
+                if (isReplayedTerminal(event)) continue;
                 setAgentRunning(false);
                 setAgentTrace(prevTrace => {
                   const nextTrace = appendUniqueTraceEvent(prevTrace, event);
@@ -589,13 +607,12 @@ export default function App() {
       }
       if (cancelled || !Array.isArray(events) || events.length === 0) return;
 
-      const terminal = events.find(e => e.type === 'done' || e.type === 'error');
+      // 重试会把多个 attempt 的 done/error 都留在同一条 trace 里，取首个会读到
+      // 早已被重跑覆盖的旧结果——成功的 run 因此被记成失败。
+      const terminal = latestTerminalEvent(events);
       if (!terminal) return;
 
-      setAgentTrace(prev => {
-        if (prev.some(e => e.type === terminal.type)) return prev;
-        return [...prev, terminal];
-      });
+      setAgentTrace(prev => appendUniqueTraceEvent(prev, terminal));
 
       const content = terminal.type === 'done'
         ? (terminal.answer || t('agent.done'))

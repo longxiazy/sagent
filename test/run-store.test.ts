@@ -100,6 +100,42 @@ describe('agent run store', () => {
     expect(store.getRun(run.runId)).toBeNull();
   });
 
+  // 从 checkpoint 重跑会复用同一个 runId，但 insertRun 建的是新的 RunRecord 对象。
+  // 重连连接登记在旧对象上，若不接管，刷新过页面的客户端会挂在被丢弃的记录上：
+  // 不报错也不关闭，只是再也收不到新 attempt 的事件。
+  it('carries live reconnect writers over when a record is replaced for the same runId', () => {
+    const store = createAgentRunStore();
+    const first = store.createRun({ task: 'retry me' }, 1, 'run_reconnect_migrate');
+    const delivered: any[] = [];
+    first._reconnectWriters = [{ send: event => delivered.push(event), close: () => {} }];
+
+    const second = store.createRun({ task: 'retry me' }, 2, 'run_reconnect_migrate');
+
+    expect(second).not.toBe(first);
+    expect(second._reconnectWriters).toHaveLength(1);
+
+    for (const writer of second._reconnectWriters ?? []) {
+      writer.send(store.addEvent(second.runId, { type: 'step', step: 9, stage: 'observe', observation: null }));
+    }
+    expect(delivered).toHaveLength(1);
+  });
+
+  // 只把写入器置 null 不够：浏览器那端的 reader 会一直等永远不来的下一个事件。
+  it('closes reconnect streams when the run reaches a terminal state', () => {
+    const store = createAgentRunStore();
+    const run = store.createRun({}, 1, 'run_reconnect_close');
+    let closed = 0;
+    run._reconnectWriters = [
+      { send: () => {}, close: () => { closed += 1; } },
+      { send: () => {}, close: () => { throw new Error('socket already gone'); } },
+    ];
+
+    store.closeRun(run.runId, 'completed');
+
+    expect(closed).toBe(1);
+    expect(run._reconnectWriters).toBeNull();
+  });
+
   it('rejects invalid state transitions', () => {
     const store = createAgentRunStore();
     const run = store.createRun({}, 1, 'run_invalid');

@@ -4,6 +4,27 @@ import { apiFetch } from './http.js';
 const AGENT_API_URL = '/api/agent';
 const AGENT_APPROVAL_API_URL = '/api/agent/approvals';
 
+// 一个 SSE 帧里 data: 不一定在首行：重连回放会在前面加 `id: <seq>` 做游标，
+// 服务端还会穿插 `: heartbeat` 注释帧。所以必须按行找 data:，不能用 /^data:/
+// 锚定整帧——那样每个带 seq 的事件都会解析失败并被静默丢弃。
+export function parseSseFrame(rawFrame) {
+  const line = rawFrame
+    .split('\n')
+    .map(item => item.trim())
+    .find(item => item.startsWith('data:'));
+
+  if (!line) {
+    return null;
+  }
+
+  const payload = line.slice(5).trim();
+  if (!payload || payload === '[DONE]') {
+    return null;
+  }
+
+  return JSON.parse(payload);
+}
+
 async function streamSseJson({ url, body, signal, onEvent }) {
   const res = await apiFetch(url, {
     method: 'POST',
@@ -32,16 +53,11 @@ async function streamSseJson({ url, body, signal, onEvent }) {
   let buffer = '';
 
   const handleEvent = async rawEvent => {
-    const line = rawEvent
-      .split('\n')
-      .map(item => item.trim())
-      .find(item => item.startsWith('data: '));
-
-    if (!line) {
+    const json = parseSseFrame(rawEvent);
+    if (!json) {
       return;
     }
 
-    const json = JSON.parse(line.slice(6));
     if (json.error && !json.type) {
       throw new Error(json.error);
     }
@@ -114,11 +130,9 @@ export async function streamAgentRun({ task, model, models, strategy, memory, si
         const lines = buffer.split('\n\n');
         buffer = lines.pop() || '';
         for (const line of lines) {
-          const dataLine = line.replace(/^data:\s*/, '');
-          if (!dataLine || dataLine === '[DONE]') continue;
           try {
-            const event = JSON.parse(dataLine);
-            wrappedEvent(event);
+            const event = parseSseFrame(line);
+            if (event) wrappedEvent(event);
           } catch { /* skip malformed */ }
         }
       }

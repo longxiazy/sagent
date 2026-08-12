@@ -40,6 +40,8 @@ function ensureEventSequences(events: AgentEvent[]): AgentEvent[] {
 }
 
 function writeSseEvent(res, event: AgentEvent) {
+  // run 可能在回放途中结束，closeRun 会把响应 end 掉；写已结束的流会抛。
+  if (res.writableEnded) return;
   const idLine = Number.isFinite(event.seq) ? `id: ${event.seq}\n` : '';
   res.write(`${idLine}data: ${JSON.stringify(event)}\n\n`);
 }
@@ -145,17 +147,26 @@ export function createAgentRunControlRouter({ agentRunStore, approvalStore, chec
     if (ACTIVE_RUN_STATUSES.has(run.status)) {
       // 先挂 live writer 再读取历史；回放期间到达的新事件暂存到 liveBuffer，
       // 最后按 seq 接在 replayUpperSeq 之后发送，避免“读取历史”的时间窗丢事件。
-      writer = (payload: AgentEvent) => {
-        if (Number(payload.seq) <= cursor) return;
-        if (replaying) liveBuffer.push(payload);
-        else if (!res.writableEnded) writeSseEvent(res, payload);
+      writer = {
+        send: (payload: AgentEvent) => {
+          if (Number(payload.seq) <= cursor) return;
+          if (replaying) liveBuffer.push(payload);
+          else if (!res.writableEnded) writeSseEvent(res, payload);
+        },
+        // run 结束时由 closeRun 调用：不主动 end，浏览器会一直等下一个事件。
+        close: () => {
+          if (!res.writableEnded) res.end();
+        },
       };
       run._reconnectWriters = run._reconnectWriters || [];
       run._reconnectWriters.push(writer);
 
       req.on('close', () => {
-        if (run._reconnectWriters) {
-          run._reconnectWriters = run._reconnectWriters.filter(reconnectWriter => reconnectWriter !== writer);
+        // 注意读的是 store 里的当前记录：从 checkpoint 重跑会复用 runId 但换掉
+        // RunRecord 对象，闭包里捕获的 run 可能已经是被丢弃的那一个。
+        const current = agentRunStore.getRun(runId) || run;
+        if (current._reconnectWriters) {
+          current._reconnectWriters = current._reconnectWriters.filter(reconnectWriter => reconnectWriter !== writer);
         }
       });
     }
