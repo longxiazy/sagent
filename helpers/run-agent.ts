@@ -138,7 +138,7 @@ export function createBaseEventSender(
     }
     if (run?._reconnectWriters) {
       for (const writer of run._reconnectWriters) {
-        writer(sequencedEvent);
+        writer.send(sequencedEvent);
       }
     }
     return sequencedEvent;

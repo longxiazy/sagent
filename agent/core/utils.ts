@@ -4,6 +4,7 @@
  * 被几乎所有 agent/core/ 模块引用：
  *   - safeJson: 安全序列化，防止循环引用导致崩溃。用于日志输出
  *   - cleanText: 压缩空白 + 截断。用于截断 LLM 输出、rationale、记忆摘要等
+ *   - formatRawOutputForError: 把模型原文包成围栏代码块，用于解析失败的错误信息
  */
 
 /** 安全序列化；循环引用等异常时返回占位符，避免日志崩溃。 */
@@ -13,6 +14,25 @@ export function safeJson(value) {
   } catch {
     return '[unserializable]';
   }
+}
+
+/** planner 解析失败错误里「原始输出」段的定位标记（planner.ts 写入、trace-replay.ts 解析）。 */
+export const RAW_OUTPUT_MARKER = '原始输出=';
+
+/**
+ * 把模型原文包进围栏代码块，供解析失败的错误信息展示。
+ *
+ * 刻意不做 JSON.stringify：stringify 会给原文里每个 " 都加一层反斜杠，
+ * 于是「模型已转义」(\\\") 和「模型未转义」(\") 在错误信息里只差一个反斜杠，
+ * 肉眼几乎无法区分，排查时极易把模型的格式错误误判成解析器的 bug。
+ * 原文自带 ``` 时自动加长围栏，避免代码块被提前闭合。
+ */
+export function formatRawOutputForError(value) {
+  const text = typeof value === 'string' ? value : String(value ?? '');
+  const tickRuns: string[] = text.match(/`+/g) ?? [];
+  const longestTicks = tickRuns.reduce((max, run) => Math.max(max, run.length), 0);
+  const fence = '`'.repeat(Math.max(3, longestTicks + 1));
+  return `${fence}\n${text}\n${fence}`;
 }
 
 /** 压缩连续空白并截断到 maxLength（超长加 …）。 */

@@ -14,6 +14,7 @@
  */
 
 import type { AgentAction, AgentEvent, AgentStep, JsonObject, ResultQuality } from './contracts.ts';
+import { RAW_OUTPUT_MARKER } from './utils.ts';
 
 export interface ReplayParseFailure {
   step?: number;
@@ -57,15 +58,20 @@ export function parseTraceLines(raw: string): AgentEvent[] {
   return events;
 }
 
-const RAW_OUTPUT_MARKER = '原始输出=';
+/** 新格式：`原始输出=` 后跟围栏代码块。贪婪匹配到最后一个同长围栏，
+ *  因为模型原文本身常带 ```json 围栏。 */
+const FENCED_RAW_OUTPUT_RE = /^(`{3,})[^\n]*\n([\s\S]*)\n\1$/;
 
-/** 从 planner 抛错文本（`…; 原始输出=<json 字符串>`）还原模型原文，供解析器语料回归使用。 */
+/** 从 planner 抛错文本（`…; 原始输出=<围栏代码块>`）还原模型原文，供解析器语料回归使用。
+ *  兼容旧 trace 的 JSON.stringify 编码格式——磁盘上的历史 trace 不会重写。 */
 export function extractRawOutputFromError(errorText: unknown): string | null {
   const text = typeof errorText === 'string' ? errorText : '';
   const idx = text.indexOf(RAW_OUTPUT_MARKER);
   if (idx < 0) return null;
   const tail = text.slice(idx + RAW_OUTPUT_MARKER.length).trim();
   if (!tail) return null;
+  const fenced = tail.match(FENCED_RAW_OUTPUT_RE);
+  if (fenced) return fenced[2];
   try {
     const decoded = JSON.parse(tail);
     return typeof decoded === 'string' ? decoded : tail;

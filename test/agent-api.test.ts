@@ -101,6 +101,26 @@ describe('GET /api/agent/memory', () => {
 });
 
 describe('GET /api/agent/active', () => {
+  // 前端刷新重连靠 meta.sessionId / meta.projectId 认领 run 归属的会话。
+  // 曾经改用“首条用户消息 == task”猜，多轮对话必然失配，于是每次刷新都新建
+  // 一个无项目的占位会话，真会话的历史执行记录也就从面板上消失了。
+  it('exposes the owning session and project so a refreshed client can reclaim the run', async () => {
+    const run = agentRunStore.createRun({
+      model: 'test-model',
+      task: '继续',
+      sessionId: 'session_owner_1',
+      projectId: 'proj_owner_1',
+    });
+
+    const res = await request(app).get('/api/agent/active');
+
+    expect(res.status).toBe(200);
+    expect(res.body.runId).toBe(run.runId);
+    expect(res.body.meta.sessionId).toBe('session_owner_1');
+    expect(res.body.meta.projectId).toBe('proj_owner_1');
+    agentRunStore.closeRun(run.runId, 'completed');
+  });
+
   it('returns pending approval details for a reconnected run', async () => {
     const run = agentRunStore.createRun({
       model: 'test-model',

@@ -62,6 +62,11 @@ export function createAgentRunStore({
       pendingRollback: null,
       nextEventSeq: Math.max(1, Math.floor(initialEventSeq)),
       persistence: createPersistenceQueue(),
+      // 从 checkpoint 重跑复用同一个 runId，但换掉的是 RunRecord 对象本身。
+      // 重连连接登记在旧对象上（routes/agent-run-control.ts），不接管过来的话，
+      // 重跑前刷新过页面的客户端会挂在被丢弃的记录上：不报错、不关闭，
+      // 只是永远收不到新 attempt 的事件——UI 表现为“任务还在跑但面板停更”。
+      _reconnectWriters: existing?._reconnectWriters?.length ? [...existing._reconnectWriters] : null,
     };
     runs.set(runId, record);
     return record;
@@ -168,14 +173,22 @@ export function createAgentRunStore({
     /**
      * 关闭运行（完成或出错后调用）
      * 调用时机：新任务与 checkpoint 恢复的统一 cleanupAgentRun 收尾
-     * 清理重连写入器，迁移到终态，
+     * 收尾重连连接，迁移到终态，
      * 普通 run 启动 5 分钟倒计时自动删除；隐私 run 立即清除内存事件和记录。
      */
     closeRun(runId: string, outcome?: TerminalRunStatus) {
       const run = getRun(runId);
       if (!run) return null;
       if (!ACTIVE_RUN_STATUSES.has(run.status)) return run;
+      // 必须真的把重连响应 end 掉，只置 null 会让浏览器的 reader 永远挂着——
+      // 既不报错也收不到事件，UI 就停在最后一个事件上。
+      const writers = run._reconnectWriters;
       run._reconnectWriters = null;
+      if (writers) {
+        for (const writer of writers) {
+          try { writer.close(); } catch { /* 连接可能已经被对端断开 */ }
+        }
+      }
       const terminalStatus = outcome || (run.status === 'cancelling' ? 'cancelled' : 'completed');
       transitionRun(runId, terminalStatus);
       if (run.meta?.privateMode === true) {
