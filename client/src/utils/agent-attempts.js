@@ -74,8 +74,8 @@ function buildPreviousRequestIndex(entries) {
     const previous = seen.get(event.model) ?? null;
     previousRequestByIndex.set(index, previous);
     previousRequestByEvent.set(event, previous);
-    // 只有真正发出过请求的事件才更新基准，failed/cancelled 等空事件跳过，
-    // 使基准能跨越无请求的步骤继续指向上一次有效请求。
+    // 只有真正发出过请求的事件才更新基准（失败事件带 requests 时同样计入，
+    // 请求确实发出去了），没有请求的事件跳过，使基准能跨越这些步骤继续指向上一次有效请求。
     const request = lastRequestOf(event);
     if (request != null) seen.set(event.model, request);
   }

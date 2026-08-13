@@ -8,7 +8,7 @@ import { createAbortScope, throwIfAborted } from '../../core/abort.ts';
 import { displayWidth, padEndW } from '../../core/utils.ts';
 import { log } from '../../../helpers/logger.ts';
 import { extractErrorDiagnostics } from '../../../helpers/retry.ts';
-import { CANCELLED_MESSAGE, DEFAULT_MODEL_TIMEOUT_MS, cancelledError } from './shared.ts';
+import { CANCELLED_MESSAGE, DEFAULT_MODEL_TIMEOUT_MS, attachRequestsToError, cancelledError } from './shared.ts';
 
 function boxed(line: string) {
   const width = Math.max(displayWidth(line) + 4, 52);
@@ -108,6 +108,9 @@ export function createPlanWithTimeout({
       })
       .catch(err => {
         logModelFailure(model, Date.now() - startedAt, err);
+        // 把已发出的消息体挂到错误上：失败事件同样要能还原当时的 prompt 输入，
+        // 否则超时/解析失败这些最需要复盘的步骤在 trace 里反而查不到请求原文。
+        attachRequestsToError(err, requests);
         throw err;
       })
       .finally(() => timeoutScope.cleanup());

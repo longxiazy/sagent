@@ -13,6 +13,7 @@ import {
   isRateLimitError,
   isTimeoutError,
   planEventPayload,
+  requestsFromError,
   sleepWithCancel,
 } from './shared.ts';
 import type { PlanWithTimeout } from './single-model.ts';
@@ -53,7 +54,7 @@ export async function runSingleModel({
       if (isTimeoutError(err)) {
         pool.blacklistedModels.add(model);
         log.warn(`[MultiModel] ${model} 超时，已加入黑名单`);
-        onEvent?.({ type: 'model_plan', stage: 'failed', model, step, error: err.message });
+        onEvent?.({ type: 'model_plan', stage: 'failed', model, step, error: err.message, requests: requestsFromError(err) });
         throw err;
       }
       if (isRateLimitError(err) && attempt < SINGLE_MODEL_RATE_LIMIT_RETRY) {
@@ -65,7 +66,7 @@ export async function runSingleModel({
         onEvent?.({ type: 'model_plan', stage: 'thinking', model, step });
         continue;
       }
-      onEvent?.({ type: 'model_plan', stage: 'failed', model, step, error: err.message });
+      onEvent?.({ type: 'model_plan', stage: 'failed', model, step, error: err.message, requests: requestsFromError(err) });
       throw err;
     }
   }

@@ -76,6 +76,8 @@ export function ModelPlanCard({ event, previousRequest, isWinner, modelList, ste
       )}
       {stage === 'failed' && (
         <>
+          {/* 失败步骤同样带请求原文（超时/解析失败最需要复盘的就是当时发了什么）。 */}
+          <PromptRequestDetails requests={event.requests} previousRequest={previousRequest} response={null} reasoning={event.reasoning} t={t} />
           {event.rationale && <p className="model-card-sub">{event.rationale}</p>}
           {event.error && <p className="model-card-error">{event.error}</p>}
         </>

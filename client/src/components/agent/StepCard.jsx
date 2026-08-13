@@ -28,6 +28,9 @@ export const StepCard = memo(function StepCard({ events, step, previousRequest, 
   // 从本步事件切片里拆出各阶段。action 信息优先取 step/action 事件，
   // 缺失时（如授权被拒只有 result）回退到 model_plan 决策事件。
   let observation = null, actionEvent = null, resultEvent = null, result = null, modelEvent = null;
+  // 本步没跑出决策时（超时、解析失败等），请求原文只挂在 failed 事件上，
+  // 单独存一份，让这类步骤照样能展开看当时发出去的 prompt。
+  let failedModelEvent = null;
   const terminalEvents = [];
   const mcpEvents = [];
   for (const e of events) {
@@ -35,6 +38,7 @@ export const StepCard = memo(function StepCard({ events, step, previousRequest, 
     else if (e.type === 'step' && e.stage === 'action') actionEvent = e;
     else if (e.type === 'step' && e.stage === 'result') { resultEvent = e; result = e.result; }
     else if (e.type === 'model_plan' && (e.stage === 'success' || e.stage === 'winner')) modelEvent = e;
+    else if (e.type === 'model_plan' && e.stage === 'failed') failedModelEvent = e;
     else if (e.type === 'terminal_output') terminalEvents.push(e);
     else if (e.type === 'mcp_output') mcpEvents.push(e);
   }
@@ -63,7 +67,7 @@ export const StepCard = memo(function StepCard({ events, step, previousRequest, 
       data-tool={action?.tool || undefined}
     >
       <div className="agent-trace-content">
-        <PromptRequestDetails requests={modelEvent?.requests} previousRequest={previousRequest} response={response} reasoning={reasoning} t={t} />
+        <PromptRequestDetails requests={modelEvent?.requests || failedModelEvent?.requests} previousRequest={previousRequest} response={response} reasoning={reasoning} t={t} />
         <div className="step-card-head">
           <span className="step-card-step">{step}</span>
           <span className="step-card-summary" title={summary}>{summary || t('agentPanel.badgeAction')}</span>

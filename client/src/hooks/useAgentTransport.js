@@ -4,6 +4,7 @@ import { showAgentNotification } from '../notifications.js';
 import { touchSession, upsertAgentRun } from './useChatSessions.js';
 import { useT } from '../i18n/I18nProvider.jsx';
 import { agentTraceEventKey, appendUniqueTraceEvent } from '../utils/agent-trace.js';
+import { buildRunConversationHistory } from '../utils/agent-conversation.js';
 import { buildAgentMetaFromSession } from '../utils/agent-stats.js';
 
 function uniqueModelIds(value) {
@@ -149,7 +150,8 @@ export function useAgentTransport({
         projectId: activeSession.projectId ?? null,
         sessionId,
         signal: controller.signal,
-        messages: isRetry ? [] : messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+        // 重跑必须沿用与首跑相同的历史口径：清空会让模型丢失 task 里指代词的所指。
+        messages: buildRunConversationHistory(messages, { isRetry, task: text }),
         ...extraBody,
         async onEvent(event) {
           console.log(`[AgentUI] event type=${event.type} step=${event.step ?? '-'} stage=${event.stage ?? '-'} model=${event.model || '-'}`);
