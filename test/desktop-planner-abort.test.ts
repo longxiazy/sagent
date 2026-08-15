@@ -245,3 +245,64 @@ describe('race strategy batch scheduling', () => {
     }
   });
 });
+
+describe('desktop planner failure tracing', () => {
+  it('keeps the sent prompt on the failed event when a single model times out', async () => {
+    const sentMessages = [{ role: 'system', content: '协议' }, { role: 'user', content: '{"task":"test"}' }];
+    const agentPlan = vi.fn(({ signal, onRequest }: { signal: AbortSignal; onRequest: (m: unknown[]) => void }) => {
+      onRequest(sentMessages);
+      return new Promise((_, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+    const events: any[] = [];
+    const planner = createDesktopPlanner({
+      registry: { resolve: () => ({ agentPlan }) },
+      modelConfig: [],
+      blacklistedModels: new Set(),
+      modelTimeoutMs: 10,
+    });
+
+    await expect(planner({
+      model: 'slow-model',
+      agentModels: ['slow-model'],
+      strategy: 'race',
+      cancelSignal: new AbortController().signal,
+      step: 1,
+      task: 'test',
+      history: [],
+      observation: {},
+      onEvent: (event: any) => events.push(event),
+    })).rejects.toThrow('模型超时');
+
+    // 超时步骤的 prompt 输入必须留痕，否则最需要复盘的步骤在 trace 里反而查不到请求原文。
+    const failed = events.find(event => event.type === 'model_plan' && event.stage === 'failed');
+    expect(failed?.requests).toEqual([sentMessages]);
+  });
+
+  it('omits requests when the model never got as far as sending one', async () => {
+    const events: any[] = [];
+    const planner = createDesktopPlanner({
+      registry: { resolve: () => ({ agentPlan: () => Promise.reject(new Error('provider down')) }) },
+      modelConfig: [],
+      blacklistedModels: new Set(),
+      modelTimeoutMs: 1_000,
+    });
+
+    await expect(planner({
+      model: 'broken-model',
+      agentModels: ['broken-model'],
+      strategy: 'race',
+      cancelSignal: new AbortController().signal,
+      step: 1,
+      task: 'test',
+      history: [],
+      observation: {},
+      onEvent: (event: any) => events.push(event),
+    })).rejects.toThrow('provider down');
+
+    const failed = events.find(event => event.type === 'model_plan' && event.stage === 'failed');
+    expect(failed).toBeTruthy();
+    expect(failed.requests).toBeUndefined();
+  });
+});

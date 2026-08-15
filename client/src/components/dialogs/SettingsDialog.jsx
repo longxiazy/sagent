@@ -3,6 +3,7 @@ import { Palette, SlidersHorizontal, KeyRound, Minus, Plus, Plug, ChevronDown, C
 import { fetchConfig, saveConfig, saveExecution, saveTools, resetConfig, applyConfigProfile, saveMcpServer, deleteMcpServer, testMcpServer } from '../../api/config.js';
 import { useTheme } from '../../theme/ThemeProvider.jsx';
 import { useI18n, useT } from '../../i18n/I18nProvider.jsx';
+import { multiModelTuningIdle } from '../../utils/agent-config-hints.js';
 import { DialogShell } from './DialogShell.jsx';
 
 // Agent 行为参数（可写，下一次任务生效）。单位与后端 schema 一致，换算放消费点。
@@ -73,7 +74,7 @@ const GROUPS = [
 // 设置面板：左导航分组 + 右内容。
 // 外观（主题/语言，前台即时生效）、Agent 参数（保存后下次任务生效）、
 // Worker 部署开关（保存后需重启）、记忆前端偏好和 API Key 只读展示。
-export function SettingsDialog({ onClose, activeProjectId = null, projects = [] }) {
+export function SettingsDialog({ onClose, activeProjectId = null, projects = [], selectedAgentModels = [] }) {
   const t = useT();
   const { theme, setTheme, fontSize, setFontSize } = useTheme();
   const { locale, setLocale } = useI18n();
@@ -574,6 +575,19 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [] 
               <p className="settings-profile-hint">
                 {profile === 'custom' ? t('settings.profileCustomHint') : t(`settings.profileHint.${profile}`)}
               </p>
+              {/* 只选了一个模型时，并发/错峰不参与执行——档位说明里承诺的"备用模型顶上"
+                  这时并不存在。参数本身合法，故沿用字段级 warning 的样式，不阻断保存。
+                  提示挂在档位下方而非 batchSize/staggerDelaySec 字段上：那两项折在高级区里，
+                  而这条恰恰是折叠起来就看不见的搭配问题。 */}
+              {multiModelTuningIdle({
+                modelCount: selectedAgentModels.length,
+                batchSize: agent.batchSize,
+                staggerDelaySec: agent.staggerDelaySec,
+              }) && (
+                <p className="settings-field-warning settings-profile-warning">
+                  {t('settings.singleModelTuningIdle')}
+                </p>
+              )}
               <div className="settings-grid">
                 {BASIC_AGENT_FIELDS.map(f => numberField(f.key, f.labelKey))}
                 <label className="settings-field settings-field-switch">

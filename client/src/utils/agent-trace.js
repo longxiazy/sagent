@@ -51,3 +51,25 @@ export function latestTerminalEvent(events) {
   }
   return null;
 }
+
+function attemptOf(event) {
+  const attempt = Number(event?.attempt);
+  return Number.isInteger(attempt) && attempt > 0 ? attempt : 1;
+}
+
+/**
+ * 「这个 run 已经结束了吗」——只认属于最新一次 attempt 的终止事件。
+ *
+ * latestTerminalEvent 单看是不够的：重跑到一半时，trace 里最后一个终止事件
+ * 还是上一次 attempt 的失败，拿它当结局会在任务正跑着的时候报失败、把运行态
+ * 清掉，连带清掉待审批/待提问，而后端仍在继续执行。
+ * 新 attempt 一开跑就会追加更高 attempt 的事件，故以本批事件的最大 attempt 为界。
+ * 老 trace 没有 attempt 字段时统一按 1 处理，行为与加守卫前一致。
+ */
+export function settledTerminalEvent(events) {
+  const terminal = latestTerminalEvent(events);
+  if (!terminal) return null;
+
+  const maxAttempt = events.reduce((max, event) => Math.max(max, attemptOf(event)), 1);
+  return attemptOf(terminal) < maxAttempt ? null : terminal;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentTraceEventKey, appendUniqueTraceEvent, latestTerminalEvent } from '../client/src/utils/agent-trace.js';
+import { agentTraceEventKey, appendUniqueTraceEvent, latestTerminalEvent, settledTerminalEvent } from '../client/src/utils/agent-trace.js';
 
 describe('agent trace event de-duplication', () => {
   it('uses the server sequence as the primary event identity', () => {
@@ -72,5 +72,46 @@ describe('terminal event selection across retry attempts', () => {
   it('returns null when the run has not finished', () => {
     expect(latestTerminalEvent([{ type: 'step', step: 1 }])).toBeNull();
     expect(latestTerminalEvent(null)).toBeNull();
+  });
+});
+
+// 切 tab 回来时的兜底只能用「已定局」的终止事件收尾。重跑跑到一半时 trace 里
+// 最后一个终止事件仍是上一次 attempt 的失败，据此收尾会在任务正跑着时误报失败、
+// 清掉运行态和待审批弹窗，而后端还在继续执行。
+describe('settled terminal event guards in-flight retries', () => {
+  it('ignores the previous attempt failure while a newer attempt is running', () => {
+    const events = [
+      { type: 'step', attempt: 1, step: 1, stage: 'result' },
+      { type: 'error', attempt: 1, error: '模型超时 (120s)' },
+      { type: 'run_meta', attempt: 2 },
+      { type: 'step', attempt: 2, step: 2, stage: 'observe' },
+    ];
+
+    expect(latestTerminalEvent(events)).toMatchObject({ type: 'error', attempt: 1 });
+    expect(settledTerminalEvent(events)).toBeNull();
+  });
+
+  it('accepts the terminal event once the newest attempt finishes', () => {
+    const events = [
+      { type: 'error', attempt: 1, error: '模型超时 (120s)' },
+      { type: 'run_meta', attempt: 2 },
+      { type: 'done', attempt: 2, answer: '完成' },
+    ];
+
+    expect(settledTerminalEvent(events)).toMatchObject({ type: 'done', answer: '完成' });
+  });
+
+  it('treats traces without attempt fields as a single attempt', () => {
+    const events = [
+      { type: 'step', step: 1, stage: 'result' },
+      { type: 'done', answer: '完成' },
+    ];
+
+    expect(settledTerminalEvent(events)).toMatchObject({ type: 'done', answer: '完成' });
+  });
+
+  it('returns null when nothing has finished yet', () => {
+    expect(settledTerminalEvent([{ type: 'step', step: 1 }])).toBeNull();
+    expect(settledTerminalEvent(null)).toBeNull();
   });
 });

@@ -124,6 +124,7 @@ export const en = {
   'settings.profileHint.economy': 'One model at a time: the primary gets a long exclusive window, the next only steps in if it fails. Cheapest, but slowest.',
   'settings.profileHint.deep': 'More steps and a larger context window, for tasks that need many rounds. Takes the longest.',
   'settings.profileHint.besteffort': 'Optimized for finishing: generous step and timeout budgets, with backup models taking over on failure or a slow primary.',
+  'settings.singleModelTuningIdle': 'Only 1 model is selected, so batch size and stagger delay never come into play: there is no backup to take over, a single model timeout fails the whole task, and a manual rollback is the only way forward. Select a second model to enable failover.',
   'settings.warning.historyExceedsSteps': 'History window ({maxHistorySteps}) exceeds max steps ({maxSteps}); the extra capacity has no effect — history can never hold more than {maxSteps} entries.',
   'settings.resultCharsNote': 'Applies to the last 3 steps only. Steps 4-10 are capped at 2500 characters, earlier ones at 1000, and anything past the history window is compressed to a 200-character summary.',
   'settings.advanced': 'Advanced settings',

@@ -114,6 +114,15 @@ function getMessageText(content) {
     .join('\n');
 }
 
+/**
+ * 解析失败兜底原文：走 native tool-call 路径时 content 往往是空串，
+ * 坏掉的 arguments 才是模型唯一的原文，必须留给错误信息和解析失败语料。
+ */
+function getToolCallRawText(message) {
+  const args = message?.tool_calls?.[0]?.function?.arguments;
+  return typeof args === 'string' ? args : '';
+}
+
 // ── MiniMax Tool Call Block Parsing ──
 
 function parseToolCallBlock(raw) {
@@ -167,12 +176,18 @@ function tryToolCalls(message) {
   const toolCalls = message?.tool_calls || [];
   if (toolCalls.length === 0) return null;
 
-  const toolCall = toolCalls[0];
-  let input = toolCall.function.arguments;
+  const fn = toolCalls[0]?.function;
+  if (!fn?.name) return null;
+
+  let input = fn.arguments;
   if (typeof input === 'string') {
-    input = JSON.parse(input);
+    // 模型会在 arguments 里吐坏 JSON（典型：shell 命令内的双引号没转义）。
+    // 必须吞掉 SyntaxError 让策略链继续往下走，否则异常会穿透 parseResponse，
+    // 用户只看到裸的 SyntaxError，原文也进不了解析失败语料。
+    input = tryParseJsonObject(input);
+    if (!input) return null;
   }
-  return { action: { type: toolCall.function.name, ...input } };
+  return { action: { type: fn.name, ...input } };
 }
 
 function tryToolCallBlocks(_message, content) {
@@ -353,6 +368,6 @@ export function createModelResponseParser(model) {
       }
     }
 
-    return { parseFailed: true, rawContent: content, usage, reasoning };
+    return { parseFailed: true, rawContent: content || getToolCallRawText(message), usage, reasoning };
   };
 }

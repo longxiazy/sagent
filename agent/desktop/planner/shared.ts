@@ -33,6 +33,23 @@ export function isTimeoutError(err: any) {
   return String(err?.message || '').includes('模型超时');
 }
 
+// 失败路径上传递请求原文的通道。挂在错误对象上而不改抛出类型，
+// 是为了不影响任何按 message/status 判定错误种类的既有逻辑。
+const ERROR_REQUESTS_KEY = '__agentPlanRequests';
+
+/** 记下这次模型调用已经发出的消息体，供后续 failed 事件还原当时的 prompt 输入。 */
+export function attachRequestsToError(err: any, requests: unknown[][]) {
+  if (!err || typeof err !== 'object' || requests.length === 0) return;
+  // 同一个错误对象会被多层 catch 依次传递，先到先得，不覆盖更贴近发起点的那份记录。
+  if (err[ERROR_REQUESTS_KEY] === undefined) err[ERROR_REQUESTS_KEY] = requests;
+}
+
+/** 取出失败调用发出过的消息体；没有则返回 undefined，事件里就不带 requests 字段。 */
+export function requestsFromError(err: any): unknown[][] | undefined {
+  const requests = err?.[ERROR_REQUESTS_KEY];
+  return Array.isArray(requests) && requests.length > 0 ? requests : undefined;
+}
+
 /** setTimeout 的可取消版本：用户取消时立即 reject，不必空等退避结束。 */
 export function sleepWithCancel(ms: number, cancelSignal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -83,6 +100,7 @@ export function handleModelFailure(
     model,
     step,
     error: String(err?.message || err).slice(0, 120),
+    requests: requestsFromError(err),
   });
 }
 

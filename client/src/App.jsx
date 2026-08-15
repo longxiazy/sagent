@@ -49,7 +49,7 @@ import {
 import { formatMsgTime } from './utils/format.js';
 import { shuffled } from './utils/random.js';
 import { hasThinkContent } from './utils/markdown.js';
-import { appendUniqueTraceEvent, latestTerminalEvent } from './utils/agent-trace.js';
+import { appendUniqueTraceEvent, settledTerminalEvent } from './utils/agent-trace.js';
 import { buildActualContextEstimate } from './utils/context-usage.js';
 import { buildAgentMetaFromSession } from './utils/agent-stats.js';
 
@@ -595,10 +595,11 @@ export default function App() {
           }
         }
         setAgentRunning(false);
-      } catch (err) {
-        if (err.name === 'AbortError') {
-          setAgentRunning(false);
-        }
+      } catch {
+        // 无论是主动 abort 还是读流中途失败（网络抖动、服务端重启）都要落回非运行态。
+        // 这个 effect 只在 sessionsLoading 变化时跑一次，不会重订阅：漏清一次
+        // 运行态就永久卡在“运行中”，输入框一直锁着，只能再刷新一次页面。
+        setAgentRunning(false);
       }
     })();
 
@@ -629,9 +630,11 @@ export default function App() {
       }
       if (cancelled || !Array.isArray(events) || events.length === 0) return;
 
-      // 重试会把多个 attempt 的 done/error 都留在同一条 trace 里，取首个会读到
-      // 早已被重跑覆盖的旧结果——成功的 run 因此被记成失败。
-      const terminal = latestTerminalEvent(events);
+      // 重试会把多个 attempt 的 done/error 都留在同一条 trace 里。取首个会读到
+      // 早已被重跑覆盖的旧结果；只取最后一个也不够——重跑跑到一半时，最后一个
+      // 终止事件仍是上一次 attempt 的失败，据此收尾会在任务正跑着时误报失败。
+      // 故只认属于最新 attempt 的终止事件，与重连回放的 isReplayedTerminal 同口径。
+      const terminal = settledTerminalEvent(events);
       if (!terminal) return;
 
       setAgentTrace(prev => appendUniqueTraceEvent(prev, terminal));
@@ -1248,7 +1251,7 @@ export default function App() {
       />
 
       {showReset && <ResetDialog onConfirm={handleReset} onCancel={() => setShowReset(false)} />}
-      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} activeProjectId={activeProjectId} projects={projects} />}
+      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} activeProjectId={activeProjectId} projects={projects} selectedAgentModels={selectedAgentModels} />}
       {showPromptPreview && visibleContextEstimate?.promptPreview?.text && (
         <PromptPreviewDialog
           estimate={visibleContextEstimate}

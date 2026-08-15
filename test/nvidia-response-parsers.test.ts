@@ -15,6 +15,63 @@ function wrapWithReasoning(content: string, reasoningContent: string) {
   };
 }
 
+function wrapToolCall(name: string, args: unknown, content = '') {
+  return {
+    choices: [{ message: { content, tool_calls: [{ function: { name, arguments: args } }] } }],
+    usage: null,
+  };
+}
+
+describe('nvidia response parsers: tryToolCalls guard', () => {
+  it('falls through to parseFailed instead of throwing on malformed tool_call arguments', () => {
+    const parse = createModelResponseParser('qwen/qwen3.5-397b-a17b');
+    // 模型把 shell 命令里的双引号原样吐出来，arguments 不是合法 JSON。
+    const raw = '{"command":"echo "---""}';
+
+    const result = parse(wrapToolCall('run_safe', raw));
+
+    expect(result.parseFailed).toBe(true);
+    // 原文必须留下来：错误信息和解析失败语料都靠它。
+    expect(result.rawContent).toBe(raw);
+  });
+
+  it('keeps content as raw output when the message also carries text', () => {
+    const parse = createModelResponseParser('qwen/qwen3.5-397b-a17b');
+    const result = parse(wrapToolCall('run_safe', '{"command":"echo "', '短文本'));
+
+    expect(result.parseFailed).toBe(true);
+    expect(result.rawContent).toBe('短文本');
+  });
+
+  it('lets a valid JSON action in content win when tool_call arguments are broken', () => {
+    const parse = createModelResponseParser('qwen/qwen3.5-397b-a17b');
+    const content = JSON.stringify({ rationale: '收尾', action: { type: 'finish', answer: '完成' } });
+
+    const result = parse(wrapToolCall('run_safe', '{"command":"echo "', content));
+
+    expect(result.parseFailed).toBeUndefined();
+    expect(result.action?.type).toBe('finish');
+  });
+
+  it('still parses well-formed tool_call arguments', () => {
+    const parse = createModelResponseParser('qwen/qwen3.5-397b-a17b');
+    const result = parse(wrapToolCall('finish', JSON.stringify({ answer: 'ok' })));
+
+    expect(result.action?.type).toBe('finish');
+    expect(result.action?.answer).toBe('ok');
+  });
+
+  it('skips tool_calls without a function name', () => {
+    const parse = createModelResponseParser('qwen/qwen3.5-397b-a17b');
+    const result = parse({
+      choices: [{ message: { content: '', tool_calls: [{ function: { arguments: '{}' } }] } }],
+      usage: null,
+    });
+
+    expect(result.parseFailed).toBe(true);
+  });
+});
+
 describe('nvidia response parsers: tryTextFinish guard', () => {
   it('rejects broken-JSON action wrapped in ```json fences instead of treating it as finish', () => {
     const parse = createModelResponseParser('z-ai/glm-5.1');
