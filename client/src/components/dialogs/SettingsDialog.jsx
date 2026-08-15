@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Palette, SlidersHorizontal, KeyRound, Minus, Plus, Plug, ChevronDown, ChevronRight, Trash2, Boxes } from 'lucide-react';
+import { Palette, SlidersHorizontal, KeyRound, Minus, Plus, Plug, ChevronDown, ChevronRight, Trash2, Boxes, X } from 'lucide-react';
 import { fetchConfig, saveConfig, saveExecution, saveTools, resetConfig, applyConfigProfile, saveMcpServer, deleteMcpServer, testMcpServer } from '../../api/config.js';
 import { useTheme } from '../../theme/ThemeProvider.jsx';
 import { useI18n, useT } from '../../i18n/I18nProvider.jsx';
 import { multiModelTuningIdle } from '../../utils/agent-config-hints.js';
 import { modelSupportsImageInput } from '../../utils/model-vision.js';
+import { SingleModelSelector } from '../ModelSelector.jsx';
 import { DialogShell } from './DialogShell.jsx';
 
 // Agent 行为参数（可写，下一次任务生效）。单位与后端 schema 一致，换算放消费点。
@@ -436,6 +437,39 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
     return layers.map((layer, index) => ({ ...layer, active: index === activeIndex }));
   };
 
+  // 工具模型沿用对话里的模型选择器（搜索/过滤/模型百科都能直接复用），
+  // 另配一个清除按钮：留空是有意义的状态——回落到下一层优先级。
+  const renderToolModelField = (tool, labelKey) => {
+    const current = tools[tool]?.model || '';
+    return (
+      <div className="settings-field">
+        <span>{t(labelKey)}</span>
+        <div className="settings-tool-model">
+          <SingleModelSelector
+            availableModels={availableModels}
+            value={current}
+            onChange={value => setToolModel(tool, value)}
+            disabled={saving}
+            placeholder={t('settings.toolModelPlaceholder')}
+            dialogTitle={t(labelKey)}
+          />
+          {!!current && (
+            <button
+              type="button"
+              className="settings-tool-model-clear"
+              onClick={() => setToolModel(tool, '')}
+              disabled={saving}
+              title={t('settings.toolModelClear')}
+              aria-label={t('settings.toolModelClear')}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderToolPriority = tool => (
     <div className="settings-priority" key={tool}>
       <div className="settings-priority-title">
@@ -753,27 +787,8 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
                   ))}
                 </select>
               </label>
-              <label className="settings-field">
-                <span>{t('settings.visionModel')}</span>
-                <input
-                  list="tool-model-suggestions"
-                  value={tools.vision?.model || ''}
-                  placeholder={t('settings.toolModelPlaceholder')}
-                  onChange={e => setToolModel('vision', e.target.value)}
-                />
-              </label>
-              <label className="settings-field">
-                <span>{t('settings.distillModel')}</span>
-                <input
-                  list="tool-model-suggestions"
-                  value={tools.distill?.model || ''}
-                  placeholder={t('settings.toolModelPlaceholder')}
-                  onChange={e => setToolModel('distill', e.target.value)}
-                />
-              </label>
-              <datalist id="tool-model-suggestions">
-                <option value="nvidia/ising-calibration-1-35b-a3b" />
-              </datalist>
+              {renderToolModelField('vision', 'settings.visionModel')}
+              {renderToolModelField('distill', 'settings.distillModel')}
               {renderToolPriority('vision')}
               {renderToolPriority('distill')}
             </div>

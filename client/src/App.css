@@ -5999,6 +5999,24 @@ textarea:disabled {
 .settings-advanced-toggle { display: inline-flex; align-items: center; gap: 5px; margin-top: 14px; padding: 5px 0; border: 0; background: transparent; color: var(--c-text-secondary); cursor: pointer; font-size: var(--f-sm); }
 .settings-advanced-toggle:hover { color: var(--c-text); }
 .settings-advanced-grid { margin-top: 10px; }
+/* 工具模型字段：复用对话的模型选择器 + 一个清除按钮（留空 = 回落到下一层优先级）。 */
+.settings-tool-model { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.settings-tool-model-clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-inline);
+  color: var(--c-text-muted);
+  cursor: pointer;
+}
+.settings-tool-model-clear:hover:not(:disabled) { color: var(--c-text); border-color: var(--c-border-strong, var(--c-border)); }
+.settings-tool-model-clear:disabled { opacity: 0.5; cursor: not-allowed; }
 /* 工具模型的取值优先级面板：把运行时的解析顺序原样列出来，并标出当前生效的那一层。
    横跨整栏，避免层级文案被两列网格挤成断行。 */
 .settings-priority {

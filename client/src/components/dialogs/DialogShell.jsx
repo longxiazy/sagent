@@ -3,6 +3,10 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useT } from '../../i18n/I18nProvider.jsx';
 
+// 已挂载的弹框栈。Escape 监听挂在 window 上，嵌套弹框（如设置里再开模型选择器）
+// 会让每一层都收到同一次按键，一下关掉整摞；这里只让最上层响应。
+const dialogStack = [];
+
 export function DialogShell({
   title,
   subtitle,
@@ -34,11 +38,19 @@ export function DialogShell({
     document.body.style.overflow = 'hidden';
     closeRef.current?.focus();
 
+    const token = {};
+    dialogStack.push(token);
+
     const onKeyDown = event => {
-      if (event.key === 'Escape' && !closeDisabledRef.current && !escapeDisabledRef.current) onCloseRef.current?.();
+      if (event.key !== 'Escape') return;
+      if (dialogStack[dialogStack.length - 1] !== token) return;
+      if (closeDisabledRef.current || escapeDisabledRef.current) return;
+      onCloseRef.current?.();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {
+      const index = dialogStack.indexOf(token);
+      if (index >= 0) dialogStack.splice(index, 1);
       window.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus?.();
