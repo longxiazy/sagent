@@ -52,14 +52,6 @@ app.use(cors(createCorsOptions(securityConfig)));
 app.use(createApiAuth(securityConfig));
 app.use(express.json({ limit: '25mb' }));
 
-const { openai_client, gemini_client } = createClients();
-const registry = createProviderRegistry({ openai_client, gemini_client });
-// 启动时同步拉取模型列表；全部供应商失败则中止启动并打印原因，不再兜底默认模型。
-const modelConfig = await registry.loadModelConfig().catch((err: any) => {
-  log.error(`[启动失败] ${err.message}`);
-  process.exit(1);
-});
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST_DIR = path.resolve(__dirname, 'client/dist');
 const MEMORY_DIR = path.resolve(__dirname, process.env.MEMORY_DIR || 'data');
@@ -71,10 +63,19 @@ const CHECKPOINT_DIR = GLOBAL_SCOPE_DIR;
 initLlmLogger(MEMORY_DIR);
 initWebViewDataStore(MEMORY_DIR);
 // 配置仓库：读取版本化 data/config.json，并兼容迁移旧 runtime-config.json。
-// 必须在 createDesktopAgentRunner 之前 init，且供 runtime.ts/memory.ts 热读取。
+// 必须在 loadModelConfig() 之前 init——provider 列模型时要读 models 段来判定
+// agentCompatible；也必须在 createDesktopAgentRunner 之前，且供 runtime.ts/memory.ts 热读取。
 await configStore.init(MEMORY_DIR);
 warnLegacyConfiguration(configStore);
 const executionConfig = configStore.execution();
+
+const { openai_client, gemini_client } = createClients();
+const registry = createProviderRegistry({ openai_client, gemini_client });
+// 启动时同步拉取模型列表；全部供应商失败则中止启动并打印原因，不再兜底默认模型。
+const modelConfig = await registry.loadModelConfig().catch((err: any) => {
+  log.error(`[启动失败] ${err.message}`);
+  process.exit(1);
+});
 
 // 项目注册表：每个项目隔离记忆/trace/checkpoint/uploads 与文件工具根。
 // 注册表为空时为「无项目」全局态，数据落在 GLOBAL_SCOPE_DIR。

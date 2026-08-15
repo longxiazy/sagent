@@ -10,7 +10,8 @@ vi.mock('../agent/core/ai-client.js', () => ({
   createClients: () => ({ openai_client: null, gemini_client: null }),
   loadAgentMultiModels: () => [],
   deriveProviderName: () => 'test',
-  isChatCapableModel: () => true,
+  matchesNonAgentKeyword: () => false,
+  resolveAgentCompatible: () => undefined,
 }));
 
 vi.mock('../agent/desktop/agent.js', () => ({

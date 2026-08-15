@@ -6052,6 +6052,113 @@ textarea:disabled {
   font-weight: 600;
 }
 .settings-priority-note { margin: 8px 0 0; font-size: var(--f-xs); line-height: 1.5; color: var(--c-text-muted); }
+
+/* 模型准入策略：关键词表 + 逐模型覆盖。沿用 settings-priority 的卡片外观。 */
+.settings-policy {
+  grid-column: 1 / -1;
+  padding: 12px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-inline);
+}
+.settings-policy-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: var(--f-xs);
+  font-weight: 600;
+  color: var(--c-text-secondary);
+}
+.settings-policy-hint { margin: 6px 0 0; font-size: var(--f-xs); line-height: 1.5; color: var(--c-text-muted); }
+.settings-policy-reset {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--c-text-muted);
+  font-size: var(--f-micro);
+  cursor: pointer;
+}
+.settings-policy-reset:hover:not(:disabled) { color: var(--c-text); border-color: var(--c-text-muted); }
+.settings-policy-reset:disabled { opacity: 0.5; cursor: not-allowed; }
+.settings-policy-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+  font-size: var(--f-xs);
+  color: var(--c-text-muted);
+  cursor: pointer;
+}
+.settings-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.settings-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 999px;
+  background: var(--c-primary-bg);
+  color: var(--c-primary);
+  font-family: var(--font-mono, 'SF Mono', Menlo, monospace);
+  font-size: var(--f-micro);
+}
+.settings-chip button {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 2px;
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.settings-chip button:hover:not(:disabled) { opacity: 1; }
+.settings-chip button:disabled { opacity: 0.4; cursor: not-allowed; }
+.settings-chip-add { display: flex; gap: 8px; margin-top: 10px; }
+.settings-chip-add input { flex: 1 1 auto; min-width: 0; }
+.settings-policy-search { width: 100%; margin-top: 10px; }
+.settings-policy-list {
+  margin-top: 8px;
+  /* 模型多时不撑爆弹框，内部滚动。 */
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-policy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 6px;
+  border-radius: var(--r-xs, 4px);
+}
+.settings-policy-row:hover { background: var(--c-surface-hover, rgba(127, 127, 127, 0.08)); }
+.settings-policy-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  cursor: pointer;
+}
+.settings-policy-row-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--f-xs);
+  color: var(--c-text);
+}
+.settings-policy-row-label code {
+  font-family: var(--font-mono, 'SF Mono', Menlo, monospace);
+  font-size: var(--f-micro);
+  color: var(--c-text-muted);
+  word-break: break-all;
+}
 .settings-mcp-list { display: flex; flex-direction: column; gap: 14px; }
 .settings-mcp-card { padding: 14px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface-inline); }
 .settings-mcp-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Palette, SlidersHorizontal, KeyRound, Minus, Plus, Plug, ChevronDown, ChevronRight, Trash2, Boxes, X } from 'lucide-react';
-import { fetchConfig, saveConfig, saveExecution, saveTools, resetConfig, applyConfigProfile, saveMcpServer, deleteMcpServer, testMcpServer } from '../../api/config.js';
+import { fetchConfig, saveConfig, saveExecution, saveTools, saveModelPolicy, resetConfig, applyConfigProfile, saveMcpServer, deleteMcpServer, testMcpServer } from '../../api/config.js';
 import { useTheme } from '../../theme/ThemeProvider.jsx';
 import { useI18n, useT } from '../../i18n/I18nProvider.jsx';
 import { multiModelTuningIdle } from '../../utils/agent-config-hints.js';
@@ -76,7 +76,7 @@ const GROUPS = [
 // 设置面板：左导航分组 + 右内容。
 // 外观（主题/语言，前台即时生效）、Agent 参数（保存后下次任务生效）、
 // Worker 部署开关（保存后需重启）、记忆前端偏好和 API Key 只读展示。
-export function SettingsDialog({ onClose, activeProjectId = null, projects = [], selectedAgentModels = [], availableModels = [] }) {
+export function SettingsDialog({ onClose, activeProjectId = null, projects = [], selectedAgentModels = [], availableModels = [], onModelPolicyChange = null }) {
   const t = useT();
   const { theme, setTheme, fontSize, setFontSize } = useTheme();
   const { locale, setLocale } = useI18n();
@@ -98,6 +98,14 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
   // 取值搭配失效的提示（如历史窗口大于总步数）。后端按生效值判定，不阻断保存。
   const [warnings, setWarnings] = useState([]);
   const [mcpServers, setMcpServers] = useState(DEFAULT_MCP_SERVERS);
+  // 模型准入策略：全局配置，与 tools 的项目作用域无关，因此单独跟踪 dirty，
+  // 免得用户在项目作用域下存 tools 时顺带覆写了全局策略。
+  const [modelPolicy, setModelPolicy] = useState({ nonAgentKeywords: [], agentCompatible: {} });
+  const [modelDefaults, setModelDefaults] = useState({ nonAgentKeywords: [] });
+  const [modelPolicyDirty, setModelPolicyDirty] = useState(false);
+  const [keywordDraft, setKeywordDraft] = useState('');
+  const [modelFilter, setModelFilter] = useState('');
+  const [showAllModels, setShowAllModels] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [mcpStatus, setMcpStatus] = useState({});
   const [newMcpName, setNewMcpName] = useState('');
@@ -127,6 +135,18 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
     if (data.execution) setExecution({ ...DEFAULT_EXECUTION, ...data.execution });
     if (data.executionSources) setExecutionSources(data.executionSources);
     if (data.schema) setSchema(data.schema);
+    if (data.models) {
+      setModelPolicy({
+        nonAgentKeywords: Array.isArray(data.models.nonAgentKeywords) ? data.models.nonAgentKeywords : [],
+        agentCompatible: data.models.agentCompatible || {},
+      });
+      setModelPolicyDirty(false);
+    }
+    if (data.modelDefaults) {
+      setModelDefaults({
+        nonAgentKeywords: Array.isArray(data.modelDefaults.nonAgentKeywords) ? data.modelDefaults.nonAgentKeywords : [],
+      });
+    }
     if (data.profile) setProfile(data.profile);
     if (data.profiles) setProfiles(data.profiles);
     // 需无条件同步：警告消除时后端返回空数组，用 if 判断会让旧提示残留。
@@ -181,6 +201,12 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
     }
   };
 
+  // 关键词表是否偏离内置默认。决定「恢复默认」按钮是否出现，也决定保存时
+  // 要不要真把这份列表写进 config.json（见 handleSaveTools 的注释）。
+  const keywordsOverridden = () => (
+    JSON.stringify(modelPolicy.nonAgentKeywords) !== JSON.stringify(modelDefaults.nonAgentKeywords)
+  );
+
   const handleSaveTools = async () => {
     setSaving(true);
     setError('');
@@ -188,12 +214,60 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
       const data = await saveTools(tools, toolsScope || undefined);
       if (data.tools) setTools({ vision: data.tools.vision || {}, distill: data.tools.distill || {} });
       if (data.globalTools) setGlobalTools({ vision: data.globalTools.vision || {}, distill: data.globalTools.distill || {} });
+      // 准入策略是全局的，只在真改过时才写，避免项目作用域下保存 tools 顺带覆写全局。
+      if (modelPolicyDirty) {
+        const saved = await saveModelPolicy({
+          // 关键词表与内置默认一致时传 null（= 不存这一项），而不是把默认值原样写进
+          // config.json。否则用户只改了个模型开关，也会把当前默认表固化成显式覆盖，
+          // 以后升级内置表就再也到不了这个用户。
+          nonAgentKeywords: keywordsOverridden() ? modelPolicy.nonAgentKeywords : null,
+          agentCompatible: modelPolicy.agentCompatible,
+        });
+        if (saved.models) {
+          setModelPolicy({
+            nonAgentKeywords: saved.models.nonAgentKeywords || [],
+            agentCompatible: saved.models.agentCompatible || {},
+          });
+        }
+        setModelPolicyDirty(false);
+        // 后端已就地重算标记，但 App 手里的 availableModels 是挂载时拉的，得让它重拉。
+        onModelPolicyChange?.();
+      }
       setSaved(true);
     } catch (e) {
       setError(e.message);
     } finally {
       setSaving(false);
     }
+  };
+
+  const updateModelPolicy = patch => {
+    setModelPolicy(prev => ({ ...prev, ...patch }));
+    setModelPolicyDirty(true);
+    setSaved(false);
+  };
+
+  const addKeyword = () => {
+    const keyword = keywordDraft.trim().toLowerCase();
+    if (!keyword || modelPolicy.nonAgentKeywords.includes(keyword)) return;
+    updateModelPolicy({ nonAgentKeywords: [...modelPolicy.nonAgentKeywords, keyword] });
+    setKeywordDraft('');
+  };
+
+  const removeKeyword = keyword => {
+    updateModelPolicy({ nonAgentKeywords: modelPolicy.nonAgentKeywords.filter(item => item !== keyword) });
+  };
+
+  const resetKeywords = () => {
+    updateModelPolicy({ nonAgentKeywords: [...modelDefaults.nonAgentKeywords] });
+  };
+
+  // 三态：显式覆盖 true/false，或没有覆盖（跟随关键词表与供应商目录）。
+  const setModelOverride = (modelId, value) => {
+    const next = { ...modelPolicy.agentCompatible };
+    if (value === null) delete next[modelId];
+    else next[modelId] = value;
+    updateModelPolicy({ agentCompatible: next });
   };
 
   const numberFieldLimit = key => {
@@ -467,6 +541,119 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
           )}
         </div>
       </div>
+    );
+  };
+
+  // 模型准入策略面板。判定逻辑与后端 resolveAgentCompatible 一致：
+  // 显式覆盖 > 关键词表。供应商目录那一层前端拿不到，但它已经体现在
+  // model.agentCompatible 里，所以未被覆盖的模型直接读该字段即可。
+  const renderModelPolicy = () => {
+    const overrides = modelPolicy.agentCompatible || {};
+    const keywordsChanged = keywordsOverridden();
+    const filter = modelFilter.trim().toLowerCase();
+
+    const rows = availableModels
+      .map(model => {
+        const overridden = Object.prototype.hasOwnProperty.call(overrides, model.id);
+        return {
+          model,
+          overridden,
+          // 后端已算好当前生效值；未覆盖时它就是关键词表 + 目录的结论。
+          allowed: overridden ? overrides[model.id] : model.agentCompatible !== false,
+        };
+      })
+      .filter(row => (showAllModels || !row.allowed || row.overridden))
+      .filter(row => !filter
+        || row.model.id.toLowerCase().includes(filter)
+        || String(row.model.label || '').toLowerCase().includes(filter));
+
+    return (
+      <>
+        <div className="settings-policy">
+          <div className="settings-policy-head">
+            <span>{t('settings.nonAgentKeywords')}</span>
+            {keywordsChanged && (
+              <button type="button" className="settings-policy-reset" onClick={resetKeywords} disabled={saving}>
+                {t('settings.keywordsReset')}
+              </button>
+            )}
+          </div>
+          <p className="settings-policy-hint">{t('settings.nonAgentKeywordsHint')}</p>
+          <div className="settings-chips">
+            {modelPolicy.nonAgentKeywords.map(keyword => (
+              <span key={keyword} className="settings-chip">
+                {keyword}
+                <button type="button" onClick={() => removeKeyword(keyword)} disabled={saving} aria-label={t('settings.keywordRemove')}>
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+            {modelPolicy.nonAgentKeywords.length === 0 && (
+              <span className="settings-policy-hint">{t('settings.keywordsEmpty')}</span>
+            )}
+          </div>
+          <div className="settings-chip-add">
+            <input
+              value={keywordDraft}
+              onChange={e => setKeywordDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addKeyword(); } }}
+              placeholder={t('settings.keywordPlaceholder')}
+              disabled={saving}
+            />
+            <button type="button" className="dialog-btn" onClick={addKeyword} disabled={saving || !keywordDraft.trim()}>
+              {t('settings.keywordAdd')}
+            </button>
+          </div>
+        </div>
+
+        <div className="settings-policy">
+          <div className="settings-policy-head">
+            <span>{t('settings.modelOverrides')}</span>
+            <label className="settings-policy-toggle">
+              <input type="checkbox" checked={showAllModels} onChange={e => setShowAllModels(e.target.checked)} />
+              {t('settings.showAllModels')}
+            </label>
+          </div>
+          <p className="settings-policy-hint">{t('settings.modelOverridesHint')}</p>
+          <input
+            className="settings-policy-search"
+            value={modelFilter}
+            onChange={e => setModelFilter(e.target.value)}
+            placeholder={t('settings.modelSearchPlaceholder')}
+            disabled={saving}
+          />
+          <div className="settings-policy-list">
+            {rows.length === 0 && <p className="settings-policy-hint">{t('settings.modelOverridesEmpty')}</p>}
+            {rows.map(({ model, overridden, allowed }) => (
+              <div key={model.id} className="settings-policy-row">
+                <label className="settings-policy-row-main">
+                  <input
+                    type="checkbox"
+                    checked={allowed}
+                    onChange={e => setModelOverride(model.id, e.target.checked)}
+                    disabled={saving}
+                  />
+                  <span className="settings-policy-row-label">
+                    {model.label || model.id}
+                    <code>{model.id}</code>
+                  </span>
+                </label>
+                {overridden && (
+                  <button
+                    type="button"
+                    className="settings-policy-reset"
+                    onClick={() => setModelOverride(model.id, null)}
+                    disabled={saving}
+                    title={t('settings.overrideClearHint')}
+                  >
+                    {t('settings.overrideClear')}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
     );
   };
 
@@ -791,6 +978,7 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
               {renderToolModelField('distill', 'settings.distillModel')}
               {renderToolPriority('vision')}
               {renderToolPriority('distill')}
+              {renderModelPolicy()}
             </div>
           )}
         </div>

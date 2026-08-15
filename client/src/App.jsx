@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Menu, Settings, ShieldCheck, Brain } from 'lucide-react';
 import './App.css';
 import { fetchAgentTrace, parseSseFrame } from './api/streams.js';
@@ -276,6 +276,17 @@ export default function App() {
         setModelsLoaded(true);
       });
   }, [setChatState]);
+
+  // 设置页改完模型准入策略后重拉一次：后端只重算了自己内存里的标记，
+  // 这份列表是挂载时取的，不重拉的话 Agent 选择器要等刷新才更新。
+  const refreshAvailableModels = useCallback(() => {
+    apiFetch('/api/models')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data.models) && data.models.length > 0) setAvailableModels(data.models);
+      })
+      .catch(() => {});
+  }, []);
 
   const sessionLocked = agentRunning;
 
@@ -1251,7 +1262,7 @@ export default function App() {
       />
 
       {showReset && <ResetDialog onConfirm={handleReset} onCancel={() => setShowReset(false)} />}
-      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} activeProjectId={activeProjectId} projects={projects} selectedAgentModels={selectedAgentModels} availableModels={availableModels} />}
+      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} activeProjectId={activeProjectId} projects={projects} selectedAgentModels={selectedAgentModels} availableModels={availableModels} onModelPolicyChange={refreshAvailableModels} />}
       {showPromptPreview && visibleContextEstimate?.promptPreview?.text && (
         <PromptPreviewDialog
           estimate={visibleContextEstimate}

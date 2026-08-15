@@ -3,7 +3,7 @@
  *
  * 职责 / Responsibilities:
  *   1. createClients() — 按 .env 构造 OpenAI(NVIDIA) / Gemini 两套 SDK 客户端
- *   2. deriveProviderName() / isChatCapableModel() — 供各 provider 复用的纯工具函数
+ *   2. deriveProviderName() / resolveAgentCompatible() — 供各 provider 复用的纯工具函数
  *
  * 注意：各供应商的 API 差异（决策、chat、列模型、摘要）已封装到 agent/core/providers/*，
  * 由 createProviderRegistry() 装配。本文件不再包含任何 isClaudeModel 式的二选一逻辑。
@@ -14,17 +14,46 @@ import { GoogleGenAI } from '@google/genai';
 
 export { createModelTools } from './tool-definitions.ts';
 
-// 过滤掉不适合做 agent 决策的模型：向量/重排、视觉/OCR、纯代码补全、内容安全护栏等。
-// 这类模型在供应商接口里和对话模型混在一起，全塞进前端下拉会很难选。
-const NON_CHAT_MODEL_RE =
-  /embed|rerank|retriever|bge-|arctic-embed|nvclip|fuyu|deplot|vila|neva|kosmos|ocr|paddle|-vision|vision-|-vl-|codegemma|starcoder|codellama|-coder|coder-|guard|safety|topic-control/i;
+/** 模型 id 是否命中「不适合做 Agent 决策」关键词（子串匹配，大小写不敏感）。 */
+export function matchesNonAgentKeyword(id: string, keywords: string[] = []) {
+  const target = String(id || '').toLowerCase();
+  if (!target) return false;
+  return keywords.some(keyword => {
+    const needle = String(keyword || '').trim().toLowerCase();
+    return !!needle && target.includes(needle);
+  });
+}
 
 /**
- * 模型 id 是否适合做 agent 决策；命中上面的噪声特征返回 false。
- * 当前使用：providers/gemini.ts 与 providers/openai-compat.ts 拉取模型列表时的过滤。
+ * 判定模型能否用于 Agent 决策，优先级从高到低：
+ *   1. config.json 的 models.agentCompatible[id] —— 用户显式表态，优先级最高
+ *   2. 供应商目录元数据（nvidia-overrides.json 等）里的 agentCompatible
+ *   3. config.json 的 models.nonAgentKeywords 关键词表（命中即 false）
+ *
+ * 返回 undefined 表示三条规则都没表态，调用方不写该字段，前端按可用处理。
+ * 注意：这里只负责「打标记」，不负责「丢弃」——命中的模型仍会出现在
+ * /api/models 全量列表里，只是 Agent 模型选择器会隐藏它们。
+ *
+ * 当前使用：providers/gemini.ts 与 providers/openai-compat.ts 的 listModels()。
  */
-export function isChatCapableModel(id: string) {
-  return !NON_CHAT_MODEL_RE.test(id);
+export function resolveAgentCompatible(
+  id: string,
+  {
+    keywords = [],
+    overrides = {},
+    catalogValue,
+  }: {
+    keywords?: string[];
+    overrides?: Record<string, boolean>;
+    catalogValue?: boolean;
+  } = {},
+): boolean | undefined {
+  const key = String(id || '').trim().toLowerCase();
+  for (const [overrideId, flag] of Object.entries(overrides)) {
+    if (String(overrideId).trim().toLowerCase() === key) return flag;
+  }
+  if (typeof catalogValue === 'boolean') return catalogValue;
+  return matchesNonAgentKeyword(id, keywords) ? false : undefined;
 }
 
 /**

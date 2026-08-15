@@ -91,6 +91,12 @@ The Settings UI creates a versioned document at `data/config.json`:
     "vision": { "model": "auto" },
     "screenshots": { "redaction": "pixelate" }
   },
+  "models": {
+    "nonAgentKeywords": ["embed", "rerank", "-vision", "-vl-", "guard"],
+    "agentCompatible": {
+      "meta/llama-3.2-90b-vision-instruct": true
+    }
+  },
   "mcpServers": {
     "chrome": {
       "enabled": true,
@@ -109,6 +115,44 @@ The Settings UI creates a versioned document at `data/config.json`:
 Values not present in the file use the canonical defaults defined by the backend schema.
 
 The schema lives in `agent/core/config-schema.ts`; loading, migration, source tracking and atomic persistence are handled by `agent/core/config-store.ts`.
+
+### Model admission policy (`models`)
+
+`/api/models` and `/v1/models` always return **every** model the providers report — nothing is dropped for being "noisy". The `models` block only decides which of them carry `agentCompatible: false`, and the client hides those from the **Agent model selector** alone. Chat, the OpenAI-compatible endpoints, and the Vision/Distill tool-model pickers all see the full list.
+
+| Field | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `nonAgentKeywords` | `string[]` | built-in table (see below) | Case-insensitive substring match against the model id. A hit marks the model `agentCompatible: false`. Setting `[]` disables keyword marking entirely. |
+| `agentCompatible` | `Record<string, boolean>` | `{}` | Per-model verdict keyed by model id (case-insensitive). Highest precedence — use it to admit one model without rewriting the keyword table. |
+
+Precedence, highest first:
+
+1. `models.agentCompatible[id]`
+2. `agentCompatible` from the provider catalog (`config/model-catalog/*-overrides.json`)
+3. `models.nonAgentKeywords`
+4. Otherwise unmarked, i.e. usable everywhere
+
+The built-in keyword table covers embedding/rerank, vision/OCR, code-completion, guardrail, and image/video/speech generation model families; the authoritative list is `DEFAULT_NON_AGENT_KEYWORDS` in `agent/core/config-schema.ts`. Providing `nonAgentKeywords` **replaces** it rather than extending it.
+
+To use a vision model for agent decisions:
+
+```json
+{
+  "models": {
+    "agentCompatible": { "meta/llama-3.2-11b-vision-instruct": true }
+  }
+}
+```
+
+The one remaining hard drop is capability-based, not taste-based: Gemini models that do not declare `generateContent` are omitted, because calling them would always fail.
+
+Edit this from **Settings → Models**, which writes through `PUT /api/config/models`:
+
+```json
+{ "nonAgentKeywords": ["embed", "guard"], "agentCompatible": { "meta/llama-3.2-11b-vision-instruct": true } }
+```
+
+Either field may be `null` to drop that override and fall back to the built-in default; omitting a field leaves it untouched. Saving re-tags the in-memory model list in place, so changes apply immediately — no restart. Hand-editing `data/config.json` does require a restart, since the file is only read at startup.
 
 ## Profiles
 

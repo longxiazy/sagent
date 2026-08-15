@@ -13,13 +13,13 @@ import {
   buildGeminiAgentPromptPayload,
 } from '../prompts.ts';
 import { normalizeDesktopAgentDecision } from '../schemas.ts';
-import { isChatCapableModel } from '../ai-client.ts';
 import { resolveAgentMaxTokens } from '../planner.ts';
 import { logLlmRequest, logLlmResponse } from '../llm-logger.ts';
 import { initSse, writeSse, writeSseDone } from '../../../helpers/streaming.ts';
 import { retryAsync } from '../../../helpers/retry.ts';
 import { extractModelMetadata } from './model-metadata.ts';
 import { getGeminiCatalogModelMetadata } from './gemini-catalog.ts';
+import { applyModelPolicy } from './model-policy.ts';
 import { configStore } from '../config-store.ts';
 import type {
   LLMProvider,
@@ -104,13 +104,12 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
         const rawName: string = (m as any).name || '';
         const id = rawName.replace(/^models\//, '');
         if (!id) continue;
-        // 仅保留能做对话决策的模型。注意 tts / image 类模型也声明了 generateContent，
-        // 无法靠 supportedActions 区分，必须按 id 过滤。
+        // 唯一的硬丢弃：接口自己声明不支持 generateContent，调用必然失败，留着没意义。
+        // 至于 imagen/veo/tts/embedding 这类「能调但不适合做决策」的，交给下面的
+        // agentCompatible 标记（关键词表已收编原先写死在这里的第二条正则），全量返回。
         const actions: string[] = (m as any).supportedActions || (m as any).supportedGenerationMethods || [];
         const supportsGenerate = !actions.length || actions.includes('generateContent');
         if (!supportsGenerate) continue;
-        if (!isChatCapableModel(id)) continue;
-        if (/imagen|veo|embedding|aqa|tts|-image|image-|gemma-(?:2|3n)/i.test(id)) continue;
         const catalogMetadata = getGeminiCatalogModelMetadata(id);
         models.push({
           ...catalogMetadata,
@@ -120,7 +119,7 @@ export function createGeminiProvider(client: GoogleGenAI): LLMProvider {
           ...extractModelMetadata(m),
         });
       }
-      return models;
+      return applyModelPolicy(models, configStore.models());
     },
 
     async agentPlan(opts: AgentPlanOpts): Promise<AgentPlanResult> {

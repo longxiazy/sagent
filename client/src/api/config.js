@@ -21,6 +21,19 @@ export async function saveTools(tools, projectId) {
   return data;
 }
 
+// 保存模型准入策略(关键词表 / 逐模型覆盖)。全局配置,不分项目作用域。
+// 传 null 表示清空该项覆盖回到内置默认;后端保存后会就地重算标记,无需重启。
+export async function saveModelPolicy(patch) {
+  const res = await apiFetch('/api/config/models', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
 export async function saveConfig(patch) {
   const res = await apiFetch('/api/config', {
     method: 'POST',
