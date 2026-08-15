@@ -55,7 +55,13 @@ describe('vision tool model selection', () => {
 
       const result = await executeVisionAction(
         { image: '@uploads/2026-01-01/image.png', question: '图里是什么？' },
-        { registry: mockRegistry(provider), projectRoot: root, dataDir },
+        {
+          registry: mockRegistry(provider),
+          // 解析链没有内置默认模型，兜底模型必须显式给出，否则会先被空模型守卫挡下。
+          visionModel: 'meta/llama-3.2-90b-vision-instruct',
+          projectRoot: root,
+          dataDir,
+        },
       );
 
       expect(result).toContain('读取成功');
@@ -63,6 +69,23 @@ describe('vision tool model selection', () => {
         .toMatch(/^data:image\/png;base64,/);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('returns an empty fallback model when nothing is configured', () => {
+    const previous = process.env.VISION_MODEL;
+    delete process.env.VISION_MODEL;
+    try {
+      expect(resolveVisionModel({
+        model: 'deepseek-ai/deepseek-v4-pro',
+        agentModels: ['deepseek-ai/deepseek-v4-pro'],
+        modelConfig: [
+          { id: 'deepseek-ai/deepseek-v4-pro', label: 'deepseek-v4-pro', provider: 'nvidia', inputModalities: ['text'] },
+        ],
+      })).toEqual({ model: '', source: 'fallback' });
+    } finally {
+      if (previous === undefined) delete process.env.VISION_MODEL;
+      else process.env.VISION_MODEL = previous;
     }
   });
 

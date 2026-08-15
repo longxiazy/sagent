@@ -26,8 +26,6 @@ import { createApprovalStore } from './agent/core/approval-store.ts';
 import { flushLlmLogs, initLlmLogger } from './agent/core/llm-logger.ts';
 import { createDesktopAgentRunner } from './agent/desktop/agent.ts';
 import { createSandboxedWorkerAgentRunner, getWorkerCancelDelays } from './agent/worker/runner.ts';
-import { DEFAULT_VISION_MODEL } from './agent/tools/vision/execute.ts';
-import { DEFAULT_DISTILL_MODEL } from './agent/tools/browser/distill.ts';
 import { createClients, deriveProviderName } from './agent/core/ai-client.ts';
 import { createProviderRegistry } from './agent/core/providers/registry.ts';
 import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
@@ -83,8 +81,6 @@ const executionConfig = configStore.execution();
 const projectStore = createProjectStore(MEMORY_DIR);
 await projectStore.init();
 
-const VISION_MODEL = (configStore.tools().vision?.model || process.env.VISION_MODEL || DEFAULT_VISION_MODEL).trim();
-const DISTILL_MODEL = (process.env.DISTILL_MODEL || DEFAULT_DISTILL_MODEL).trim();
 const agentSandboxedWorkers = executionConfig.sandboxedWorkers;
 const AGENT_WORKER_SANDBOX = executionConfig.workerSandbox;
 const agentRunStore = createAgentRunStore();
@@ -103,8 +99,6 @@ const directRunDesktopAgent = createDesktopAgentRunner({
   runStore: agentRunStore,
   approvalStore,
   checkpointDir: CHECKPOINT_DIR,
-  visionModel: VISION_MODEL,
-  distillModel: DISTILL_MODEL,
 });
 // runner 类型与 macOS Sandbox 都在启动时固定；UI 保存 execution 后必须重启，
 // 后端才会重新创建 Worker runner 或切回进程内直跑。
@@ -115,8 +109,6 @@ const runDesktopAgent = agentSandboxedWorkers
       modelConfig,
       approvalStore,
       runStore: agentRunStore,
-      visionModel: VISION_MODEL,
-      distillModel: DISTILL_MODEL,
       sandbox: AGENT_WORKER_SANDBOX,
     }) as any
   : directRunDesktopAgent;
@@ -183,7 +175,7 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
   ${row('🚀 Sagent Server', `http://${HOST}:${PORT}`)}
   ╠${dLine.slice(2)}╣
   ${row('Models', modelConfig.map(m => m.id).join(', '))}
-  ${row('VISION_MODEL', VISION_MODEL)}
+  ${row('Vision Model', configStore.tools().vision?.model || process.env.VISION_MODEL || 'auto (selected / main model)')}
   ${hLine}
   ${row('Max Steps', cfg.maxSteps)}
   ${row('Model Timeout', `${cfg.modelTimeoutSec}s`)}

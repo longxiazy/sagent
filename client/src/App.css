@@ -5999,6 +5999,41 @@ textarea:disabled {
 .settings-advanced-toggle { display: inline-flex; align-items: center; gap: 5px; margin-top: 14px; padding: 5px 0; border: 0; background: transparent; color: var(--c-text-secondary); cursor: pointer; font-size: var(--f-sm); }
 .settings-advanced-toggle:hover { color: var(--c-text); }
 .settings-advanced-grid { margin-top: 10px; }
+/* 工具模型的取值优先级面板：把运行时的解析顺序原样列出来，并标出当前生效的那一层。
+   横跨整栏，避免层级文案被两列网格挤成断行。 */
+.settings-priority {
+  grid-column: 1 / -1;
+  padding: 12px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-inline);
+}
+.settings-priority + .settings-priority { margin-top: -2px; }
+.settings-priority-title { font-size: var(--f-xs); font-weight: 600; color: var(--c-text-secondary); margin-bottom: 8px; }
+.settings-priority-list { list-style: decimal; margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 5px; }
+.settings-priority-list li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: var(--f-xs);
+  line-height: 1.5;
+  color: var(--c-text-muted);
+}
+.settings-priority-list li.is-active { color: var(--c-text); }
+.settings-priority-label { flex: 0 0 auto; }
+.settings-priority-value { font-family: var(--font-mono, 'SF Mono', Menlo, monospace); word-break: break-all; }
+.settings-priority-value.is-empty { font-family: inherit; opacity: 0.7; }
+.settings-priority-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--c-primary-bg);
+  color: var(--c-primary);
+  font-size: var(--f-micro);
+  font-weight: 600;
+}
+.settings-priority-note { margin: 8px 0 0; font-size: var(--f-xs); line-height: 1.5; color: var(--c-text-muted); }
 .settings-mcp-list { display: flex; flex-direction: column; gap: 14px; }
 .settings-mcp-card { padding: 14px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface-inline); }
 .settings-mcp-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }

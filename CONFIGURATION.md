@@ -60,7 +60,10 @@ Non-loopback `HOST` values require a token of at least 16 characters.
 | `SAGENT_SHELL` | Shell used by confirmed terminal actions |
 | `BUN_BIN` | Bun executable used by workers |
 | `SANDBOX_EXEC` | macOS sandbox executable override |
-| `DISTILL_MODEL` | Cheap OpenAI-compatible model that distills `http_fetch` page text before it enters agent history; cuts prompt-token growth on multi-source browsing. Empty/unset = disabled |
+| `VISION_MODEL` | Fallback model for `image_analyze`. The vision tool first picks any run-selected model that accepts image input; this variable only applies when none does and no project/global `tools.vision.model` is set. Unset = fall back to the run's main model |
+| `DISTILL_MODEL` | Cheap OpenAI-compatible model that distills `http_fetch` page text before it enters agent history; cuts prompt-token growth on multi-source browsing. Unset = fall back to the run's main model |
+
+Both tool models resolve as **project override → global `tools.<tool>.model` → environment variable → current main model**; there is no built-in default model. The Settings › Models panel shows this chain with the layer currently in effect.
 
 ## Structured configuration
 

@@ -10,6 +10,8 @@
  *   2. 都不支持时才用兜底模型 visionModel，该值由 desktop/agent.ts 经
  *      resolveToolModel 四级解析后传入：项目覆盖 → 全局配置 → VISION_MODEL → 主模型。
  *      兜底模型不保证支持多模态，若不支持则由实际调用报错暴露。
+ *      这里不再自带内置默认视觉模型：解析已在 agent.ts 完成，兜底为空时直接失败，
+ *      避免代码里藏一个用户在设置页看不到、也未必可用的隐式模型。
  *
  * 调用场景：
  *   - 主 agent loop 中模型返回 { tool: 'vision', type: 'image_analyze', image, question }
@@ -39,7 +41,6 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 // 一部分预算在推理通道上，留给正文的额度更少。预算过紧会让回答在中途被硬切。
 const MAX_OUTPUT_TOKENS = 4096;
 const TRUNCATION_NOTICE = '\n\n[注意] 上述回答因达到输出长度上限而被截断，内容不完整。';
-export const DEFAULT_VISION_MODEL = 'meta/llama-3.2-90b-vision-instruct';
 
 const VISION_ANALYSIS_GUIDE = [
   '请严格基于图片可见内容回答。',
@@ -193,7 +194,7 @@ export function resolveVisionModel(context: VisionContext = {}) {
   }
 
   return {
-    model: String(context.visionModel || process.env.VISION_MODEL || DEFAULT_VISION_MODEL).trim(),
+    model: String(context.visionModel || process.env.VISION_MODEL || '').trim(),
     source: 'fallback',
   };
 }
@@ -302,6 +303,12 @@ export async function executeVisionAction(
     timeoutMessage: `image_analyze 超时 (${Math.round(REQUEST_TIMEOUT_MS / 1000)}s)`,
   });
   const { model } = resolveVisionModel(context);
+  // 兜底链（项目覆盖 → 全局配置 → VISION_MODEL → 主模型）整条为空时，与其把空模型名
+  // 送进 provider 换一条难懂的报错，不如直接说清该去哪配。
+  if (!model) {
+    scope.cleanup();
+    return 'image_analyze 失败：未解析出可用视觉模型，请在设置 → 模型中配置 Vision 模型';
+  }
 
   let imageUrl: string;
   try {

@@ -92,6 +92,14 @@ export function createAgentConfigRouter({ configStore, projectStore }: AgentRout
       // 搭配失效的提示（如历史窗口大于总步数）。不阻断保存，由前端展示。
       warnings: configStore.warnings(),
       tools: configStore.tools(),
+      // 设置页要按「项目覆盖 → 全局配置 → 环境变量 → 当前主模型」讲清 vision/distill 的
+      // 取值优先级。切到项目作用域时上面的 tools 会被项目 override 顶掉，所以这里把
+      // 全局值和环境变量单独给出，否则前端说不清「下一层」是什么。
+      globalTools: configStore.tools(),
+      toolEnvModels: {
+        vision: (process.env.VISION_MODEL || '').trim(),
+        distill: (process.env.DISTILL_MODEL || '').trim(),
+      },
       // execution 是启动期配置；返回 effective 值与来源，便于 UI 解释环境变量覆盖。
       execution: configStore.execution(),
       executionSources: configStore.executionSources(),
@@ -123,7 +131,9 @@ export function createAgentConfigRouter({ configStore, projectStore }: AgentRout
       const saved = projectId
         ? await writeProjectToolsOverride(projectStore.dataDir(projectId), tools)
         : await configStore.updateTools(tools);
-      res.json({ tools: saved, scope: projectId ? 'project' : 'global' });
+      // globalTools 一并回传：保存全局时它就是新值，保存项目覆盖时它是下一层的现值，
+      // 前端的优先级说明两种情况都要刷新。
+      res.json({ tools: saved, globalTools: configStore.tools(), scope: projectId ? 'project' : 'global' });
     } catch (err: any) {
       res.status(400).json({ error: err?.message || tReq(req, 'config.validationFailed') });
     }

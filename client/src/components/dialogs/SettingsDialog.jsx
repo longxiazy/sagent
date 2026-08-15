@@ -4,6 +4,7 @@ import { fetchConfig, saveConfig, saveExecution, saveTools, resetConfig, applyCo
 import { useTheme } from '../../theme/ThemeProvider.jsx';
 import { useI18n, useT } from '../../i18n/I18nProvider.jsx';
 import { multiModelTuningIdle } from '../../utils/agent-config-hints.js';
+import { modelSupportsImageInput } from '../../utils/model-vision.js';
 import { DialogShell } from './DialogShell.jsx';
 
 // Agent 行为参数（可写，下一次任务生效）。单位与后端 schema 一致，换算放消费点。
@@ -74,13 +75,17 @@ const GROUPS = [
 // 设置面板：左导航分组 + 右内容。
 // 外观（主题/语言，前台即时生效）、Agent 参数（保存后下次任务生效）、
 // Worker 部署开关（保存后需重启）、记忆前端偏好和 API Key 只读展示。
-export function SettingsDialog({ onClose, activeProjectId = null, projects = [], selectedAgentModels = [] }) {
+export function SettingsDialog({ onClose, activeProjectId = null, projects = [], selectedAgentModels = [], availableModels = [] }) {
   const t = useT();
   const { theme, setTheme, fontSize, setFontSize } = useTheme();
   const { locale, setLocale } = useI18n();
   const [activeGroup, setActiveGroup] = useState('appearance');
   const [agent, setAgent] = useState(null);
   const [tools, setTools] = useState({ vision: {}, distill: {} });
+  // 全局 tools 与环境变量是优先级说明里「下一层」的值：切到项目作用域后 tools
+  // 只剩项目覆盖，若不单独留一份，面板就说不清项目没设时到底落到哪。
+  const [globalTools, setGlobalTools] = useState({ vision: {}, distill: {} });
+  const [toolEnvModels, setToolEnvModels] = useState({ vision: '', distill: '' });
   const [toolsScope, setToolsScope] = useState(activeProjectId || '');
   const [sources, setSources] = useState({});
   const [execution, setExecution] = useState(DEFAULT_EXECUTION);
@@ -113,6 +118,10 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
   const applyConfigData = data => {
     if (data.agent) setAgent(data.agent);
     if (data.tools) setTools({ vision: data.tools.vision || {}, distill: data.tools.distill || {} });
+    if (data.globalTools) setGlobalTools({ vision: data.globalTools.vision || {}, distill: data.globalTools.distill || {} });
+    if (data.toolEnvModels) {
+      setToolEnvModels({ vision: data.toolEnvModels.vision || '', distill: data.toolEnvModels.distill || '' });
+    }
     if (data.sources) setSources(data.sources);
     if (data.execution) setExecution({ ...DEFAULT_EXECUTION, ...data.execution });
     if (data.executionSources) setExecutionSources(data.executionSources);
@@ -177,6 +186,7 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
     try {
       const data = await saveTools(tools, toolsScope || undefined);
       if (data.tools) setTools({ vision: data.tools.vision || {}, distill: data.tools.distill || {} });
+      if (data.globalTools) setGlobalTools({ vision: data.globalTools.vision || {}, distill: data.globalTools.distill || {} });
       setSaved(true);
     } catch (e) {
       setError(e.message);
@@ -375,6 +385,78 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
   };
 
   const workerSandboxDisabled = !execution.sandboxedWorkers || executionSources.workerSandbox === 'env';
+
+  // vision/distill 的取值优先级面板。列的是运行时 resolveToolModel 的真实顺序——
+  // 项目覆盖 → 全局配置 → 环境变量 → 当前主模型，链路里没有内置默认模型，
+  // 兜底就是主模型本身。vision 在此之上还多一层：工具会先从本次已选模型里挑
+  // 支持图片输入的，命中就不走下面几层。
+  const toolPriorityLayers = tool => {
+    const scopedProject = toolsScope
+      ? (projects.find(p => p.projectId === toolsScope) || { projectId: toolsScope })
+      : null;
+    const envVarName = tool === 'vision' ? 'VISION_MODEL' : 'DISTILL_MODEL';
+    const layers = [];
+
+    if (tool === 'vision') {
+      const capable = selectedAgentModels.filter(id => modelSupportsImageInput(id, availableModels));
+      layers.push({
+        key: 'selected',
+        label: t('settings.priority.visionSelected'),
+        value: capable.join(' · '),
+        empty: t('settings.priority.visionSelectedNone'),
+      });
+    }
+    if (scopedProject) {
+      layers.push({
+        key: 'project',
+        label: t('settings.priority.project', { name: scopedProject.name || scopedProject.projectId }),
+        value: (tools[tool]?.model || '').trim(),
+      });
+    }
+    layers.push({
+      key: 'global',
+      // 全局作用域下输入框编辑的就是这一层，取未保存的现值；项目作用域下它是只读的下一层。
+      label: t('settings.priority.global'),
+      value: ((toolsScope ? globalTools[tool]?.model : tools[tool]?.model) || '').trim(),
+    });
+    layers.push({
+      key: 'env',
+      label: t('settings.priority.env', { name: envVarName }),
+      value: (toolEnvModels[tool] || '').trim(),
+    });
+    layers.push({
+      key: 'main',
+      label: t('settings.priority.mainModel'),
+      // 多模型并行时，兜底用的是产出该步决策的那个模型，事前无法确定，故把已选的都列出来。
+      value: selectedAgentModels.join(' · '),
+      empty: t('settings.priority.mainModelUnset'),
+    });
+
+    const activeIndex = layers.findIndex(layer => layer.value);
+    return layers.map((layer, index) => ({ ...layer, active: index === activeIndex }));
+  };
+
+  const renderToolPriority = tool => (
+    <div className="settings-priority" key={tool}>
+      <div className="settings-priority-title">
+        {t(tool === 'vision' ? 'settings.priority.visionTitle' : 'settings.priority.distillTitle')}
+      </div>
+      <ol className="settings-priority-list">
+        {toolPriorityLayers(tool).map(layer => (
+          <li key={layer.key} className={layer.active ? 'is-active' : undefined}>
+            <span className="settings-priority-label">{layer.label}</span>
+            <span className={layer.value ? 'settings-priority-value' : 'settings-priority-value is-empty'}>
+              {layer.value || layer.empty || t('settings.priority.unset')}
+            </span>
+            {layer.active && <span className="settings-priority-badge">{t('settings.priority.active')}</span>}
+          </li>
+        ))}
+      </ol>
+      <p className="settings-priority-note">
+        {t(tool === 'vision' ? 'settings.priority.visionNote' : 'settings.priority.distillNote')}
+      </p>
+    </div>
+  );
 
   const renderMcpServer = name => {
     const fallback = DEFAULT_MCP_SERVERS[name] || { enabled: false, transport: { type: 'stdio', command: '', args: [], cwd: '.' } };
@@ -692,6 +774,8 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
               <datalist id="tool-model-suggestions">
                 <option value="nvidia/ising-calibration-1-35b-a3b" />
               </datalist>
+              {renderToolPriority('vision')}
+              {renderToolPriority('distill')}
             </div>
           )}
         </div>
