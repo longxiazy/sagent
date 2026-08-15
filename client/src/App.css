@@ -5993,6 +5993,9 @@ textarea:disabled {
   font-size: var(--f-xs);
   line-height: 1.5;
 }
+/* 档位级警告：档位承诺的行为在当前模型数下不成立。与字段级 warning 同底色，
+   但要顶到档位说明下方，故单独收一下外边距。 */
+.settings-profile-warning { margin: -8px 0 16px; }
 .settings-advanced-toggle { display: inline-flex; align-items: center; gap: 5px; margin-top: 14px; padding: 5px 0; border: 0; background: transparent; color: var(--c-text-secondary); cursor: pointer; font-size: var(--f-sm); }
 .settings-advanced-toggle:hover { color: var(--c-text); }
 .settings-advanced-grid { margin-top: 10px; }

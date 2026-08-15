@@ -125,6 +125,7 @@ export const zh = {
   'settings.profileHint.economy': '单模型串行：主模型独占较长时间，确实不行才叫下一个。最省 token，但慢。',
   'settings.profileHint.deep': '步数与上下文都放宽，适合需要多步推进的复杂任务。耗时最长。',
   'settings.profileHint.besteffort': '以跑成功为目标：步数和超时都留有余量，主模型失败或迟迟不返回时由备用模型顶上。',
+  'settings.singleModelTuningIdle': '当前只选了 1 个模型，并发批量与错峰延迟不参与执行：没有备用模型可顶上，主模型一超时整个任务就失败，只能手动回滚重跑。多选一个模型即可启用补位。',
   'settings.warning.historyExceedsSteps': '历史窗口（{maxHistorySteps}）大于最大步数（{maxSteps}），多出的额度不会生效——历史里不可能有超过 {maxSteps} 条记录。',
   'settings.resultCharsNote': '仅作用于最近 3 步。第 4-10 步固定 2500 字符，更早的固定 1000 字符，被历史窗口丢弃的压成 200 字符摘要。',
   'settings.advanced': '高级设置',
