@@ -60,7 +60,10 @@ Non-loopback `HOST` values require a token of at least 16 characters.
 | `SAGENT_SHELL` | Shell used by confirmed terminal actions |
 | `BUN_BIN` | Bun executable used by workers |
 | `SANDBOX_EXEC` | macOS sandbox executable override |
-| `DISTILL_MODEL` | Cheap OpenAI-compatible model that distills `http_fetch` page text before it enters agent history; cuts prompt-token growth on multi-source browsing. Empty/unset = disabled |
+| `VISION_MODEL` | Fallback model for `image_analyze`. The vision tool first picks any run-selected model that accepts image input; this variable only applies when none does and no project/global `tools.vision.model` is set. Unset = fall back to the run's main model |
+| `DISTILL_MODEL` | Cheap OpenAI-compatible model that distills `http_fetch` page text before it enters agent history; cuts prompt-token growth on multi-source browsing. Unset = fall back to the run's main model |
+
+Both tool models resolve as **project override → global `tools.<tool>.model` → environment variable → current main model**; there is no built-in default model. The Settings › Models panel shows this chain with the layer currently in effect.
 
 ## Structured configuration
 
@@ -88,6 +91,12 @@ The Settings UI creates a versioned document at `data/config.json`:
     "vision": { "model": "auto" },
     "screenshots": { "redaction": "pixelate" }
   },
+  "models": {
+    "nonAgentKeywords": ["embed", "rerank", "-vision", "-vl-", "guard"],
+    "agentCompatible": {
+      "meta/llama-3.2-90b-vision-instruct": true
+    }
+  },
   "mcpServers": {
     "chrome": {
       "enabled": true,
@@ -106,6 +115,44 @@ The Settings UI creates a versioned document at `data/config.json`:
 Values not present in the file use the canonical defaults defined by the backend schema.
 
 The schema lives in `agent/core/config-schema.ts`; loading, migration, source tracking and atomic persistence are handled by `agent/core/config-store.ts`.
+
+### Model admission policy (`models`)
+
+`/api/models` and `/v1/models` always return **every** model the providers report — nothing is dropped for being "noisy". The `models` block only decides which of them carry `agentCompatible: false`, and the client hides those from the **Agent model selector** alone. Chat, the OpenAI-compatible endpoints, and the Vision/Distill tool-model pickers all see the full list.
+
+| Field | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `nonAgentKeywords` | `string[]` | built-in table (see below) | Case-insensitive substring match against the model id. A hit marks the model `agentCompatible: false`. Setting `[]` disables keyword marking entirely. |
+| `agentCompatible` | `Record<string, boolean>` | `{}` | Per-model verdict keyed by model id (case-insensitive). Highest precedence — use it to admit one model without rewriting the keyword table. |
+
+Precedence, highest first:
+
+1. `models.agentCompatible[id]`
+2. `agentCompatible` from the provider catalog (`config/model-catalog/*-overrides.json`)
+3. `models.nonAgentKeywords`
+4. Otherwise unmarked, i.e. usable everywhere
+
+The built-in keyword table covers embedding/rerank, vision/OCR, code-completion, guardrail, and image/video/speech generation model families; the authoritative list is `DEFAULT_NON_AGENT_KEYWORDS` in `agent/core/config-schema.ts`. Providing `nonAgentKeywords` **replaces** it rather than extending it.
+
+To use a vision model for agent decisions:
+
+```json
+{
+  "models": {
+    "agentCompatible": { "meta/llama-3.2-11b-vision-instruct": true }
+  }
+}
+```
+
+The one remaining hard drop is capability-based, not taste-based: Gemini models that do not declare `generateContent` are omitted, because calling them would always fail.
+
+Edit this from **Settings → Models**, which writes through `PUT /api/config/models`:
+
+```json
+{ "nonAgentKeywords": ["embed", "guard"], "agentCompatible": { "meta/llama-3.2-11b-vision-instruct": true } }
+```
+
+Either field may be `null` to drop that override and fall back to the built-in default; omitting a field leaves it untouched. Saving re-tags the in-memory model list in place, so changes apply immediately — no restart. Hand-editing `data/config.json` does require a restart, since the file is only read at startup.
 
 ## Profiles
 

@@ -133,8 +133,6 @@ export function createSandboxedWorkerAgentRunner({
   modelConfig,
   approvalStore,
   runStore,
-  visionModel,
-  distillModel = '',
   sandbox = true,
   sandboxFile = path.join(REPO_ROOT, 'sandbox.sb'),
   workerFile = path.join(REPO_ROOT, 'agent/worker/agent-worker.ts'),
@@ -144,8 +142,6 @@ export function createSandboxedWorkerAgentRunner({
   modelConfig: any[];
   approvalStore: any;
   runStore?: any;
-  visionModel: string;
-  distillModel?: string;
   sandbox?: boolean;
   sandboxFile?: string;
   workerFile?: string;
@@ -346,8 +342,6 @@ export function createSandboxedWorkerAgentRunner({
         memoryDir,
         checkpointDir: dataDir,
         modelConfig,
-        visionModel,
-        distillModel,
       },
     });
 

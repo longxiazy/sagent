@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { deriveProviderName } from '../agent/core/ai-client.ts';
+import { DEFAULT_NON_AGENT_KEYWORDS } from '../agent/core/config-schema.ts';
+import { applyModelPolicy } from '../agent/core/providers/model-policy.ts';
 import { tReq } from '../helpers/i18n.ts';
 import type { AgentRouterContext } from './agent-types.ts';
 import { loadChromeMcpConfig } from '../agent/tools/chrome/mcp-client.ts';
@@ -78,7 +80,7 @@ function effectiveMcpServers(configStore: AgentRouterContext['configStore']) {
   return { servers, sources };
 }
 
-export function createAgentConfigRouter({ configStore, projectStore }: AgentRouterContext) {
+export function createAgentConfigRouter({ configStore, projectStore, modelConfig }: AgentRouterContext) {
   const router = Router();
   const configPayload = (agent = configStore.get()) => {
     const mcp = effectiveMcpServers(configStore);
@@ -92,11 +94,22 @@ export function createAgentConfigRouter({ configStore, projectStore }: AgentRout
       // 搭配失效的提示（如历史窗口大于总步数）。不阻断保存，由前端展示。
       warnings: configStore.warnings(),
       tools: configStore.tools(),
+      // 设置页要按「项目覆盖 → 全局配置 → 环境变量 → 当前主模型」讲清 vision/distill 的
+      // 取值优先级。切到项目作用域时上面的 tools 会被项目 override 顶掉，所以这里把
+      // 全局值和环境变量单独给出，否则前端说不清「下一层」是什么。
+      globalTools: configStore.tools(),
+      toolEnvModels: {
+        vision: (process.env.VISION_MODEL || '').trim(),
+        distill: (process.env.DISTILL_MODEL || '').trim(),
+      },
       // execution 是启动期配置；返回 effective 值与来源，便于 UI 解释环境变量覆盖。
       execution: configStore.execution(),
       executionSources: configStore.executionSources(),
       mcpServers: mcp.servers,
       mcpSources: mcp.sources,
+      // 模型准入策略：生效值 + 内置默认（前端要能显示「已改过」并一键恢复）。
+      models: configStore.models(),
+      modelDefaults: { nonAgentKeywords: [...DEFAULT_NON_AGENT_KEYWORDS] },
     };
   };
 
@@ -123,7 +136,9 @@ export function createAgentConfigRouter({ configStore, projectStore }: AgentRout
       const saved = projectId
         ? await writeProjectToolsOverride(projectStore.dataDir(projectId), tools)
         : await configStore.updateTools(tools);
-      res.json({ tools: saved, scope: projectId ? 'project' : 'global' });
+      // globalTools 一并回传：保存全局时它就是新值，保存项目覆盖时它是下一层的现值，
+      // 前端的优先级说明两种情况都要刷新。
+      res.json({ tools: saved, globalTools: configStore.tools(), scope: projectId ? 'project' : 'global' });
     } catch (err: any) {
       res.status(400).json({ error: err?.message || tReq(req, 'config.validationFailed') });
     }
@@ -134,6 +149,19 @@ export function createAgentConfigRouter({ configStore, projectStore }: AgentRout
     try {
       const agent = await configStore.update(req.body ?? {});
       res.json(configPayload(agent));
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || tReq(req, 'config.validationFailed') });
+    }
+  });
+
+  // 更新模型准入策略；body: { nonAgentKeywords?, agentCompatible? }，null 表示恢复默认。
+  // 保存后就地重算 modelConfig 的 agentCompatible 标记：该数组被路由与 agent runner
+  // 按引用共享，重算即刻生效，不必重启去重新拉供应商模型列表。
+  router.put('/api/config/models', async (req, res) => {
+    try {
+      const models = await configStore.updateModels(req.body ?? {});
+      applyModelPolicy(modelConfig, models);
+      res.json({ models, modelConfig });
     } catch (err: any) {
       res.status(400).json({ error: err?.message || tReq(req, 'config.validationFailed') });
     }

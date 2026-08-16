@@ -25,10 +25,12 @@ import {
   AGENT_CONFIG_KEYS,
   AGENT_CONFIG_SCHEMA,
   CONFIG_PROFILES,
+  DEFAULT_NON_AGENT_KEYWORDS,
   configDefaults,
   collectConfigWarnings,
   detectProfile,
   type ConfigProfile,
+  type ModelPolicyConfig,
   type RuntimeConfig,
   type RuntimeConfigKey,
   type McpServerConfig,
@@ -227,6 +229,28 @@ function normalizeScreenshots(value: any): NonNullable<NonNullable<SagentConfigD
   return out;
 }
 
+/**
+ * models 段规范化。两个字段都是「不写 = 用默认」，因此都用 undefined 表示缺省：
+ * nonAgentKeywords 只有在确实是数组时才落盘，空数组是合法值（= 关闭关键词标记），
+ * 不能和「没配」混为一谈，否则用户永远关不掉内置表。
+ */
+function normalizeModels(value: any): ModelPolicyConfig {
+  const out: ModelPolicyConfig = {};
+  if (Array.isArray(value?.nonAgentKeywords)) {
+    out.nonAgentKeywords = value.nonAgentKeywords
+      .filter((item: any) => typeof item === 'string' && item.trim())
+      .map((item: string) => item.trim());
+  }
+  if (value?.agentCompatible && typeof value.agentCompatible === 'object' && !Array.isArray(value.agentCompatible)) {
+    const overrides: Record<string, boolean> = {};
+    for (const [id, flag] of Object.entries(value.agentCompatible)) {
+      if (typeof flag === 'boolean' && id.trim()) overrides[id.trim()] = flag;
+    }
+    if (Object.keys(overrides).length > 0) out.agentCompatible = overrides;
+  }
+  return out;
+}
+
 export function normalizeConfigDocument(value: any): SagentConfigDocument {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return { version: 1, agent: {}, mcpServers: {} };
@@ -244,6 +268,7 @@ export function normalizeConfigDocument(value: any): SagentConfigDocument {
     version: 1,
     profile,
     agent,
+    models: normalizeModels(value.models),
     mcpServers: normalizeMcpServers(value.mcpServers),
     tools: {
       vision: typeof value.tools?.vision?.model === 'string' && value.tools.vision.model.trim()
@@ -344,6 +369,17 @@ export const configStore = {
     return JSON.parse(JSON.stringify(document.tools || {}));
   },
 
+  /** 模型准入策略（关键词表已叠加内置默认）。
+   *  当前使用：providers/openai-compat.ts、providers/gemini.ts 拉模型列表时标记 agentCompatible。 */
+  models(): Required<ModelPolicyConfig> {
+    const stored = document.models || {};
+    return {
+      // 只有显式配了数组才覆盖内置表；空数组是合法的「关掉全部关键词」。
+      nonAgentKeywords: stored.nonAgentKeywords ?? [...DEFAULT_NON_AGENT_KEYWORDS],
+      agentCompatible: { ...(stored.agentCompatible || {}) },
+    };
+  },
+
   execution(env: Record<string, string | undefined> = process.env): ExecutionConfig {
     const stored = document.execution || {};
     return {
@@ -426,6 +462,40 @@ export const configStore = {
     saveChain = saveChain.then(persist).catch(err => log.error('[RuntimeConfig] 保存失败:', err?.message || err));
     await saveChain;
     return current;
+  },
+
+  /** 更新模型准入策略（关键词表 / 逐模型覆盖），sanitize 后落盘。
+   *
+   * 两个字段各自独立：不传 = 保持原样，传 null = 清空该项覆盖回到内置默认，
+   * 传值 = 整体替换（关键词表是「替换」不是「追加」，与 CONFIGURATION.md 一致）。
+   * 之所以要区分「不传」和「传 null」：nonAgentKeywords 的空数组是合法值
+   * （关掉全部关键词标记），不能拿它当「恢复默认」用。
+   *
+   * 当前使用：routes/agent-config.ts 的 PUT /api/config/models。 */
+  async updateModels(patch: any): Promise<Required<ModelPolicyConfig>> {
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+      throw new Error('models 配置必须是对象');
+    }
+    if ('nonAgentKeywords' in patch && patch.nonAgentKeywords !== null && !Array.isArray(patch.nonAgentKeywords)) {
+      throw new Error('nonAgentKeywords 必须是字符串数组或 null');
+    }
+    const next: ModelPolicyConfig = { ...(document.models || {}) };
+    if ('nonAgentKeywords' in patch) {
+      if (patch.nonAgentKeywords === null) delete next.nonAgentKeywords;
+      else next.nonAgentKeywords = patch.nonAgentKeywords;
+    }
+    if ('agentCompatible' in patch) {
+      if (patch.agentCompatible === null) delete next.agentCompatible;
+      else next.agentCompatible = patch.agentCompatible;
+    }
+    // 走一遍 normalize：过滤空白关键词、丢掉非布尔的覆盖值。
+    const sanitized = normalizeModels(next);
+    // normalizeModels 会把空的 agentCompatible 整个省略，但上面若显式传了空对象，
+    // 语义是「清空覆盖」，正好与省略一致，无需额外处理。
+    document = { ...document, models: sanitized };
+    saveChain = saveChain.then(persist).catch(err => log.error('[Config] 保存模型策略失败:', err?.message || err));
+    await saveChain;
+    return this.models();
   },
 
   /** 应用某个预设档位：以档位取值覆盖 Agent 参数，并在 document 中记录 profile 标签。

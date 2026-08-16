@@ -9,7 +9,7 @@
 import { createJsonPlanner } from '../planner.ts';
 import { normalizeDesktopAgentDecision } from '../schemas.ts';
 import { buildNvidiaTaskMessages, buildNvidiaAgentTools } from '../prompts.ts';
-import { deriveProviderName, isChatCapableModel } from '../ai-client.ts';
+import { deriveProviderName } from '../ai-client.ts';
 import {
   buildChatCompletionRequest,
   createChatCompletionWithTemplateFallback,
@@ -27,6 +27,8 @@ import {
 import { log } from '../../../helpers/logger.ts';
 import { extractModelMetadata } from './model-metadata.ts';
 import { getNvidiaCatalogModelMetadata } from './nvidia-catalog.ts';
+import { applyModelPolicy } from './model-policy.ts';
+import { configStore } from '../config-store.ts';
 import type {
   LLMProvider,
   ModelInfo,
@@ -156,21 +158,21 @@ export function createOpenAICompatProvider(
       // 失败直接抛错，由 registry 聚合原因；全部供应商失败时中止启动。
       const list = await client.models.list();
       for (const m of list.data || []) {
-        if (m?.id && isChatCapableModel(m.id)) {
-          // `/v1/models` 是可用模型的唯一来源。NVIDIA 本地目录只用于补充展示元数据，
-          // 不应因目录快照滞后或缺项而过滤掉 API 实际返回的模型。
-          const catalogMetadata = providerName === 'nvidia' ? getNvidiaCatalogModelMetadata(m.id) : {};
-          const providerMetadata = extractModelMetadata(m);
-          models.push({
-            ...catalogMetadata,
-            id: m.id,
-            label: catalogMetadata.label || m.id,
-            provider: providerName,
-            ...providerMetadata,
-          });
-        }
+        if (!m?.id) continue;
+        // `/v1/models` 是可用模型的唯一来源，一律全量返回：NVIDIA 本地目录只用于补充
+        // 展示元数据，不应因目录快照滞后或缺项而过滤掉 API 实际返回的模型；
+        // 「不适合做 Agent 决策」的模型也只打 agentCompatible:false 标记而不丢弃，
+        // 对话与 Vision/Distill 工具模型选择器需要看到完整列表。
+        const catalogMetadata = providerName === 'nvidia' ? getNvidiaCatalogModelMetadata(m.id) : {};
+        models.push({
+          ...catalogMetadata,
+          id: m.id,
+          label: catalogMetadata.label || m.id,
+          provider: providerName,
+          ...extractModelMetadata(m),
+        });
       }
-      return models;
+      return applyModelPolicy(models, configStore.models());
     },
 
     async agentPlan(opts: AgentPlanOpts): Promise<AgentPlanResult> {

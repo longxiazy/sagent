@@ -7,13 +7,13 @@
  * 摘要同时**强制保留来源 URL**——result-quality 的官方来源判定与
  * appendHttpFetchReferences 都从 result 文本里提 URL,丢了会破坏打分与引用。
  *
- * 纯增量、默认关闭:未配置 distillModel(client/model 为空)或正文短于阈值时原样返回;
+ * 提炼模型由 desktop/agent.ts 经 resolveToolModel 四级解析：
+ * 项目覆盖 → 全局配置 → DISTILL_MODEL → 当前主模型。主模型是最后兜底，
+ * 因此默认状态下提炼是开着的（用主模型）；正文短于阈值或解析结果为空时原样返回;
  * 提炼失败/超时回退原文,绝不抛错阻断主流程(取消信号例外,需向上传播)。
  */
 
 import { log } from '../../../helpers/logger.ts';
-
-export const DEFAULT_DISTILL_MODEL = ''; // 默认空 = 关闭提炼
 
 // 与 result-quality.ts 的 urlsFromText 同口径,避免把中文标点/右括号吞进 URL。
 const URL_RE = /https?:\/\/[^\s)\]"'，。]+/g;

@@ -26,8 +26,6 @@ import { createApprovalStore } from './agent/core/approval-store.ts';
 import { flushLlmLogs, initLlmLogger } from './agent/core/llm-logger.ts';
 import { createDesktopAgentRunner } from './agent/desktop/agent.ts';
 import { createSandboxedWorkerAgentRunner, getWorkerCancelDelays } from './agent/worker/runner.ts';
-import { DEFAULT_VISION_MODEL } from './agent/tools/vision/execute.ts';
-import { DEFAULT_DISTILL_MODEL } from './agent/tools/browser/distill.ts';
 import { createClients, deriveProviderName } from './agent/core/ai-client.ts';
 import { createProviderRegistry } from './agent/core/providers/registry.ts';
 import { initWebViewDataStore } from './agent/tools/browser/webview-session.ts';
@@ -54,14 +52,6 @@ app.use(cors(createCorsOptions(securityConfig)));
 app.use(createApiAuth(securityConfig));
 app.use(express.json({ limit: '25mb' }));
 
-const { openai_client, gemini_client } = createClients();
-const registry = createProviderRegistry({ openai_client, gemini_client });
-// 启动时同步拉取模型列表；全部供应商失败则中止启动并打印原因，不再兜底默认模型。
-const modelConfig = await registry.loadModelConfig().catch((err: any) => {
-  log.error(`[启动失败] ${err.message}`);
-  process.exit(1);
-});
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST_DIR = path.resolve(__dirname, 'client/dist');
 const MEMORY_DIR = path.resolve(__dirname, process.env.MEMORY_DIR || 'data');
@@ -73,18 +63,25 @@ const CHECKPOINT_DIR = GLOBAL_SCOPE_DIR;
 initLlmLogger(MEMORY_DIR);
 initWebViewDataStore(MEMORY_DIR);
 // 配置仓库：读取版本化 data/config.json，并兼容迁移旧 runtime-config.json。
-// 必须在 createDesktopAgentRunner 之前 init，且供 runtime.ts/memory.ts 热读取。
+// 必须在 loadModelConfig() 之前 init——provider 列模型时要读 models 段来判定
+// agentCompatible；也必须在 createDesktopAgentRunner 之前，且供 runtime.ts/memory.ts 热读取。
 await configStore.init(MEMORY_DIR);
 warnLegacyConfiguration(configStore);
 const executionConfig = configStore.execution();
+
+const { openai_client, gemini_client } = createClients();
+const registry = createProviderRegistry({ openai_client, gemini_client });
+// 启动时同步拉取模型列表；全部供应商失败则中止启动并打印原因，不再兜底默认模型。
+const modelConfig = await registry.loadModelConfig().catch((err: any) => {
+  log.error(`[启动失败] ${err.message}`);
+  process.exit(1);
+});
 
 // 项目注册表：每个项目隔离记忆/trace/checkpoint/uploads 与文件工具根。
 // 注册表为空时为「无项目」全局态，数据落在 GLOBAL_SCOPE_DIR。
 const projectStore = createProjectStore(MEMORY_DIR);
 await projectStore.init();
 
-const VISION_MODEL = (configStore.tools().vision?.model || process.env.VISION_MODEL || DEFAULT_VISION_MODEL).trim();
-const DISTILL_MODEL = (process.env.DISTILL_MODEL || DEFAULT_DISTILL_MODEL).trim();
 const agentSandboxedWorkers = executionConfig.sandboxedWorkers;
 const AGENT_WORKER_SANDBOX = executionConfig.workerSandbox;
 const agentRunStore = createAgentRunStore();
@@ -103,8 +100,6 @@ const directRunDesktopAgent = createDesktopAgentRunner({
   runStore: agentRunStore,
   approvalStore,
   checkpointDir: CHECKPOINT_DIR,
-  visionModel: VISION_MODEL,
-  distillModel: DISTILL_MODEL,
 });
 // runner 类型与 macOS Sandbox 都在启动时固定；UI 保存 execution 后必须重启，
 // 后端才会重新创建 Worker runner 或切回进程内直跑。
@@ -115,8 +110,6 @@ const runDesktopAgent = agentSandboxedWorkers
       modelConfig,
       approvalStore,
       runStore: agentRunStore,
-      visionModel: VISION_MODEL,
-      distillModel: DISTILL_MODEL,
       sandbox: AGENT_WORKER_SANDBOX,
     }) as any
   : directRunDesktopAgent;
@@ -183,7 +176,7 @@ const httpServer = app.listen(Number(PORT), HOST, async () => {
   ${row('🚀 Sagent Server', `http://${HOST}:${PORT}`)}
   ╠${dLine.slice(2)}╣
   ${row('Models', modelConfig.map(m => m.id).join(', '))}
-  ${row('VISION_MODEL', VISION_MODEL)}
+  ${row('Vision Model', configStore.tools().vision?.model || process.env.VISION_MODEL || 'auto (selected / main model)')}
   ${hLine}
   ${row('Max Steps', cfg.maxSteps)}
   ${row('Model Timeout', `${cfg.modelTimeoutSec}s`)}

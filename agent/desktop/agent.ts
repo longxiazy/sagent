@@ -80,8 +80,6 @@ interface DesktopAgentRunnerConfig {
   runStore?: AgentRunStore | null;
   approvalStore: Pick<ApprovalStore, 'request'>;
   checkpointDir?: string;
-  visionModel: string;
-  distillModel?: string;
   modelTimeoutMs?: number;
   staggerDelayMs?: number;
   batchSize?: number;
@@ -97,8 +95,6 @@ export function createDesktopAgentRunner({
   runStore,
   approvalStore,
   checkpointDir,
-  visionModel,
-  distillModel = '',
   modelTimeoutMs = DEFAULT_MODEL_TIMEOUT_MS,
   staggerDelayMs = 0,
   batchSize = 1,
@@ -113,7 +109,8 @@ export function createDesktopAgentRunner({
   // 每次 run 都从 configStore 读取行为参数，前台修改后无需重启即可生效。
   // 因此工厂入参 maxSteps/modelTimeoutMs/staggerDelayMs/batchSize/observeDesktop
   // 目前不参与运行时兜底。
-  // visionModel/distillModel 也不在这里直接读取；两个工具在 action 执行时动态解析模型。
+  // vision/distill 的模型不是工厂入参：两个工具在 action 执行时用 resolveToolModel
+  // 现算（项目覆盖 → 全局配置 → 环境变量 → 当前主模型）。
   function liveConfig() {
     const c = configStore.get();
     return {

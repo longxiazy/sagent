@@ -1,7 +1,11 @@
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useT } from '../../i18n/I18nProvider.jsx';
+
+// 已挂载的弹框栈。Escape 监听挂在 window 上，嵌套弹框（如设置里再开模型选择器）
+// 会让每一层都收到同一次按键，一下关掉整摞；这里只让最上层响应。
+const dialogStack = [];
 
 export function DialogShell({
   title,
@@ -21,6 +25,13 @@ export function DialogShell({
   const onCloseRef = useRef(onClose);
   const closeDisabledRef = useRef(closeDisabled);
   const escapeDisabledRef = useRef(escapeDisabled);
+  // 嵌套弹框（设置里再开模型选择器）必须压在外层之上。外层的层级由各自的
+  // maskClassName 决定（.settings-mask 是 100，高于 .model-picker-mask 的 90），
+  // 所以只给第二层及以上加行内覆盖，不动已有单层弹框之间的关系。
+  // 入栈发生在 effect 里，而 effect 是自外向内跑的：内层首次渲染时外层已经在栈上。
+  // 用惰性初始的 state 而非 ref——深度要参与渲染，读 ref 会踩 react-hooks/refs。
+  const [depth] = useState(() => dialogStack.length);
+  const maskStyle = depth > 0 ? { zIndex: 100 + depth * 10 } : undefined;
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -34,11 +45,19 @@ export function DialogShell({
     document.body.style.overflow = 'hidden';
     closeRef.current?.focus();
 
+    const token = {};
+    dialogStack.push(token);
+
     const onKeyDown = event => {
-      if (event.key === 'Escape' && !closeDisabledRef.current && !escapeDisabledRef.current) onCloseRef.current?.();
+      if (event.key !== 'Escape') return;
+      if (dialogStack[dialogStack.length - 1] !== token) return;
+      if (closeDisabledRef.current || escapeDisabledRef.current) return;
+      onCloseRef.current?.();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {
+      const index = dialogStack.indexOf(token);
+      if (index >= 0) dialogStack.splice(index, 1);
       window.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus?.();
@@ -53,7 +72,7 @@ export function DialogShell({
   // transform / filter / backdrop-filter 的祖先降级为相对该祖先定位。输入框
   // (.agent-composer--dock) 就带 backdrop-filter，弹层留在原地会被压缩进输入框。
   return createPortal((
-    <div className={`model-picker-mask ${maskClassName}`.trim()} onPointerDown={closeFromMask}>
+    <div className={`model-picker-mask ${maskClassName}`.trim()} style={maskStyle} onPointerDown={closeFromMask}>
       <div
         className={`model-picker-dialog ${dialogClassName}`.trim()}
         role="dialog"

@@ -32,10 +32,44 @@ export interface McpServerConfig {
   navigateTimeoutMs?: number;
 }
 
+/**
+ * 「不适合做 Agent 决策」的模型 id 关键词（子串匹配，大小写不敏感）。
+ *
+ * 命中的模型**不会**从模型列表里消失——它们照常返回给前端，只是被标记
+ * agentCompatible:false，由 Agent 模型选择器隐藏。对话、Vision/Distill 工具模型
+ * 选择器拿到的都是全量列表。想放行个别模型，在 config.json 的
+ * models.agentCompatible 里写 { "<模型id>": true } 即可，优先级高于本表。
+ *
+ * 覆盖范围：向量/重排、视觉/OCR、纯代码补全、内容安全护栏、图像/视频/语音生成。
+ * 其中 imagen/veo/tts/-image 等原先是 gemini provider 的第二条硬编码规则，
+ * 已一并收编到这里，避免两处各删一半。
+ */
+export const DEFAULT_NON_AGENT_KEYWORDS: string[] = [
+  // 向量 / 重排 / 检索
+  'embed', 'rerank', 'retriever', 'bge-', 'arctic-embed', 'nvclip',
+  // 视觉 / OCR / 多模态专用模型
+  'fuyu', 'deplot', 'vila', 'neva', 'kosmos', 'ocr', 'paddle', '-vision', 'vision-', '-vl-',
+  // 代码补全
+  'codegemma', 'starcoder', 'codellama', '-coder', 'coder-',
+  // 内容安全护栏
+  'guard', 'safety', 'topic-control',
+  // 图像 / 视频 / 语音生成（无法做文本决策）
+  'imagen', 'veo', 'aqa', 'tts', '-image', 'image-', 'gemma-2', 'gemma-3n',
+];
+
+/** 模型准入策略：关键词表 + 逐个模型的显式覆盖。 */
+export interface ModelPolicyConfig {
+  /** 覆盖内置关键词表；缺省或非法时回落到 DEFAULT_NON_AGENT_KEYWORDS。空数组 = 不标记任何模型。 */
+  nonAgentKeywords?: string[];
+  /** 逐个模型显式指定是否可用于 Agent 决策，优先级高于关键词表与供应商目录元数据。 */
+  agentCompatible?: Record<string, boolean>;
+}
+
 export interface SagentConfigDocument {
   version: 1;
   profile?: ConfigProfile;
   agent?: Partial<RuntimeConfig>;
+  models?: ModelPolicyConfig;
   mcpServers?: Record<string, McpServerConfig>;
   tools?: {
     vision?: { model?: string };
