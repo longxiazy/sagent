@@ -14,10 +14,11 @@ import { getModelLabel } from './plan-stage.js';
 import { TraceDebugPanel } from './TraceDebugPanel.jsx';
 import { useIsMobile } from '../../hooks/useIsMobile.js';
 import { usePersistentState, jsonStorage } from '../../hooks/usePersistentState.js';
+import { MAX_AGENT_RUN_HISTORY } from '../../hooks/useChatSessions.js';
 import { useT } from '../../i18n/I18nProvider.jsx';
 import { formatFullTime, formatRelativeTime } from '../../utils/format.js';
 import { fetchAgentTrace } from '../../api/streams.js';
-import { appendUniqueTraceEvent } from '../../utils/agent-trace.js';
+import { dedupeTraceEvents } from '../../utils/agent-trace.js';
 import { DialogShell } from '../dialogs/DialogShell.jsx';
 import { attemptStepKey, buildAttemptTraceIndex } from '../../utils/agent-attempts.js';
 
@@ -39,6 +40,16 @@ function statusLabel(status, t) {
   if (status === 'error') return t('agentStats.statusError');
   if (status === 'cancelled') return t('agentStats.statusCancelled');
   return t('agentStats.statusDone');
+}
+
+// 状态标签的配色分档，对应 App.css 里的 --c-badge-* 令牌(自带暗色变体)。
+// 缺省归到 done：老会话的 agentMeta 可能没有 status，但它们本来就是跑完的。
+function statusTone(status) {
+  if (status === 'error') return 'error';
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'done_degraded') return 'degraded';
+  if (status === 'done_unverified') return 'unverified';
+  return 'done';
 }
 
 function traceRunId(trace) {
@@ -224,7 +235,9 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
   const [traceDebugOpen, setTraceDebugOpen] = useState(false);
   const [traceDebugModelId, setTraceDebugModelId] = useState('all');
   const [headVisible, setHeadVisible] = useState(true);
-  const [recentRunExpanded, setRecentRunExpanded] = useState(true);
+  // 展开着完整步骤流的那一轮 run(按 runId 记，不是布尔量)：
+  // 只有“本次进来跑过的这一轮”默认展开，点开历史会话时一律先折叠成摘要卡。
+  const [expandedRunId, setExpandedRunId] = useState(null);
   const [selectedModelId, setSelectedModelId] = useState('all');
 
   // 运行悬浮框：默认贴在页面右上角(fixed，见 CSS)，桌面端可拖动、缩放；位置尺寸持久化。
@@ -336,18 +349,27 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
   );
   const currentRunId = lastRun?.runId || traceRunId(trace);
   const canToggleRecentRun = !running && trace.length > 0 && !!lastRun;
+  // 一轮 run 可以有几百个事件、上兆文本，点开历史会话就整条挂上去会明显卡一帧。
+  // 所以历史会话默认只渲染「最近执行」摘要卡，完整步骤流等用户点开再挂。
+  const recentRunExpanded = running || expandedRunId === currentRunId;
   const showCurrentTrace = running || !canToggleRecentRun || recentRunExpanded;
   const LastRunFrame = canToggleRecentRun ? 'button' : 'div';
   const lastRunClassName = `agent-last-run${lastRun?.status === 'error' ? ' error' : ''}${canToggleRecentRun ? ' agent-last-run-toggle' : ''}`;
   const historyRuns = useMemo(
-    () => previousRuns.filter((run, index) => runKey(run, index) !== currentRunId).slice(0, 8),
+    // 会话里最多就存这么多条，这里不再另设更小的显示上限——弹框够高，列表自己滚。
+    () => previousRuns.filter((run, index) => runKey(run, index) !== currentRunId).slice(0, MAX_AGENT_RUN_HISTORY),
     [currentRunId, previousRuns],
   );
 
   useEffect(() => {
-    setRecentRunExpanded(true);
     setSelectedModelId('all');
   }, [currentRunId]);
+
+  // 正在跑的这一轮登记为“已展开”，这样 run 结束、running 落回 false 之后，
+  // 刚看完的步骤流不会在收尾那一刻突然折叠起来。
+  useEffect(() => {
+    if (running && currentRunId) setExpandedRunId(currentRunId);
+  }, [running, currentRunId]);
 
   useEffect(() => {
     if (selectedModelId !== 'all' && !modelIds.includes(selectedModelId)) setSelectedModelId('all');
@@ -362,7 +384,7 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
     setHistoryTraceLoading(key);
     try {
       const events = await fetchAgentTrace(run.runId, { projectId });
-      const deduped = events.reduce((acc, event) => appendUniqueTraceEvent(acc, event), []);
+      const deduped = dedupeTraceEvents(events);
       setHistoryTraceCache(prev => ({ ...prev, [key]: deduped }));
     } catch {
       setHistoryTraceCache(prev => ({ ...prev, [key]: [] }));
@@ -588,7 +610,7 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
               className={lastRunClassName}
               {...(canToggleRecentRun ? {
                 type: 'button',
-                onClick: () => setRecentRunExpanded(v => !v),
+                onClick: () => setExpandedRunId(prev => (prev === currentRunId ? null : currentRunId)),
                 'aria-expanded': recentRunExpanded,
               } : {})}
             >
@@ -601,7 +623,12 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
                   <span className="agent-last-run-status" title={lastRun.endedAt ? formatFullTime(lastRun.endedAt) : ''}>
                     {lastRun.endedAt ? formatRelativeTime(lastRun.endedAt) : statusLabel(lastRun.status, t)}
                   </span>
-                  {canToggleRecentRun && (recentRunExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
+                  {canToggleRecentRun && (
+                    <span className="agent-last-run-toggle-hint">
+                      {recentRunExpanded ? t('agentPanel.collapseTrace') : t('agentPanel.expandTrace')}
+                      {recentRunExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </span>
+                  )}
                 </span>
               </div>
               <div className="agent-last-run-grid">
@@ -716,7 +743,7 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
     {historyDialogOpen && (
       <DialogShell
         title={t('agentPanel.previousRuns')}
-        subtitle={historyRuns.length}
+        subtitle={t('agentPanel.previousRunsCap', { n: historyRuns.length, max: MAX_AGENT_RUN_HISTORY })}
         onClose={() => setHistoryDialogOpen(false)}
         escapeDisabled={!!lightboxSrc}
         maskClassName="agent-history-dialog-mask"
@@ -740,8 +767,11 @@ export function AgentPanel({ running, trace, startedAt, lastRun, previousRuns = 
                       <span>{formatDurationMs(meta.elapsedMs || 0)} · {formatTokenCount(meta.totalTokens || 0)} tok · {t('agentPanel.stepCount', { n: meta.stepCount || 0 })}</span>
                     </span>
                     <span className="agent-history-run-side">
-                      <span>{models.slice(0, 2).join(' + ') || t('session.unknownModel')}</span>
-                      <span title={meta.endedAt ? formatFullTime(meta.endedAt) : ''}>{meta.endedAt ? formatRelativeTime(meta.endedAt) : statusLabel(meta.status, t)}</span>
+                      <span className={`agent-run-status-tag ${statusTone(meta.status)}`}>{statusLabel(meta.status, t)}</span>
+                      <span className="agent-history-run-models">{models.slice(0, 2).join(' + ') || t('session.unknownModel')}</span>
+                      {meta.endedAt && (
+                        <span title={formatFullTime(meta.endedAt)}>{formatRelativeTime(meta.endedAt)}</span>
+                      )}
                       {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     </span>
                   </button>

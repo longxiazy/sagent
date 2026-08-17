@@ -300,6 +300,8 @@ export const zh = {
   'agentPanel.browserStatus.recovering': '正在重建',
   'agentPanel.browserStatus.degraded': '异常',
   'agentPanel.recentRun': '最近执行',
+  'agentPanel.expandTrace': '展开过程',
+  'agentPanel.collapseTrace': '收起过程',
   'agentPanel.mcpPhase.connecting': '正在连接',
   'agentPanel.mcpPhase.connected': '连接成功',
   'agentPanel.mcpPhase.discovering': '读取工具列表',
@@ -309,6 +311,7 @@ export const zh = {
   'agentPanel.mcpPhase.completed': '已完成',
   'agentPanel.mcpPhase.error': '执行失败',
   'agentPanel.previousRuns': '历史执行',
+  'agentPanel.previousRunsCap': '共 {n} 条 · 每个会话最多保留最近 {max} 条',
   'agentPanel.historyLoading': '正在加载历史步骤…',
   'agentPanel.historyTraceUnavailable': '未找到这次执行的历史步骤',
 

@@ -39,6 +39,26 @@ export function appendUniqueTraceEvent(prev, event) {
   return [...prev, event];
 }
 
+// 整条 trace 一次性落地时(切换会话、SSE 重连回放)的批量去重。
+// appendUniqueTraceEvent 是为“逐个追加”写的：每追加一个事件都要重算一遍已有事件的
+// key 并复制整份数组，拿它 reduce 一条几百事件的 trace 就是 O(n²)，这笔开销全压在
+// 切会话那一帧上。语义保持一致：同 key 留先出现的那个，算不出 key 的事件一律保留。
+export function dedupeTraceEvents(events) {
+  if (!Array.isArray(events)) return [];
+
+  const seen = new Set();
+  const result = [];
+  for (const event of events) {
+    const key = agentTraceEventKey(event);
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    result.push(event);
+  }
+  return result;
+}
+
 // 从 checkpoint 重跑会复用 runId，于是同一条 trace 里留着每个 attempt 的
 // done/error。取首个会读到早已被重跑覆盖的旧结果——成功的 run 因此被记成失败。
 // 语义上“这个 run 的结局”永远是最后一个终止事件。

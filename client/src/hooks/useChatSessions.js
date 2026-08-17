@@ -3,7 +3,9 @@ import { tStatic } from '../i18n/locale.js';
 import { normalizeAgentMeta } from '../utils/agent-stats.js';
 import { apiFetch } from '../api/http.js';
 
-const MAX_AGENT_RUN_HISTORY = 30;
+// 单个会话保留的 Agent 执行记录上限。服务端 session-store 的 normalizeAgentRuns
+// 也切在 30，两边必须一致，否则前端显示的条数会比落盘的多。
+export const MAX_AGENT_RUN_HISTORY = 30;
 
 function generateSessionId() {
   return `session_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
