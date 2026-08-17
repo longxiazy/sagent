@@ -49,7 +49,7 @@ import {
 import { formatMsgTime } from './utils/format.js';
 import { shuffled } from './utils/random.js';
 import { hasThinkContent } from './utils/markdown.js';
-import { appendUniqueTraceEvent, settledTerminalEvent } from './utils/agent-trace.js';
+import { appendUniqueTraceEvent, dedupeTraceEvents, settledTerminalEvent } from './utils/agent-trace.js';
 import { buildActualContextEstimate } from './utils/context-usage.js';
 import { buildAgentMetaFromSession } from './utils/agent-stats.js';
 
@@ -732,7 +732,7 @@ export default function App() {
       fetchAgentTrace(savedRunId, { signal: controller.signal, projectId: activeSession.projectId ?? null })
         .then(events => {
           if (events.length === 0 || controller.signal.aborted) return;
-          const deduped = events.reduce((acc, event) => appendUniqueTraceEvent(acc, event), []);
+          const deduped = dedupeTraceEvents(events);
           setAgentTrace(deduped);
           const modelsUsed = getTraceModels(deduped);
           // 重建 trace 只是恢复客户端镜像，不算用户活动：保留原 updatedAt，

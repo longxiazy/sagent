@@ -3223,7 +3223,8 @@ a.model-option-detail-value:hover {
   overflow: visible;
 }
 
-.agent-workspace-trace .agent-last-run,
+/* 面板顶部那句静态说明在 workspace 里是噪音；「最近执行」摘要卡则要留着——
+   历史会话默认折叠步骤流，这张卡就是唯一的运行摘要和展开入口。 */
 .agent-workspace-trace .agent-panel-note {
   display: none;
 }
@@ -3529,6 +3530,17 @@ a.model-option-detail-value:hover {
   color: var(--c-text-muted);
 }
 
+/* 折叠态下把「点我展开步骤流」写在卡片上——历史会话默认不铺开整轮步骤。 */
+.agent-last-run-toggle-hint {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--c-text-muted);
+  font-size: var(--f-micro);
+  white-space: nowrap;
+}
+
 .agent-last-run-grid {
   display: flex;
   flex-wrap: wrap;
@@ -3574,22 +3586,63 @@ a.model-option-detail-value:hover {
   background: rgba(0, 0, 0, 0.48);
 }
 
-.model-picker-dialog.agent-history-dialog {
-  width: min(760px, 100%);
-  height: auto;
-  max-height: min(760px, calc(100vh - 48px));
-}
-
+/* 尺寸不再单独收窄，直接沿用「模型选择」弹框的 .model-picker-dialog
+   ——min(1280px, 100vw - 40px) × min(88dvh, 780px)，移动端同样退化成底部抽屉。
+   列表要吃满这个固定高度并在内部滚动，所以必须给 flex 尺寸。 */
 .agent-run-history--dialog {
+  flex: 1 1 0;
+  min-height: 0;
   margin: 0;
-  padding: 12px;
+  padding: 14px;
+  gap: 8px;
   overflow-y: auto;
 }
 
 @media (max-width: 639px) {
-  .model-picker-dialog.agent-history-dialog { max-height: calc(100vh - 20px); }
   .agent-history-btn > span:not(.agent-history-btn-count) { display: none; }
-  .agent-history-run-side > span:first-child { display: none; }
+  /* 窄屏优先保状态标签和时间，模型名先让位。
+     原来这条按 :first-child 写，状态标签插到最前面后会误伤标签本身。 */
+  .agent-history-run-models { display: none; }
+}
+
+/* 执行状态标签。配色走 --c-badge-* 令牌，暗色主题自动跟随。 */
+.agent-run-status-tag {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: var(--f-micro);
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--c-badge-default-bg);
+  color: var(--c-badge-default);
+}
+
+.agent-run-status-tag.done {
+  background: var(--c-badge-done-bg);
+  color: var(--c-badge-done);
+}
+
+.agent-run-status-tag.degraded {
+  background: var(--c-badge-rollback-bg);
+  color: var(--c-badge-rollback);
+}
+
+.agent-run-status-tag.unverified {
+  background: var(--c-badge-approval-bg);
+  color: var(--c-badge-approval);
+}
+
+.agent-run-status-tag.error {
+  background: var(--c-badge-error-bg);
+  color: var(--c-badge-error);
+}
+
+.agent-run-status-tag.cancelled {
+  background: var(--c-badge-default-bg);
+  color: var(--c-badge-default);
 }
 
 .agent-history-run {
@@ -3601,15 +3654,15 @@ a.model-option-detail-value:hover {
 
 .agent-history-run-toggle {
   width: 100%;
-  min-height: 44px;
-  padding: 8px 10px;
+  min-height: 56px;
+  padding: 11px 14px;
   border: 0;
   background: transparent;
   color: inherit;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
   text-align: left;
   cursor: pointer;
 }
@@ -3622,12 +3675,12 @@ a.model-option-detail-value:hover {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .agent-history-run-main strong {
   color: var(--c-text);
-  font-size: var(--f-xs);
+  font-size: var(--f-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3636,14 +3689,14 @@ a.model-option-detail-value:hover {
 .agent-history-run-main span,
 .agent-history-run-side {
   color: var(--c-text-secondary);
-  font-size: var(--f-micro);
+  font-size: var(--f-xs);
 }
 
 .agent-history-run-side {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   white-space: nowrap;
 }
 
@@ -3652,12 +3705,12 @@ a.model-option-detail-value:hover {
 }
 
 .agent-history-trace {
-  padding: 0 10px 10px;
+  padding: 0 14px 14px;
   border-top: 1px solid var(--c-border);
 }
 
 .agent-trace.agent-trace--history {
-  max-height: 360px;
+  max-height: 460px;
   margin-top: 8px;
   padding-top: 2px;
   flex: initial;

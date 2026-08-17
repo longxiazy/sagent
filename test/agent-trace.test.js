@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentTraceEventKey, appendUniqueTraceEvent, latestTerminalEvent, settledTerminalEvent } from '../client/src/utils/agent-trace.js';
+import { agentTraceEventKey, appendUniqueTraceEvent, dedupeTraceEvents, latestTerminalEvent, settledTerminalEvent } from '../client/src/utils/agent-trace.js';
 
 describe('agent trace event de-duplication', () => {
   it('uses the server sequence as the primary event identity', () => {
@@ -37,6 +37,41 @@ describe('agent trace event de-duplication', () => {
     const replay = { ...action };
 
     expect(appendUniqueTraceEvent([action], replay)).toHaveLength(1);
+  });
+});
+
+// 切会话/重连回放会一次性落地整条 trace。逐个 appendUniqueTraceEvent 是 O(n²)，
+// 几百个事件时那一帧的开销肉眼可见，故批量路径走 Set，但结果必须逐字节等价。
+describe('bulk trace de-duplication', () => {
+  it('matches append-one-by-one results', () => {
+    const events = [
+      { runId: 'run_1', seq: 1, type: 'status', status: 'starting' },
+      { runId: 'run_1', seq: 2, type: 'step', step: 1, stage: 'observe' },
+      { runId: 'run_1', seq: 2, type: 'step', step: 1, stage: 'observe' },
+      { type: 'terminal_output', step: 1, phase: 'stdout', sequence: 1, chunk: 'a\n' },
+      { type: 'terminal_output', step: 1, phase: 'stdout', sequence: 1, chunk: 'a\n' },
+      { type: 'terminal_output', step: 1, phase: 'stdout', sequence: 2, chunk: 'b\n' },
+      { runId: 'run_1', seq: 9, type: 'done', answer: '完成' },
+    ];
+
+    const oneByOne = events.reduce((acc, event) => appendUniqueTraceEvent(acc, event), []);
+
+    expect(dedupeTraceEvents(events)).toEqual(oneByOne);
+    expect(dedupeTraceEvents(events)).toHaveLength(5);
+  });
+
+  it('keeps the first occurrence of a duplicated key', () => {
+    const first = { runId: 'run_1', seq: 3, type: 'step', step: 2, stage: 'action', tag: 'first' };
+    const later = { runId: 'run_1', seq: 3, type: 'step', step: 2, stage: 'action', tag: 'later' };
+
+    expect(dedupeTraceEvents([first, later])).toEqual([first]);
+  });
+
+  it('keeps events that produce no key instead of collapsing them', () => {
+    const events = [null, undefined, 'junk'];
+
+    expect(dedupeTraceEvents(events)).toEqual(events);
+    expect(dedupeTraceEvents(null)).toEqual([]);
   });
 });
 

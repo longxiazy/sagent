@@ -299,6 +299,8 @@ export const en = {
   'agentPanel.browserStatus.recovering': 'Rebuilding',
   'agentPanel.browserStatus.degraded': 'Degraded',
   'agentPanel.recentRun': 'Recent run',
+  'agentPanel.expandTrace': 'Show steps',
+  'agentPanel.collapseTrace': 'Hide steps',
   'agentPanel.mcpPhase.connecting': 'Connecting',
   'agentPanel.mcpPhase.connected': 'Connected',
   'agentPanel.mcpPhase.discovering': 'Discovering tools',
@@ -308,6 +310,7 @@ export const en = {
   'agentPanel.mcpPhase.completed': 'Completed',
   'agentPanel.mcpPhase.error': 'Failed',
   'agentPanel.previousRuns': 'Previous runs',
+  'agentPanel.previousRunsCap': '{n} runs · each chat keeps the latest {max}',
   'agentPanel.historyLoading': 'Loading previous steps…',
   'agentPanel.historyTraceUnavailable': 'No saved steps were found for this run',
 
