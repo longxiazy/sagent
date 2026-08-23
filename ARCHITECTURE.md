@@ -43,6 +43,15 @@ data directory
 
 The server no longer resumes incomplete runs on restart; Step-level checkpoints were removed. Session-level health snapshots remain for in-run manual rollback only.
 
+### Model list lifecycle
+
+The array produced in step 2 is shared **by reference** with the completions/agent routes, the direct runner, and the worker runner's start payload. Two paths mutate it in place so every holder sees the change without a restart:
+
+- `applyModelPolicy` (`agent/core/providers/model-policy.ts`) — recomputes `agentCompatible` flags after the admission policy is saved.
+- `createModelRefresher` (`agent/core/providers/model-refresh.ts`) — backs `POST /api/models/refresh`, a manual full re-fetch from every provider. Unlike startup (which boots as long as one provider answers), the refresh is all-or-nothing: any provider failure aborts it with a 502 and leaves the existing list untouched, so a transient network error can never silently delete a provider's models. Concurrent refreshes share one in-flight fetch, and the replace is a single `splice` so an in-progress run never observes a half-empty list.
+
+`GET /api/models` returns `refreshedAt`/`count` alongside the models so the client can show how stale the list is.
+
 ## Configuration architecture
 
 Configuration is intentionally split by lifecycle:

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Palette, SlidersHorizontal, KeyRound, Minus, Plus, Plug, ChevronDown, ChevronRight, Trash2, Boxes, X } from 'lucide-react';
+import { Palette, SlidersHorizontal, KeyRound, Minus, Plus, Plug, ChevronDown, ChevronRight, RefreshCw, Trash2, Boxes, X } from 'lucide-react';
 import { fetchConfig, saveConfig, saveExecution, saveTools, saveModelPolicy, resetConfig, applyConfigProfile, saveMcpServer, deleteMcpServer, testMcpServer } from '../../api/config.js';
 import { useTheme } from '../../theme/ThemeProvider.jsx';
 import { useI18n, useT } from '../../i18n/I18nProvider.jsx';
 import { multiModelTuningIdle } from '../../utils/agent-config-hints.js';
 import { modelSupportsImageInput } from '../../utils/model-vision.js';
+import { modelRefreshNote } from '../../utils/model-refresh-note.js';
 import { SingleModelSelector } from '../ModelSelector.jsx';
 import { DialogShell } from './DialogShell.jsx';
 
@@ -76,7 +77,7 @@ const GROUPS = [
 // 设置面板：左导航分组 + 右内容。
 // 外观（主题/语言，前台即时生效）、Agent 参数（保存后下次任务生效）、
 // Worker 部署开关（保存后需重启）、记忆前端偏好和 API Key 只读展示。
-export function SettingsDialog({ onClose, activeProjectId = null, projects = [], selectedAgentModels = [], availableModels = [], onModelPolicyChange = null }) {
+export function SettingsDialog({ onClose, activeProjectId = null, projects = [], selectedAgentModels = [], availableModels = [], onModelPolicyChange = null, onRefreshModels = null, modelsRefreshedAt = null }) {
   const t = useT();
   const { theme, setTheme, fontSize, setFontSize } = useTheme();
   const { locale, setLocale } = useI18n();
@@ -106,6 +107,11 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
   const [keywordDraft, setKeywordDraft] = useState('');
   const [modelFilter, setModelFilter] = useState('');
   const [showAllModels, setShowAllModels] = useState(false);
+  // 模型列表重拉：与 saving（保存配置）分开，两件事互不影响，也不该互相禁用。
+  // 结果一律留一句话——包括「拉到了但没变化」，否则点完看不出发生过什么。
+  const [refreshingModels, setRefreshingModels] = useState(false);
+  const [refreshNote, setRefreshNote] = useState('');
+  const [modelRefreshError, setModelRefreshError] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [mcpStatus, setMcpStatus] = useState({});
   const [newMcpName, setNewMcpName] = useState('');
@@ -547,6 +553,45 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
   // 模型准入策略面板。判定逻辑与后端 resolveAgentCompatible 一致：
   // 显式覆盖 > 关键词表。供应商目录那一层前端拿不到，但它已经体现在
   // model.agentCompatible 里，所以未被覆盖的模型直接读该字段即可。
+  const handleRefreshModels = async () => {
+    if (!onRefreshModels || refreshingModels) return;
+    setRefreshingModels(true);
+    setRefreshNote('');
+    setModelRefreshError('');
+    try {
+      setRefreshNote(modelRefreshNote(await onRefreshModels(), t));
+    } catch (e) {
+      setModelRefreshError(e?.message || String(e));
+    } finally {
+      setRefreshingModels(false);
+    }
+  };
+
+  // 模型列表的来源与新鲜度。后端那份列表是它启动时向各供应商拉的快照，
+  // 供应商上新/下线在这里手动重拉才看得到——不写清楚，用户只会以为是自己看花了眼。
+  const renderModelSource = () => (
+    <div className="settings-policy settings-model-source">
+      <div className="settings-policy-head">
+        <span>{t('settings.modelList')}</span>
+        <span className="settings-model-source-meta">
+          {t('settings.modelListCount', { count: availableModels.length })}
+          {modelsRefreshedAt && ` · ${t('settings.modelListFetchedAt', { time: new Date(modelsRefreshedAt).toLocaleString() })}`}
+        </span>
+      </div>
+      <p className="settings-policy-hint">{t('settings.modelListHint')}</p>
+      {onRefreshModels && (
+        <div className="settings-model-source-actions">
+          <button type="button" className="dialog-btn" onClick={handleRefreshModels} disabled={refreshingModels}>
+            <RefreshCw size={13} className={refreshingModels ? 'spinning' : ''} />
+            {refreshingModels ? t('settings.modelListRefreshing') : t('settings.modelListRefresh')}
+          </button>
+        </div>
+      )}
+      {refreshNote && !modelRefreshError && <p className="settings-model-source-note">{refreshNote}</p>}
+      {modelRefreshError && <p className="settings-model-source-error">{modelRefreshError}</p>}
+    </div>
+  );
+
   const renderModelPolicy = () => {
     const overrides = modelPolicy.agentCompatible || {};
     const keywordsChanged = keywordsOverridden();
@@ -965,6 +1010,7 @@ export function SettingsDialog({ onClose, activeProjectId = null, projects = [],
           <p className="dialog-desc">{t('settings.modelsDesc')}</p>
           {renderBackendGuard() || (
             <div className="settings-grid">
+              {renderModelSource()}
               <label className="settings-field">
                 <span>{t('settings.toolsScope')}</span>
                 <select value={toolsScope} onChange={e => switchToolsScope(e.target.value)} disabled={saving}>
