@@ -2081,6 +2081,28 @@ select,
   color: var(--c-primary);
 }
 
+/* 重拉失败：弹框里没有常驻报错位，靠这一抹红把原因引到按钮的 title 上。 */
+.model-picker-help.error,
+.model-picker-help.error:hover {
+  border-color: var(--c-danger);
+  background: transparent;
+  color: var(--c-danger);
+}
+
+.model-picker-help:disabled { cursor: default; opacity: 0.6; }
+
+/* 重拉结果提示（含「无变化」）：贴在弹框顶部，点完总有一句交代。 */
+.model-picker-refresh-note {
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--f-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.model-picker-refresh-note.ok { background: var(--c-primary-bg); color: var(--c-primary); }
+.model-picker-refresh-note.error { background: var(--c-danger-bg, var(--c-surface-dim)); color: var(--c-danger); }
+
 .model-picker-close:hover {
   border-color: var(--c-primary);
   color: var(--c-text);
@@ -3787,6 +3809,9 @@ a.model-option-detail-value:hover {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* 通用「进行中」旋转标记：给任何 svg 图标加 .spinning 即可（模型重拉等）。 */
+.spinning { animation: spin 1s linear infinite; }
 
 .agent-metrics {
   display: flex;
@@ -6124,6 +6149,29 @@ textarea:disabled {
   color: var(--c-text-secondary);
 }
 .settings-policy-hint { margin: 6px 0 0; font-size: var(--f-xs); line-height: 1.5; color: var(--c-text-muted); }
+
+/* 模型列表来源卡片：数量/拉取时刻 + 重新拉取按钮。 */
+.settings-model-source-meta {
+  flex: 0 0 auto;
+  font-weight: 400;
+  font-size: var(--f-micro);
+  color: var(--c-text-muted);
+}
+.settings-model-source-actions { margin-top: 10px; }
+.settings-model-source-actions .dialog-btn { gap: 6px; height: 30px; padding: 0 12px; font-size: var(--f-xs); }
+.settings-model-source-note {
+  margin: 8px 0 0;
+  font-size: var(--f-xs);
+  line-height: 1.5;
+  color: var(--c-primary);
+}
+.settings-model-source-error {
+  margin: 8px 0 0;
+  font-size: var(--f-xs);
+  line-height: 1.5;
+  color: var(--c-danger);
+  white-space: pre-wrap;
+}
 .settings-policy-reset {
   flex: 0 0 auto;
   padding: 2px 8px;

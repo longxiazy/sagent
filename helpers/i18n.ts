@@ -26,6 +26,7 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'checkpoint.noActiveRun': '没有活跃的运行',
     'checkpoint.rollbackInProgress': '已有回滚请求处理中',
     'screenshots.invalidPath': '非法的截图路径',
+    'models.refreshFailed': '模型列表拉取失败',
   },
   en: {
     'trace.notFound': 'trace not found',
@@ -45,6 +46,7 @@ const MESSAGES: Record<Locale, Record<string, string>> = {
     'checkpoint.noActiveRun': 'No active run',
     'checkpoint.rollbackInProgress': 'A rollback request is already in progress',
     'screenshots.invalidPath': 'Invalid screenshot path',
+    'models.refreshFailed': 'Failed to fetch the model list',
   },
 };
 

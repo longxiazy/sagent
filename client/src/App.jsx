@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Menu, Settings, ShieldCheck, Brain } from 'lucide-react';
 import './App.css';
 import { fetchAgentTrace, parseSseFrame } from './api/streams.js';
+import { fetchModels, refreshModels } from './api/models.js';
 import { ensureServiceWorker, notificationPermission, notificationsSupported, requestNotificationPermission } from './notifications.js';
 import { AgentWorkspacePane } from './components/AgentWorkspacePane.jsx';
 import { SessionSidebar } from './components/SessionSidebar.jsx';
@@ -129,6 +130,9 @@ export default function App() {
   // modelsLoaded 用来区分“还没拿到后端列表”和“真实列表为空”，
   // 避免启动阶段误清理用户已选的多模型。
   const [modelsLoaded, setModelsLoaded] = useState(false);
+  // 这份列表是后端启动时拉的快照，供应商上新/下线要手动重拉才看得到。
+  // 记下拉取时刻，设置页据此告诉用户「现在这份有多旧」。
+  const [modelsRefreshedAt, setModelsRefreshedAt] = useState(null);
   const [input, setInput] = useState('');
   const [contextEstimate, setContextEstimate] = useState(null);
   const mode = 'agent';
@@ -245,48 +249,55 @@ export default function App() {
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // 拉取后端可用模型。这里除了更新下拉/模型标签，
-  // 还要顺手修正那些引用了已下线模型的历史聊天会话。
-  useEffect(() => {
-    apiFetch('/api/models')
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data.models) && data.models.length > 0) {
-          setAvailableModels(data.models);
-          const availableIds = new Set(data.models.map(model => model.id));
-          // 清理历史会话里已经下线的模型；不再替换成列表第一个模型，避免制造默认选择。
-          setChatState(prev => {
-            let changed = false;
-            const sessions = prev.sessions.map(session => {
-              const nextModel = session.model && availableIds.has(session.model) ? session.model : null;
-              const nextModelsUsed = uniqueModelIds(session.modelsUsed).filter(model => availableIds.has(model));
-              if (nextModel !== (session.model ?? null) || nextModelsUsed.length !== uniqueModelIds(session.modelsUsed).length) {
-                changed = true;
-                return { ...session, model: nextModel, modelsUsed: nextModelsUsed };
-              }
-              return session;
-            });
-            if (!changed) return prev;
-            return normalizeChatState({ ...prev, sessions });
-          });
+  // 一份新列表到手后的统一落地：更新下拉/模型标签，并顺手修正那些引用了
+  // 已下线模型的历史聊天会话（手动重拉同样会真的删掉下线模型，一并要清）。
+  const applyModelList = useCallback(data => {
+    const models = Array.isArray(data?.models) ? data.models : [];
+    if (models.length === 0) return;
+    setAvailableModels(models);
+    setModelsRefreshedAt(data?.refreshedAt || null);
+    const availableIds = new Set(models.map(model => model.id));
+    // 清理历史会话里已经下线的模型；不再替换成列表第一个模型，避免制造默认选择。
+    setChatState(prev => {
+      let changed = false;
+      const sessions = prev.sessions.map(session => {
+        const nextModel = session.model && availableIds.has(session.model) ? session.model : null;
+        const nextModelsUsed = uniqueModelIds(session.modelsUsed).filter(model => availableIds.has(model));
+        if (nextModel !== (session.model ?? null) || nextModelsUsed.length !== uniqueModelIds(session.modelsUsed).length) {
+          changed = true;
+          return { ...session, model: nextModel, modelsUsed: nextModelsUsed };
         }
-      })
+        return session;
+      });
+      if (!changed) return prev;
+      return normalizeChatState({ ...prev, sessions });
+    });
+  }, [setChatState]);
+
+  // 挂载时拉一次后端可用模型。注意后端那份列表本身是它启动时的快照，
+  // 这里拿到的“新鲜度”上限就是后端上次拉取的时刻。
+  useEffect(() => {
+    fetchModels()
+      .then(applyModelList)
       .catch(() => {})
       .finally(() => {
         setModelsLoaded(true);
       });
-  }, [setChatState]);
+  }, [applyModelList]);
 
   // 设置页改完模型准入策略后重拉一次：后端只重算了自己内存里的标记，
   // 这份列表是挂载时取的，不重拉的话 Agent 选择器要等刷新才更新。
   const refreshAvailableModels = useCallback(() => {
-    apiFetch('/api/models')
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data.models) && data.models.length > 0) setAvailableModels(data.models);
-      })
-      .catch(() => {});
-  }, []);
+    fetchModels().then(applyModelList).catch(() => {});
+  }, [applyModelList]);
+
+  // 手动全量重拉：让后端重新问一遍所有供应商。失败时后端保证自己那份列表原样不动，
+  // 这里也就不碰本地状态，只把原因抛回给按钮，由按钮所在界面展示。
+  const handleRefreshModels = useCallback(async () => {
+    const data = await refreshModels();
+    applyModelList(data);
+    return data;
+  }, [applyModelList]);
 
   const sessionLocked = agentRunning;
 
@@ -978,6 +989,7 @@ export default function App() {
       setAgentStrategy={setAgentStrategy}
       sessionLocked={sessionLocked}
       recentModelUsage={recentModelUsage}
+      onRefresh={handleRefreshModels}
     />
   );
   const contextInputText = useMemo(
@@ -1262,7 +1274,7 @@ export default function App() {
       />
 
       {showReset && <ResetDialog onConfirm={handleReset} onCancel={() => setShowReset(false)} />}
-      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} activeProjectId={activeProjectId} projects={projects} selectedAgentModels={selectedAgentModels} availableModels={availableModels} onModelPolicyChange={refreshAvailableModels} />}
+      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} activeProjectId={activeProjectId} projects={projects} selectedAgentModels={selectedAgentModels} availableModels={availableModels} onModelPolicyChange={refreshAvailableModels} onRefreshModels={handleRefreshModels} modelsRefreshedAt={modelsRefreshedAt} />}
       {showPromptPreview && visibleContextEstimate?.promptPreview?.text && (
         <PromptPreviewDialog
           estimate={visibleContextEstimate}

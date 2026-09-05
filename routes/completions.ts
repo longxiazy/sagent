@@ -2,13 +2,39 @@ import { Router } from 'express';
 import { safeJson } from '../agent/core/utils.ts';
 import { buildOpenAiError } from '../helpers/streaming.ts';
 import { log } from '../helpers/logger.ts';
+import { tReq } from '../helpers/i18n.ts';
+import { createModelRefresher, type ModelRefresher } from '../agent/core/providers/model-refresh.ts';
 import type { ProviderRegistry } from '../agent/core/providers/registry.ts';
 
-export function createCompletionsRouter({ registry, modelConfig }: { registry: ProviderRegistry; modelConfig: any[] }) {
+export function createCompletionsRouter({
+  registry,
+  modelConfig,
+  // 默认就地构造：刷新器只在这一个路由里用，构造时刻即启动拉取时刻，
+  // server.ts 不必为此多接一根线。
+  modelRefresher = createModelRefresher({ registry, modelConfig }),
+}: {
+  registry: ProviderRegistry;
+  modelConfig: any[];
+  modelRefresher?: ModelRefresher;
+}) {
   const router = Router();
 
   router.get('/api/models', (_req, res) => {
-    res.json({ models: modelConfig });
+    res.json({ models: modelConfig, ...modelRefresher.status() });
+  });
+
+  // 手动全量重拉。成功即就地替换 modelConfig，所有引用持有者（agent runner、
+  // 其他路由）下次读就是新表，不必重启；失败则整体放弃，列表保持原样。
+  // 成败与增删差异都由 model-refresh.ts 落日志，这里只管把结果转成 HTTP。
+  router.post('/api/models/refresh', async (req, res) => {
+    try {
+      res.json({ models: modelConfig, ...(await modelRefresher.refresh()) });
+    } catch (err: any) {
+      res.status(502).json({
+        error: err?.message || tReq(req, 'models.refreshFailed'),
+        ...modelRefresher.status(),
+      });
+    }
   });
 
   router.get('/v1/models', (_req, res) => {

@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowUpDown, Check, ChevronDown, ChevronUp, ExternalLink, HelpCircle, Search, Star, X } from 'lucide-react';
+import { ArrowUpDown, Check, ChevronDown, ChevronUp, ExternalLink, HelpCircle, RefreshCw, Search, Star, X } from 'lucide-react';
 import { useT } from '../i18n/I18nProvider.jsx';
 import { jsonStorage, usePersistentState } from '../hooks/usePersistentState.js';
 import { modelGreetingScore, modelPrice, modelSpeed, sortModels } from '../utils/model-sort.js';
+import { modelRefreshNote } from '../utils/model-refresh-note.js';
 import { formatTokenLimit } from '../utils/token-limit.js';
 import { DialogShell } from './dialogs/DialogShell.jsx';
 
@@ -327,6 +328,7 @@ function ModelPickerDropdown({
   dialogTitle,
   clearable = true,
   recentModelUsage = {},
+  onRefresh = null,
 }) {
   const t = useT();
   const { open, setOpen, inputRef } = useModelPickerDialog();
@@ -338,6 +340,10 @@ function ModelPickerDropdown({
   const [categoryFilters, setCategoryFilters] = useState([]);
   const [showDetails, setShowDetails] = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+  // 就地重拉模型列表。结果一律落成弹框里的一行提示——包括「拉到了但没变化」，
+  // 否则用户点完看不出发生过什么，只能猜按钮是不是坏了。
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshNote, setRefreshNote] = useState(null);
   const [sortMode, setSortMode] = usePersistentState('model_picker_sort', 'recommended');
   const [storedFavoriteModelIds, setStoredFavoriteModelIds] = usePersistentState('model_picker_favorites', [], jsonStorage);
   const [recentSelections, setRecentSelections] = usePersistentState('model_picker_recent', {}, jsonStorage);
@@ -354,7 +360,21 @@ function ModelPickerDropdown({
     setQuery('');
     setShowDetails(false);
     setFiltersExpanded(false);
+    setRefreshNote(null);
     setOpen(o => !o);
+  };
+
+  const handleRefresh = async () => {
+    if (!onRefresh || refreshing) return;
+    setRefreshing(true);
+    setRefreshNote(null);
+    try {
+      setRefreshNote({ kind: 'ok', text: modelRefreshNote(await onRefresh(), t) });
+    } catch (e) {
+      setRefreshNote({ kind: 'error', text: e?.message || String(e) });
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const resetFilters = () => {
@@ -651,18 +671,34 @@ function ModelPickerDropdown({
           subtitle={t('modelSelector.resultCount', { count: visibleCount, total: availableModels.length })}
           onClose={() => setOpen(false)}
           headerActions={(
-            <button
-              type="button"
-              className={`model-picker-help ${showDetails ? 'active' : ''}`}
-              onClick={() => setShowDetails(current => !current)}
-              title={t('modelSelector.toggleDetails')}
-              aria-pressed={showDetails}
-            >
-              <HelpCircle size={16} />
-            </button>
+            <>
+              {onRefresh && (
+                <button
+                  type="button"
+                  className={`model-picker-help ${refreshNote?.kind === 'error' ? 'error' : ''}`}
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  title={t('modelSelector.refresh')}
+                  aria-label={t('modelSelector.refresh')}
+                >
+                  <RefreshCw size={16} className={refreshing ? 'spinning' : ''} />
+                </button>
+              )}
+              <button
+                type="button"
+                className={`model-picker-help ${showDetails ? 'active' : ''}`}
+                onClick={() => setShowDetails(current => !current)}
+                title={t('modelSelector.toggleDetails')}
+                aria-pressed={showDetails}
+              >
+                <HelpCircle size={16} />
+              </button>
+            </>
           )}
         >
-
+                {refreshNote && (
+                  <p className={`model-picker-refresh-note ${refreshNote.kind}`} role="status">{refreshNote.text}</p>
+                )}
                 <div className="model-picker-toolbar">
                   <div className="model-dropdown-search model-picker-search">
                     <Search size={15} />
@@ -838,6 +874,7 @@ export function ModelSelector({
   setAgentStrategy,
   sessionLocked,
   recentModelUsage,
+  onRefresh = null,
 }) {
   return (
     <div className="model-select-row">
@@ -850,6 +887,7 @@ export function ModelSelector({
         setAgentStrategy={setAgentStrategy}
         disabled={sessionLocked}
         recentModelUsage={recentModelUsage}
+        onRefresh={onRefresh}
       />
     </div>
   );
@@ -864,6 +902,7 @@ export function SingleModelSelector({
   placeholder,
   dialogTitle,
   className = '',
+  onRefresh = null,
 }) {
   return (
     <div className={`model-select-row single-model-select-row ${className}`}>
@@ -876,6 +915,7 @@ export function SingleModelSelector({
         placeholder={placeholder}
         dialogTitle={dialogTitle}
         clearable={false}
+        onRefresh={onRefresh}
       />
     </div>
   );
