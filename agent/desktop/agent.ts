@@ -99,7 +99,7 @@ export function createDesktopAgentRunner({
   staggerDelayMs = 0,
   batchSize = 1,
 }: DesktopAgentRunnerConfig): DesktopAgentRunner {
-  // 所有内置浏览器操作共享受管会话：串行执行，并在 WebView 失效时统一恢复。
+  // 每个任务独占 WebView；任务内操作串行执行，任务结束关闭实例，普通 profile 继续保留。
   const {
     cleanupBrowserSession,
     serializeBrowserOperation,
@@ -313,7 +313,7 @@ export function createDesktopAgentRunner({
         dataDir,
       }),
       // 观察与浏览器执行共用串行队列，避免读取到页面切换过程中的中间状态。
-      observe: state => serializeBrowserOperation(() => observeDesktopAgent(state)),
+      observe: state => serializeBrowserOperation(() => observeDesktopAgent(state), state),
       // runtime 已压缩 history；planner 只负责选择模型并生成下一步 action。
       decide: async ({ task: currentTask, step, history, observation, finalOnly }) =>
         plan({
@@ -341,7 +341,8 @@ export function createDesktopAgentRunner({
       // 工具执行仍通过统一路由，以保持取消信号、事件和审批上下文一致。
       execute: async (state, action, context) => routeAction(state, action, context),
       cleanup: async state => {
-        // 普通会话复位后可复用；隐私会话会由管理器关闭并清除一次性 profile。
+        // 所有结束路径都关闭 WebView；取消监听会提前关闭，这里幂等等待清理收尾。
+        // 普通模式保留登录数据，隐私模式同时清除一次性 profile。
         await cleanupBrowserSession(state);
       },
     }));
