@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowUpDown, Check, ChevronDown, ChevronUp, ExternalLink, HelpCircle, RefreshCw, Search, Star, X } from 'lucide-react';
+import { ArrowUpDown, Check, ChevronDown, ChevronUp, ExternalLink, GripVertical, HelpCircle, RefreshCw, Search, Star, X } from 'lucide-react';
 import { useT } from '../i18n/I18nProvider.jsx';
 import { jsonStorage, usePersistentState } from '../hooks/usePersistentState.js';
 import { modelGreetingScore, modelPrice, modelSpeed, sortModels } from '../utils/model-sort.js';
@@ -340,6 +340,14 @@ function ModelPickerDropdown({
   const [categoryFilters, setCategoryFilters] = useState([]);
   const [showDetails, setShowDetails] = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [draggedModelId, setDraggedModelId] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
+  const [orderAnnouncement, setOrderAnnouncement] = useState('');
+  const orderListRef = useRef(null);
+  const orderDragRef = useRef(null);
+  const orderDragFrameRef = useRef(null);
+
+  useEffect(() => () => cancelAnimationFrame(orderDragFrameRef.current), []);
   // 就地重拉模型列表。结果一律落成弹框里的一行提示——包括「拉到了但没变化」，
   // 否则用户点完看不出发生过什么，只能猜按钮是不是坏了。
   const [refreshing, setRefreshing] = useState(false);
@@ -361,6 +369,9 @@ function ModelPickerDropdown({
     setShowDetails(false);
     setFiltersExpanded(false);
     setRefreshNote(null);
+    setDraggedModelId(null);
+    setDropTarget(null);
+    setOrderAnnouncement('');
     setOpen(o => !o);
   };
 
@@ -430,14 +441,107 @@ function ModelPickerDropdown({
     });
   };
 
-  const moveModel = (id, dir) => {
-    const idx = selectedModelIds.indexOf(id);
-    if (idx < 0) return;
+  const moveModelTo = (id, position) => {
+    const from = selectedModelIds.indexOf(id);
+    if (disabled || from < 0 || position < 0 || position >= selectedModelIds.length || from === position) return;
     const next = [...selectedModelIds];
-    const swap = idx + dir;
-    if (swap < 0 || swap >= next.length) return;
-    [next[idx], next[swap]] = [next[swap], next[idx]];
+    next.splice(from, 1);
+    next.splice(position, 0, id);
     setSelectedModelIds(next);
+    const model = availableModels.find(item => item.id === id);
+    setOrderAnnouncement(t('modelSelector.orderUpdated', { model: model?.label || id, position: position + 1 }));
+    requestAnimationFrame(() => {
+      const row = Array.from(orderListRef.current?.children || []).find(item => item.dataset.modelId === id);
+      row?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+  };
+
+  const moveModel = (id, direction) => moveModelTo(id, selectedModelIds.indexOf(id) + direction);
+
+  const finishModelDrag = () => {
+    cancelAnimationFrame(orderDragFrameRef.current);
+    orderDragRef.current = null;
+    setDraggedModelId(null);
+    setDropTarget(null);
+  };
+
+  const updateModelDragTarget = drag => {
+    const list = orderListRef.current;
+    if (!list) return;
+    const bounds = list.getBoundingClientRect();
+    let target = null;
+    if (drag.x >= bounds.left && drag.x <= bounds.right && drag.y >= bounds.top - 32 && drag.y <= bounds.bottom + 32) {
+      const y = Math.max(bounds.top + 1, Math.min(bounds.bottom - 1, drag.y));
+      const rows = Array.from(list.children);
+      const row = rows.find(item => y < item.getBoundingClientRect().bottom) || rows[rows.length - 1];
+      if (row && row.dataset.modelId !== drag.id) {
+        const rect = row.getBoundingClientRect();
+        target = { id: row.dataset.modelId, placement: y < rect.top + rect.height / 2 ? 'before' : 'after' };
+      }
+    }
+    drag.target = target;
+    setDropTarget(current => {
+      return current?.id === target?.id && current?.placement === target?.placement ? current : target;
+    });
+  };
+
+  // 用 Pointer Events 统一鼠标与触屏；拖至列表边缘时持续滚动，松手才保存顺序。
+  const scrollModelDrag = () => {
+    const drag = orderDragRef.current;
+    const list = orderListRef.current;
+    if (!drag?.active || !list) return;
+    const bounds = list.getBoundingClientRect();
+    if (drag.x >= bounds.left && drag.x <= bounds.right && drag.y >= bounds.top - 32 && drag.y <= bounds.bottom + 32) {
+      const distance = drag.y < bounds.top + 32
+        ? drag.y - bounds.top - 32
+        : drag.y > bounds.bottom - 32 ? drag.y - bounds.bottom + 32 : 0;
+      if (distance) {
+        list.scrollTop += Math.max(-12, Math.min(12, distance / 3));
+        updateModelDragTarget(drag);
+      }
+    }
+    orderDragFrameRef.current = requestAnimationFrame(scrollModelDrag);
+  };
+
+  const startModelDrag = (event, id) => {
+    if (disabled || event.button !== 0 || !event.isPrimary) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    orderDragRef.current = { id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, active: false, target: null };
+  };
+
+  const moveModelDrag = event => {
+    const drag = orderDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (disabled) {
+      finishModelDrag();
+      return;
+    }
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    if (!drag.active) {
+      if (Math.hypot(drag.x - drag.startX, drag.y - drag.startY) < 5) return;
+      drag.active = true;
+      setDraggedModelId(drag.id);
+      orderDragFrameRef.current = requestAnimationFrame(scrollModelDrag);
+    }
+    event.preventDefault();
+    updateModelDragTarget(drag);
+  };
+
+  const dropModelDrag = event => {
+    const drag = orderDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!disabled && drag.active) {
+      drag.x = event.clientX;
+      drag.y = event.clientY;
+      updateModelDragTarget(drag);
+      if (drag.target) {
+        const remaining = selectedModelIds.filter(modelId => modelId !== drag.id);
+        const position = remaining.indexOf(drag.target.id);
+        if (position >= 0) moveModelTo(drag.id, position + (drag.target.placement === 'after' ? 1 : 0));
+      }
+    }
+    finishModelDrag();
   };
 
   // 已选模型始终置顶且不受搜索影响，避免选中后被过滤掉看不到。
@@ -502,22 +606,56 @@ function ModelPickerDropdown({
 
   const renderOption = item => {
     const isSelected = selectedSet.has(item.id);
+    const isOrdered = multiple && isSelected;
+    const canReorder = isOrdered && selectedModelIds.length > 1;
     const isFavorite = favoriteModelIds.includes(item.id);
     const orderIdx = selectedModelIds.indexOf(item.id);
     const secondary = item.description || (item.label && item.label !== item.id ? item.id : '');
     const contextLabel = formatTokenLimit(item?.contextWindow || item?.context_length || item?.inputTokenLimit);
     const greetingScore = modelGreetingScore(item);
     return (
-      <div key={item.id} className={`model-option-cell ${isSelected ? 'selected' : ''}`}>
-      <span className={`model-option-wrapper ${isSelected ? 'selected' : ''}`}>
+      <div
+        key={item.id}
+        className={`model-option-cell ${isSelected ? 'selected' : ''} ${isOrdered && draggedModelId === item.id ? 'model-order-dragging' : ''} ${isOrdered && dropTarget?.id === item.id ? `model-order-drop-${dropTarget.placement}` : ''}`}
+      >
+      <span className={`model-option-wrapper ${isOrdered ? 'model-priority-row' : isSelected ? 'selected' : ''}`}>
+        {canReorder && (
+          <button
+            type="button"
+            className="model-order-drag"
+            disabled={disabled}
+            title={t('modelSelector.dragToReorder', { model: item.label || item.id })}
+            aria-label={t('modelSelector.dragToReorder', { model: item.label || item.id })}
+            onPointerDown={event => startModelDrag(event, item.id)}
+            onPointerMove={moveModelDrag}
+            onPointerUp={dropModelDrag}
+            onPointerCancel={finishModelDrag}
+            onLostPointerCapture={finishModelDrag}
+            onKeyDown={event => {
+              if (event.key === 'Escape' && orderDragRef.current) {
+                event.preventDefault();
+                event.stopPropagation();
+                finishModelDrag();
+                return;
+              }
+              if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+              event.preventDefault();
+              moveModel(item.id, event.key === 'ArrowUp' ? -1 : 1);
+            }}
+          >
+            <GripVertical size={18} aria-hidden="true" />
+          </button>
+        )}
         <button
-          className={`model-option ${isSelected ? 'selected' : ''}`}
+          type="button"
+          className={`model-option ${isSelected && !multiple ? 'selected' : ''}`}
           onClick={() => toggleModel(item.id)}
           disabled={disabled}
+          aria-pressed={isSelected}
           title={[isSelected ? t('modelSelector.deselect') : t(multiple ? 'modelSelector.selectConcurrent' : 'modelSelector.selectModel'), item.id].filter(Boolean).join('\n')}
         >
-          <span className="model-option-check" aria-hidden="true">
-            {isSelected && <Check size={14} />}
+          <span className={`model-option-check ${isOrdered ? 'order-number' : ''}`} aria-hidden="true">
+            {isOrdered ? orderIdx + 1 : isSelected && <Check size={14} />}
           </span>
           <span className="model-option-text">
             <span className="model-option-title-row">
@@ -536,9 +674,10 @@ function ModelPickerDropdown({
                 >CTX {contextLabel || '—'}</span>
               </span>
             </span>
-            {secondary && <span className="model-option-description">{secondary}</span>}
+            {secondary && <span className="model-option-description" title={secondary}>{secondary}</span>}
           </span>
         </button>
+        <span className="model-option-actions">
         <button
           type="button"
           className={`model-option-favorite ${isFavorite ? 'active' : ''}`}
@@ -550,13 +689,33 @@ function ModelPickerDropdown({
         >
           <Star size={15} fill={isFavorite ? 'currentColor' : 'none'} />
         </button>
-        {multiple && isSelected && selectedModelIds.length > 1 && (
-          <span className="model-option-order">
-            <button className="order-arrow" onClick={() => moveModel(item.id, -1)} disabled={orderIdx <= 0 || disabled} title={t('modelSelector.raisePriority')}><ChevronUp size={10} /></button>
-            <span className="order-number">{orderIdx + 1}</span>
-            <button className="order-arrow" onClick={() => moveModel(item.id, 1)} disabled={orderIdx >= selectedModelIds.length - 1 || disabled} title={t('modelSelector.lowerPriority')}><ChevronDown size={10} /></button>
+        {canReorder && (
+          <span className="model-option-order" role="group" aria-label={t('modelSelector.modelOrder')}>
+            <button
+              type="button"
+              className="order-arrow"
+              onClick={() => moveModel(item.id, -1)}
+              disabled={orderIdx <= 0 || disabled}
+              title={t('modelSelector.raisePriority')}
+              aria-label={`${t('modelSelector.raisePriority')}: ${item.label || item.id}`}
+            >
+              <ChevronUp size={18} aria-hidden="true" />
+              <span>{t('modelSelector.raisePriority')}</span>
+            </button>
+            <button
+              type="button"
+              className="order-arrow"
+              onClick={() => moveModel(item.id, 1)}
+              disabled={orderIdx >= selectedModelIds.length - 1 || disabled}
+              title={t('modelSelector.lowerPriority')}
+              aria-label={`${t('modelSelector.lowerPriority')}: ${item.label || item.id}`}
+            >
+              <ChevronDown size={18} aria-hidden="true" />
+              <span>{t('modelSelector.lowerPriority')}</span>
+            </button>
           </span>
         )}
+        </span>
       </span>
         {showDetails && (
           <div className="model-option-details">
@@ -822,32 +981,50 @@ function ModelPickerDropdown({
                   </div>
                 </div>
 
-            {multiple && selectedModelIds.length > 1 && (
-              <div className="strategy-toggle model-picker-strategy">
-                <button
-                  className={`strategy-btn ${agentStrategy === 'race' ? 'active' : ''}`}
-                  onClick={() => setAgentStrategy('race')}
-                  disabled={disabled}
-                  title={t('modelSelector.raceTitle')}
-                >{t('modelSelector.race')}</button>
-                <button
-                  className={`strategy-btn ${agentStrategy === 'vote' ? 'active' : ''}`}
-                  onClick={() => setAgentStrategy('vote')}
-                  disabled={disabled}
-                  title={t('modelSelector.voteTitle')}
-                >{t('modelSelector.vote')}</button>
-              </div>
-            )}
-
             <div className="model-picker-body">
               {selectedItems.length > 0 && (
-                <div className="model-provider-group model-selected-group">
-                  <div className="model-provider-heading">
-                    {multiple ? t('modelSelector.selectedCount', { count: selectedItems.length }) : t('modelSelector.currentModel')}
+                <div className={`model-provider-group model-selected-group ${multiple ? 'model-selected-group-sortable' : ''}`}>
+                  <div className="model-selected-header">
+                    <div>
+                      <div className="model-provider-heading">
+                        {multiple ? t('modelSelector.selectedCount', { count: selectedItems.length }) : t('modelSelector.currentModel')}
+                      </div>
+                      {multiple && selectedModelIds.length > 1 && (
+                        <p className="model-order-hint">{t(agentStrategy === 'vote' ? 'modelSelector.voteOrderHint' : 'modelSelector.raceOrderHint')}</p>
+                      )}
+                    </div>
+                    {multiple && selectedModelIds.length > 1 && (
+                      <div className="strategy-toggle model-picker-strategy">
+                        <button
+                          type="button"
+                          className={`strategy-btn ${agentStrategy === 'race' ? 'active' : ''}`}
+                          onClick={() => setAgentStrategy('race')}
+                          disabled={disabled}
+                          title={t('modelSelector.raceTitle')}
+                          aria-pressed={agentStrategy === 'race'}
+                        >{t('modelSelector.race')}</button>
+                        <button
+                          type="button"
+                          className={`strategy-btn ${agentStrategy === 'vote' ? 'active' : ''}`}
+                          onClick={() => setAgentStrategy('vote')}
+                          disabled={disabled}
+                          title={t('modelSelector.voteTitle')}
+                          aria-pressed={agentStrategy === 'vote'}
+                        >{t('modelSelector.vote')}</button>
+                      </div>
+                    )}
                   </div>
-                  <div className="model-provider-options">
-                    {selectedItems.map(renderOption)}
-                  </div>
+                  {multiple ? (
+                    <ol
+                      ref={orderListRef}
+                      className="model-provider-options model-priority-list"
+                      aria-label={t('modelSelector.modelOrder')}
+                    >
+                      {selectedItems.map(item => <li key={item.id} data-model-id={item.id}>{renderOption(item)}</li>)}
+                    </ol>
+                  ) : (
+                    <div className="model-provider-options">{selectedItems.map(renderOption)}</div>
+                  )}
                 </div>
               )}
               <div className="model-options model-picker-results">
@@ -857,6 +1034,7 @@ function ModelPickerDropdown({
                 </div>
               </div>
             </div>
+            <span className="model-order-announcement" role="status" aria-live="polite" aria-atomic="true">{orderAnnouncement}</span>
         </DialogShell>
       )}
     </div>

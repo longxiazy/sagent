@@ -2375,7 +2375,12 @@ select,
 
 .model-picker-strategy {
   flex: 0 0 auto;
-  margin: 8px 12px 0;
+  margin: 0;
+}
+
+.model-picker-strategy .strategy-btn {
+  height: 36px;
+  padding: 0 14px;
 }
 
 .model-encyclopedia-badges {
@@ -2416,6 +2421,58 @@ select,
   overflow-y: auto;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--c-border);
+}
+
+.model-selected-group-sortable {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(46dvh, 380px);
+  overflow: hidden;
+}
+
+.model-selected-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  gap: 12px;
+  padding: 2px 4px 10px;
+}
+
+.model-selected-group-sortable .model-provider-heading {
+  padding: 0;
+  font-size: var(--f-sm);
+  letter-spacing: normal;
+  color: var(--c-text);
+}
+
+.model-order-hint {
+  margin: 4px 0 0;
+  font-size: var(--f-xs);
+  line-height: 1.4;
+  color: var(--c-text-muted);
+}
+
+.model-priority-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scroll-padding: 4px;
+}
+
+.model-priority-list > li {
+  min-width: 0;
+}
+
+.model-priority-list .model-option-cell {
+  position: relative;
 }
 
 .model-options.model-picker-results {
@@ -2493,6 +2550,12 @@ select,
   background: var(--c-primary);
   padding-right: 0;
   border-radius: var(--r-sm);
+}
+
+.model-option-actions {
+  display: inline-flex;
+  align-items: stretch;
+  flex: 0 0 auto;
 }
 
 /* 行内“更多信息”:每个模型行下方按需展开的详情,保持列表原有顺序 */
@@ -2710,10 +2773,6 @@ a.model-option-detail-value:hover {
   border-radius: 0 var(--r-sm) var(--r-sm) 0;
 }
 
-.model-option-wrapper:has(.model-option-order) .model-option-favorite {
-  border-radius: 0;
-}
-
 .model-option-favorite:hover:not(:disabled),
 .model-option-favorite.active {
   border-color: var(--c-warning-strong);
@@ -2756,51 +2815,163 @@ a.model-option-detail-value:hover {
 
 .model-option-order {
   display: inline-flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: var(--c-primary);
-  border: 1px solid var(--c-primary);
-  border-left: none;
-  border-radius: 0 var(--r-sm) var(--r-sm) 0;
-  overflow: hidden;
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 6px 8px;
 }
 
 .order-arrow {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 15px;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.7);
+  flex: 0 0 auto;
+  gap: 4px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--c-border-input);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text-secondary);
   cursor: pointer;
   padding: 0;
+  transition: color var(--ease), background var(--ease), border-color var(--ease);
+}
+
+.order-arrow > span {
+  display: none;
 }
 
 .order-number {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  font-size: var(--f-micro);
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  background: var(--c-primary);
+  font-size: var(--f-xs);
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.order-arrow:first-child {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--c-on-accent);
 }
 
 .order-arrow:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
-  color: var(--c-on-accent);
+  border-color: var(--c-primary);
+  background: var(--c-primary-bg);
+  color: var(--c-primary);
 }
 
 .order-arrow:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+.model-priority-row {
+  border: 1px solid var(--c-primary-light);
+  background: var(--c-primary-bg);
+}
+
+.model-priority-row .model-option {
+  min-height: 64px;
+  padding: 10px 8px;
+  border: none;
+  background: transparent;
+  color: var(--c-text);
+}
+
+.model-priority-row .model-option:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--c-primary) 8%, transparent);
+}
+
+.model-priority-row .model-option-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+}
+
+.model-priority-row .model-option-actions {
+  border-left: 1px solid var(--c-primary-light);
+}
+
+.model-priority-row .model-option-favorite {
+  width: 36px;
+  height: 40px;
+  align-self: center;
+  margin-left: 6px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+}
+
+.model-priority-row .model-option-favorite:hover:not(:disabled),
+.model-priority-row .model-option-favorite.active {
+  background: var(--c-warning-bg);
+  color: var(--c-warning-strong);
+}
+
+.model-order-drag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  flex: 0 0 36px;
+  width: 36px;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  border-right: 1px solid var(--c-primary-light);
+  border-radius: var(--r-sm) 0 0 var(--r-sm);
+  background: transparent;
+  color: var(--c-primary);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.model-order-drag:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--c-primary) 10%, transparent);
+}
+
+.model-order-drag:active {
+  cursor: grabbing;
+}
+
+.model-order-drag:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.model-order-dragging .model-priority-row {
+  opacity: 0.45;
+  border-style: dashed;
+}
+
+.model-order-drop-before::before,
+.model-order-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--c-primary);
+  pointer-events: none;
+}
+
+.model-order-drop-before::before { top: -5px; }
+.model-order-drop-after::after { bottom: -5px; }
+
+.model-order-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* ── Messages ── */
@@ -7440,23 +7611,83 @@ textarea:disabled {
     -webkit-box-orient: unset;
   }
 
-  .model-option-order {
-    min-width: 32px;
-  }
-
-  .order-arrow {
-    width: 28px;
-    height: 22px;
-  }
-
   .model-picker-strategy {
-    align-self: stretch;
-    margin: 8px 10px 0;
+    margin: 0;
   }
 
   .model-picker-strategy .strategy-btn {
     flex: 1 1 0;
-    height: 34px;
+    height: 44px;
+    padding: 0 12px;
+  }
+
+  .model-selected-group.model-selected-group-sortable {
+    flex: 0 0 auto;
+    max-height: min(54dvh, 460px);
+  }
+
+  .model-selected-header {
+    padding: 2px 4px 8px;
+    gap: 8px;
+  }
+
+  .model-priority-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-priority-row:has(.model-order-drag) {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .model-priority-row .model-option {
+    min-height: 64px;
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .model-priority-row .model-option-title-row {
+    flex-wrap: wrap;
+    gap: 4px 6px;
+  }
+
+  .model-priority-row .model-option-name {
+    order: -1;
+    flex-basis: 100%;
+  }
+
+  .model-priority-row .model-option-description {
+    display: none;
+  }
+
+  .model-priority-row .model-option-actions {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    padding: 4px 6px;
+    border-left: none;
+    border-top: 1px solid var(--c-primary-light);
+  }
+
+  .model-priority-row .model-option-favorite {
+    width: 44px;
+    height: 44px;
+    margin: 0;
+  }
+
+  .model-option-order {
+    padding: 0;
+  }
+
+  .order-arrow {
+    width: auto;
+    min-width: 76px;
+    height: 44px;
+    padding: 0 12px;
+    font-size: var(--f-xs);
+  }
+
+  .order-arrow > span {
+    display: inline;
   }
 
   .send-btn.stop {
@@ -7496,6 +7727,23 @@ textarea:disabled {
 
   .model-card { padding: 4px 5px; }
   .model-card-json { max-height: 48px; font-size: var(--f-micro); }
+}
+
+/* 触屏保留拖拽手柄，并为两种排序方式提供足够大的操作区域。 */
+@media (hover: none) and (pointer: coarse) {
+  .model-order-drag {
+    width: 44px;
+    flex-basis: 44px;
+  }
+
+  .model-priority-row:has(.model-order-drag) {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .order-arrow {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 /* ── Memory Panel ── */
