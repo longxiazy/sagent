@@ -50,7 +50,7 @@
 | `decide` | `planner/index.ts` 的 `createDesktopPlanner()` | 模型路由 + 三种调度策略 |
 | `authorize` | `policy/approvals.ts` 的 `createAgentAuthorizer()` | 分类 → 需要时阻塞等审批 |
 | `execute` | `core/router.ts` 的 `createActionRouter()` | 按 `action.tool` 分发到 tools |
-| `cleanup` | `browser-session-manager.ts` | 普通会话复位复用，隐私会话关闭并删临时 profile |
+| `cleanup` | `browser-session-manager.ts` | 所有任务结束时关闭 WebView；普通 profile 保留，隐私 profile 删除 |
 | `shouldObserve` | agent.ts 就地判断 | `fs`/`terminal` 执行后跳过观测（结果已进 history） |
 | `saveSessionSnapshot` | `core/checkpoint.ts` 或 worker 桥接 | 有持久化队列时入队，保证写入次序 |
 
@@ -111,7 +111,7 @@ POST /api/agent
   - **progressive** — 先只跑主模型，超时未返回或提前失败才唤醒其余加入竞速。**未接入 UI**，但 `strategy` 字段不做白名单校验，API 直调可用。
 - **planner/model-pool.ts** — 两种不可用状态语义不同：**黑名单**（超时，本次 run 内不恢复）vs **冷却**（429，到期自动恢复）。全部不可用时只重置黑名单——冷却硬闯只会再撞一次限流。
 - **observer.ts** — 把 macOS 桌面观测与内置浏览器观测**并行**采集后合并成统一 observation；未启用/未建会话时返回空占位，保证 planner 总收到稳定结构。
-- **browser-session-manager.ts** — 内置浏览器会话按 `headless + privateMode` 匹配复用，全部操作走一条串行队列；WebView 失效时重建一次，再失败则本 run 熔断。
+- **browser-session-manager.ts** — WebView 归属单次任务，仅在任务内按 `headless + privateMode` 匹配复用；导航和观察走串行队列，取消直接关闭实例以停止后台媒体，任务结束时幂等关闭。普通 profile 保留登录数据，隐私 profile 删除。WebView 失效时可重建一次，连续恢复失败后本 run 熔断；取消或结束后禁止重建，旧任务的清理不会关闭新任务的实例。
 
 ### policy/ — 副作用闸门
 

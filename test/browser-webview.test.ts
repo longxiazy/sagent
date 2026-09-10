@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -33,11 +33,13 @@ class FakeWebView {
 
   async navigate(url) {
     this.calls.push(['navigate', url]);
+    if (this.closed) throw new Error('Invalid state: WebView.navigate: view is closed');
     this.url = url;
   }
 
   async evaluate(script): Promise<any> {
     this.calls.push(['evaluate', script]);
+    if (this.closed) throw new Error('Invalid state: WebView.evaluate: view is closed');
     if (script.includes('elements: []')) {
       return {
         title: 'Example',
@@ -85,6 +87,16 @@ class FakeWebView {
   }
 }
 
+function deferred<T = void>() {
+  let resolve: (value: T) => void;
+  let reject: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve: resolve!, reject: reject! };
+}
+
 class NotFoundWebView extends FakeWebView {
   async evaluate(script): Promise<any> {
     this.calls.push(['evaluate', script]);
@@ -103,8 +115,8 @@ class NotFoundWebView extends FakeWebView {
 }
 
 afterEach(async () => {
-  resetWebViewFactoryForTests();
   await closeBrowserSession();
+  resetWebViewFactoryForTests();
 });
 
 describe('Bun.WebView browser session adapter', () => {
@@ -123,6 +135,26 @@ describe('Bun.WebView browser session adapter', () => {
 
     await closeBrowserSession(session);
     expect(created.closed).toBe(true);
+  });
+
+  it('closes a native view only once when cancellation and cleanup overlap', async () => {
+    const view = new FakeWebView();
+    const closing = deferred();
+    view.close = async () => {
+      view.calls.push(['close']);
+      view.closed = true;
+      await closing.promise;
+    };
+    setWebViewFactoryForTests(() => view);
+    const session = createBrowserSession();
+
+    const first = closeBrowserSession(session);
+    const second = closeBrowserSession(view);
+    expect(view.closed).toBe(true);
+    expect(view.calls.filter(call => call[0] === 'close')).toHaveLength(1);
+    closing.resolve();
+    await Promise.all([first, second, closeBrowserSession(session)]);
+    expect(view.calls.filter(call => call[0] === 'close')).toHaveLength(1);
   });
 
   it('uses a disposable data store for private browser sessions and removes it on close', async () => {
@@ -231,6 +263,292 @@ describe('Bun.WebView browser session adapter', () => {
         globalThis.Bun = originalBun;
       }
     }
+  });
+});
+
+describe('Bun.WebView run lifecycle', () => {
+  it('closes normal runs, preserves their profile, and creates a fresh view for the next run', async () => {
+    const memoryDir = await mkdtemp(path.join(os.tmpdir(), 'sagent-browser-lifecycle-'));
+    const created: FakeWebView[] = [];
+    setWebViewFactoryForTests(options => {
+      const view = new FakeWebView(options);
+      created.push(view);
+      return view;
+    });
+    initWebViewDataStore(memoryDir);
+    const manager = createSharedBrowserSessionManager();
+    const firstState: any = { browserSession: null };
+    const nextState: any = { browserSession: null };
+
+    try {
+      const first = await manager.ensureBrowserSession(firstState);
+      expect(await manager.ensureBrowserSession(firstState)).toBe(first);
+      const profileDir = first.view.options.dataStore.directory;
+      const marker = path.join(profileDir, 'login-state-fixture');
+      await writeFile(marker, 'keep-login-data');
+      await first.view.navigate('https://example.com/video');
+
+      await manager.cleanupBrowserSession(firstState);
+      expect(first.view.closed).toBe(true);
+      expect(firstState.browserSession).toBeNull();
+      await expect(manager.ensureBrowserSession(firstState)).rejects.toThrow('任务已结束');
+
+      const next = await manager.ensureBrowserSession(nextState);
+      expect(created).toHaveLength(2);
+      expect(next.view).not.toBe(first.view);
+      expect(next.view.options.dataStore.directory).toBe(profileDir);
+      await expect(readFile(marker, 'utf8')).resolves.toBe('keep-login-data');
+      // 重复收尾不能落到共享实例上，把下一任务刚创建的页面关掉。
+      await manager.cleanupBrowserSession(firstState);
+      await manager.cleanupBrowserSession({ browserSession: null });
+      expect(next.view.closed).toBe(false);
+    } finally {
+      await manager.cleanupBrowserSession(firstState);
+      await manager.cleanupBrowserSession(nextState);
+      await rm(memoryDir, { recursive: true, force: true });
+    }
+  });
+
+  it('closes media immediately while the runtime is waiting for its next model decision', async () => {
+    const view = new FakeWebView();
+    setWebViewFactoryForTests(() => view);
+    const manager = createSharedBrowserSessionManager();
+    const controller = new AbortController();
+    const state: any = { browserSession: null, cancelSignal: controller.signal };
+    await manager.ensureBrowserSession(state);
+    const deciding = deferred();
+    const resumeDecision = deferred();
+    const run = runAgentRuntime({
+      task: 'read the page',
+      cancelSignal: controller.signal,
+      initialize: async () => state,
+      observe: async () => ({}),
+      decide: async () => {
+        deciding.resolve();
+        await resumeDecision.promise;
+        return { rationale: 'done', action: { tool: 'core', type: 'finish', answer: 'completed' } };
+      },
+      execute: async () => 'completed',
+      cleanup: manager.cleanupBrowserSession,
+    });
+    const cancelled = expect(run).rejects.toThrow('Agent 已取消');
+
+    await deciding.promise;
+    controller.abort();
+    // 不释放模型 Promise，也应当已经同步调用 close，不能等 runtime finally 才停播。
+    expect(view.closed).toBe(true);
+    resumeDecision.resolve();
+    await cancelled;
+    expect(state.browserSession).toBeNull();
+    expect(view.calls.filter(call => call[0] === 'close')).toHaveLength(1);
+  });
+
+  it('closes private sessions on cancellation and removes their disposable profile', async () => {
+    const view = new FakeWebView();
+    setWebViewFactoryForTests(() => view);
+    const manager = createSharedBrowserSessionManager();
+    const controller = new AbortController();
+    const state: any = { privateMode: true, browserSession: null, cancelSignal: controller.signal };
+    const session = await manager.ensureBrowserSession(state);
+    const profileDir = session.privateProfileDir;
+    await access(profileDir);
+
+    controller.abort();
+    expect(view.closed).toBe(true);
+    await manager.cleanupBrowserSession(state);
+    await expect(access(profileDir)).rejects.toThrow();
+    expect(view.calls.filter(call => call[0] === 'close')).toHaveLength(1);
+  });
+
+  it.each(['rejects', 'hangs'] as const)('cancels a navigation whose native promise %s after close without rebuilding', async closeBehavior => {
+    const created: FakeWebView[] = [];
+    const navigating = deferred();
+    const navigation = deferred();
+    setWebViewFactoryForTests(options => {
+      const view = new FakeWebView(options);
+      if (created.length === 0) {
+        const navigate = view.navigate.bind(view);
+        const close = view.close.bind(view);
+        view.navigate = async url => {
+          await navigate(url);
+          if (url === 'about:blank') return;
+          navigating.resolve();
+          await navigation.promise;
+        };
+        view.close = async () => {
+          await close();
+          if (closeBehavior === 'rejects') navigation.reject(new Error('Invalid state: WebView.navigate: view is closed'));
+        };
+      }
+      created.push(view);
+      return view;
+    });
+    const manager = createSharedBrowserSessionManager();
+    const controller = new AbortController();
+    const state: any = { browserSession: null, cancelSignal: controller.signal };
+    const events: any[] = [];
+    const operation = manager.withBrowserSessionRecovery(state, event => events.push(event), (session, recoveryAttempt) => (
+      executeBrowserAction(session.view, { type: 'navigate', url: 'https://example.com/video' }, {
+        signal: controller.signal,
+        recoveryAttempt,
+      })
+    ));
+    const cancelled = expect(operation).rejects.toThrow('Agent 已取消');
+
+    await navigating.promise;
+    controller.abort();
+    expect(created[0].closed).toBe(true);
+    await cancelled;
+    await manager.cleanupBrowserSession(state);
+    expect(created).toHaveLength(1);
+    expect(created[0].calls.filter(call => call[0] === 'close')).toHaveLength(1);
+    expect(events.some(event => event.status === 'recovering')).toBe(false);
+
+    // 旧原生 Promise 不落定也不能占住操作队列；新任务可用，旧任务迟到的结果不能影响它。
+    const nextState: any = { browserSession: null };
+    const next = await manager.ensureBrowserSession(nextState);
+    navigation.resolve();
+    await manager.serializeBrowserOperation(async () => {});
+    expect(next.view.closed).toBe(false);
+    await manager.cleanupBrowserSession(nextState);
+  });
+
+  it('cancels during initial health navigation and ignores its late result', async () => {
+    const view = new FakeWebView();
+    const navigating = deferred();
+    const navigation = deferred();
+    view.navigate = async url => {
+      view.calls.push(['navigate', url]);
+      navigating.resolve();
+      await navigation.promise;
+    };
+    setWebViewFactoryForTests(() => view);
+    const manager = createSharedBrowserSessionManager();
+    const controller = new AbortController();
+    const state: any = { browserSession: null, cancelSignal: controller.signal };
+    const events: any[] = [];
+    const initializing = manager.ensureBrowserSession(state, event => events.push(event));
+    const cancelled = expect(initializing).rejects.toThrow('Agent 已取消');
+
+    await navigating.promise;
+    controller.abort();
+    expect(view.closed).toBe(true);
+    await cancelled;
+    navigation.resolve();
+    await manager.cleanupBrowserSession(state);
+    await manager.serializeBrowserOperation(async () => {});
+    expect(view.calls.some(call => call[0] === 'evaluate')).toBe(false);
+    expect(events.some(event => event.status === 'ready' || event.status === 'browser_ready')).toBe(false);
+    expect(state.browserSession).toBeNull();
+  });
+
+  it.each(['recovering', 'starting'] as const)('does not retry when cancelled during recovery at %s', async cancelAt => {
+    const created: FakeWebView[] = [];
+    setWebViewFactoryForTests(options => {
+      const view = new FakeWebView(options);
+      created.push(view);
+      return view;
+    });
+    const manager = createSharedBrowserSessionManager();
+    const controller = new AbortController();
+    const state: any = { browserSession: null, cancelSignal: controller.signal };
+    let calls = 0;
+    const result = manager.withBrowserSessionRecovery(state, event => {
+      if (event.status === cancelAt && (cancelAt !== 'starting' || event.generation === 2)) controller.abort();
+    }, async () => {
+      calls += 1;
+      throw new Error('Invalid state: WebView.navigate: view is closed');
+    });
+
+    await expect(result).rejects.toThrow('Agent 已取消');
+    await manager.cleanupBrowserSession(state);
+    expect(calls).toBe(1);
+    expect(created).toHaveLength(cancelAt === 'recovering' ? 1 : 2);
+    expect(created.every(view => view.closed)).toBe(true);
+    expect(state.browserRecoveryFailures || 0).toBe(0);
+  });
+
+  it('never creates a view for an already cancelled or queued cancelled operation', async () => {
+    const created: FakeWebView[] = [];
+    setWebViewFactoryForTests(options => {
+      const view = new FakeWebView(options);
+      created.push(view);
+      return view;
+    });
+    const manager = createSharedBrowserSessionManager();
+    const blocking = deferred();
+    const blocked = manager.serializeBrowserOperation(() => blocking.promise);
+    const controller = new AbortController();
+    const state: any = { browserSession: null, cancelSignal: controller.signal };
+    const initializing = manager.ensureBrowserSession(state);
+    controller.abort();
+
+    await expect(initializing).rejects.toThrow('Agent 已取消');
+    await expect(manager.ensureBrowserSession(state)).rejects.toThrow('Agent 已取消');
+    await expect(executeBrowserAction(null, { type: 'navigate', url: 'https://example.com' }, { signal: controller.signal })).rejects.toThrow();
+    expect(created).toHaveLength(0);
+    blocking.resolve();
+    await blocked;
+    await manager.serializeBrowserOperation(async () => {});
+    expect(created).toHaveLength(0);
+  });
+
+  it('blocks queued browser work after normal cleanup', async () => {
+    let creations = 0;
+    setWebViewFactoryForTests(options => { creations += 1; return new FakeWebView(options); });
+    const manager = createSharedBrowserSessionManager();
+    const blocking = deferred();
+    const blocked = manager.serializeBrowserOperation(() => blocking.promise);
+    const state: any = { browserSession: null };
+    const initializing = manager.ensureBrowserSession(state);
+    const ended = expect(initializing).rejects.toThrow('任务已结束');
+
+    await manager.cleanupBrowserSession(state);
+    blocking.resolve();
+    await blocked;
+    await ended;
+    expect(creations).toBe(0);
+  });
+
+  it('does not let old task cancellation or cleanup close a replacement task session', async () => {
+    const created: FakeWebView[] = [];
+    setWebViewFactoryForTests(options => {
+      const view = new FakeWebView(options);
+      created.push(view);
+      return view;
+    });
+    const manager = createSharedBrowserSessionManager();
+    const oldController = new AbortController();
+    const firstState: any = { browserSession: null, cancelSignal: oldController.signal };
+    const nextState: any = { browserSession: null };
+    await manager.ensureBrowserSession(firstState);
+    const next = await manager.ensureBrowserSession(nextState);
+
+    expect(created[0].closed).toBe(true);
+    oldController.abort();
+    await manager.cleanupBrowserSession(firstState);
+    expect(next.view.closed).toBe(false);
+    expect(nextState.browserSession).toBe(next);
+    await manager.cleanupBrowserSession(nextState);
+  });
+
+  it('closes the browser when the runtime fails', async () => {
+    const view = new FakeWebView();
+    setWebViewFactoryForTests(() => view);
+    const manager = createSharedBrowserSessionManager();
+    const state: any = { browserSession: null };
+    await manager.ensureBrowserSession(state);
+
+    await expect(runAgentRuntime({
+      task: 'read a page',
+      initialize: async () => state,
+      observe: async () => ({}),
+      decide: async () => { throw new Error('model failed'); },
+      execute: async () => '',
+      cleanup: manager.cleanupBrowserSession,
+    })).rejects.toThrow('model failed');
+    expect(view.closed).toBe(true);
+    expect(state.browserSession).toBeNull();
   });
 });
 
@@ -349,7 +667,7 @@ describe('Bun.WebView browser actions', () => {
     ]));
   });
 
-  it('serializes operations that share the same WebView', async () => {
+  it('serializes browser operations while keeping task sessions separate', async () => {
     setWebViewFactoryForTests(options => new FakeWebView(options));
     const manager = createSharedBrowserSessionManager();
     const firstState: any = { headless: true, browserSession: null };
@@ -371,7 +689,9 @@ describe('Bun.WebView browser actions', () => {
     await expect(Promise.all([run('first', firstState), run('second', secondState)]))
       .resolves.toEqual(['first', 'second']);
     expect(maxActive).toBe(1);
-    expect(order).toEqual(['first:start:1', 'first:end:1', 'second:start:1', 'second:end:1']);
+    expect(order).toEqual(['first:start:1', 'first:end:1', 'second:start:2', 'second:end:2']);
+    await manager.cleanupBrowserSession(firstState);
+    await manager.cleanupBrowserSession(secondState);
   });
 
   it('bounds a hanging close and clears the session reference', async () => {
@@ -471,18 +791,12 @@ describe('Bun.WebView browser actions', () => {
   });
 
   it('keeps a core.finish result when WebView cleanup throws synchronously', async () => {
-    let blankNavigations = 0;
+    let closeCalls = 0;
     setWebViewFactoryForTests(options => {
       const view = new FakeWebView(options);
-      const navigate = view.navigate.bind(view);
-      view.navigate = async url => {
-        if (url === 'about:blank') {
-          blankNavigations += 1;
-          if (blankNavigations > 1) {
-            throw new Error('Invalid state: WebView.navigate: view is closed');
-          }
-        }
-        return navigate(url);
+      view.close = () => {
+        closeCalls += 1;
+        throw new Error('Invalid state: WebView.close: view is closed');
       };
       return view;
     });
@@ -505,5 +819,7 @@ describe('Bun.WebView browser actions', () => {
     });
 
     expect(result.answer).toBe('completed');
+    expect(closeCalls).toBe(1);
+    expect(state.browserSession).toBeNull();
   });
 });

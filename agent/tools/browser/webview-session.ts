@@ -16,6 +16,7 @@ import { EdgeCdpWebView } from './edge-cdp-webview.ts';
 import { isPrivateRun } from '../../../helpers/private-run.ts';
 
 let sharedSession = null;
+const closingViews = new WeakMap<object, Promise<void>>();
 let webViewFactory = defaultWebViewFactory;
 let dataStoreDir = null;
 let screenshotDir = path.resolve(process.env.MEMORY_DIR || 'data', 'screenshots');
@@ -173,10 +174,16 @@ export async function closeBrowserSession(session = sharedSession) {
   const view = session?.view || session?.page || session;
   const privateProfileDir = session?.privateProfileDir;
   if (view && typeof view.close === 'function') {
-    try {
-      const result = view.close();
-      if (result && typeof result.catch === 'function') await result;
-    } catch {}
+    let closeTask = closingViews.get(view);
+    if (!closeTask) {
+      // 任务取消、导航超时和 finally 可能同时关闭同一实例；原生 close 只调用一次。
+      // 在调用 close 前登记 Promise，既能同步终止播放，也能防止关闭回调重入。
+      let complete: () => void;
+      closeTask = new Promise<void>(resolve => { complete = resolve; });
+      closingViews.set(view, closeTask);
+      try { Promise.resolve(view.close()).then(complete, complete); } catch { complete(); }
+    }
+    await closeTask;
   }
   await removePrivateProfileDir(privateProfileDir);
   if (session === sharedSession || session?.view === sharedSession?.view) {
