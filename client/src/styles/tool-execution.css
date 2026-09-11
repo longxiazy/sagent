@@ -1,0 +1,356 @@
+/* ── StepCard（单模型合并卡）与折叠/截断工具 ── */
+
+/* 多行文本截断：超出部分隐藏，配合「展开/收起」按钮使用 */
+
+.clamp-1,
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.clamp-1 { -webkit-line-clamp: 1; }
+
+.clamp-2 { -webkit-line-clamp: 2; }
+
+/* ── StepCard 头部：步号(弱) + 工具图标 + 动作摘要(主) + meta(轻) + 回滚 ── */
+
+.step-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.step-card-tool-icon {
+  flex-shrink: 0;
+  color: var(--tool-c, var(--c-text-secondary));
+}
+
+.step-card-step {
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--f-micro);
+  font-weight: 600;
+  color: var(--c-text-tertiary);
+  min-width: 12px;
+}
+
+.step-card-summary {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--f-sm);
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 模型·token 合并成一行次要文字，弱化视觉权重 */
+
+.step-card-meta {
+  flex-shrink: 0;
+  font-size: var(--f-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--c-text-tertiary);
+  white-space: nowrap;
+}
+
+.step-card-observe { color: var(--c-text-secondary); }
+
+/* 结果：↳ 图标锚点 + 文本，区别于上方的决策理由 */
+
+.step-card-result,
+.tool-result-details {
+  margin-top: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-hover);
+}
+
+.step-card-result-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--c-badge-result);
+}
+
+.step-card-result-body {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  column-gap: 5px;
+  min-width: 0;
+}
+
+.step-card-result-body > p { color: var(--c-text); }
+
+.step-card-result-body .step-card-toggle { grid-column: 2; justify-self: start; }
+
+.tool-result-label {
+  margin-bottom: 4px;
+  font-size: var(--f-micro);
+  font-weight: 700;
+  color: var(--c-badge-result);
+}
+
+.tool-request-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.tool-execution-block {
+  margin-top: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-hover);
+}
+
+.tool-execution-block > .step-card-result,
+.tool-execution-block > .tool-result-details {
+  margin: 7px 0 0;
+  padding: 7px 0 0;
+  border: 0;
+  border-top: 1px solid var(--c-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.tool-execution-block > .terminal-process,
+.tool-execution-block > .mcp-process {
+  margin-top: 7px;
+}
+
+.tool-request-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.tool-request-row.align-start { align-items: start; }
+
+.tool-request-label {
+  font-size: var(--f-micro);
+  font-weight: 700;
+  color: var(--c-text-tertiary);
+  white-space: nowrap;
+}
+
+.tool-request-tool {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  color: var(--tool-c, var(--c-text-secondary));
+}
+
+.tool-request-tool code {
+  min-width: 0;
+  color: var(--c-text);
+  font-size: var(--f-micro);
+  overflow-wrap: anywhere;
+}
+
+.tool-request-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-request-param {
+  display: grid;
+  grid-template-columns: minmax(48px, max-content) minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+}
+
+.tool-request-param-key {
+  max-width: 92px;
+  padding-top: 1px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--f-micro);
+  color: var(--c-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-request-param-value {
+  margin: 0;
+  max-height: 96px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--f-micro);
+  line-height: 1.35;
+  color: var(--c-text);
+}
+
+.tool-request-empty {
+  font-size: var(--f-micro);
+  color: var(--c-text-muted);
+}
+
+.tool-request-json-toggle {
+  align-self: flex-start;
+}
+
+.terminal-process {
+  margin-top: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-hover);
+}
+
+.terminal-process-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.terminal-process-label {
+  font-size: var(--f-micro);
+  font-weight: 700;
+  color: var(--c-text-tertiary);
+}
+
+.terminal-process-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: var(--f-micro);
+  font-weight: 700;
+  color: var(--c-text-muted);
+  white-space: nowrap;
+}
+
+.terminal-process-status.running { color: var(--c-agent-running); }
+
+.terminal-process-status.running svg { animation: spin 1s linear infinite; }
+
+.terminal-process-status.success { color: var(--c-badge-result); }
+
+.terminal-process-status.error { color: var(--c-badge-error); }
+
+.terminal-process-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.terminal-process-line {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+}
+
+.terminal-process-stream-label {
+  padding-top: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--f-micro);
+  font-weight: 700;
+  color: var(--c-success-text);
+}
+
+.terminal-process-line.stderr .terminal-process-stream-label {
+  color: var(--c-warning);
+}
+
+.terminal-process-line pre {
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--f-micro);
+  line-height: 1.35;
+  color: var(--c-text);
+}
+
+.terminal-process-empty,
+.terminal-process-message {
+  font-size: var(--f-micro);
+  line-height: 1.4;
+  color: var(--c-text-muted);
+}
+
+.terminal-process-message {
+  margin-top: 5px;
+  color: var(--c-badge-error);
+}
+
+/* 「展开/收起」纯文字小开关（理由/结果） */
+
+.step-card-toggle {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: var(--f-xs);
+  color: var(--c-primary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.step-card-toggle:hover { text-decoration: underline; }
+
+.step-card-json { margin-top: 4px; }
+
+/* JSON 折叠开关做成一颗带 chevron 的小 chip */
+
+.step-card-json-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 7px 1px 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--f-micro);
+  font-weight: 600;
+  color: var(--c-text-secondary);
+  background: var(--c-surface-inline);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
+}
+
+.step-card-json-toggle:hover {
+  color: var(--c-primary);
+  border-color: var(--c-primary-light);
+  background: var(--c-primary-bg);
+}
+
+/* 用 <details> 折叠的 observe 详情 / 兜底 action JSON */
+
+.step-card-details,
+.agent-observe-details { margin-top: 4px; }
+
+.step-card-details > summary,
+.agent-observe-details > summary {
+  font-size: var(--f-xs);
+  color: var(--c-primary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.step-card-details > summary,
+.agent-observe-details > summary { color: var(--c-text-tertiary); }
+
+.step-card-details > summary::-webkit-details-marker,
+.agent-observe-details > summary::-webkit-details-marker { display: none; }
+
+/* details 展开后的 chips 不应被移动端 .agent-element-list 的 40px 裁剪 */
+
+.agent-observe-details .agent-element-list,
+.step-card-details .agent-element-list { max-height: none; overflow: visible; }

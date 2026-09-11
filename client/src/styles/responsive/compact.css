@@ -1,0 +1,414 @@
+@media (max-width: 480px) {
+  .agent-composer--hero {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .agent-composer--hero .agent-composer-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .attachment-chip {
+    max-width: 160px;
+    padding-right: 24px;
+  }
+
+  .attachment-thumb {
+    width: 32px;
+    height: 32px;
+  }
+
+  .attach-btn span {
+    display: none;
+  }
+
+  /* 极窄屏（SE/mini）第二行仍然吃紧：开关只留图标与滑块，与附件按钮同一处理。
+     滑块本身已表达开/关，去掉文字不损失状态可读性。含义靠 title 与图标传达。 */
+  .agent-composer--dock .toolbar-switch .toolbar-switch-label {
+    display: none;
+  }
+
+  .agent-composer--dock .toolbar-switch {
+    padding: 0 8px;
+  }
+
+  .attach-btn {
+    padding: 0 8px;
+  }
+
+  .model-select-row,
+  .model-dropdown {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .model-dropdown {
+    position: static;
+  }
+
+  .model-dropdown-trigger,
+  .agent-composer--hero .model-dropdown-trigger {
+    width: min(100%, 176px);
+    max-width: 100%;
+    padding: 0 8px;
+  }
+
+  .model-picker-mask {
+    align-items: flex-end;
+    justify-content: stretch;
+    padding: max(8px, env(safe-area-inset-top)) 0 0;
+  }
+
+  .model-picker-dialog {
+    width: 100%;
+    height: min(92dvh, 760px);
+    max-height: calc(100dvh - max(8px, env(safe-area-inset-top)));
+    border-right: none;
+    border-bottom: none;
+    border-left: none;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+
+  .model-picker-header,
+  .model-picker-toolbar,
+  .model-filter-grid {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .model-picker-header {
+    min-height: 48px;
+    flex: 0 0 auto;
+  }
+
+  .model-picker-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .model-picker-subtitle {
+    white-space: normal;
+  }
+
+  .model-picker-close {
+    width: 36px;
+    height: 36px;
+  }
+
+  .model-picker-help {
+    width: 36px;
+    height: 36px;
+  }
+
+  .model-picker-toolbar {
+    grid-template-columns: 1fr;
+    flex: 0 0 auto;
+  }
+
+  .model-picker-search {
+    position: relative;
+    align-items: flex-start;
+    flex-direction: column;
+    min-height: 40px;
+    height: auto;
+    padding: 7px 10px 7px 34px;
+    gap: 5px;
+  }
+
+  .model-picker-search > svg {
+    position: absolute;
+    left: 11px;
+    top: 13px;
+  }
+
+  .model-picker-search input {
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 24px;
+  }
+
+  .model-search-selected-tags {
+    width: 100%;
+    max-height: 58px;
+    overflow-y: auto;
+    padding-right: 2px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .model-search-selected-chip {
+    max-width: 100%;
+    height: 24px;
+  }
+
+  .model-picker-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .model-sort-control {
+    min-height: 36px;
+    flex: 1 1 180px;
+  }
+
+  .model-sort-control select {
+    flex: 1 1 auto;
+    max-width: none;
+  }
+
+  .model-clear-btn {
+    min-height: 36px;
+    padding: 0 10px;
+  }
+
+  .model-filter-toggle {
+    min-height: 36px;
+    padding: 0 10px;
+  }
+
+  .model-filter-grid {
+    --model-filter-control-height: 36px;
+    --model-filter-control-min: 0;
+    --model-filter-control-max: none;
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    max-height: 34dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  .model-filter-group {
+    display: flex;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .model-filter-label {
+    width: auto;
+    line-height: 1;
+    text-align: left;
+  }
+
+  .model-filter-chips {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    max-width: 100%;
+    overflow: visible;
+    padding-bottom: 2px;
+  }
+
+  .model-filter-chip {
+    width: 100%;
+    max-width: none;
+    padding: 0 10px;
+  }
+
+  .model-category-checkboxes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    max-width: 100%;
+    overflow: visible;
+    gap: 6px;
+    padding-bottom: 2px;
+  }
+
+  .model-category-checkbox {
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .model-picker-body {
+    flex: 1 1 0;
+    min-height: 0;
+    padding: 10px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .model-picker-body .model-provider-options {
+    grid-template-columns: 1fr;
+  }
+
+  .model-selected-group {
+    flex: 0 0 auto;
+    max-height: 22dvh;
+  }
+
+  .model-options.model-picker-results {
+    flex: 0 0 auto;
+    max-height: none;
+    overflow: visible;
+    min-height: 0;
+  }
+
+  .model-provider-heading {
+    padding-left: 2px;
+  }
+
+  .model-picker-body .model-option {
+    height: auto;
+    min-height: 54px;
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .model-option-favorite {
+    width: 44px;
+  }
+
+  .model-selected-group .model-option {
+    min-height: 0;
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .model-option-description {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+    -webkit-box-orient: unset;
+  }
+
+  .model-picker-strategy .strategy-btn {
+    flex: 1 1 0;
+    height: 44px;
+    padding: 0 12px;
+  }
+
+  .model-selected-group.model-selected-group-sortable {
+    flex: 0 0 auto;
+    max-height: min(54dvh, 460px);
+  }
+
+  .model-selected-header {
+    padding: 2px 4px 8px;
+    gap: 8px;
+  }
+
+  .model-priority-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-priority-row:has(.model-order-drag) {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .model-priority-row .model-option {
+    min-height: 64px;
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .model-priority-row .model-option-title-row {
+    flex-wrap: wrap;
+    gap: 4px 6px;
+  }
+
+  .model-priority-row .model-option-name {
+    order: -1;
+    flex-basis: 100%;
+  }
+
+  .model-priority-row .model-option-description {
+    display: none;
+  }
+
+  .model-priority-row .model-option-actions {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    padding: 4px 6px;
+    border-left: none;
+    border-top: 1px solid var(--c-primary-light);
+  }
+
+  .model-priority-row .model-option-favorite {
+    width: 44px;
+    height: 44px;
+    margin: 0;
+  }
+
+  .model-option-order {
+    padding: 0;
+  }
+
+  .order-arrow {
+    width: auto;
+    min-width: 76px;
+    height: 44px;
+    padding: 0 12px;
+    font-size: var(--f-xs);
+  }
+
+  .order-arrow > span {
+    display: inline;
+  }
+
+  .send-btn.stop {
+    font-size: var(--f-xs);
+    padding: 0 10px;
+  }
+
+  .agent-panel { padding: 4px 8px; }
+
+  .agent-metric-tokens { font-size: var(--f-micro); padding: 1px 4px; }
+  .agent-trace-item { padding: 2px 0 2px 26px; gap: 5px; }
+
+  .agent-trace-badge { height: 18px; font-size: var(--f-micro); padding: 0 4px; }
+
+  .agent-trace-content strong { font-size: var(--f-xs); }
+  .agent-trace-content p { font-size: var(--f-xs); line-height: 1.35; }
+
+  .agent-json {
+    font-size: var(--f-micro);
+    padding: 3px 4px;
+    max-height: 48px;
+  }
+
+  .tool-request-row { grid-template-columns: 48px minmax(0, 1fr); }
+  .tool-request-label,
+  .tool-result-label,
+  .tool-request-param-key,
+  .terminal-process-label,
+  .terminal-process-stream-label { font-size: var(--f-micro); }
+  .tool-request-tool code,
+  .tool-request-param-value,
+  .tool-request-empty,
+  .terminal-process-line pre,
+  .terminal-process-empty,
+  .terminal-process-message,
+  .terminal-process-status { font-size: var(--f-micro); }
+
+  .model-card { padding: 4px 5px; }
+}
+
+/* 触屏保留拖拽手柄，并为两种排序方式提供足够大的操作区域。 */
+
+@media (hover: none) and (pointer: coarse) {
+  .model-order-drag {
+    width: 44px;
+    flex-basis: 44px;
+  }
+
+  .model-priority-row:has(.model-order-drag) {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .order-arrow {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

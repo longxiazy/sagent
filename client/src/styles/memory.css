@@ -1,0 +1,117 @@
+/* ── Memory Panel ── */
+
+.memory-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.memory-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--c-border);
+  margin-bottom: 8px;
+}
+
+.memory-panel-title {
+  padding: 4px 2px;
+  font-size: var(--f-xs);
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.memory-panel-close {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-secondary);
+  border-radius: var(--r-sm);
+}
+
+.memory-panel-close:hover { background: var(--c-surface-inline); }
+
+.memory-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.memory-loading, .memory-empty {
+  text-align: center;
+  padding: 20px;
+  color: var(--c-text-secondary);
+  font-size: var(--f-sm);
+}
+
+.memory-section {
+  margin-bottom: 10px;
+}
+
+.memory-section-title {
+  font-size: var(--f-micro);
+  font-weight: 600;
+  color: var(--c-badge-plan);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--c-badge-plan-bg);
+}
+
+.memory-kv {
+  font-size: var(--f-xs);
+  color: var(--c-text-secondary);
+  line-height: 1.5;
+  padding: 2px 0;
+  word-break: break-word;
+}
+
+.memory-k {
+  display: inline-block;
+  font-weight: 500;
+  color: var(--c-text);
+  min-width: 60px;
+}
+
+.memory-panel-footer {
+  padding: 8px 0;
+  border-top: 1px solid var(--c-border);
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.memory-clear-group {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.memory-clear-btn {
+  padding: 4px 8px;
+  font-size: var(--f-xs);
+  color: var(--c-agent-idle);
+  background: var(--c-surface-inline);
+  border: 1px solid var(--c-border-input);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.memory-clear-btn:hover { background: var(--c-surface-active); }
+
+.memory-clear-btn.danger { color: var(--c-danger); border-color: var(--c-danger); }
+
+.memory-clear-btn.danger:hover { background: var(--c-danger-bg); }
+
+.memory-clear-btn:disabled { opacity: 0.5; cursor: not-allowed; }

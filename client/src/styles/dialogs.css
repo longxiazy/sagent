@@ -1,0 +1,85 @@
+/* ── Dialogs ── */
+
+.dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--c-overlay);
+}
+
+.settings-mask {
+  z-index: 100;
+}
+
+.dialog {
+  background: var(--c-surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 24px;
+  width: 320px;
+}
+
+.dialog-title { font-size: var(--f-base); margin-bottom: 8px; }
+
+.dialog-desc { font-size: var(--f-sm); line-height: 1.6; color: var(--c-text-muted); margin-bottom: 20px; }
+
+.dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+.approval-dialog {
+  width: min(520px, 94vw);
+  max-height: min(720px, 88vh);
+  display: flex;
+  flex-direction: column;
+}
+
+.approval-eyebrow { margin-bottom: 8px; font-size: var(--f-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-warning-text); }
+
+.approval-message {
+  max-height: 96px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.approval-dialog .approval-json {
+  margin-top: 0;
+  flex: 1 1 auto;
+  max-height: min(320px, 40vh);
+  overflow-y: auto;
+}
+
+.approval-dialog .dialog-actions { flex-shrink: 0; }
+
+.approval-confirm { min-width: 84px; }
+
+.dialog-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 20px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  font-size: var(--f-base);
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--ease);
+}
+
+.dialog-btn.cancel { background: var(--c-surface-dim); }
+
+.dialog-btn.cancel:hover { background: var(--c-surface-active); }
+
+.dialog-btn.confirm { background: var(--c-danger); color: var(--c-surface); border-color: var(--c-danger); }
+
+.dialog-btn.confirm:hover { background: var(--c-danger-hover); }
+
+.dialog-btn.primary { background: var(--c-primary); color: var(--c-surface); border-color: var(--c-primary); }
+
+.dialog-btn.primary:hover { filter: brightness(0.95); }
+
+.dialog-btn:disabled { opacity: 0.5; cursor: not-allowed; }

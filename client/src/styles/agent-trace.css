@@ -1,0 +1,476 @@
+/* ── Agent Trace ── */
+
+.agent-trace {
+  margin-top: 2px;
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+@media (min-width: 640px) and (max-width: 899px) {
+  .agent-trace {
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
+/* 执行轨迹 = 一条时间线：每个节点（步骤卡/事件/决策卡组）左侧串一颗状态色圆点，
+   圆点用竖线连成执行流。去掉每项的整框背景与粗左边框，让时间线本身成为主视觉。 */
+
+.agent-trace-item,
+.model-plan-group {
+  position: relative;
+  padding-left: 30px;
+}
+
+.agent-trace-item {
+  display: flex;
+  gap: 8px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+/* 连接线：贯穿节点并跨过 gap 连到下一个圆点；圆点描边盖住交点形成"串珠" */
+
+.agent-trace-item::before,
+.model-plan-group::before {
+  content: '';
+  position: absolute;
+  left: 17px;
+  top: 0;
+  bottom: -8px;
+  width: 2px;
+  background: var(--c-border);
+}
+
+/* 第一个节点：竖线从圆点起，不向上溢出 */
+
+.agent-trace > :first-child.agent-trace-item::before,
+.agent-trace > :first-child.model-plan-group::before { top: 11px; }
+
+/* 最后一个真实节点（其后是 traceBottom 占位 div）：线到自身底部即止，不悬空 */
+
+.agent-trace > :nth-last-child(2)::before { bottom: 0; }
+
+/* 节点圆点：默认色，下面按事件语义着色 */
+
+.agent-trace-item::after,
+.model-plan-group::after {
+  content: '';
+  position: absolute;
+  left: 13px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--c-text-tertiary);
+  box-shadow: 0 0 0 3px var(--c-surface);
+  z-index: 1;
+}
+
+@keyframes traceItemIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.agent-trace-item,
+.model-plan-group { animation: traceItemIn var(--dur-normal) ease-out; }
+
+/* ── 工具语义色映射：任一带 data-tool 的元素都把 --tool-c 定下来，圆点 / 工具图标共用 ── */
+
+[data-tool="browser"]  { --tool-c: var(--c-tool-browser); }
+
+[data-tool="chrome"]   { --tool-c: var(--c-tool-chrome); }
+
+[data-tool="search"]   { --tool-c: var(--c-tool-search); }
+
+[data-tool="fs"]       { --tool-c: var(--c-tool-fs); }
+
+[data-tool="terminal"] { --tool-c: var(--c-tool-terminal); }
+
+[data-tool="macos"]    { --tool-c: var(--c-tool-macos); }
+
+[data-tool="mcp"]      { --tool-c: var(--c-tool-mcp); }
+
+[data-tool="vision"]   { --tool-c: var(--c-tool-vision); }
+
+[data-tool="core"]     { --tool-c: var(--c-tool-core); }
+
+/* 圆点状态色：动作类节点用工具色（--tool-c），其余事件沿用原语义映射 */
+
+.agent-trace-item[data-stage="merged"]::after,
+.agent-trace-item[data-type="step"][data-stage="action"]::after { background: var(--tool-c, var(--c-badge-action)); }
+
+.agent-trace-item[data-type="step"][data-stage="result"]::after { background: var(--c-badge-result); }
+
+/* 多模型场景下单独渲染的 observe 节点：用专属中性色（observe 本身不属于具体工具，故不参与工具色） */
+
+.agent-trace-item[data-type="step"][data-stage="observe"]::after { background: var(--c-trace-observe); }
+
+.agent-trace-item[data-type="done"]::after { background: var(--c-badge-done); }
+
+.agent-trace-item[data-type="error"]::after { background: var(--c-badge-error); }
+
+.agent-trace-item[data-type="approval_required"]::after { background: var(--c-badge-approval); }
+
+.agent-trace-item[data-type="rollback"]::after { background: var(--c-badge-rollback); }
+
+.agent-attempt-boundary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 8px;
+  color: var(--c-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.agent-attempt-boundary::before,
+.agent-attempt-boundary::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: var(--c-border);
+}
+
+.agent-trace-item[data-type="session_checkpoint"]::after { background: var(--c-badge-plan); }
+
+.agent-trace-item[data-type="notification"]::after { background: var(--c-primary); }
+
+/* 用户回答已经有“回答”徽标，不再重复绘制时间线圆点。 */
+
+.agent-trace-item[data-type="user_response"]::after { display: none; }
+
+.model-plan-group::after { background: var(--c-badge-plan); }
+
+/* 卡组圆点改用 winner 的工具色（与单模型步一致）；无 winner 时回落到 plan 紫 */
+
+.model-plan-group[data-tool]::after { background: var(--tool-c); }
+
+/* done 三态：完成绿 / 未核验琥珀 / 降级橙，圆点与右上角状态标签呼应 */
+
+.agent-trace-item[data-type="done"][data-status="done_unverified"]::after { background: var(--c-badge-approval); }
+
+.agent-trace-item[data-type="done"][data-status="done_degraded"]::after { background: var(--c-badge-rollback); }
+
+/* 失败步骤：圆点转红，结果 ↳ 图标与文字标红——失败在时间线上一眼可辨（放在最后以压过工具色） */
+
+.agent-trace-item.result-failed::after,
+.model-plan-group.result-failed::after { background: var(--c-badge-error); }
+
+/* 失败步：圆点 + ↳ 图标转红做状态指示；结果正文不再整段标红，改为只高亮命中的关键词 */
+
+.agent-trace-item.result-failed .step-card-result-icon,
+.model-plan-group.result-failed .step-card-result-icon { color: var(--c-badge-error); }
+
+.mcp-process {
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--c-tool-mcp) 30%, var(--c-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--c-tool-mcp) 7%, var(--c-surface));
+}
+
+.mcp-process.error {
+  border-color: color-mix(in srgb, var(--c-danger) 35%, var(--c-border));
+  background: var(--c-danger-bg);
+}
+
+.mcp-process-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--c-text-muted);
+  font-size: var(--f-xs);
+}
+
+.mcp-process-head strong {
+  color: var(--c-text);
+}
+
+.mcp-process-percent {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.mcp-process p {
+  margin: 5px 0 0;
+  color: var(--c-text-muted);
+  font-size: var(--f-xs);
+}
+
+.mcp-process-spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* 命中失败模式的关键词高亮（红字 + 淡红底），结果主体文字保持正常可读 */
+
+.result-keyword {
+  color: var(--c-badge-error);
+  background: var(--c-badge-error-bg);
+  font-weight: 600;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+/* 当前正在执行的步：节点圆点向外扩散脉冲（脉冲色跟随该步的工具色），强化时间线的"执行流"叙事 */
+
+.agent-trace-item.running::after { animation: traceNodePulse 1.6s ease-out infinite; }
+
+@keyframes traceNodePulse {
+  0% { box-shadow: 0 0 0 3px var(--c-surface), 0 0 0 3px var(--tool-c, var(--c-badge-action)); }
+  75%, 100% { box-shadow: 0 0 0 3px var(--c-surface), 0 0 0 9px transparent; }
+}
+
+/* 尊重系统的减少动态偏好 */
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-trace-item,
+  .model-plan-group { animation: none; }
+  .agent-trace-item.running::after { animation: none; }
+}
+
+.agent-trace-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-pill);
+  font-weight: 600;
+  flex-shrink: 0;
+  justify-content: center;
+  min-width: 42px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: var(--f-micro);
+  background: var(--c-badge-default-bg);
+  color: var(--c-badge-default);
+}
+
+.agent-trace-badge.action { background: var(--c-badge-action-bg); color: var(--c-badge-action); }
+
+.agent-trace-badge.result { background: var(--c-badge-result-bg); color: var(--c-badge-result); }
+
+.agent-trace-badge.done { background: var(--c-badge-done-bg); color: var(--c-badge-done); }
+
+.agent-trace-badge.approval { background: var(--c-badge-approval-bg); color: var(--c-badge-approval); }
+
+.agent-trace-badge.error { background: var(--c-badge-error-bg); color: var(--c-badge-error); }
+
+.agent-trace-badge.plan { background: var(--c-badge-plan-bg); color: var(--c-badge-plan); }
+
+.agent-trace-badge.consensus { background: var(--c-badge-consensus-bg); color: var(--c-badge-consensus); }
+
+.agent-trace-badge.rollback { background: var(--c-badge-rollback-bg); color: var(--c-badge-rollback); }
+
+.trace-rollback-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--ease);
+}
+
+.trace-rollback-btn:hover:not(:disabled) {
+  background: var(--c-badge-rollback-bg);
+  border-color: var(--c-warning-border);
+  color: var(--c-warning);
+}
+
+.trace-rollback-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rollback-suggestion {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: var(--c-warning-bg);
+  border: 1px solid var(--c-warning-border);
+}
+
+.rollback-suggestion-info {
+  font-size: var(--f-sm);
+  font-weight: 600;
+  color: var(--c-badge-rollback);
+  margin-bottom: 4px;
+}
+
+.rollback-suggestion-detail {
+  color: var(--c-text-secondary);
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.rollback-suggestion-ctx {
+  font-size: var(--f-xs);
+  color: var(--c-text-secondary);
+  margin: 2px 0;
+  line-height: 1.4;
+}
+
+.rollback-suggestion-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-warning-border);
+  background: var(--c-surface);
+  color: var(--c-warning);
+  font-size: var(--f-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--ease);
+}
+
+.rollback-suggestion-btn:hover:not(:disabled) {
+  background: var(--c-badge-rollback-bg);
+}
+
+.rollback-suggestion-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-trace-content { min-width: 0; flex: 1; }
+
+.agent-trace-content strong { display: block; font-size: var(--f-sm); color: var(--c-text); }
+
+.agent-trace-content p { margin-top: 2px; font-size: var(--f-xs); line-height: 1.5; color: var(--c-text-secondary); word-break: break-word; }
+
+.agent-trace-url { color: var(--c-text-secondary); font-size: var(--f-xs); }
+
+.screenshot-details {
+  margin-top: 6px;
+}
+
+.screenshot-details summary {
+  font-size: var(--f-xs);
+  color: var(--c-primary);
+  cursor: pointer;
+}
+
+.screenshot-img {
+  display: block;
+  margin-top: 6px;
+  max-width: 100%;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--c-border);
+}
+
+.screenshot-img.clickable { cursor: zoom-in; transition: transform var(--dur-fast), box-shadow var(--dur-fast); }
+
+.screenshot-img.clickable:hover { transform: scale(1.02); box-shadow: var(--shadow-card); }
+
+/* 缩略图：trace 里默认用小尺寸（点击走 lightbox 放大），避免全宽截图撑高面板 */
+
+.screenshot-thumb {
+  display: block;
+  margin-top: 6px;
+  max-height: 72px;
+  max-width: 200px;
+  width: auto;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--c-border);
+}
+
+.screenshot-thumb.clickable { cursor: zoom-in; transition: transform var(--dur-fast), box-shadow var(--dur-fast); }
+
+.screenshot-thumb.clickable:hover { transform: scale(1.04); box-shadow: var(--shadow-card); }
+
+.screenshot-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: var(--c-overlay-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.screenshot-lightbox-img {
+  max-width: 95vw;
+  max-height: 95vh;
+  object-fit: contain;
+  border-radius: var(--r-sm);
+}
+
+.chat-screenshots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.chat-screenshot-img {
+  max-width: 100%;
+  border-radius: var(--r-md);
+  border: 1px solid var(--c-border);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.chat-screenshot-img:hover {
+  transform: scale(1.02);
+}
+
+.agent-trace-meta { margin-left: 8px; font-size: var(--f-micro); font-weight: 400; color: var(--c-text-secondary); }
+
+.agent-models-used {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.agent-model-chip {
+  font-size: var(--f-micro);
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  background: var(--c-badge-plan-bg);
+  color: var(--c-badge-plan);
+}
+
+.agent-element-list { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+
+.agent-element-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-pill);
+  font-weight: 600;
+  height: 20px;
+  padding: 0 6px;
+  background: var(--c-surface-inline);
+  color: var(--c-badge-default);
+  font-size: var(--f-micro);
+}
+
+.agent-json {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: var(--c-code-bg);
+  color: var(--c-code-text);
+  font-size: var(--f-xs);
+  line-height: 1.4;
+  overflow-x: auto;
+  max-width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
+}

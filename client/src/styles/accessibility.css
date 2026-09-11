@@ -1,0 +1,78 @@
+/* ── Focus-visible outlines ── */
+
+button:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+.agent-trace-item:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: -2px;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .suggestion-card:hover,
+  .copy-btn:hover,
+  .header-icon-btn:hover:not(:disabled),
+  .session-toggle-btn:hover,
+  .page-create-btn:hover:not(:disabled),
+  .header-new-session-btn:hover:not(:disabled),
+  .model-option:hover,
+  .toolbar-chip:hover,
+  .agent-collapse-btn:hover,
+  .agent-stop-btn:hover:not(:disabled),
+  .send-btn:hover:not(:disabled),
+  .session-card:hover,
+  .session-delete-btn:hover:not(:disabled) {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .copy-btn,
+  .session-delete-btn,
+  .model-card-head .copy-btn {
+    opacity: 1;
+  }
+
+  .suggestion-card:active,
+  .header-icon-btn:active,
+  .session-toggle-btn:active,
+  .page-create-btn:active:not(:disabled),
+  .header-new-session-btn:active:not(:disabled),
+  .model-option:active:not(:disabled),
+  .toolbar-chip:active,
+  .agent-collapse-btn:active,
+  .agent-stop-btn:active:not(:disabled),
+  .send-btn:active:not(:disabled),
+  .session-main:active:not(:disabled),
+  .session-delete-btn:active:not(:disabled),
+  .session-group-header:active {
+    filter: brightness(0.96);
+  }
+
+  .session-main,
+  .session-group-header,
+  .suggestion-card,
+  .model-option,
+  .toolbar-chip,
+  .send-btn,
+  .header-icon-btn,
+  .session-toggle-btn,
+  .page-create-btn,
+  .header-new-session-btn,
+  .session-delete-btn,
+  .agent-collapse-btn,
+  .agent-stop-btn {
+    min-height: 36px;
+  }
+
+  .copy-btn,
+  .session-delete-btn,
+  .header-icon-btn,
+  .session-toggle-btn {
+    min-width: 36px;
+  }
+}

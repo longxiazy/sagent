@@ -1,0 +1,77 @@
+/* ── Strategy Toggle ── */
+
+.strategy-toggle {
+  display: inline-flex;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--c-border);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.strategy-btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: var(--f-xs);
+  font-weight: 600;
+  border: none;
+  background: var(--c-surface);
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.strategy-btn:first-child { border-right: 1px solid var(--c-border); }
+
+.strategy-btn.active { background: var(--c-primary); color: var(--c-on-accent); }
+
+.strategy-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Consensus Bar ── */
+
+.consensus-content { flex: 1; }
+
+.consensus-bar {
+  padding: 4px 8px;
+  border-radius: var(--r-md);
+  background: var(--c-success-bg);
+  border: 1px solid var(--c-success-border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.consensus-badge {
+  font-size: var(--f-micro);
+  font-weight: 700;
+  color: var(--c-badge-result);
+  background: var(--c-success-border);
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+}
+
+.consensus-action {
+  font-size: var(--f-xs);
+  font-weight: 600;
+  color: var(--c-text);
+  font-family: var(--font-mono, 'SF Mono', Menlo, monospace);
+}
+
+.consensus-votes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.consensus-vote {
+  font-size: var(--f-micro);
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+  min-height: 18px;
+  white-space: nowrap;
+}
+
+.consensus-vote.agree { background: var(--c-badge-result-bg); color: var(--c-badge-result); }
+
+.consensus-vote.dissent { background: var(--c-badge-approval-bg); color: var(--c-badge-approval); }

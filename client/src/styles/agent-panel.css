@@ -1,0 +1,502 @@
+/* ── Agent panel ── */
+
+.agent-panel {
+  margin: 0 auto;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-surface);
+  max-width: 860px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.agent-workspace-messages {
+  max-width: 1100px;
+}
+
+.agent-workspace-trace {
+  width: 100%;
+  margin: 2px 0 8px;
+}
+
+.agent-workspace-trace .agent-panel {
+  max-width: none;
+  margin: 0;
+  padding: 8px 0 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  flex: none;
+}
+
+.agent-workspace-trace .agent-panel-head {
+  position: fixed;
+  top: 68px;
+  right: 16px;
+  z-index: 45;
+  width: min(440px, calc(100vw - 32px));
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 14px;
+  background: var(--c-surface);
+  box-shadow: 0 10px 30px rgba(47, 47, 83, 0.12), 0 2px 8px rgba(47, 47, 83, 0.06);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 显式拉高悬浮框时,多出的空间给浏览器预览图;其余行保持内容高度不被压缩 */
+
+.agent-workspace-trace .agent-panel-head > :not(.agent-browser-preview) { flex: none; }
+
+.agent-workspace-trace .agent-panel-head .agent-browser-preview {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.agent-workspace-trace .agent-panel-head.dragging {
+  cursor: grabbing;
+  transition: none;
+  box-shadow: 0 18px 44px rgba(47, 47, 83, 0.22), 0 4px 12px rgba(47, 47, 83, 0.12);
+}
+
+/* 左下角缩放手柄:悬浮框停靠右侧,向左/向下拉伸 */
+
+.agent-panel-head-resize { display: none; }
+
+.agent-workspace-trace .agent-panel-head-resize {
+  display: block;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nesw-resize;
+  border-bottom-left-radius: 14px;
+}
+
+.agent-workspace-trace .agent-panel-head-resize::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  bottom: 5px;
+  width: 7px;
+  height: 7px;
+  border-left: 2px solid var(--c-text-secondary);
+  border-bottom: 2px solid var(--c-text-secondary);
+  border-bottom-left-radius: 3px;
+  opacity: 0.55;
+}
+
+.agent-workspace-trace .agent-panel-head-resize:hover::before { opacity: 1; }
+
+/* 悬浮框内的交互控件保留自身指针，不被标题栏的抓手光标覆盖 */
+
+.agent-workspace-trace .agent-panel-head button { cursor: pointer; }
+
+.agent-workspace-trace .agent-panel-head button:disabled { cursor: default; }
+
+.agent-workspace-trace .agent-panel-head .agent-browser-preview { cursor: zoom-in; }
+
+.agent-workspace-trace .agent-panel-body,
+.agent-workspace-trace .agent-trace {
+  flex: none;
+  overflow: visible;
+}
+
+/* 面板顶部那句静态说明在 workspace 里是噪音；「最近执行」摘要卡则要留着——
+   历史会话默认折叠步骤流，这张卡就是唯一的运行摘要和展开入口。 */
+
+.agent-workspace-trace .agent-panel-note {
+  display: none;
+}
+
+.agent-workspace-trace .agent-panel-title {
+  font-size: var(--f-sm);
+}
+
+.agent-workspace-trace .agent-panel-body {
+  padding-bottom: 2px;
+}
+
+@media (min-width: 900px) {
+  .agent-panel {
+    max-width: none;
+    margin: 0;
+    padding: 10px 14px;
+    border-bottom: none;
+    border-right: 1px solid var(--c-border);
+  }
+  .agent-panel-title { font-size: var(--f-sm); }
+  .agent-panel-eyebrow { display: none; }
+  .agent-panel-note { display: none; }
+  .agent-workspace-trace .agent-panel {
+    padding: 8px 0 10px;
+    border: 0;
+    border-radius: 0;
+  }
+}
+
+.agent-panel-head {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--c-surface);
+  padding: 4px 0 8px;
+  border-bottom: 1px solid var(--c-border);
+  margin-bottom: 4px;
+}
+
+.agent-head-row-primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+}
+
+.agent-panel-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--c-agent-idle);
+  box-shadow: 0 0 0 3px var(--c-agent-idle-bg);
+}
+
+.agent-status-dot.running {
+  background: var(--c-agent-running);
+  box-shadow: 0 0 0 3px var(--c-agent-running-bg);
+  animation: agent-status-pulse 1.8s ease-in-out infinite;
+}
+
+.agent-status-dot.complete {
+  background: var(--c-badge-done);
+  box-shadow: 0 0 0 3px var(--c-badge-done-bg);
+}
+
+@keyframes agent-status-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.8); opacity: 0.65; }
+}
+
+.agent-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.agent-head-row-metrics {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  min-height: 20px;
+  margin-left: 16px;
+}
+
+.agent-panel-eyebrow {
+  font-size: var(--f-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-text-tertiary);
+  font-weight: 600;
+}
+
+.agent-panel-title {
+  margin-top: 0;
+  font-size: var(--f-sm);
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-panel-note {
+  margin-top: 4px;
+  font-size: var(--f-xs);
+  line-height: 1.4;
+  color: var(--c-text-secondary);
+}
+
+.agent-stop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-agent-stop-border);
+  background: var(--c-agent-stop-bg);
+  color: var(--c-agent-stop);
+  font-size: var(--f-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--ease);
+  flex-shrink: 0;
+}
+
+.agent-stop-btn:hover:not(:disabled) {
+  background: var(--c-badge-error-bg);
+  border-color: var(--c-danger);
+}
+
+.agent-stop-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-collapse-btn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 7px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  cursor: pointer;
+  font-size: var(--f-micro);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-secondary);
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.agent-collapse-btn:hover { background: var(--c-surface-hover); }
+
+.agent-history-btn {
+  gap: 4px;
+  padding: 0 7px;
+}
+
+.agent-history-btn-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-hover);
+  color: var(--c-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
+.agent-memory-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  cursor: pointer;
+  font-size: var(--f-micro);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-secondary);
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.agent-memory-btn:hover { background: var(--c-badge-plan-bg); color: var(--c-badge-plan); border-color: var(--c-primary-light); }
+
+.agent-collapse-btn.agent-tablet-only { display: none; }
+
+@media (min-width: 640px) and (max-width: 899px) {
+  .agent-collapse-btn.agent-tablet-only { display: inline-flex; }
+}
+
+.agent-panel.collapsed .agent-panel-head { cursor: pointer; border-radius: var(--r-sm); transition: background 0.15s; }
+
+.agent-panel.collapsed .agent-panel-head:hover { background: var(--c-surface-hover); }
+
+.agent-panel.collapsed .agent-panel-body {
+  display: none;
+}
+
+.agent-panel-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.agent-last-run {
+  margin: 6px 0 3px;
+  padding: 7px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-hover);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-last-run-toggle {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-last-run-toggle:hover {
+  background: var(--c-surface-inline);
+}
+
+.agent-last-run-toggle:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+.agent-last-run.error {
+  border-color: var(--c-agent-stop-border);
+  background: var(--c-agent-stop-bg);
+}
+
+.agent-last-run-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.agent-last-run-head > div {
+  min-width: 0;
+}
+
+.agent-last-run-kicker {
+  display: block;
+  margin-bottom: 1px;
+  color: var(--c-text-muted);
+  font-size: var(--f-micro);
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.agent-last-run-head strong {
+  display: block;
+  color: var(--c-text);
+  font-size: var(--f-xs);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-last-run-status {
+  flex-shrink: 0;
+  color: var(--c-text-muted);
+  font-size: var(--f-micro);
+  white-space: nowrap;
+}
+
+.agent-last-run-status-wrap {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.agent-last-run-status-wrap svg {
+  color: var(--c-text-muted);
+}
+
+/* 折叠态下把「点我展开步骤流」写在卡片上——历史会话默认不铺开整轮步骤。 */
+
+.agent-last-run-toggle-hint {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--c-text-muted);
+  font-size: var(--f-micro);
+  white-space: nowrap;
+}
+
+.agent-last-run-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.agent-last-run-grid span {
+  min-width: 0;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--f-micro);
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-last-run-grid span:nth-child(4) {
+  flex: 1 1 88px;
+}
+
+.agent-last-run-grid svg {
+  flex-shrink: 0;
+  color: var(--c-primary);
+}
+
+.agent-run-history {
+  margin: 8px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-history-dialog-mask {
+  z-index: 190;
+  background: rgba(0, 0, 0, 0.48);
+}
+
+/* 尺寸不再单独收窄，直接沿用「模型选择」弹框的 .model-picker-dialog
+   ——min(1280px, 100vw - 40px) × min(88dvh, 780px)，移动端同样退化成底部抽屉。
+   列表要吃满这个固定高度并在内部滚动，所以必须给 flex 尺寸。 */
+
+.agent-run-history--dialog {
+  flex: 1 1 0;
+  min-height: 0;
+  margin: 0;
+  padding: 14px;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+@media (max-width: 639px) {
+  .agent-history-btn > span:not(.agent-history-btn-count) { display: none; }
+  /* 窄屏优先保状态标签和时间，模型名先让位。
+     原来这条按 :first-child 写，状态标签插到最前面后会误伤标签本身。 */
+  .agent-history-run-models { display: none; }
+}

@@ -70,7 +70,8 @@ ref.current               // 读取
 ```
 client/src/
 ├── App.jsx              ← 根组件：状态装配 + 顶层 effects + JSX 拼装
-├── App.css              ← 全局样式
+├── App.css              ← 样式入口：按固定顺序导入功能样式
+├── styles/              ← 主题、布局、组件样式及响应式覆盖
 ├── main.jsx             ← 入口，挂载 <App> 到 #root
 ├── notifications.js     ← 桌面通知 + service worker
 ├── api/                 ← 后端接口封装（streams.js 等）
@@ -88,6 +89,23 @@ client/src/
 | `hooks/` | 持有状态、跑 effect、发请求 | 不直接写 JSX |
 | `utils/` | 纯函数 | 不依赖 React |
 | `data/` | 静态数据 | — |
+
+### 样式的归属和加载顺序
+
+`App.jsx` 只导入 `App.css`，后者通过有序 `@import` 加载 `styles/` 中的文件。
+Vite 会在构建时合并这些导入。组件不要再次导入同一份 CSS，以免挂载顺序改变样式覆盖关系。
+
+样式按功能命名：`theme.css` 放主题和字号变量，`hero.css` / `shell.css` /
+`workspace.css` 放页面布局，`model-selector.css` / `model-filters.css` /
+`model-options.css` 放模型选择。`agent-*.css` / `tool-execution.css` /
+`model-plans.css` 放执行过程，`composer.css`、`settings.css`、`attachments.css`
+等对应各自的界面区域。共享弹框外壳位于 `dialog-shell.css`。
+
+`responsive/` 保留原文件后段的平板、手机和极窄屏覆盖顺序；组件文件中原本就近的
+媒体查询仍保持原位置。`accessibility.css` 最后加载通用焦点和触屏规则。
+这种布局保留现有层叠关系；调整导入顺序或移动跨组件规则时，需要对照检查桌面、
+窄屏、亮暗主题及弹框。不能仅凭全文搜索删除动态生成的类名，例如
+`agent-composer--${variant}`、`model-order-drop-${placement}` 和 `context-${risk}`。
 
 ---
 

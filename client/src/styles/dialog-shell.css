@@ -1,0 +1,123 @@
+.model-picker-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--c-overlay);
+}
+
+.model-picker-dialog {
+  width: min(1280px, calc(100vw - 40px));
+  height: min(88dvh, 780px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.model-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.model-picker-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  font-size: var(--f-sm);
+  font-weight: 700;
+  color: var(--c-text);
+}
+
+.model-picker-subtitle {
+  font-size: var(--f-xs);
+  font-weight: 500;
+  color: var(--c-text-muted);
+  white-space: nowrap;
+}
+
+.model-picker-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text-muted);
+  cursor: pointer;
+}
+
+.model-picker-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.model-picker-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text-muted);
+  cursor: pointer;
+}
+
+.model-picker-help:hover,
+.model-picker-help.active {
+  border-color: var(--c-primary);
+  background: var(--c-primary-bg);
+  color: var(--c-primary);
+}
+
+/* 重拉失败：弹框里没有常驻报错位，靠这一抹红把原因引到按钮的 title 上。 */
+
+.model-picker-help.error,
+.model-picker-help.error:hover {
+  border-color: var(--c-danger);
+  background: transparent;
+  color: var(--c-danger);
+}
+
+.model-picker-help:disabled { cursor: default; opacity: 0.6; }
+
+/* 重拉结果提示（含「无变化」）：贴在弹框顶部，点完总有一句交代。 */
+
+.model-picker-refresh-note {
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--f-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.model-picker-refresh-note.ok { background: var(--c-primary-bg); color: var(--c-primary); }
+
+.model-picker-refresh-note.error { background: var(--c-danger-bg, var(--c-surface-dim)); color: var(--c-danger); }
+
+.model-picker-close:hover {
+  border-color: var(--c-primary);
+  color: var(--c-text);
+}
