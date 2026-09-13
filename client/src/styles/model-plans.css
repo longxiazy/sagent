@@ -1,0 +1,173 @@
+/* ── Model Plan Cards ── */
+
+.model-plan-group {
+  width: 100%;
+}
+
+.model-plan-cards {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+}
+
+.model-plan-collapsed {
+  flex-basis: 100%;
+  font-size: var(--f-xs);
+  color: var(--c-text-tertiary);
+}
+
+.model-plan-collapsed .collapsed-summary {
+  cursor: pointer;
+  padding: 2px 0;
+  color: var(--c-text-secondary);
+}
+
+/* 瘦身：去掉重边框/卡片底色，融入时间线（与单模型 StepCard 一致）；hover 才点亮底色 */
+
+.model-card {
+  flex: 1 1 0;
+  min-width: 140px;
+  max-width: 360px;
+  border-radius: var(--r-sm);
+  border: none;
+  background: none;
+  padding: 2px 6px;
+  font-size: var(--f-xs);
+  transition: background var(--dur-fast);
+  position: relative;
+  overflow: hidden;
+}
+
+.model-card:hover { background: var(--c-surface-hover); }
+
+/* winner 靠 ★ + step 号 + 回滚 标记，failed 靠状态图标/标签；不再用左色条（避免动作图标前多一道竖线） */
+
+.model-card.discarded,
+.model-card.abandoned,
+.model-card.cancelled {
+  opacity: 0.5;
+}
+
+.model-card-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+/* Desktop docked layout: compact stacked model rows */
+
+@media (min-width: 900px) {
+  .model-plan-cards {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .model-card {
+    flex: none;
+    min-width: 0;
+    max-width: none;
+    padding: 5px 8px;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+  }
+}
+
+.model-card-icon { font-size: var(--f-xs); flex-shrink: 0; }
+
+.model-card.winner .model-card-icon { color: var(--tool-c, var(--c-badge-result)); }
+
+.model-card.failed .model-card-icon { color: var(--c-badge-error); }
+
+.model-card-label {
+  font-weight: 700;
+  color: var(--c-text);
+  flex-shrink: 0;
+  max-width: 96px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--f-xs);
+}
+
+.model-card-summary {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--f-sm);
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-card-meta {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--f-micro);
+  color: var(--c-text-tertiary);
+  white-space: nowrap;
+}
+
+.model-card-winner-star { color: var(--tool-c, var(--c-badge-result)); }
+
+.model-card-status {
+  font-weight: 600;
+  font-size: var(--f-micro);
+  padding: 1px 5px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.model-card-status.thinking { background: var(--c-warning-bg); color: var(--c-warning-text); }
+
+.model-card-status.success { background: var(--c-badge-result-bg); color: var(--c-badge-result); }
+
+.model-card-status.winner { background: var(--c-success-border); color: var(--c-badge-result); }
+
+.model-card-status.failed { background: var(--c-danger-bg); color: var(--c-badge-error); }
+
+.model-card-status.discarded,
+.model-card-status.abandoned,
+.model-card-status.cancelled { background: var(--c-surface-inline); color: var(--c-agent-idle); }
+
+.model-card-sub { margin: 2px 0 0; font-size: var(--f-xs); color: var(--c-text-tertiary); }
+
+.model-card-head .copy-btn { opacity: 0; width: 22px; height: 22px; border-radius: 4px; flex-shrink: 0; }
+
+.model-card:hover .model-card-head .copy-btn { opacity: 1; }
+
+.model-card-head .copy-btn.copied { opacity: 1; }
+
+.model-card-thinking {
+  display: flex;
+  gap: 3px;
+  padding: 3px 0;
+}
+
+.thinking-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--c-warning-strong);
+  animation: thinking-bounce 1.2s ease-in-out infinite;
+}
+
+.thinking-dot:nth-child(2) { animation-delay: 0.15s; }
+
+.thinking-dot:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes thinking-bounce {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.1); }
+}
+
+.model-card-error { color: var(--c-badge-error) !important; }
+
+.model-card-discarded { color: var(--c-text-tertiary) !important; }

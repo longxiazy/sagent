@@ -1,0 +1,265 @@
+.model-picker-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.model-picker-search {
+  min-height: 30px;
+  height: auto;
+  padding: 0 10px;
+  border: 1px solid var(--c-border-input);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-dim);
+}
+
+.model-picker-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.model-sort-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--c-border-input);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text-muted);
+}
+
+.model-sort-control:focus-within,
+.model-sort-control:hover {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+}
+
+.model-sort-control select {
+  max-width: 156px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--c-text-secondary);
+  font: inherit;
+  font-size: var(--f-sm);
+  cursor: pointer;
+}
+
+.model-sort-notice {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--c-warning-border);
+  background: var(--c-warning-bg);
+  color: var(--c-warning-text);
+  font-size: var(--f-xs);
+  line-height: 1.4;
+}
+
+.model-filter-grid {
+  --model-filter-control-height: 32px;
+  --model-filter-control-min: 98px;
+  --model-filter-control-max: 176px;
+  --model-filter-count-size: 18px;
+  --model-filter-label-width: 66px;
+  display: flex;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  gap: 10px 12px;
+  max-height: none;
+  overflow: visible;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-surface-dim);
+}
+
+.model-filter-group {
+  display: inline-grid;
+  grid-template-columns: var(--model-filter-label-width) minmax(0, auto);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.model-filter-label {
+  width: var(--model-filter-label-width);
+  font-size: var(--f-micro);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: right;
+  color: var(--c-text-muted);
+}
+
+.model-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 选项较多的分组（能力 / 高级分类）独占一整行,标签顶对齐放在首行 */
+
+.model-filter-group-wide {
+  width: 100%;
+  align-items: start;
+}
+
+.model-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  width: clamp(var(--model-filter-control-min), 12vw, var(--model-filter-control-max));
+  height: var(--model-filter-control-height);
+  padding: 0 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text-secondary);
+  font-size: var(--f-xs);
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--ease), border-color var(--ease), color var(--ease), box-shadow var(--ease);
+}
+
+.model-filter-chip > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-filter-chip > span:only-child {
+  margin: 0 auto;
+}
+
+.model-filter-chip:hover {
+  border-color: var(--c-primary-light);
+  color: var(--c-text);
+  background: var(--c-surface-hover);
+}
+
+.model-filter-chip.active {
+  border-color: var(--c-primary);
+  background: var(--c-primary-bg);
+  color: var(--c-primary);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-primary) 18%, transparent);
+}
+
+.model-filter-chip-count {
+  flex: 0 0 auto;
+  min-width: var(--model-filter-count-size);
+  height: var(--model-filter-count-size);
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-dim);
+  color: var(--c-text-muted);
+  font-size: var(--f-micro);
+  line-height: var(--model-filter-count-size);
+  text-align: center;
+}
+
+.model-filter-chip.active .model-filter-chip-count {
+  background: var(--c-primary);
+  color: var(--c-on-accent);
+}
+
+.model-category-filter-group {
+  align-items: flex-start;
+  width: 100%;
+}
+
+.model-category-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.model-category-checkbox {
+  display: inline-grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: clamp(var(--model-filter-control-min), 12vw, var(--model-filter-control-max));
+  min-width: 0;
+  min-height: var(--model-filter-control-height);
+  padding: 0 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text-secondary);
+  font-size: var(--f-xs);
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--ease), border-color var(--ease), color var(--ease), box-shadow var(--ease);
+}
+
+.model-category-checkbox input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.model-category-checkbox-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--c-border-input);
+  border-radius: 4px;
+  color: var(--c-on-accent);
+}
+
+.model-category-checkbox-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-category-checkbox-count {
+  min-width: var(--model-filter-count-size);
+  height: var(--model-filter-count-size);
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-dim);
+  color: var(--c-text-muted);
+  font-size: var(--f-micro);
+  line-height: var(--model-filter-count-size);
+  text-align: center;
+}
+
+.model-category-checkbox:hover {
+  border-color: var(--c-primary-light);
+  color: var(--c-text);
+  background: var(--c-surface-hover);
+}
+
+.model-category-checkbox.checked {
+  border-color: var(--c-primary);
+  background: var(--c-primary-bg);
+  color: var(--c-primary);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-primary) 18%, transparent);
+}
+
+.model-category-checkbox.checked .model-category-checkbox-box,
+.model-category-checkbox.checked .model-category-checkbox-count {
+  border-color: var(--c-primary);
+  background: var(--c-primary);
+  color: var(--c-on-accent);
+}

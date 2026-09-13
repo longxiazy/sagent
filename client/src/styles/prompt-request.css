@@ -1,0 +1,108 @@
+/* LLM request inspection and step-to-step prompt diff */
+.prompt-request-details {
+  margin-top: 8px;
+  border-top: 1px solid var(--c-border-subtle, rgba(128, 148, 168, .22));
+  padding-top: 6px;
+}
+.agent-trace-content > .prompt-request-details:first-child,
+.model-card > .prompt-request-details:first-child {
+  margin: 0 0 7px;
+  padding: 0 0 6px;
+  border-top: 0;
+  border-bottom: 1px solid var(--c-border-subtle, rgba(128, 148, 168, .22));
+}
+.prompt-request-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 0;
+}
+.prompt-request-toggle:hover { color: var(--c-accent); }
+.prompt-request-body {
+  margin-top: 6px;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--c-border-subtle, rgba(128, 148, 168, .22));
+  border-radius: 6px;
+  background: var(--c-surface-inset, rgba(0, 0, 0, .14));
+}
+.prompt-exchange-section + .prompt-exchange-section {
+  border-top: 1px solid var(--c-border-subtle, rgba(128, 148, 168, .22));
+}
+.prompt-exchange-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 5px 8px;
+  background: var(--c-surface-inset, rgba(0, 0, 0, .22));
+  color: var(--c-text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+}
+.prompt-response-kind {
+  padding: 5px 8px 0;
+  color: var(--c-text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+}
+.prompt-response-pre + .prompt-response-pre {
+  border-top: 1px dashed var(--c-border-subtle, rgba(128, 148, 168, .22));
+}
+.prompt-request-diff-legend {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 5px 8px;
+  background: var(--c-surface-inset, rgba(0, 0, 0, .22));
+  color: var(--c-text-secondary);
+  font-size: 10px;
+}
+.prompt-request-attempts {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px 0;
+}
+.prompt-request-attempts button {
+  border: 1px solid var(--c-border-subtle, rgba(128, 148, 168, .28));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 6px;
+}
+.prompt-request-attempts button.active {
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+.prompt-request-pre {
+  margin: 0;
+  padding: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--c-text-primary);
+  font: 10px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+/* word 级差异：相同片段常规、新增高亮、删除取消线。 */
+.prompt-word-diff { white-space: pre-wrap; }
+.prompt-word.same { color: var(--c-text-secondary); }
+.prompt-word.add { background: rgba(94, 210, 130, .22); color: var(--c-text-primary); border-radius: 2px; }
+.prompt-word.del { background: rgba(239, 96, 96, .18); color: #f6a6a6; text-decoration: line-through; border-radius: 2px; }
+/* 折叠未改动内容的条带按钮（块级，自成一行）。 */
+.prompt-fold-band {
+  display: block;
+  width: 100%;
+  margin: 3px 0;
+  border: 1px dashed var(--c-border-subtle, rgba(128, 148, 168, .3));
+  border-radius: 4px;
+  background: var(--c-surface-inset, rgba(0, 0, 0, .18));
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  font: 10px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+  padding: 3px 8px;
+  text-align: center;
+}
+.prompt-fold-band:hover { border-color: var(--c-accent); color: var(--c-accent); }

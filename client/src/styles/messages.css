@@ -1,0 +1,356 @@
+/* ── Messages ── */
+
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px;
+  padding-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+  position: relative;
+}
+
+@media (min-width: 900px) {
+  .messages {
+    max-width: none;
+    padding: 20px 32px;
+  }
+}
+
+/* ── Chat bubbles ── */
+
+.bubble-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.bubble-row.user {
+  justify-content: flex-end;
+}
+
+.bubble-row.assistant {
+  justify-content: flex-start;
+}
+
+.copy-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--c-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all var(--ease);
+}
+
+.bubble-row:hover .copy-btn {
+  opacity: 1;
+}
+
+.copy-btn:hover {
+  background: var(--c-surface-dim);
+  border-color: var(--c-border);
+}
+
+.copy-btn.copied {
+  color: var(--c-success);
+  background: var(--c-success-bg);
+  border-color: var(--c-success-border);
+  opacity: 1;
+}
+
+.bubble {
+  max-width: min(78%, 720px);
+  padding: 12px 16px;
+  font-size: var(--f-base);
+  line-height: 1.6;
+  /* flex 子项默认最小宽度是内容宽度，长 URL 会把气泡顶出 max-width。 */
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .bubble {
+    max-width: min(85%, 900px);
+  }
+}
+
+@media (min-width: 1600px) {
+  .bubble {
+    max-width: min(85%, 1100px);
+  }
+}
+
+.bubble.user {
+  background: var(--c-primary);
+  color: var(--c-on-accent);
+  border-radius: var(--r-lg) var(--r-lg) 6px var(--r-lg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bubble.assistant {
+  background: var(--c-surface);
+  color: var(--c-text);
+  border-radius: var(--r-lg) var(--r-lg) var(--r-lg) 6px;
+  border: 1px solid var(--c-border);
+}
+
+.bubble.assistant.has-think {
+  padding: 10px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-think-border);
+}
+
+.msg-time {
+  font-size: var(--f-micro);
+  color: var(--c-text-hint);
+  margin-top: 4px;
+  text-align: right;
+}
+
+.msg-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 6px;
+  color: var(--c-text-hint);
+}
+
+.msg-meta .msg-time {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+.msg-model {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--f-micro);
+  line-height: 1.4;
+}
+
+.assistant-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.assistant-answer {
+  min-width: 0;
+}
+
+/* ── Think blocks ── */
+
+.think-block {
+  border: 1px solid var(--c-think-border);
+  border-radius: 14px;
+  background: var(--c-think-bg);
+  overflow: hidden;
+}
+
+.think-block[open] {
+  box-shadow: 0 4px 16px rgba(83, 74, 183, 0.08);
+}
+
+.think-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.think-summary::-webkit-details-marker {
+  display: none;
+}
+
+.think-summary-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-pill);
+  font-weight: 700;
+  flex-shrink: 0;
+  justify-content: center;
+  min-width: 52px;
+  height: 24px;
+  padding: 0 10px;
+  background: var(--c-think-badge-bg);
+  color: var(--c-primary-strong);
+  font-size: var(--f-xs);
+  letter-spacing: 0.1em;
+}
+
+.think-summary-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.think-summary-copy strong {
+  font-size: var(--f-sm);
+  color: var(--c-text);
+}
+
+.think-summary-copy span {
+  font-size: var(--f-xs);
+  color: var(--c-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.think-summary-meta {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--f-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.think-summary-meta::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  opacity: 0.8;
+}
+
+.think-summary-meta.ready { color: var(--c-think-meta); }
+
+.think-summary-meta.running { color: var(--c-primary); }
+
+.think-summary-meta.running::before {
+  animation: thinkPulse 1.2s ease-in-out infinite;
+}
+
+.think-body {
+  padding: 0 14px 14px;
+  border-top: 1px solid rgba(150, 139, 233, 0.15);
+}
+
+.think-content {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--c-think-content-bg);
+  border: 1px solid rgba(154, 146, 219, 0.15);
+  color: var(--c-think-text);
+  font-size: var(--f-sm);
+  line-height: 1.7;
+}
+
+.think-content p,
+.think-content li,
+.think-content blockquote {
+  color: inherit;
+}
+
+.think-content code {
+  color: var(--c-think-code);
+}
+
+.think-block.streaming .think-content {
+  background: linear-gradient(120deg, rgba(255,255,255,0.8), rgba(245,243,255,0.95), rgba(255,255,255,0.8));
+}
+
+/* ── Markdown body ── */
+
+.md-body p { margin: 0 0 8px; }
+
+.md-body p:last-child { margin-bottom: 0; }
+
+.md-body ul, .md-body ol { padding-left: 20px; margin: 6px 0; }
+
+.md-body ul { list-style: disc; }
+
+.md-body ol { list-style: decimal; }
+
+.md-body li { margin: 3px 0; }
+
+.md-body h1, .md-body h2, .md-body h3 { font-weight: 500; margin: 12px 0 6px; }
+
+.md-body h1 { font-size: var(--f-lg); }
+
+.md-body h2 { font-size: var(--f-md); }
+
+.md-body h3 { font-size: var(--f-base); }
+
+.md-body strong { font-weight: 600; }
+
+.md-body blockquote { border-left: 3px solid var(--c-border); margin: 8px 0; padding: 4px 12px; color: var(--c-text-secondary); }
+
+/* 长 URL / 无空格长串是不可断的连续字符，不处理会撑破气泡并带出横向滚动。
+   overflow-wrap: anywhere 只在放不下时才断，正常文本仍按词换行。
+   代码块与表格例外：它们自己有 overflow-x，断行反而破坏可读性。 */
+
+.md-body { overflow-wrap: anywhere; min-width: 0; }
+
+.md-body a { color: var(--c-primary); text-decoration: underline; overflow-wrap: anywhere; }
+
+.md-body table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: var(--f-sm); display: block; overflow-x: auto; }
+
+.md-body th, .md-body td { border: 1px solid var(--c-border); padding: 6px 10px; text-align: left; overflow-wrap: normal; }
+
+.md-body th { background: var(--c-surface-dim); font-weight: 500; }
+
+.inline-code {
+  background: var(--c-surface-inline);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: var(--f-sm);
+  font-family: 'Menlo', 'Monaco', monospace;
+  color: var(--c-code-inline);
+}
+
+.code-block {
+  border-radius: var(--r-sm);
+  font-size: var(--f-sm);
+  margin: 8px 0;
+  padding: 12px 14px;
+  max-width: 100%;
+  overflow-x: auto;
+  /* 抵消 .md-body 的 anywhere：代码靠自身横向滚动，强行断行会打乱缩进与语义。 */
+  overflow-wrap: normal;
+}
+
+.cursor {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  background: var(--c-primary);
+  margin-left: 3px;
+  vertical-align: middle;
+  border-radius: 2px;
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes thinkPulse {
+  0%, 100% { transform: scale(0.9); opacity: 0.6; }
+  50% { transform: scale(1.15); opacity: 1; }
+}

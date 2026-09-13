@@ -1,0 +1,365 @@
+:root {
+  --c-primary: #534ab7;
+  --c-primary-hover: #463ea0;
+  --c-primary-bg: #f0effe;
+  --c-primary-muted: #4a4780;
+  --c-primary-light: #c4beff;
+
+  --c-danger: #e24b4a;
+  --c-danger-hover: #c73b3a;
+  --c-danger-bg: #fff0f0;
+
+  --c-text: #1a1a2e;
+  --c-text-secondary: #555;
+  --c-text-muted: #888;
+  --c-text-hint: #999;
+
+  --c-bg: #f5f5fa;
+  --c-surface: #fff;
+  --c-surface-dim: #f3f3f7;
+
+  --c-border: #e8e8f0;
+  --c-border-input: #d8d8e4;
+
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 18px;
+  --r-xl: 24px;
+  --r-pill: 999px;
+
+  --shadow-card: 0 4px 24px rgba(47, 47, 83, 0.08);
+  --shadow-lg: 0 24px 80px rgba(0, 0, 0, 0.18);
+
+  /* Type scale: dense app UI, with 11px reserved for compact badges/meta only. */
+  --f-micro: 11px;
+  --f-xs: 12px;
+  --f-sm: 13px;
+  --f-base: 14px;
+  --f-md: 16px;
+  --f-lg: 18px;
+  --f-xl: 22px;
+  --f-display: 28px;
+
+  /* Agent status colors */
+  --c-agent-running: #1d4ed8;
+  --c-agent-running-bg: #dbeafe;
+  --c-agent-idle: #6b7280;
+  --c-agent-idle-bg: #f3f4f6;
+  --c-agent-timer: #1d4ed8;
+  --c-agent-tokens: #7c3aed;
+  --c-agent-tokens-bg: #ede9fe;
+  --c-agent-stop: #dc2626;
+  --c-agent-stop-bg: #fef2f2;
+  --c-agent-stop-border: #fca5a5;
+
+  /* Badge trace colors */
+  --c-badge-default-bg: #e5e7eb;
+  --c-badge-default: #4b5563;
+  --c-badge-action-bg: #dbeafe;
+  --c-badge-action: #1e40af;
+  --c-badge-result-bg: #dcfce7;
+  --c-badge-result: #166534;
+  --c-badge-done-bg: #d1fae5;
+  --c-badge-done: #065f46;
+  --c-badge-approval-bg: #fef3c7;
+  --c-badge-approval: #92400e;
+  --c-badge-error-bg: #fee2e2;
+  --c-badge-error: #991b1b;
+  --c-badge-plan-bg: #ede9fe;
+  --c-badge-plan: #6d28d9;
+  --c-badge-rollback-bg: #ffedd5;
+  --c-badge-rollback: #9a3412;
+  --c-badge-consensus-bg: #dcfce7;
+  --c-badge-consensus: #166534;
+
+  /* 工具语义色：按领域分组，时间线圆点 + 工具图标据此着色，让「这步在用哪类工具」一眼可辨。
+     网络蓝青(browser/chrome/search) · 文件命令暖色(fs/terminal) · 智能粉玫(vision) · 控制灰(core) */
+  --c-tool-browser:  #2563eb;
+  --c-tool-chrome:   #0891b2;
+  --c-tool-search:   #0d9488;
+  --c-tool-fs:       #d97706;
+  --c-tool-terminal: #16a34a;
+  --c-tool-macos:    #7c3aed;
+  --c-tool-mcp:      #7c3aed;
+  --c-tool-vision:   #c026d3;
+  --c-tool-core:     #64748b;
+
+  /* observe 节点专属色：多模型场景下单独渲染的「观察」节点，柔和蓝灰——中性、明确区别于动作的鲜艳工具色 */
+  --c-trace-observe: #6b8aa8;
+
+  /* Semantic surfaces */
+  --c-surface-hover: #f9fafb;
+  --c-surface-inline: #f3f4f6;
+  --c-surface-active: #ededf2;
+
+  /* Status: success / warning / info (此前散落为硬编码) */
+  --c-success: #1d9e75;
+  --c-success-strong: #059669;
+  --c-success-text: #166534;
+  --c-success-bg: #f0fdf4;
+  --c-success-bg-soft: #ecfdf5;
+  --c-success-border: #bbf7d0;
+
+  --c-warning: #c2410c;
+  --c-warning-strong: #d97706;
+  --c-warning-text: #854d0e;
+  --c-warning-bg: #fff7ed;
+  --c-warning-border: #fdba74;
+
+  --c-info: #3b82f6;
+
+  /* 其它语义补充（此前硬编码） */
+  --c-primary-accent: #7c6ef0;     /* 渐变中与 --c-primary 搭配的亮紫 */
+  --c-primary-strong: #4c439f;
+  --c-text-tertiary: #9ca3af;
+  --c-on-accent: #ffffff;          /* 实色按钮/气泡上的文字（亮暗一致为白） */
+  --c-overlay: rgba(20, 20, 31, 0.3);
+  --c-overlay-strong: rgba(0, 0, 0, 0.85);
+  --c-code-bg: #1e1e2e;
+  --c-code-text: #cdd6f4;
+  --c-code-inline: #c7254e;
+  --c-input-bg: rgba(255, 255, 255, 0.72);
+  --c-input-border: rgba(0, 0, 0, 0.06);
+  --c-settings-mask: rgba(20, 20, 31, 0.16);
+  --c-settings-glass: rgba(255, 255, 255, 0.52);
+  --c-settings-glass-border: rgba(255, 255, 255, 0.54);
+  --c-settings-glass-inner: rgba(255, 255, 255, 0.34);
+
+  /* Think（推理）区配色 */
+  --c-think-border: #dcd7fb;
+  --c-think-bg: #fafaff;
+  --c-think-badge-bg: rgba(83, 74, 183, 0.1);
+  --c-think-content-bg: rgba(255, 255, 255, 0.8);
+  --c-think-text: #5d577f;
+  --c-think-meta: #736b9d;
+  --c-think-code: #9b2f56;
+
+  color-scheme: light;
+
+  /* Spacing scale */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+
+  /* Transition durations */
+  --dur-fast: 0.12s;
+  --dur-normal: 0.2s;
+  --dur-slow: 0.3s;
+
+  --ease: 0.15s;
+
+  color: var(--c-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+:root[data-font-size="small"] {
+  --f-micro: 10px;
+  --f-xs: 11px;
+  --f-sm: 12px;
+  --f-base: 13px;
+  --f-md: 15px;
+  --f-lg: 17px;
+  --f-xl: 20px;
+  --f-display: 26px;
+}
+
+:root[data-font-size="large"] {
+  --f-micro: 12px;
+  --f-xs: 13px;
+  --f-sm: 14px;
+  --f-base: 16px;
+  --f-md: 18px;
+  --f-lg: 20px;
+  --f-xl: 24px;
+  --f-display: 32px;
+}
+
+/* ── 暗色主题：仅覆盖语义变量，规则本身不必改动 ── */
+
+:root[data-theme="dark"] {
+  --c-primary: #7a70e6;
+  --c-primary-hover: #8b82ee;
+  --c-primary-bg: #272338;
+  --c-primary-muted: #a39ecc;
+  --c-primary-light: #4a4570;
+
+  --c-danger: #f0605f;
+  --c-danger-hover: #f47776;
+  --c-danger-bg: #3a1f22;
+
+  --c-text: #e8e8ef;
+  --c-text-secondary: #b4b4c0;
+  --c-text-muted: #8e8e9e;
+  --c-text-hint: #6e6e7e;
+
+  --c-bg: #14141b;
+  --c-surface: #1e1e29;
+  --c-surface-dim: #25252f;
+
+  --c-border: #2e2e3c;
+  --c-border-input: #3a3a4a;
+
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 24px 80px rgba(0, 0, 0, 0.65);
+
+  /* Agent status colors */
+  --c-agent-running: #6ea8fe;
+  --c-agent-running-bg: #1e2a44;
+  --c-agent-idle: #9a9aac;
+  --c-agent-idle-bg: #2a2a36;
+  --c-agent-timer: #6ea8fe;
+  --c-agent-tokens: #b39af5;
+  --c-agent-tokens-bg: #2c2440;
+  --c-agent-stop: #f0605f;
+  --c-agent-stop-bg: #3a1f22;
+  --c-agent-stop-border: #6e3838;
+
+  /* Badge trace colors */
+  --c-badge-default-bg: #2e2e3c;
+  --c-badge-default: #b4b4c0;
+  --c-badge-action-bg: #1e2a44;
+  --c-badge-action: #8fb4fe;
+  --c-badge-result-bg: #14331f;
+  --c-badge-result: #6ee0a0;
+  --c-badge-done-bg: #103326;
+  --c-badge-done: #5fd0a0;
+  --c-badge-approval-bg: #3a2e10;
+  --c-badge-approval: #e0c060;
+  --c-badge-error-bg: #3a1c1c;
+  --c-badge-error: #f08a8a;
+  --c-badge-plan-bg: #2c2440;
+  --c-badge-plan: #b39af5;
+  --c-badge-rollback-bg: #3a2410;
+  --c-badge-rollback: #f0a050;
+  --c-badge-consensus-bg: #14331f;
+  --c-badge-consensus: #6ee0a0;
+
+  /* 工具语义色（暗版：整体提亮以保证在深色背景上的对比与可辨识度） */
+  --c-tool-browser:  #6ea8fe;
+  --c-tool-chrome:   #38bdf8;
+  --c-tool-search:   #2dd4bf;
+  --c-tool-fs:       #fbbf24;
+  --c-tool-terminal: #4ade80;
+  --c-tool-macos:    #a78bfa;
+  --c-tool-mcp:      #a78bfa;
+  --c-tool-vision:   #e879f9;
+  --c-tool-core:     #94a3b8;
+
+  /* observe 节点专属色（暗版：提亮的柔和蓝灰） */
+  --c-trace-observe: #8aa6c4;
+
+  /* Semantic surfaces */
+  --c-surface-hover: #2a2a36;
+  --c-surface-inline: #2a2a36;
+  --c-surface-active: #33333f;
+
+  /* Status */
+  --c-success: #4ec99a;
+  --c-success-strong: #4ec99a;
+  --c-success-text: #6ee0a0;
+  --c-success-bg: #14301f;
+  --c-success-bg-soft: #14301f;
+  --c-success-border: #2a5a40;
+
+  --c-warning: #e8a060;
+  --c-warning-strong: #e8a060;
+  --c-warning-text: #e0c060;
+  --c-warning-bg: #3a2a14;
+  --c-warning-border: #6e5028;
+
+  --c-info: #6ea8fe;
+
+  --c-primary-accent: #9a8ef5;
+  --c-primary-strong: #b3aaf5;
+  --c-text-tertiary: #7c7c8c;
+  --c-on-accent: #ffffff;
+  --c-overlay: rgba(0, 0, 0, 0.55);
+  --c-overlay-strong: rgba(0, 0, 0, 0.85);
+  --c-code-bg: #181820;
+  --c-code-text: #cdd6f4;
+  --c-code-inline: #f0859b;
+  --c-input-bg: rgba(40, 40, 52, 0.72);
+  --c-input-border: rgba(255, 255, 255, 0.08);
+  --c-settings-mask: rgba(0, 0, 0, 0.3);
+  --c-settings-glass: rgba(30, 30, 41, 0.48);
+  --c-settings-glass-border: rgba(255, 255, 255, 0.12);
+  --c-settings-glass-inner: rgba(42, 42, 54, 0.34);
+
+  /* Think 区 */
+  --c-think-border: #36304f;
+  --c-think-bg: #20202c;
+  --c-think-badge-bg: rgba(122, 112, 230, 0.18);
+  --c-think-content-bg: rgba(255, 255, 255, 0.04);
+  --c-think-text: #b8b2d8;
+  --c-think-meta: #9a93c8;
+  --c-think-code: #f0859b;
+
+  color-scheme: dark;
+}
+
+/* 暗色下推理流式渐变改用暗色高光，避免亮白闪光 */
+
+:root[data-theme="dark"] .think-block.streaming .think-content {
+  background: linear-gradient(120deg, rgba(122, 112, 230, 0.06), rgba(122, 112, 230, 0.16), rgba(122, 112, 230, 0.06));
+}
+
+/* 暗色代码高亮（github-dark 调色板，作用域覆盖随包引入的 github.css 亮色主题） */
+
+:root[data-theme="dark"] .hljs { color: #c9d1d9; background: var(--c-code-bg); }
+
+:root[data-theme="dark"] .hljs-doctag,
+:root[data-theme="dark"] .hljs-keyword,
+:root[data-theme="dark"] .hljs-meta .hljs-keyword,
+:root[data-theme="dark"] .hljs-template-tag,
+:root[data-theme="dark"] .hljs-template-variable,
+:root[data-theme="dark"] .hljs-type,
+:root[data-theme="dark"] .hljs-variable.language_ { color: #ff7b72; }
+
+:root[data-theme="dark"] .hljs-title,
+:root[data-theme="dark"] .hljs-title.class_,
+:root[data-theme="dark"] .hljs-title.class_.inherited__,
+:root[data-theme="dark"] .hljs-title.function_ { color: #d2a8ff; }
+
+:root[data-theme="dark"] .hljs-attr,
+:root[data-theme="dark"] .hljs-attribute,
+:root[data-theme="dark"] .hljs-literal,
+:root[data-theme="dark"] .hljs-meta,
+:root[data-theme="dark"] .hljs-number,
+:root[data-theme="dark"] .hljs-operator,
+:root[data-theme="dark"] .hljs-variable,
+:root[data-theme="dark"] .hljs-selector-attr,
+:root[data-theme="dark"] .hljs-selector-class,
+:root[data-theme="dark"] .hljs-selector-id { color: #79c0ff; }
+
+:root[data-theme="dark"] .hljs-regexp,
+:root[data-theme="dark"] .hljs-string,
+:root[data-theme="dark"] .hljs-meta .hljs-string { color: #a5d6ff; }
+
+:root[data-theme="dark"] .hljs-built_in,
+:root[data-theme="dark"] .hljs-symbol { color: #ffa657; }
+
+:root[data-theme="dark"] .hljs-comment,
+:root[data-theme="dark"] .hljs-code,
+:root[data-theme="dark"] .hljs-formula { color: #8b949e; }
+
+:root[data-theme="dark"] .hljs-name,
+:root[data-theme="dark"] .hljs-quote,
+:root[data-theme="dark"] .hljs-selector-tag,
+:root[data-theme="dark"] .hljs-selector-pseudo { color: #7ee787; }
+
+:root[data-theme="dark"] .hljs-subst { color: #c9d1d9; }
+
+:root[data-theme="dark"] .hljs-section { color: #1f6feb; font-weight: bold; }
+
+:root[data-theme="dark"] .hljs-bullet { color: #f2cc60; }
+
+:root[data-theme="dark"] .hljs-emphasis { color: #c9d1d9; font-style: italic; }
+
+:root[data-theme="dark"] .hljs-strong { color: #c9d1d9; font-weight: bold; }
+
+:root[data-theme="dark"] .hljs-addition { color: #aff5b4; background-color: #033a16; }
+
+:root[data-theme="dark"] .hljs-deletion { color: #ffdcd7; background-color: #67060c; }

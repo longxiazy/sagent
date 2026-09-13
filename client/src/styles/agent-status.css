@@ -1,0 +1,283 @@
+/* 执行状态标签。配色走 --c-badge-* 令牌，暗色主题自动跟随。 */
+.agent-run-status-tag {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: var(--f-micro);
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--c-badge-default-bg);
+  color: var(--c-badge-default);
+}
+.agent-run-status-tag.done {
+  background: var(--c-badge-done-bg);
+  color: var(--c-badge-done);
+}
+.agent-run-status-tag.degraded {
+  background: var(--c-badge-rollback-bg);
+  color: var(--c-badge-rollback);
+}
+.agent-run-status-tag.unverified {
+  background: var(--c-badge-approval-bg);
+  color: var(--c-badge-approval);
+}
+.agent-run-status-tag.error {
+  background: var(--c-badge-error-bg);
+  color: var(--c-badge-error);
+}
+.agent-run-status-tag.cancelled {
+  background: var(--c-badge-default-bg);
+  color: var(--c-badge-default);
+}
+.agent-history-run {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  overflow: hidden;
+}
+.agent-history-run-toggle {
+  width: 100%;
+  min-height: 56px;
+  padding: 11px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-history-run-toggle:hover {
+  background: var(--c-surface-hover);
+}
+.agent-history-run-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agent-history-run-main strong {
+  color: var(--c-text);
+  font-size: var(--f-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-history-run-main span,
+.agent-history-run-side {
+  color: var(--c-text-secondary);
+  font-size: var(--f-xs);
+}
+.agent-history-run-side {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+.agent-history-run-side svg {
+  color: var(--c-text-muted);
+}
+.agent-history-trace {
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--c-border);
+}
+.agent-trace.agent-trace--history {
+  max-height: 460px;
+  margin-top: 8px;
+  padding-top: 2px;
+  flex: initial;
+  overflow-y: auto;
+}
+.agent-trace.agent-trace--history > :nth-last-child(2)::before {
+  bottom: -8px;
+}
+.agent-trace.agent-trace--history > :last-child::before {
+  bottom: 0;
+}
+.agent-history-empty {
+  padding: 10px 0 0;
+  color: var(--c-text-muted);
+  font-size: var(--f-xs);
+}
+.agent-empty {
+  margin-top: 8px;
+  padding: 16px 12px;
+  border-radius: var(--r-md);
+  background: var(--c-surface-hover);
+  border: 1px dashed var(--c-border);
+  color: var(--c-text-secondary);
+  font-size: var(--f-sm);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.5;
+}
+.agent-empty-icon {
+  color: var(--c-text-muted);
+  flex-shrink: 0;
+}
+.agent-skeleton {
+  margin-top: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+}
+.agent-skeleton-line {
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--c-surface-inline) 25%, var(--c-surface-hover) 50%, var(--c-surface-inline) 75%);
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s ease-in-out infinite;
+}
+.agent-skeleton-line--w60 { width: 60%; }
+.agent-skeleton-line--w90 { width: 90%; }
+.agent-skeleton-line--w70 { width: 70%; }
+@keyframes skeletonShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.agent-skeleton-spinner {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  color: var(--c-text-muted);
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+/* 通用「进行中」旋转标记：给任何 svg 图标加 .spinning 即可（模型重拉等）。 */
+.spinning { animation: spin 1s linear infinite; }
+.agent-metrics {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.agent-metric {
+  font-size: var(--f-micro);
+  font-weight: 600;
+  color: var(--c-agent-idle);
+  background: var(--c-surface-inline);
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+}
+.agent-metric-timer {
+  color: var(--c-agent-timer);
+  background: var(--c-agent-running-bg);
+  animation: agent-timer-pulse 1.5s ease-in-out infinite;
+}
+@keyframes agent-timer-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.agent-metric-tokens { color: var(--c-agent-tokens); background: var(--c-agent-tokens-bg); }
+.agent-step-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.agent-token-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--f-micro);
+  font-weight: 600;
+  color: var(--c-agent-tokens);
+  background: var(--c-agent-tokens-bg);
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+.agent-token-detail { font-weight: 400; color: var(--c-agent-tokens); }
+.agent-browser-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 1px 7px;
+  border-radius: var(--r-sm);
+  background: var(--c-surface-inline);
+  color: var(--c-text-secondary);
+  font-size: var(--f-micro);
+  white-space: nowrap;
+}
+.agent-browser-compact svg {
+  color: var(--c-text-muted);
+}
+.agent-browser-compact strong {
+  color: var(--c-text-secondary);
+  font-weight: 650;
+}
+.agent-browser-compact-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--c-badge-done);
+}
+.agent-browser-compact.navigating .agent-browser-compact-dot,
+.agent-browser-compact.starting .agent-browser-compact-dot,
+.agent-browser-compact.recovering .agent-browser-compact-dot {
+  background: var(--c-agent-timer);
+  animation: agent-status-pulse 1.8s ease-in-out infinite;
+}
+.agent-browser-compact.degraded .agent-browser-compact-dot {
+  background: var(--c-badge-error);
+}
+.agent-browser-preview {
+  position: relative;
+  width: 100%;
+  height: 168px;
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-bg);
+  color: var(--c-text-secondary);
+  cursor: zoom-in;
+  padding: 0;
+  text-align: left;
+}
+.agent-browser-preview:hover {
+  border-color: var(--c-primary-light);
+}
+.agent-browser-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #fff;
+}
+.agent-browser-preview-caption {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  left: 6px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(20, 20, 32, 0.76);
+  color: #fff;
+  font-size: var(--f-micro);
+  backdrop-filter: blur(8px);
+}
+.agent-browser-preview-caption span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
