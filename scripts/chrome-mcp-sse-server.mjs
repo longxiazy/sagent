@@ -1,11 +1,24 @@
 #!/usr/bin/env node
 import http from 'node:http';
 import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 3099;
-const DEFAULT_COMMAND = path.join('node_modules', '.bin', 'chrome-devtools-mcp');
+const require = createRequire(import.meta.url);
+
+function resolveChromeMcpBin() {
+  try {
+    const packageJson = require.resolve('chrome-devtools-mcp/package.json');
+    return path.join(path.dirname(packageJson), 'build', 'src', 'bin', 'chrome-devtools-mcp.js');
+  } catch (err) {
+    throw new Error(`无法解析 chrome-devtools-mcp，请先运行 npm install: ${err?.message || err}`);
+  }
+}
+
+const DEFAULT_COMMAND = process.execPath;
+const DEFAULT_COMMAND_ARGS = [resolveChromeMcpBin()];
 
 function parseFlag(name, fallback) {
   const prefix = `--${name}=`;
@@ -181,8 +194,12 @@ function readBody(req) {
 
 const host = parseFlag('host', process.env.CHROME_MCP_BRIDGE_HOST || DEFAULT_HOST);
 const port = Number(parseFlag('port', process.env.CHROME_MCP_BRIDGE_PORT || DEFAULT_PORT));
-const command = parseFlag('command', process.env.CHROME_MCP_BRIDGE_COMMAND || DEFAULT_COMMAND);
-const bridge = new StdioMcpBridge(command, parseChildArgs());
+const explicitCommand = parseFlag('command', process.env.CHROME_MCP_BRIDGE_COMMAND || '');
+const command = explicitCommand || DEFAULT_COMMAND;
+const bridge = new StdioMcpBridge(
+  command,
+  [...(explicitCommand ? [] : DEFAULT_COMMAND_ARGS), ...parseChildArgs()],
+);
 
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
