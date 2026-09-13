@@ -12,6 +12,7 @@ import { tReq } from '../helpers/i18n.ts';
 import { configStore } from '../agent/core/config-store.ts';
 import {
   scanScreenshots,
+  paginateScreenshots,
   cleanupScreenshots,
   resolveInside,
   isSafeSegment,
@@ -30,17 +31,20 @@ function currentScreenshotsConfig() {
 export function createAgentScreenshotsRouter({ screenshotDir }: { screenshotDir: string }) {
   const router = Router();
 
-  // 列表:按 run 分组 + 汇总 + 当前截图配置。
-  router.get('/api/agent/screenshots', async (_req, res) => {
+  // 列表:按图片分页(每批最多 10 张)，保留 run 分组、汇总与当前截图配置。
+  router.get('/api/agent/screenshots', async (req, res) => {
     const scan = await scanScreenshots(screenshotDir);
-    res.json({ ...scan, screenshots: currentScreenshotsConfig() });
+    const offset = typeof req.query.offset === 'string' ? Number(req.query.offset) : 0;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    const page = paginateScreenshots(scan, offset, limit);
+    res.json({ ...page, screenshots: currentScreenshotsConfig() });
   });
 
   // 手动清理:忽略 enabled 开关,直接按当前阈值执行(阈值都为空则不删)。
   router.post('/api/agent/screenshots/cleanup', async (_req, res) => {
     const result = await cleanupScreenshots(screenshotDir, { ...currentRetention(), enabled: true });
     const scan = await scanScreenshots(screenshotDir);
-    res.json({ ...result, ...scan, screenshots: currentScreenshotsConfig() });
+    res.json({ ...result, ...paginateScreenshots(scan), screenshots: currentScreenshotsConfig() });
   });
 
   // 清空:删除所有 run 子目录。

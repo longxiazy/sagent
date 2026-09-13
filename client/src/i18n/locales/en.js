@@ -381,6 +381,7 @@ export const en = {
   'session.viewScreenshots': 'View screenshots',
   'screenshots.title': 'Screenshots ({n})',
   'screenshots.empty': 'No screenshots yet',
+  'screenshots.loadMore': 'Load more',
   'screenshots.deleteRun': "Delete this run's screenshots",
   'screenshots.deleteImage': 'Delete',
   'screenshots.confirmDeleteRun': 'Delete all screenshots for this run? This cannot be undone.',

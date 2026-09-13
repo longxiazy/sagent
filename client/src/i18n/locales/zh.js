@@ -382,6 +382,7 @@ export const zh = {
   'session.viewScreenshots': '查看截图',
   'screenshots.title': '截图 ({n})',
   'screenshots.empty': '暂无截图',
+  'screenshots.loadMore': '加载更多',
   'screenshots.deleteRun': '删除该运行的截图',
   'screenshots.deleteImage': '删除',
   'screenshots.confirmDeleteRun': '删除该运行的全部截图？此操作不可撤销。',

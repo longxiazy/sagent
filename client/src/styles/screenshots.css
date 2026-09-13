@@ -90,21 +90,23 @@
 }
 .screenshot-group-del:hover { color: var(--c-danger); background: var(--c-danger-bg); }
 .screenshot-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
-  gap: 6px;
+  column-count: 2;
+  column-gap: 6px;
 }
 .screenshot-cell {
   position: relative;
-  aspect-ratio: 4 / 3;
+  break-inside: avoid;
+  margin-bottom: 6px;
+  min-height: 64px;
   border-radius: var(--r-sm);
   overflow: hidden;
   border: 1px solid var(--c-border);
 }
 .screenshot-cell img {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
+  min-height: 64px;
+  object-fit: contain;
   cursor: zoom-in;
   display: block;
 }
@@ -126,3 +128,13 @@
   transition: opacity 0.15s;
 }
 .screenshot-cell:hover .screenshot-cell-del { opacity: 1; }
+.screenshot-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 0;
+  color: var(--c-text-secondary);
+  font-size: var(--f-xs);
+}
