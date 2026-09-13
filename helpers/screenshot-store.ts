@@ -33,6 +33,36 @@ export interface ScreenshotScan {
   groups: ScreenshotGroup[];
 }
 
+export interface ScreenshotPage extends ScreenshotScan {
+  nextOffset: number | null;
+}
+
+const SCREENSHOT_PAGE_SIZE = 10;
+
+/** 按图片而非运行分组分页；保留全局与各组统计，但每次最多返回 10 张。 */
+export function paginateScreenshots(scan: ScreenshotScan, offset = 0, limit = SCREENSHOT_PAGE_SIZE): ScreenshotPage {
+  const start = Number.isSafeInteger(offset) && offset >= 0 ? offset : 0;
+  const pageSize = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, SCREENSHOT_PAGE_SIZE) : SCREENSHOT_PAGE_SIZE;
+  const groups: ScreenshotGroup[] = [];
+  let skip = start;
+  let remaining = pageSize;
+
+  for (const group of scan.groups) {
+    if (skip >= group.files.length) {
+      skip -= group.files.length;
+      continue;
+    }
+    const files = group.files.slice(skip, skip + remaining);
+    groups.push({ ...group, files });
+    remaining -= files.length;
+    skip = 0;
+    if (remaining === 0) break;
+  }
+
+  const nextOffset = start + pageSize - remaining;
+  return { total: scan.total, groups, nextOffset: nextOffset < scan.total.count ? nextOffset : null };
+}
+
 export interface RetentionPolicy {
   enabled?: boolean;
   maxAgeDays?: number;
@@ -116,13 +146,13 @@ export async function scanScreenshots(screenshotDir: string): Promise<Screenshot
     }
 
     if (groupFiles.length === 0) continue;
-    groupFiles.sort((a, b) => b.mtime - a.mtime);
+    groupFiles.sort((a, b) => b.mtime - a.mtime || a.name.localeCompare(b.name));
     groups.push({ runId, count: groupFiles.length, bytes: groupBytes, latestMtime, files: groupFiles });
     totalCount += groupFiles.length;
     totalBytes += groupBytes;
   }
 
-  groups.sort((a, b) => b.latestMtime - a.latestMtime);
+  groups.sort((a, b) => b.latestMtime - a.latestMtime || a.runId.localeCompare(b.runId));
   return { total: { count: totalCount, bytes: totalBytes }, groups };
 }
 

@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronUp, Trash2, X } from 'lucide-react';
 import { useT } from '../../i18n/I18nProvider.jsx';
 import {
-  listScreenshots,
   deleteScreenshot,
   deleteScreenshotRun,
   clearScreenshots,
   runScreenshotCleanup,
 } from '../../api/screenshots.js';
 import { saveTools } from '../../api/config.js';
+import { useScreenshots } from '../../hooks/useScreenshots.js';
 
 function formatSize(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
@@ -20,10 +20,10 @@ function formatSize(bytes) {
 
 export function ScreenshotPanel({ onClose }) {
   const t = useT();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [lightbox, setLightbox] = useState(null);
   const [busy, setBusy] = useState(false);
+  const bodyRef = useRef(null);
+  const loadMoreRef = useRef(null);
 
   // 保留策略表单(截图是全局配置,写回不带 projectId)。redaction 需在保存时原样带回,避免被覆盖。
   const [enabled, setEnabled] = useState(false);
@@ -33,28 +33,25 @@ export function ScreenshotPanel({ onClose }) {
   const [savingPolicy, setSavingPolicy] = useState(false);
   const [policySaved, setPolicySaved] = useState(false);
 
-  const applyConfig = (payload) => {
+  const applyConfig = useCallback((payload) => {
     const sc = payload?.screenshots || {};
     const r = sc.retention || {};
     setEnabled(Boolean(r.enabled));
     setMaxAgeDays(r.maxAgeDays != null ? String(r.maxAgeDays) : '');
     setMaxTotalMB(r.maxTotalMB != null ? String(r.maxTotalMB) : '');
     setRedaction(sc.redaction);
-  };
-
-  const load = async () => {
-    try {
-      const d = await listScreenshots();
-      setData(d);
-      applyConfig(d);
-    } catch { /* ignore */ }
-    setLoading(false);
-  };
+  }, []);
+  const { data, loading, error, refresh, loadMore } = useScreenshots(applyConfig);
+  const hasMore = data?.nextOffset != null;
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!hasMore || loading || busy || error) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) loadMore();
+    }, { root: bodyRef.current, rootMargin: '0px 0px 48px 0px' });
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, loading, busy, error, loadMore]);
 
   // 放大图用 Esc 关闭(对齐 AgentPanel 的 lightbox 交互)。
   useEffect(() => {
@@ -64,39 +61,40 @@ export function ScreenshotPanel({ onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [lightbox]);
 
-  const refresh = async () => {
+  const mutateScreenshots = async (action) => {
+    setBusy(true);
     try {
-      setData(await listScreenshots());
-    } catch { /* ignore */ }
+      await action();
+      bodyRef.current?.scrollTo({ top: 0 });
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleDeleteFile = async (runId, name) => {
-    await deleteScreenshot(runId, name);
-    await refresh();
+    await mutateScreenshots(() => deleteScreenshot(runId, name));
   };
 
   const handleDeleteRun = async (runId) => {
     if (!confirm(t('screenshots.confirmDeleteRun'))) return;
-    await deleteScreenshotRun(runId);
-    await refresh();
+    await mutateScreenshots(() => deleteScreenshotRun(runId));
   };
 
   const handleClearAll = async () => {
     if (!confirm(t('screenshots.confirmClearAll'))) return;
-    setBusy(true);
-    await clearScreenshots();
-    await refresh();
-    setBusy(false);
+    await mutateScreenshots(clearScreenshots);
   };
 
   const handleCleanup = async () => {
     setBusy(true);
+    bodyRef.current?.scrollTo({ top: 0 });
     try {
-      const d = await runScreenshotCleanup();
-      setData(d);
-      applyConfig(d);
-    } catch { /* ignore */ }
-    setBusy(false);
+      const d = await refresh(runScreenshotCleanup);
+      if (d) applyConfig(d);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleSavePolicy = async () => {
@@ -129,7 +127,7 @@ export function ScreenshotPanel({ onClose }) {
         <button className="memory-panel-close" onClick={onClose}><ChevronUp size={14} /></button>
       </div>
 
-      <div className="memory-panel-body">
+      <div className="memory-panel-body" ref={bodyRef}>
         <div className="screenshot-retention">
           <label className="screenshot-retention-toggle">
             <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
@@ -154,41 +152,50 @@ export function ScreenshotPanel({ onClose }) {
           <p className="screenshot-retention-hint">{t('screenshots.retentionHint')}</p>
         </div>
 
-        {loading ? (
-          <div className="memory-loading">{t('common.loading')}</div>
-        ) : groups.length === 0 ? (
+        {!loading && !error && groups.length === 0 && (
           <div className="memory-empty">{t('screenshots.empty')}</div>
-        ) : (
-          groups.map(group => (
-            <div key={group.runId} className="screenshot-group">
-              <div className="screenshot-group-head">
-                <span className="screenshot-group-run" title={group.runId}>{group.runId}</span>
-                <span className="screenshot-group-meta">{group.count} · {formatSize(group.bytes)}</span>
-                <button className="screenshot-group-del" onClick={() => handleDeleteRun(group.runId)} title={t('screenshots.deleteRun')}>
-                  <Trash2 size={12} />
-                </button>
-              </div>
-              <div className="screenshot-grid">
-                {group.files.map(file => (
-                  <div key={file.name} className={`screenshot-cell kind-${file.kind}`}>
-                    <img src={file.url} alt={file.name} loading="lazy" onClick={() => setLightbox(file.url)} />
-                    <button className="screenshot-cell-del" onClick={() => handleDeleteFile(group.runId, file.name)} title={t('screenshots.deleteImage')}>
-                      <X size={11} />
-                    </button>
-                  </div>
-                ))}
-              </div>
+        )}
+        {groups.map(group => (
+          <div key={group.runId} className="screenshot-group">
+            <div className="screenshot-group-head">
+              <span className="screenshot-group-run" title={group.runId}>{group.runId}</span>
+              <span className="screenshot-group-meta">{group.count} · {formatSize(group.bytes)}</span>
+              <button className="screenshot-group-del" onClick={() => handleDeleteRun(group.runId)} disabled={busy || loading} title={t('screenshots.deleteRun')}>
+                <Trash2 size={12} />
+              </button>
             </div>
-          ))
+            <div className="screenshot-grid">
+              {group.files.map(file => (
+                <div key={file.name} className={`screenshot-cell kind-${file.kind}`}>
+                  <img src={file.url} alt={file.name} loading="lazy" decoding="async" onClick={() => setLightbox(file.url)} />
+                  <button className="screenshot-cell-del" onClick={() => handleDeleteFile(group.runId, file.name)} disabled={busy || loading} title={t('screenshots.deleteImage')}>
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        {(loading || error || hasMore) && (
+          <div className="screenshot-pagination" ref={loadMoreRef}>
+            {error && <span role="alert">{t('common.loadFailed')}</span>}
+            {loading ? (
+              <span role="status">{t('common.loading')}</span>
+            ) : (
+              <button className="memory-clear-btn" onClick={loadMore} disabled={busy}>
+                {t(error ? 'common.retry' : 'screenshots.loadMore')}
+              </button>
+            )}
+          </div>
         )}
       </div>
 
       <div className="memory-panel-footer">
-        <button className="memory-clear-btn" onClick={handleCleanup} disabled={busy} title={t('screenshots.cleanupNowTitle')}>
+        <button className="memory-clear-btn" onClick={handleCleanup} disabled={busy || loading} title={t('screenshots.cleanupNowTitle')}>
           {t('screenshots.cleanupNow')}
         </button>
         <div className="memory-clear-group">
-          <button className="memory-clear-btn danger" onClick={handleClearAll} disabled={busy || total.count === 0}>
+          <button className="memory-clear-btn danger" onClick={handleClearAll} disabled={busy || loading || total.count === 0}>
             {t('screenshots.clearAll')}
           </button>
         </div>
